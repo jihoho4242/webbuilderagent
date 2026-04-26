@@ -1,0 +1,886 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ai-web-director.local/schemas/state.schema.json",
+  "title": "AI Web Director state.yaml",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "project",
+    "phase",
+    "gates",
+    "artifacts",
+    "design_candidates",
+    "implementation",
+    "qa",
+    "deploy",
+    "budget",
+    "adapters",
+    "invalidations",
+    "decisions",
+    "snapshots"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "integer",
+      "const": 1
+    },
+    "project": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "name",
+        "created_at",
+        "updated_at"
+      ],
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "created_at": {
+          "type": "string"
+        },
+        "updated_at": {
+          "type": "string"
+        }
+      }
+    },
+    "phase": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "current",
+        "completed",
+        "blocked",
+        "block_reason"
+      ],
+      "properties": {
+        "current": {
+          "$ref": "#/$defs/phase_id"
+        },
+        "completed": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/phase_id"
+          }
+        },
+        "blocked": {
+          "type": "boolean"
+        },
+        "block_reason": {
+          "type": "string"
+        }
+      }
+    },
+    "gates": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "gate_1a_scope_quality_stack",
+        "gate_1b_product_content_ia_data_security",
+        "gate_2_design",
+        "gate_3_golden_flow",
+        "gate_4_predeploy"
+      ],
+      "properties": {
+        "gate_1a_scope_quality_stack": {
+          "$ref": "#/$defs/gate"
+        },
+        "gate_1b_product_content_ia_data_security": {
+          "$ref": "#/$defs/gate"
+        },
+        "gate_2_design": {
+          "$ref": "#/$defs/gate"
+        },
+        "gate_3_golden_flow": {
+          "$ref": "#/$defs/gate"
+        },
+        "gate_4_predeploy": {
+          "$ref": "#/$defs/gate"
+        }
+      }
+    },
+    "artifacts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "project",
+        "quality",
+        "product",
+        "stack",
+        "brand",
+        "content",
+        "ia",
+        "data",
+        "security",
+        "design_brief",
+        "design_candidates",
+        "design_comparison",
+        "selected_design_candidate",
+        "design_system",
+        "deploy",
+        "final_qa_report",
+        "post_launch_backlog"
+      ],
+      "properties": {
+        "project": {
+          "$ref": "#/$defs/artifact"
+        },
+        "quality": {
+          "$ref": "#/$defs/artifact"
+        },
+        "product": {
+          "$ref": "#/$defs/artifact"
+        },
+        "stack": {
+          "$ref": "#/$defs/artifact"
+        },
+        "brand": {
+          "$ref": "#/$defs/artifact"
+        },
+        "content": {
+          "$ref": "#/$defs/artifact"
+        },
+        "ia": {
+          "$ref": "#/$defs/artifact"
+        },
+        "data": {
+          "$ref": "#/$defs/artifact"
+        },
+        "security": {
+          "$ref": "#/$defs/artifact"
+        },
+        "design_brief": {
+          "$ref": "#/$defs/artifact"
+        },
+        "design_candidates": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "path",
+            "status",
+            "min_required",
+            "count"
+          ],
+          "properties": {
+            "path": {
+              "type": "string",
+              "const": ".ai-web/design-candidates/"
+            },
+            "status": {
+              "$ref": "#/$defs/artifact_status"
+            },
+            "min_required": {
+              "type": "integer",
+              "minimum": 2
+            },
+            "count": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        },
+        "design_comparison": {
+          "$ref": "#/$defs/artifact"
+        },
+        "selected_design_candidate": {
+          "$ref": "#/$defs/artifact"
+        },
+        "design_system": {
+          "$ref": "#/$defs/artifact"
+        },
+        "deploy": {
+          "$ref": "#/$defs/artifact"
+        },
+        "final_qa_report": {
+          "$ref": "#/$defs/artifact"
+        },
+        "post_launch_backlog": {
+          "$ref": "#/$defs/artifact"
+        }
+      }
+    },
+    "design_candidates": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "min_required",
+        "max_allowed",
+        "candidates",
+        "comparison_path",
+        "selected_path",
+        "selected_candidate",
+        "regeneration_requested",
+        "regeneration_rounds",
+        "gate_2_draft_path"
+      ],
+      "properties": {
+        "min_required": {
+          "type": "integer",
+          "minimum": 2
+        },
+        "max_allowed": {
+          "type": "integer",
+          "minimum": 2
+        },
+        "candidates": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/design_candidate_ref"
+          }
+        },
+        "comparison_path": {
+          "type": "string",
+          "const": ".ai-web/design-candidates/comparison.md"
+        },
+        "selected_path": {
+          "type": "string",
+          "const": ".ai-web/design-candidates/selected.md"
+        },
+        "selected_candidate": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "regeneration_requested": {
+          "type": "boolean"
+        },
+        "regeneration_rounds": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "gate_2_draft_path": {
+          "type": "string",
+          "const": ".ai-web/gates/gate-2-design.md"
+        }
+      }
+    },
+    "implementation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "stack_profile",
+        "scaffold_target",
+        "scaffold_created",
+        "current_task",
+        "completed_tasks"
+      ],
+      "properties": {
+        "stack_profile": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "enum": [
+            "A",
+            "B",
+            "C",
+            "D",
+            null
+          ]
+        },
+        "scaffold_target": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "scaffold_created": {
+          "type": "boolean"
+        },
+        "current_task": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "completed_tasks": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "qa": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "current_checklist",
+        "final_report",
+        "last_result",
+        "open_failures"
+      ],
+      "properties": {
+        "current_checklist": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "final_report": {
+          "type": "string",
+          "const": ".ai-web/qa/final-report.md"
+        },
+        "last_result": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "open_failures": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/open_failure"
+          }
+        }
+      }
+    },
+    "deploy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "plan",
+        "post_launch_backlog",
+        "rollback_defined",
+        "rollback_dry_run_result"
+      ],
+      "properties": {
+        "plan": {
+          "type": "string",
+          "const": ".ai-web/deploy.md"
+        },
+        "post_launch_backlog": {
+          "type": "string",
+          "const": ".ai-web/post-launch-backlog.md"
+        },
+        "rollback_defined": {
+          "type": "boolean"
+        },
+        "rollback_dry_run_result": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
+    },
+    "budget": {
+      "$ref": "#/$defs/budget"
+    },
+    "adapters": {
+      "$ref": "#/$defs/adapters"
+    },
+    "invalidations": {
+      "type": "array",
+      "items": {
+        "type": "object"
+      }
+    },
+    "decisions": {
+      "type": "array",
+      "items": {
+        "type": "object"
+      }
+    },
+    "snapshots": {
+      "type": "array",
+      "items": {
+        "type": "object"
+      }
+    }
+  },
+  "$defs": {
+    "phase_id": {
+      "type": "string",
+      "enum": [
+        "phase--1",
+        "phase-0",
+        "phase-0.25",
+        "phase-0.5",
+        "phase-1",
+        "phase-1.5",
+        "phase-2",
+        "phase-2.5",
+        "phase-3",
+        "phase-3.5",
+        "phase-4",
+        "phase-5",
+        "phase-6",
+        "phase-7",
+        "phase-8",
+        "phase-9",
+        "phase-10",
+        "phase-11",
+        "complete"
+      ]
+    },
+    "artifact_status": {
+      "type": "string",
+      "enum": [
+        "missing",
+        "stub",
+        "draft",
+        "ready_for_gate",
+        "approved",
+        "invalidated",
+        "archived"
+      ]
+    },
+    "artifact": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "path",
+        "status"
+      ],
+      "properties": {
+        "path": {
+          "type": "string"
+        },
+        "status": {
+          "$ref": "#/$defs/artifact_status"
+        }
+      }
+    },
+    "gate_status": {
+      "type": "string",
+      "enum": [
+        "pending",
+        "approved",
+        "rejected",
+        "invalidated"
+      ]
+    },
+    "gate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "status",
+        "approved_at",
+        "approved_by",
+        "approval_scope",
+        "approved_artifact_hashes",
+        "accepted_risks",
+        "artifact"
+      ],
+      "properties": {
+        "status": {
+          "$ref": "#/$defs/gate_status"
+        },
+        "approved_at": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "approved_by": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "approval_scope": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "approved_artifact_hashes": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "accepted_risks": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/accepted_risk"
+          }
+        },
+        "artifact": {
+          "type": "string"
+        }
+      }
+    },
+    "severity": {
+      "type": "string",
+      "enum": [
+        "critical",
+        "high",
+        "medium",
+        "low",
+        "info"
+      ]
+    },
+    "accepted_risk": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "severity",
+        "owner",
+        "mitigation",
+        "expires_at",
+        "release_blocker"
+      ],
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "source_check_id": {
+          "type": "string"
+        },
+        "severity": {
+          "$ref": "#/$defs/severity"
+        },
+        "owner": {
+          "type": "string"
+        },
+        "rationale": {
+          "type": "string"
+        },
+        "mitigation": {
+          "type": "string"
+        },
+        "expires_at": {
+          "type": "string"
+        },
+        "release_blocker": {
+          "type": "boolean"
+        }
+      }
+    },
+    "open_failure": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "source_result",
+        "check_id",
+        "severity",
+        "blocking",
+        "accepted_risk_id"
+      ],
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "source_result": {
+          "type": "string"
+        },
+        "check_id": {
+          "type": "string"
+        },
+        "severity": {
+          "$ref": "#/$defs/severity"
+        },
+        "blocking": {
+          "type": "boolean"
+        },
+        "accepted_risk_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
+    },
+    "design_candidate_ref": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "path",
+        "status"
+      ],
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "path": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "draft",
+            "ready_for_gate",
+            "approved",
+            "rejected",
+            "regenerate"
+          ]
+        },
+        "provider": {
+          "type": "string"
+        },
+        "model": {
+          "type": "string"
+        }
+      }
+    },
+    "budget": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "cost_mode",
+        "meter_model_cost",
+        "max_model_cost_usd",
+        "max_design_generations_total",
+        "max_design_candidates",
+        "max_regeneration_rounds",
+        "max_qa_runtime_minutes",
+        "qa_timeout_action",
+        "max_qa_timeout_recovery_cycles",
+        "require_user_approval_above_usd",
+        "estimated_spend_usd"
+      ],
+      "properties": {
+        "cost_mode": {
+          "type": "string",
+          "enum": [
+            "subscription_usage",
+            "api_metered",
+            "manual",
+            "unknown"
+          ]
+        },
+        "meter_model_cost": {
+          "type": "boolean"
+        },
+        "max_model_cost_usd": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "max_design_generations_total": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "max_design_candidates": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "max_regeneration_rounds": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "max_qa_runtime_minutes": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "qa_timeout_action": {
+          "type": "string",
+          "enum": [
+            "self_diagnose_fix_rerun",
+            "block",
+            "report_only"
+          ]
+        },
+        "max_qa_timeout_recovery_cycles": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "require_user_approval_above_usd": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "estimated_spend_usd": {
+          "type": "number",
+          "minimum": 0
+        }
+      }
+    },
+    "adapters": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "implementation_agent",
+        "image_generation",
+        "browser_qa",
+        "deploy"
+      ],
+      "properties": {
+        "implementation_agent": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "provider",
+            "command",
+            "model",
+            "permissions",
+            "instruction_file",
+            "network_allowed",
+            "mcp_servers_allowed",
+            "command_timeout_minutes"
+          ],
+          "properties": {
+            "provider": {
+              "type": "string",
+              "enum": [
+                "codex",
+                "claude_code",
+                "openhands",
+                "manual"
+              ]
+            },
+            "command": {
+              "type": "string"
+            },
+            "model": {
+              "type": "string"
+            },
+            "permissions": {
+              "type": "string",
+              "enum": [
+                "read_only",
+                "edit",
+                "network",
+                "browser"
+              ]
+            },
+            "instruction_file": {
+              "type": "string"
+            },
+            "network_allowed": {
+              "type": "boolean"
+            },
+            "mcp_servers_allowed": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "command_timeout_minutes": {
+              "type": "integer",
+              "minimum": 1
+            }
+          }
+        },
+        "image_generation": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "provider",
+            "tool",
+            "model",
+            "model_snapshot",
+            "api_surface"
+          ],
+          "properties": {
+            "provider": {
+              "type": "string",
+              "enum": [
+                "openai",
+                "anthropic",
+                "manual"
+              ]
+            },
+            "tool": {
+              "type": "string"
+            },
+            "model": {
+              "type": "string"
+            },
+            "model_snapshot": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "api_surface": {
+              "type": "string",
+              "enum": [
+                "image_api",
+                "responses_api",
+                "claude_design_ui",
+                "manual"
+              ]
+            }
+          }
+        },
+        "browser_qa": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "provider",
+            "allowed_hosts",
+            "evidence_schema",
+            "file_access"
+          ],
+          "properties": {
+            "provider": {
+              "type": "string",
+              "enum": [
+                "codex_browser",
+                "playwright_mcp",
+                "browser_use",
+                "playwright_script",
+                "manual"
+              ]
+            },
+            "allowed_hosts": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "evidence_schema": {
+              "type": "string"
+            },
+            "file_access": {
+              "type": "string",
+              "enum": [
+                "workspace_only",
+                "explicit_paths",
+                "unrestricted"
+              ]
+            }
+          }
+        },
+        "deploy": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "provider",
+            "target",
+            "config_files"
+          ],
+          "properties": {
+            "provider": {
+              "type": "string",
+              "enum": [
+                "cloudflare_pages",
+                "cloudflare_workers",
+                "kamal",
+                "manual"
+              ]
+            },
+            "target": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "config_files": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

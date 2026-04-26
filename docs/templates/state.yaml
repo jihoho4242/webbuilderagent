@@ -1,0 +1,140 @@
+schema_version: 1
+project:
+  id: ""
+  name: ""
+  created_at: ""
+  updated_at: ""
+phase:
+  current: "phase-0"
+  completed: []
+  blocked: false
+  block_reason: ""
+gates:
+  gate_1a_scope_quality_stack:
+    status: "pending"
+    approved_at: null
+    approved_by: null
+    approval_scope: []
+    approved_artifact_hashes: {}
+    accepted_risks: []
+    artifact: ".ai-web/gates/gate-1a-scope-quality-stack.md"
+  gate_1b_product_content_ia_data_security:
+    status: "pending"
+    approved_at: null
+    approved_by: null
+    approval_scope: []
+    approved_artifact_hashes: {}
+    accepted_risks: []
+    artifact: ".ai-web/gates/gate-1b-product-content-ia-data-security.md"
+  gate_2_design:
+    status: "pending"
+    approved_at: null
+    approved_by: null
+    approval_scope: []
+    approved_artifact_hashes: {}
+    accepted_risks: []
+    artifact: ".ai-web/gates/gate-2-design.md"
+  gate_3_golden_flow:
+    status: "pending"
+    approved_at: null
+    approved_by: null
+    approval_scope: []
+    approved_artifact_hashes: {}
+    accepted_risks: []
+    artifact: ".ai-web/gates/gate-3-golden-flow.md"
+  gate_4_predeploy:
+    status: "pending"
+    approved_at: null
+    approved_by: null
+    approval_scope: []
+    approved_artifact_hashes: {}
+    accepted_risks: []
+    artifact: ".ai-web/gates/gate-4-predeploy.md"
+artifacts:
+  project: { path: ".ai-web/project.md", status: "stub" }
+  quality: { path: ".ai-web/quality.yaml", status: "stub" }
+  product: { path: ".ai-web/product.md", status: "missing" }
+  stack: { path: ".ai-web/stack.md", status: "missing" }
+  brand: { path: ".ai-web/brand.md", status: "missing" }
+  content: { path: ".ai-web/content.md", status: "missing" }
+  ia: { path: ".ai-web/ia.md", status: "missing" }
+  data: { path: ".ai-web/data.md", status: "missing" }
+  security: { path: ".ai-web/security.md", status: "missing" }
+  design_brief: { path: ".ai-web/design-brief.md", status: "missing" }
+  design_candidates:
+    path: ".ai-web/design-candidates/"
+    status: "missing"
+    min_required: 2
+    count: 0
+  design_comparison: { path: ".ai-web/design-candidates/comparison.md", status: "missing" }
+  selected_design_candidate: { path: ".ai-web/design-candidates/selected.md", status: "missing" }
+  design_system: { path: ".ai-web/DESIGN.md", status: "missing" }
+  deploy: { path: ".ai-web/deploy.md", status: "missing" }
+  final_qa_report: { path: ".ai-web/qa/final-report.md", status: "missing" }
+  post_launch_backlog: { path: ".ai-web/post-launch-backlog.md", status: "missing" }
+design_candidates:
+  min_required: 2
+  max_allowed: 10
+  candidates: []
+  comparison_path: ".ai-web/design-candidates/comparison.md"
+  selected_path: ".ai-web/design-candidates/selected.md"
+  selected_candidate: null
+  regeneration_requested: false
+  regeneration_rounds: 0
+  gate_2_draft_path: ".ai-web/gates/gate-2-design.md"
+implementation:
+  stack_profile: null
+  scaffold_target: null
+  scaffold_created: false
+  current_task: null
+  completed_tasks: []
+qa:
+  current_checklist: null
+  final_report: ".ai-web/qa/final-report.md"
+  last_result: null
+  open_failures: []
+deploy:
+  plan: ".ai-web/deploy.md"
+  post_launch_backlog: ".ai-web/post-launch-backlog.md"
+  rollback_defined: false
+  rollback_dry_run_result: null
+budget:
+  cost_mode: "subscription_usage"
+  meter_model_cost: false
+  max_model_cost_usd: null
+  max_design_generations_total: 10
+  max_design_candidates: 10
+  max_regeneration_rounds: 10
+  max_qa_runtime_minutes: 60
+  qa_timeout_action: "self_diagnose_fix_rerun"
+  max_qa_timeout_recovery_cycles: 3
+  require_user_approval_above_usd: null
+  estimated_spend_usd: 0
+adapters:
+  implementation_agent:
+    provider: "codex"
+    command: "codex"
+    model: "repo-default"
+    permissions: "edit"
+    instruction_file: "AGENTS.md"
+    network_allowed: false
+    mcp_servers_allowed: []
+    command_timeout_minutes: 30
+  image_generation:
+    provider: "openai"
+    tool: "gpt-image"
+    model: "gpt-image-2"
+    model_snapshot: null
+    api_surface: "image_api"
+  browser_qa:
+    provider: "codex_browser"
+    allowed_hosts: ["localhost", "127.0.0.1"]
+    evidence_schema: "qa-result-v1"
+    file_access: "workspace_only"
+  deploy:
+    provider: "manual"
+    target: null
+    config_files: []
+invalidations: []
+decisions: []
+snapshots: []

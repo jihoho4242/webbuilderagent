@@ -1,0 +1,124 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ai-web-director.local/schemas/quality.schema.json",
+  "title": "AI Web Director quality.yaml",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "quality"
+  ],
+  "properties": {
+    "quality": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": [
+        "responsive",
+        "accessibility",
+        "performance",
+        "seo",
+        "design",
+        "content",
+        "security",
+        "qa",
+        "budget"
+      ],
+      "properties": {
+        "responsive": {
+          "type": "object"
+        },
+        "accessibility": {
+          "type": "object"
+        },
+        "performance": {
+          "type": "object"
+        },
+        "seo": {
+          "type": "object"
+        },
+        "design": {
+          "type": "object"
+        },
+        "content": {
+          "type": "object"
+        },
+        "security": {
+          "type": "object"
+        },
+        "qa": {
+          "type": "object"
+        },
+        "budget": {
+          "type": "object",
+          "required": [
+            "cost_mode",
+            "meter_model_cost",
+            "max_model_cost_usd",
+            "max_design_generations_total",
+            "max_design_candidates",
+            "max_regeneration_rounds",
+            "max_qa_runtime_minutes",
+            "qa_timeout_action",
+            "max_qa_timeout_recovery_cycles",
+            "require_user_approval_above_usd"
+          ],
+          "properties": {
+            "cost_mode": {
+              "type": "string",
+              "enum": [
+                "subscription_usage",
+                "api_metered",
+                "manual",
+                "unknown"
+              ]
+            },
+            "meter_model_cost": {
+              "type": "boolean"
+            },
+            "max_model_cost_usd": {
+              "type": [
+                "number",
+                "null"
+              ],
+              "minimum": 0
+            },
+            "max_design_generations_total": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "max_design_candidates": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "max_regeneration_rounds": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "max_qa_runtime_minutes": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "qa_timeout_action": {
+              "type": "string",
+              "enum": [
+                "self_diagnose_fix_rerun",
+                "block",
+                "report_only"
+              ]
+            },
+            "max_qa_timeout_recovery_cycles": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "require_user_approval_above_usd": {
+              "type": [
+                "number",
+                "null"
+              ],
+              "minimum": 0
+            }
+          }
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,39 @@
+{
+  "schema_version": 1,
+  "task_id": "",
+  "status": "pending",
+  "started_at": "",
+  "finished_at": "",
+  "duration_minutes": 0,
+  "timed_out": false,
+  "environment": {
+    "url": "",
+    "browser": "chromium",
+    "browser_version": "",
+    "viewport": {
+      "width": 375,
+      "height": 812,
+      "name": "mobile"
+    },
+    "commit_sha": "",
+    "server_command": ""
+  },
+  "checks": [
+    {
+      "id": "",
+      "category": "responsive",
+      "severity": "medium",
+      "status": "pending",
+      "expected": "",
+      "actual": "",
+      "evidence": [],
+      "notes": "",
+      "accepted_risk_id": null
+    }
+  ],
+  "evidence": [],
+  "console_errors": [],
+  "network_errors": [],
+  "recommended_action": "none",
+  "created_fix_task": null
+}

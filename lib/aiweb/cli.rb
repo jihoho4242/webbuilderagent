@@ -1,0 +1,241 @@
+# frozen_string_literal: true
+
+require "json"
+require "optparse"
+require "stringio"
+
+module Aiweb
+  class CLI
+    EXIT_SUCCESS = 0
+    EXIT_VALIDATION_FAILED = 1
+    EXIT_PHASE_BLOCKED = 2
+    EXIT_BUDGET_BLOCKED = 3
+    EXIT_ADAPTER_UNAVAILABLE = 4
+    EXIT_UNSAFE_EXTERNAL_ACTION = 5
+    EXIT_INTERNAL_ERROR = 10
+
+    MUTATION_COMMANDS = %w[init interview run ingest-design next-task qa-checklist qa-report advance rollback snapshot design-prompt].freeze
+
+    def initialize(argv, root)
+      @argv = argv.dup
+      @root = root
+      @json = false
+      @dry_run = false
+    end
+
+    def run
+      parse_global_flags!
+      command = @argv.shift || "help"
+      if @dry_run && !MUTATION_COMMANDS.include?(command)
+        return emit_error("--dry-run is only supported for mutation commands", EXIT_VALIDATION_FAILED)
+      end
+
+      result = dispatch(command)
+      result["dry_run"] = @dry_run if @dry_run
+      emit_result(result)
+      exit_code_for(command, result)
+    rescue UserError => e
+      emit_error(e.message, e.exit_code)
+    rescue OptionParser::ParseError, ArgumentError => e
+      emit_error(e.message, EXIT_VALIDATION_FAILED)
+    rescue StandardError => e
+      emit_error("#{e.class}: #{e.message}", EXIT_INTERNAL_ERROR)
+    end
+
+    private
+
+    def project
+      @project ||= Project.new(@root)
+    end
+
+    def parse_global_flags!
+      kept = []
+      until @argv.empty?
+        arg = @argv.shift
+        case arg
+        when "--json"
+          @json = true
+        when "--dry-run"
+          @dry_run = true
+        else
+          kept << arg
+        end
+      end
+      @argv = kept
+    end
+
+    def dispatch(command)
+      case command
+      when "help", "--help", "-h"
+        help_payload
+      when "version", "--version"
+        base_payload("version", "aiweb #{Aiweb::VERSION}")
+      when "init"
+        opts = parse_options do |o, options|
+          o.on("--profile PROFILE") { |v| options[:profile] = v }
+        end
+        project.init(profile: opts[:profile], dry_run: @dry_run)
+      when "status"
+        project.status
+      when "interview"
+        opts = parse_options do |o, options|
+          o.on("--idea IDEA") { |v| options[:idea] = v }
+        end
+        opts[:idea] ||= @argv.join(" ")
+        project.interview(idea: opts[:idea], dry_run: @dry_run)
+      when "run"
+        project.run(dry_run: @dry_run)
+      when "design-prompt"
+        opts = parse_options do |o, options|
+          o.on("--force") { options[:force] = true }
+        end
+        project.design_prompt(dry_run: @dry_run, force: opts[:force])
+      when "ingest-design"
+        opts = parse_options do |o, options|
+          o.on("--id ID") { |v| options[:id] = v }
+          o.on("--title TITLE") { |v| options[:title] = v }
+          o.on("--source SOURCE") { |v| options[:source] = v }
+          o.on("--notes NOTES") { |v| options[:notes] = v }
+          o.on("--selected") { options[:selected] = true }
+          o.on("--force") { options[:force] = true }
+        end
+        project.ingest_design(id: opts[:id], title: opts[:title], source: opts[:source], notes: opts[:notes], selected: opts[:selected], dry_run: @dry_run, force: opts[:force])
+      when "next-task"
+        opts = parse_options do |o, options|
+          o.on("--type TYPE") { |v| options[:type] = v }
+        end
+        project.next_task(type: opts[:type], dry_run: @dry_run)
+      when "qa-checklist"
+        project.qa_checklist(dry_run: @dry_run)
+      when "qa-report"
+        opts = parse_options do |o, options|
+          o.on("--from PATH") { |v| options[:from] = v }
+          o.on("--status STATUS") { |v| options[:status] = v }
+          o.on("--task-id ID") { |v| options[:task_id] = v }
+          o.on("--duration-minutes N") { |v| options[:duration_minutes] = v.to_f }
+          o.on("--timed-out") { options[:timed_out] = true }
+          o.on("--force") { options[:force] = true }
+        end
+        project.qa_report(status: opts[:status] || "passed", task_id: opts[:task_id], duration_minutes: opts[:duration_minutes], timed_out: opts[:timed_out], from: opts[:from], dry_run: @dry_run, force: opts[:force])
+      when "advance"
+        project.advance(dry_run: @dry_run)
+      when "rollback"
+        opts = parse_options do |o, options|
+          o.on("--to PHASE") { |v| options[:to] = v }
+          o.on("--failure CODE") { |v| options[:failure] = v }
+          o.on("--reason REASON") { |v| options[:reason] = v }
+        end
+        if opts[:to].to_s.empty? && opts[:failure].to_s.empty?
+          raise UserError.new("rollback requires --to or --failure", EXIT_VALIDATION_FAILED)
+        end
+        project.rollback(to: opts[:to], failure: opts[:failure], reason: opts[:reason], dry_run: @dry_run)
+      when "snapshot"
+        opts = parse_options do |o, options|
+          o.on("--reason REASON") { |v| options[:reason] = v }
+        end
+        project.snapshot(reason: opts[:reason], dry_run: @dry_run)
+      else
+        raise UserError.new("unknown command #{command.inspect}; run aiweb help", EXIT_VALIDATION_FAILED)
+      end
+    end
+
+    def parse_options
+      options = {}
+      parser = OptionParser.new do |o|
+        yield(o, options) if block_given?
+      end
+      parser.parse!(@argv)
+      options
+    end
+
+    def help_payload
+      base_payload("help", <<~HELP)
+        aiweb — AI Web Director CLI
+
+        Commands:
+          init [--profile A|B|C|D]
+          status
+          interview --idea "..."
+          run
+          design-prompt [--force]
+          ingest-design [--title TITLE] [--source SOURCE] [--notes NOTES] [--selected] [--force]
+          next-task [--type TYPE]
+          qa-checklist
+          qa-report [--from PATH] [--status passed|failed|blocked] [--duration-minutes N] [--timed-out] [--force]
+          advance
+          rollback --to phase-4 --reason "..."
+          snapshot [--reason "..."]
+
+        Global flags:
+          --json       machine-readable output
+          --dry-run    plan mutation without writing files
+
+        Phase-sensitive commands are guarded:
+          design-prompt: phase-3 or phase-3.5
+          ingest-design: phase-3.5
+          qa-report: phase-7 through phase-11
+        Use --force only for manual repair/override.
+      HELP
+    end
+
+    def base_payload(action, message)
+      {
+        "schema_version" => 1,
+        "current_phase" => nil,
+        "action_taken" => action,
+        "changed_files" => [],
+        "blocking_issues" => [],
+        "missing_artifacts" => [],
+        "next_action" => message
+      }
+    end
+
+    def emit_result(result)
+      if @json
+        puts JSON.pretty_generate(result)
+      else
+        puts human_result(result)
+      end
+    end
+
+    def emit_error(message, code)
+      payload = {
+        "schema_version" => 1,
+        "status" => "error",
+        "error" => { "code" => code, "message" => message },
+        "blocking_issues" => [message],
+        "next_action" => "fix the reported issue and rerun the command"
+      }
+      if @json
+        puts JSON.pretty_generate(payload)
+      else
+        warn "Error: #{message}"
+        warn "Next command: #{payload["next_action"]}"
+      end
+      code
+    end
+
+    def human_result(result)
+      changed = result["changed_files"] || result["artifacts_changed"] || []
+      blockers = result["blocking_issues"] || []
+      [
+        "Current phase: #{result["current_phase"] || "n/a"}",
+        "Action taken: #{result["action_taken"] || "n/a"}",
+        "Artifacts changed: #{changed.empty? ? "none" : changed.join(", ")}",
+        "Blocking issues: #{blockers.empty? ? "none" : blockers.join("; ")}",
+        "Next command: #{result["next_action"] || "n/a"}"
+      ].join("\n")
+    end
+
+    def exit_code_for(command, result)
+      return EXIT_VALIDATION_FAILED if result["validation_errors"] && !result["validation_errors"].empty?
+      return EXIT_SUCCESS if %w[help version status init interview run design-prompt ingest-design next-task qa-checklist qa-report rollback snapshot].include?(command)
+      if command == "advance" && !(result["blocking_issues"] || []).empty?
+        issue = result["blocking_issues"].join(" ")
+        return EXIT_BUDGET_BLOCKED if issue =~ /budget|candidate cap|design generation cap/i
+        return EXIT_PHASE_BLOCKED
+      end
+      EXIT_SUCCESS
+    end
+  end
+end

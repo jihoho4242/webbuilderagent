@@ -1,0 +1,6 @@
+# Local OMX runtime/session artifacts
+.omx/
+
+# OS/editor noise
+.DS_Store
+*.swp

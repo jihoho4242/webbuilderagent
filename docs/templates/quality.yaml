@@ -1,0 +1,54 @@
+quality:
+  responsive:
+    required: true
+    viewports:
+      - { width: 375, height: 812, name: "mobile" }
+      - { width: 768, height: 1024, name: "tablet" }
+      - { width: 1440, height: 900, name: "desktop" }
+    no_horizontal_scroll: "blocker"
+  accessibility:
+    target: "WCAG_2_2_AA"
+    keyboard_navigation: "blocker"
+    color_contrast: "blocker"
+    form_labels: "blocker"
+  performance:
+    lighthouse_mobile_min: 85
+    lighthouse_desktop_min: 90
+    lcp_ms_max: 2500
+    max_initial_js_kb: 250
+  seo:
+    required: ["title", "description", "canonical", "og"]
+    sitemap: "required_if_public_content"
+    robots: "required_if_public"
+  design:
+    use_design_tokens: true
+    no_random_inline_styles: true
+    max_button_variants: 3
+    max_card_variants: 4
+    visual_diff_tolerance_percent: 5
+  content:
+    hero_clear_value_prop: true
+    primary_cta_above_fold: true
+    faq_if_conversion_site: "recommended"
+    provenance_required: true
+  security:
+    secrets_in_env_only: "blocker"
+    form_spam_protection: "required_if_public_form"
+    admin_auth: "required_if_admin"
+    threat_model_required: true
+  qa:
+    browser_walkthrough: "required"
+    screenshots_required: true
+    failed_checks_create_fix_packet: true
+    result_schema: "qa-result-v1"
+  budget:
+    cost_mode: "subscription_usage"
+    meter_model_cost: false
+    max_model_cost_usd: null
+    max_design_generations_total: 10
+    max_design_candidates: 10
+    max_regeneration_rounds: 10
+    max_qa_runtime_minutes: 60
+    qa_timeout_action: "self_diagnose_fix_rerun"
+    max_qa_timeout_recovery_cycles: 3
+    require_user_approval_above_usd: null
