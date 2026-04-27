@@ -7,6 +7,9 @@ require "open3"
 require "tmpdir"
 require "yaml"
 
+$LOAD_PATH.unshift(File.expand_path("../lib", __dir__))
+require "aiweb/project"
+
 class AiwebCliTest < Minitest::Test
   AIWEB = File.expand_path("../bin/aiweb", __dir__)
   WEBBUILDER = File.expand_path("../bin/webbuilder", __dir__)
@@ -585,6 +588,66 @@ class AiwebCliTest < Minitest::Test
       assert File.exist?(".ai-web/.lock")
       assert_equal before_state, File.read(".ai-web/state.yaml")
       refute_match(/blocked mutation/, File.read(".ai-web/project.md"))
+    end
+  end
+
+  def test_concurrent_mutation_lock_rejects_second_process
+    in_tmp do
+      json_cmd("init")
+      before_state = File.read(".ai-web/state.yaml")
+      ready_reader, ready_writer = IO.pipe
+      release_reader, release_writer = IO.pipe
+      child_pid = nil
+
+      begin
+        child_pid = fork do
+          ready_reader.close
+          release_writer.close
+          begin
+            Aiweb::Project.new(Dir.pwd).send(:mutation, dry_run: false) do
+              ready_writer.write("1")
+              ready_writer.close
+              release_reader.read
+            end
+            exit! 0
+          rescue StandardError => e
+            warn "#{e.class}: #{e.message}"
+            exit! 1
+          ensure
+            ready_writer.close unless ready_writer.closed?
+            release_reader.close unless release_reader.closed?
+          end
+        end
+        ready_writer.close
+        release_reader.close
+
+        assert IO.select([ready_reader], nil, nil, 5), "child mutation did not acquire lock"
+        assert_equal "1", ready_reader.read(1)
+        assert File.exist?(".ai-web/.lock")
+
+        payload, code = json_cmd("interview", "--idea", "concurrent mutation")
+        assert_equal 1, code
+        assert_match(/state lock exists/, payload.dig("error", "message"))
+        assert_equal before_state, File.read(".ai-web/state.yaml")
+        refute_match(/concurrent mutation/, File.read(".ai-web/project.md"))
+
+        release_writer.write("1")
+        release_writer.close
+        _pid, status = Process.wait2(child_pid)
+        child_pid = nil
+        assert status.success?, "lock holder exited unsuccessfully"
+        refute File.exist?(".ai-web/.lock")
+      ensure
+        ready_reader.close unless ready_reader.closed?
+        unless release_writer.closed?
+          begin
+            release_writer.write("1")
+          rescue IOError, Errno::EPIPE
+          end
+          release_writer.close
+        end
+        Process.wait(child_pid) if child_pid
+      end
     end
   end
 
