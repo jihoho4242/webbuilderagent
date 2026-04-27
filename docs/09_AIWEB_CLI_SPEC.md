@@ -18,6 +18,7 @@
 ## 2. MVP 명령
 
 ```bash
+aiweb start --path <project-path> --idea "..." [--profile <A|B|C|D>] [--no-advance]
 aiweb init
 aiweb init --profile <A|B|C|D>
 aiweb status
@@ -35,6 +36,32 @@ aiweb snapshot
 ```
 
 ## 3. 명령 상세
+
+### `aiweb start`
+
+가장 편한 시작 명령이다. 새 프로젝트 폴더를 만들고 `init --profile`, `interview --idea`, 첫 `advance`를 한 번에 실행한다.
+
+기본값:
+
+- profile: `D`
+- path: 현재 디렉터리
+- advance: enabled
+
+예:
+
+```bash
+aiweb start \
+  --path ~/Desktop/aiweb-dogfood-cafe \
+  --idea "성수동 감성 로컬 카페 웹사이트"
+```
+
+출력:
+
+- `.ai-web/`
+- 초기 product/project/brand/content draft
+- `phase-0.25` quality gate 상태
+
+`--no-advance`를 쓰면 `init`과 `interview`만 실행하고 phase-0에 머문다.
 
 ### `aiweb init`
 

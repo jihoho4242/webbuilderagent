@@ -14,7 +14,7 @@ module Aiweb
     EXIT_UNSAFE_EXTERNAL_ACTION = 5
     EXIT_INTERNAL_ERROR = 10
 
-    MUTATION_COMMANDS = %w[init interview run ingest-design next-task qa-checklist qa-report advance rollback resolve-blocker snapshot design-prompt].freeze
+    MUTATION_COMMANDS = %w[start init interview run ingest-design next-task qa-checklist qa-report advance rollback resolve-blocker snapshot design-prompt].freeze
 
     def initialize(argv, root)
       @argv = argv.dup
@@ -70,6 +70,16 @@ module Aiweb
         help_payload
       when "version", "--version"
         base_payload("version", "aiweb #{Aiweb::VERSION}")
+      when "start"
+        opts = parse_options do |o, options|
+          o.on("--path PATH") { |v| options[:path] = v }
+          o.on("--profile PROFILE") { |v| options[:profile] = v }
+          o.on("--idea IDEA") { |v| options[:idea] = v }
+          o.on("--no-advance") { options[:advance] = false }
+        end
+        opts[:idea] ||= @argv.join(" ")
+        target_root = opts[:path].to_s.strip.empty? ? @root : File.expand_path(opts[:path])
+        Project.new(target_root).start(idea: opts[:idea], profile: opts[:profile] || "D", advance: opts.fetch(:advance, true), dry_run: @dry_run)
       when "init"
         opts = parse_options do |o, options|
           o.on("--profile PROFILE") { |v| options[:profile] = v }
@@ -162,6 +172,7 @@ module Aiweb
         aiweb — AI Web Director CLI
 
         Commands:
+          start [--path PATH] --idea "..." [--profile A|B|C|D] [--no-advance]
           init [--profile A|B|C|D]
           status
           interview --idea "..."
@@ -241,7 +252,7 @@ module Aiweb
 
     def exit_code_for(command, result)
       return EXIT_VALIDATION_FAILED if result["validation_errors"] && !result["validation_errors"].empty?
-      return EXIT_SUCCESS if %w[help version status init interview run design-prompt ingest-design next-task qa-checklist qa-report rollback resolve-blocker snapshot].include?(command)
+      return EXIT_SUCCESS if %w[help version status start init interview run design-prompt ingest-design next-task qa-checklist qa-report rollback resolve-blocker snapshot].include?(command)
       if command == "advance" && result["action_taken"] == "advance blocked"
         issue = result["blocking_issues"].join(" ")
         return EXIT_BUDGET_BLOCKED if issue =~ /budget|candidate cap|design generation cap/i

@@ -5,11 +5,12 @@ This repository now includes a first working `aiweb` Director CLI. The CLI is in
 ## Quick start
 
 ```bash
-./bin/aiweb init --profile D
-./bin/aiweb status
-./bin/aiweb interview --idea "로컬 카페 웹사이트"
-./bin/aiweb advance
+./bin/aiweb start \
+  --path ~/Desktop/aiweb-dogfood-cafe \
+  --idea "성수동 감성 로컬 카페 웹사이트. 메뉴, 위치, 영업시간, 문의 폼이 있는 소규모 브랜드 사이트."
 ```
+
+`start` creates the target folder, initializes profile D by default, drafts the first interview artifacts, and advances to the phase-0.25 quality gate.
 
 Phase-sensitive commands are guarded by the Director state machine:
 

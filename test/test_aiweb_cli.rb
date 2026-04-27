@@ -90,6 +90,63 @@ class AiwebCliTest < Minitest::Test
     end
   end
 
+  def test_start_creates_target_project_interviews_and_advances_to_quality_gate
+    in_tmp do |dir|
+      target = File.join(dir, "dogfood-cafe")
+
+      payload, code = json_cmd(
+        "start",
+        "--path", target,
+        "--idea", "성수동 감성 로컬 카페 웹사이트"
+      )
+
+      assert_equal 0, code
+      assert_equal "phase-0.25", payload["current_phase"]
+      assert_equal "started director workspace and advanced to quality gate", payload["action_taken"]
+      assert_match(/quality\.approved/, payload["next_action"])
+      assert_includes payload["start_steps"], "aiweb init --profile D"
+      assert File.exist?(File.join(target, ".ai-web", "state.yaml"))
+      assert File.exist?(File.join(target, ".ai-web", "project.md"))
+      refute File.exist?(File.join(target, "package.json")), "start must not scaffold app code"
+
+      state = YAML.load_file(File.join(target, ".ai-web", "state.yaml"))
+      assert_equal "D", state.dig("implementation", "stack_profile")
+      assert_match(/성수동 감성 로컬 카페/, File.read(File.join(target, ".ai-web", "project.md")))
+    end
+  end
+
+  def test_start_dry_run_does_not_create_target_directory
+    in_tmp do |dir|
+      target = File.join(dir, "dry-run-cafe")
+
+      stdout, stderr, code = run_aiweb(
+        "start",
+        "--path", target,
+        "--idea", "드라이런 카페 웹사이트",
+        "--dry-run",
+        "--json"
+      )
+      payload = JSON.parse(stdout)
+
+      assert_equal 0, code
+      assert_equal "", stderr
+      assert_equal "planned director start", payload["action_taken"]
+      assert_equal true, payload["dry_run"]
+      assert_match(/would create/, payload["next_action"])
+      refute Dir.exist?(target)
+    end
+  end
+
+  def test_start_requires_idea
+    in_tmp do |dir|
+      payload, code = json_cmd("start", "--path", File.join(dir, "missing-idea"))
+
+      assert_equal 1, code
+      assert_match(/start requires --idea/, payload.dig("error", "message"))
+      refute Dir.exist?(File.join(dir, "missing-idea"))
+    end
+  end
+
   def test_init_dry_run_writes_nothing_and_outputs_planned_changes
     in_tmp do
       payload, code = json_cmd("init", "--profile", "D", "--dry-run")
@@ -459,15 +516,15 @@ class AiwebCliTest < Minitest::Test
     assert_equal "", stderr
     spec = File.read(File.expand_path("../docs/09_AIWEB_CLI_SPEC.md", __dir__))
 
-    %w[design-prompt ingest-design next-task qa-checklist qa-report rollback snapshot].each do |command|
+    %w[start design-prompt ingest-design next-task qa-checklist qa-report rollback snapshot].each do |command|
       assert_includes stdout, command
       assert_includes spec, command
     end
 
-    ["ingest-design [--id ID]", "--selected", "rollback [--to PHASE] [--failure CODE]", "qa-report [--from PATH]", "--duration-minutes N", "--timed-out"].each do |snippet|
+    ["start [--path PATH]", "--no-advance", "ingest-design [--id ID]", "--selected", "rollback [--to PHASE] [--failure CODE]", "qa-report [--from PATH]", "--duration-minutes N", "--timed-out"].each do |snippet|
       assert_includes stdout, snippet
     end
-    ["aiweb ingest-design [--id ID]", "aiweb rollback --failure"].each do |snippet|
+    ["aiweb start --path", "aiweb ingest-design [--id ID]", "aiweb rollback --failure"].each do |snippet|
       assert_includes spec, snippet
     end
   end

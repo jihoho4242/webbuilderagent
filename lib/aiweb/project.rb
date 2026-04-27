@@ -119,6 +119,43 @@ module Aiweb
       payload
     end
 
+    def start(idea:, profile: "D", advance: true, dry_run: false)
+      idea = idea.to_s.strip
+      raise UserError.new("start requires --idea", 1) if idea.empty?
+
+      selected_profile = profile.to_s.strip.empty? ? "D" : profile.to_s.strip
+      Profiles.fetch!(selected_profile)
+
+      if dry_run
+        return {
+          "schema_version" => 1,
+          "current_phase" => nil,
+          "action_taken" => "planned director start",
+          "changed_files" => [],
+          "blocking_issues" => [],
+          "missing_artifacts" => [],
+          "start_steps" => start_steps(selected_profile, advance),
+          "next_action" => "would create #{root}, initialize profile #{selected_profile}, draft interview artifacts#{advance ? ", then advance to phase-0.25" : ""}",
+        }
+      end
+
+      FileUtils.mkdir_p(root)
+      init_payload = init(profile: selected_profile, dry_run: false)
+      interview_payload = interview(idea: idea, dry_run: false)
+      final_payload = advance ? self.advance(dry_run: false) : status
+      final_payload = final_payload.merge(
+        "action_taken" => advance ? "started director workspace and advanced to quality gate" : "started director workspace",
+        "changed_files" => compact_changes([
+          init_payload["changed_files"],
+          interview_payload["changed_files"],
+          final_payload["changed_files"],
+        ]),
+        "start_steps" => start_steps(selected_profile, advance),
+        "next_action" => start_next_action(advance, final_payload)
+      )
+      final_payload
+    end
+
     def interview(idea:, dry_run: false)
       assert_initialized!
       idea = idea.to_s.strip
@@ -890,6 +927,24 @@ module Aiweb
       when "phase-10" then "aiweb qa-checklist"
       else "aiweb advance"
       end
+    end
+
+    def start_steps(profile, advance)
+      steps = [
+        "create #{root}",
+        "aiweb init --profile #{profile}",
+        "aiweb interview --idea '<provided idea>'",
+      ]
+      steps << "aiweb advance" if advance
+      steps
+    end
+
+    def start_next_action(advance, final_payload)
+      blockers = final_payload["blocking_issues"] || []
+      return final_payload["next_action"] unless blockers.empty?
+      return "review .ai-web/project.md and .ai-web/product.md, then run aiweb advance" unless advance
+
+      "review .ai-web/quality.yaml, set quality.approved: true when accepted, then run aiweb advance"
     end
 
     def write_file(path, content, dry_run)
