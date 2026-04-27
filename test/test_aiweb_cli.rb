@@ -9,6 +9,7 @@ require "yaml"
 
 class AiwebCliTest < Minitest::Test
   AIWEB = File.expand_path("../bin/aiweb", __dir__)
+  WEBBUILDER = File.expand_path("../bin/webbuilder", __dir__)
 
   def in_tmp
     Dir.mktmpdir("aiweb-test-") do |dir|
@@ -18,6 +19,11 @@ class AiwebCliTest < Minitest::Test
 
   def run_aiweb(*args)
     stdout, stderr, status = Open3.capture3(AIWEB, *args.map(&:to_s))
+    [stdout, stderr, status.exitstatus]
+  end
+
+  def run_webbuilder(*args, input: nil)
+    stdout, stderr, status = Open3.capture3(WEBBUILDER, *args.map(&:to_s), stdin_data: input)
     [stdout, stderr, status.exitstatus]
   end
 
@@ -166,6 +172,76 @@ class AiwebCliTest < Minitest::Test
       assert_equal "", dry_run_stderr
       assert_match(/quality contract.*approved/i, dry_run_payload["blocking_issues"].join("\n"))
     end
+  end
+
+  def test_webbuilder_direct_idea_starts_from_zero
+    in_tmp do |dir|
+      target = File.join(dir, "webbuilder-cafe")
+
+      stdout, stderr, code = run_webbuilder("--path", target, "--json", "성수동 카페 웹사이트")
+      payload = JSON.parse(stdout)
+
+      assert_equal 0, code
+      assert_equal "", stderr
+      assert_equal "phase-0.25", payload["current_phase"]
+      assert File.exist?(File.join(target, ".ai-web", "state.yaml"))
+      refute File.exist?(File.join(target, "package.json"))
+    end
+  end
+
+  def test_webbuilder_interactive_launcher_collects_idea_path_profile_and_advance
+    in_tmp do |dir|
+      target = File.join(dir, "interactive-cafe")
+      input = [
+        "동네 카페 웹사이트",
+        target,
+        "D",
+        "Y"
+      ].join("\n") + "\n"
+
+      stdout, stderr, code = run_webbuilder(input: input)
+
+      assert_equal 0, code
+      assert_equal "", stderr
+      assert_match(/웹빌더를 시작합니다/, stdout)
+      assert_match(/웹빌더 실행 순서/, stdout)
+      assert File.exist?(File.join(target, ".ai-web", "state.yaml"))
+      state = YAML.load_file(File.join(target, ".ai-web", "state.yaml"))
+      assert_equal "phase-0.25", state.dig("phase", "current")
+    end
+  end
+
+  def test_webbuilder_passthrough_commands_use_aiweb_engine
+    in_tmp do |dir|
+      target = File.join(dir, "passthrough-cafe")
+      _payload, start_code = json_cmd("start", "--path", target, "--idea", "동네 카페 웹사이트")
+      assert_equal 0, start_code
+
+      stdout, stderr, code = run_webbuilder("--path", target, "status", "--json")
+      payload = JSON.parse(stdout)
+
+      assert_equal 0, code
+      assert_equal "", stderr
+      assert_equal "phase-0.25", payload["current_phase"]
+    end
+  end
+
+  def test_webbuilder_help_explains_zero_start_workflow
+    stdout, stderr, code = run_webbuilder("--help")
+
+    assert_equal 0, code
+    assert_equal "", stderr
+    assert_match(/웹빌더/, stdout)
+    assert_match(/Phase 0/, stdout)
+    assert_match(/웹빌더 --path/, stdout)
+  end
+
+  def test_webbuilder_version_passes_through_to_aiweb
+    stdout, stderr, code = run_webbuilder("--version")
+
+    assert_equal 0, code
+    assert_equal "", stderr
+    assert_match(/aiweb \d+\.\d+\.\d+/, stdout)
   end
 
   def test_init_dry_run_writes_nothing_and_outputs_planned_changes

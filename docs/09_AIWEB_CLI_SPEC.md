@@ -17,6 +17,18 @@
 
 ## 2. MVP 명령
 
+사용자용 zero-start entrypoint:
+
+```bash
+웹빌더
+웹빌더 "성수동 감성 로컬 카페 웹사이트"
+웹빌더 --path ~/Desktop/aiweb-dogfood-cafe "성수동 감성 로컬 카페 웹사이트"
+```
+
+`웹빌더`는 시작 순서를 숙지한 launcher이며, 내부적으로 `aiweb start`를 호출한다.
+
+저수준 Director 명령:
+
 ```bash
 aiweb start --path <project-path> --idea "..." [--profile <A|B|C|D>] [--no-advance]
 aiweb init
@@ -36,6 +48,28 @@ aiweb snapshot
 ```
 
 ## 3. 명령 상세
+
+### `웹빌더`
+
+가장 바깥 사용자 진입점이다. 아무 인자 없이 실행하면 다음을 질문한다.
+
+- 만들고 싶은 웹 아이디어
+- 프로젝트 폴더
+- 스택 프로필
+- phase-0.25 품질 계약 게이트까지 자동 진행 여부
+
+인자로 아이디어를 주면 질문 없이 바로 시작한다.
+
+```bash
+웹빌더 --path ~/Desktop/my-site "동네 병원 웹사이트"
+```
+
+기존 `aiweb` 명령도 그대로 통과시킨다.
+
+```bash
+웹빌더 --path ~/Desktop/my-site status
+웹빌더 --path ~/Desktop/my-site advance
+```
 
 ### `aiweb start`
 

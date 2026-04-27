@@ -4,6 +4,23 @@ This repository now includes a first working `aiweb` Director CLI. The CLI is in
 
 ## Quick start
 
+The friendly entry point is `웹빌더`. Run it with no arguments for a zero-start interview:
+
+```bash
+웹빌더
+```
+
+Or pass the idea directly:
+
+```bash
+웹빌더 --path ~/Desktop/aiweb-dogfood-cafe \
+  "성수동 감성 로컬 카페 웹사이트. 메뉴, 위치, 영업시간, 문의 폼이 있는 소규모 브랜드 사이트."
+```
+
+`웹빌더` knows the Director sequence and calls the lower-level `aiweb` engine for you.
+
+Low-level equivalent:
+
 ```bash
 ./bin/aiweb start \
   --path ~/Desktop/aiweb-dogfood-cafe \

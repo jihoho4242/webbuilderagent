@@ -1,0 +1,205 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+$LOAD_PATH.unshift(File.expand_path("../lib", __dir__))
+
+require "aiweb"
+require "time"
+
+class WebbuilderLauncher
+  KNOWN_COMMANDS = %w[
+    help --help -h version --version
+    start init status interview run design-prompt ingest-design next-task
+    qa-checklist qa-report advance rollback resolve-blocker snapshot
+  ].freeze
+
+  def initialize(argv, stdin: STDIN, stdout: STDOUT, stderr: STDERR, root: Dir.pwd)
+    @argv = argv.dup
+    @stdin = stdin
+    @stdout = stdout
+    @stderr = stderr
+    @root = root
+  end
+
+  def run
+    return print_help if help_requested?
+    return Aiweb::CLI.new(@argv, @root).run if passthrough_command?
+
+    options = direct_start_options
+    if options[:idea].empty?
+      options = interview_for_start(options)
+    else
+      print_start_plan(options) unless options[:json]
+    end
+
+    Aiweb::CLI.new(start_args(options), @root).run
+  rescue Aiweb::UserError => e
+    @stderr.puts "Error: #{e.message}"
+    e.exit_code
+  end
+
+  private
+
+  def help_requested?
+    @argv.length == 1 && %w[help --help -h].include?(@argv.first)
+  end
+
+  def print_help
+    @stdout.puts <<~HELP
+      웹빌더 — AI Web Director zero-start launcher
+
+      가장 쉬운 시작:
+        웹빌더
+        웹빌더 "성수동 감성 로컬 카페 웹사이트"
+        웹빌더 --path ~/Desktop/my-site "성수동 감성 로컬 카페 웹사이트"
+
+      이어서 작업:
+        웹빌더 --path ~/Desktop/my-site status
+        웹빌더 --path ~/Desktop/my-site advance
+
+      웹빌더가 숙지한 시작 순서:
+        Phase 0: 웹 유형 / 난이도 / 릴리즈 범위 결정
+        Phase 0.25: 품질 계약 승인
+        Phase 0.5: 스택 프로필 확정
+        Phase 1~2.5: 제품 / 콘텐츠 / IA / 데이터 / 보안 정리
+        Phase 3~4: 디자인 탐색과 DESIGN.md 시스템화
+        Phase 5~11: repo / 컴포넌트 / Golden Flow / 구현 / QA / 배포
+
+      기본 스택 프로필:
+        D — Astro + MDX/Content Collections + Cloudflare Pages + Tailwind
+
+      고급 명령은 기존 aiweb 명령과 동일하게 사용할 수 있다.
+    HELP
+    0
+  end
+
+  def passthrough_command?
+    return false if @argv.empty?
+
+    args = @argv.dup
+    until args.empty?
+      arg = args.shift
+      case arg
+      when "--json", "--dry-run"
+        next
+      when "--path"
+        args.shift
+      when /\A--path=/
+        next
+      else
+        return KNOWN_COMMANDS.include?(arg)
+      end
+    end
+    false
+  end
+
+  def direct_start_options
+    options = {
+      path: default_project_path,
+      profile: "D",
+      advance: true,
+      idea: "",
+      json: false,
+      dry_run: false
+    }
+    idea_parts = []
+    args = @argv.dup
+
+    until args.empty?
+      arg = args.shift
+      case arg
+      when "--path"
+        options[:path] = require_value(args.shift, "--path")
+      when /\A--path=(.+)\z/
+        options[:path] = Regexp.last_match(1)
+      when "--profile"
+        options[:profile] = require_value(args.shift, "--profile").upcase
+      when /\A--profile=(.+)\z/
+        options[:profile] = Regexp.last_match(1).upcase
+      when "--idea"
+        idea_parts << require_value(args.shift, "--idea")
+      when /\A--idea=(.+)\z/
+        idea_parts << Regexp.last_match(1)
+      when "--no-advance"
+        options[:advance] = false
+      when "--json"
+        options[:json] = true
+      when "--dry-run"
+        options[:dry_run] = true
+      else
+        idea_parts << arg
+      end
+    end
+
+    options[:idea] = idea_parts.join(" ").strip
+    options
+  end
+
+  def require_value(value, option)
+    raise Aiweb::UserError.new("#{option} requires a value", Aiweb::CLI::EXIT_VALIDATION_FAILED) if value.to_s.empty?
+
+    value
+  end
+
+  def interview_for_start(options)
+    @stdout.puts "웹빌더를 시작합니다. 처음부터 필요한 순서대로 잡아갈게요."
+    @stdout.puts
+
+    options[:idea] = ask_required("만들고 싶은 웹을 한 문장으로 적어줘")
+    options[:path] = ask("프로젝트 폴더", options[:path])
+    options[:profile] = ask("스택 프로필 A/B/C/D", options[:profile]).upcase
+    advance_answer = ask("품질 계약 게이트까지 자동 진행", options[:advance] ? "Y" : "N")
+    options[:advance] = !advance_answer.match?(/\A(n|no|아니|아니오)\z/i)
+
+    print_start_plan(options)
+    options
+  end
+
+  def ask(label, default)
+    @stdout.print "#{label} [#{default}]: "
+    line = @stdin.gets
+    raise Aiweb::UserError.new("input ended before #{label}", Aiweb::CLI::EXIT_VALIDATION_FAILED) if line.nil?
+
+    value = line.strip
+    value.empty? ? default : value
+  end
+
+  def ask_required(label)
+    3.times do
+      @stdout.print "#{label}: "
+      line = @stdin.gets
+      raise Aiweb::UserError.new("input ended before #{label}", Aiweb::CLI::EXIT_VALIDATION_FAILED) if line.nil?
+
+      value = line.strip
+      return value unless value.empty?
+
+      @stdout.puts "아이디어가 있어야 시작할 수 있어요."
+    end
+    raise Aiweb::UserError.new("website idea is required", Aiweb::CLI::EXIT_VALIDATION_FAILED)
+  end
+
+  def print_start_plan(options)
+    @stdout.puts
+    @stdout.puts "웹빌더 실행 순서"
+    @stdout.puts "1. 프로젝트 폴더 생성: #{File.expand_path(options[:path])}"
+    @stdout.puts "2. profile #{options[:profile]}로 Director 초기화"
+    @stdout.puts "3. 아이디어 인터뷰 문서 생성"
+    @stdout.puts(options[:advance] ? "4. phase-0.25 품질 계약 게이트까지 이동" : "4. phase-0에서 멈춤")
+    @stdout.puts
+  end
+
+  def start_args(options)
+    args = []
+    args << "--json" if options[:json]
+    args << "--dry-run" if options[:dry_run]
+    args += ["start", "--path", options[:path], "--profile", options[:profile], "--idea", options[:idea]]
+    args << "--no-advance" unless options[:advance]
+    args
+  end
+
+  def default_project_path
+    File.expand_path("~/Desktop/웹빌더-#{Time.now.strftime("%Y%m%d-%H%M%S")}")
+  end
+end
+
+exit WebbuilderLauncher.new(ARGV).run
