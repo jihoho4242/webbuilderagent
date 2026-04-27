@@ -211,12 +211,13 @@ module Aiweb
       payload
     end
 
-    def next_task(type: nil, dry_run: false)
+    def next_task(type: nil, dry_run: false, force: false)
       assert_initialized!
       changes = []
       payload = nil
       mutation(dry_run: dry_run) do
         state = load_state
+        phase_guard!(state, "next-task", %w[phase-6 phase-7 phase-8 phase-9 phase-10 phase-11], force)
         task_type = type.to_s.strip.empty? ? recommended_task_type(state) : type.to_s.strip
         task_id = "task-#{Time.now.utc.strftime("%Y%m%dT%H%M%SZ")}-#{slug(task_type)}"
         task_path = File.join(aiweb_dir, "tasks", "#{task_id}.md")
@@ -231,12 +232,13 @@ module Aiweb
       payload
     end
 
-    def qa_checklist(dry_run: false)
+    def qa_checklist(dry_run: false, force: false)
       assert_initialized!
       changes = []
       payload = nil
       mutation(dry_run: dry_run) do
         state = load_state
+        phase_guard!(state, "qa-checklist", %w[phase-7 phase-8 phase-9 phase-10 phase-11], force)
         path = File.join(aiweb_dir, "qa", "current-checklist.md")
         changes << write_file(path, qa_checklist_markdown(state), dry_run)
         state["qa"]["current_checklist"] = relative(path)

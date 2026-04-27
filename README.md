@@ -20,6 +20,9 @@ Phase-sensitive commands are guarded by the Director state machine:
 # Once current phase is phase-3.5
 ./bin/aiweb ingest-design --title "Candidate 1"
 
+# Once current phase is phase-6 through phase-11
+./bin/aiweb next-task
+
 # Once current phase is phase-7 through phase-11
 ./bin/aiweb qa-checklist
 ./bin/aiweb qa-report --status failed --task-id golden-page --duration-minutes 61

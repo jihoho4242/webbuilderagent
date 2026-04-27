@@ -103,10 +103,14 @@ module Aiweb
       when "next-task"
         opts = parse_options do |o, options|
           o.on("--type TYPE") { |v| options[:type] = v }
+          o.on("--force") { options[:force] = true }
         end
-        project.next_task(type: opts[:type], dry_run: @dry_run)
+        project.next_task(type: opts[:type], dry_run: @dry_run, force: opts[:force])
       when "qa-checklist"
-        project.qa_checklist(dry_run: @dry_run)
+        opts = parse_options do |o, options|
+          o.on("--force") { options[:force] = true }
+        end
+        project.qa_checklist(dry_run: @dry_run, force: opts[:force])
       when "qa-report"
         opts = parse_options do |o, options|
           o.on("--from PATH") { |v| options[:from] = v }
@@ -159,8 +163,8 @@ module Aiweb
           run
           design-prompt [--force]
           ingest-design [--title TITLE] [--source SOURCE] [--notes NOTES] [--selected] [--force]
-          next-task [--type TYPE]
-          qa-checklist
+          next-task [--type TYPE] [--force]
+          qa-checklist [--force]
           qa-report [--from PATH] [--status passed|failed|blocked] [--duration-minutes N] [--timed-out] [--force]
           advance
           rollback --to phase-4 --reason "..."
@@ -173,6 +177,8 @@ module Aiweb
         Phase-sensitive commands are guarded:
           design-prompt: phase-3 or phase-3.5
           ingest-design: phase-3.5
+          next-task: phase-6 through phase-11
+          qa-checklist: phase-7 through phase-11
           qa-report: phase-7 through phase-11
         Use --force only for manual repair/override.
       HELP

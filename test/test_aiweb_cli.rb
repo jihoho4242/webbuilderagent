@@ -241,6 +241,22 @@ class AiwebCliTest < Minitest::Test
       assert_equal 2, ingest_code
       assert_match(/ingest-design requires current phase/, blocked_ingest.dig("error", "message"))
 
+      blocked_task, task_code = json_cmd("next-task")
+      assert_equal 2, task_code
+      assert_match(/next-task requires current phase/, blocked_task.dig("error", "message"))
+
+      forced_task, forced_task_code = json_cmd("next-task", "--force")
+      assert_equal 0, forced_task_code
+      assert forced_task["changed_files"].any? { |path| path.include?(".ai-web/tasks/task-") }
+
+      blocked_checklist, checklist_code = json_cmd("qa-checklist")
+      assert_equal 2, checklist_code
+      assert_match(/qa-checklist requires current phase/, blocked_checklist.dig("error", "message"))
+
+      forced_checklist, forced_checklist_code = json_cmd("qa-checklist", "--force")
+      assert_equal 0, forced_checklist_code
+      assert_includes forced_checklist["changed_files"], ".ai-web/qa/current-checklist.md"
+
       blocked_qa, qa_code = json_cmd("qa-report", "--status", "passed", "--task-id", "too-early")
       assert_equal 2, qa_code
       assert_match(/qa-report requires current phase/, blocked_qa.dig("error", "message"))
