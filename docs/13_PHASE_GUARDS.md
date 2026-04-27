@@ -27,7 +27,7 @@
 5. Gate가 필요한 경우 `approved`인지 검사
 6. 승인된 artifact hash가 변경되지 않았는지 검사
 7. invalidation 중 blocking 항목이 남아 있는지 검사
-8. QA open failure 중 blocking 항목이 남아 있는지 검사
+8. Phase 7 이상에서는 QA open failure 중 blocking 항목이 남아 있는지 검사
 9. design generation cap, QA runtime cap, metered adapter budget 초과 여부 검사
 10. 다음 Phase로 state mutation
 
@@ -37,7 +37,7 @@
 |---|---|---|---|---|---|
 | phase--1 | template registry, stack profile registry, `state.schema.json`, `quality.schema.json`, `qa-result.schema.json` | none | missing templates, schema parse failure | phase-0 | mark template artifacts ready |
 | phase-0 | `.ai-web/project.md`, draft `.ai-web/product.md`; `project.idea`, website type, primary conversion, release scope | none | open questions that affect stack/profile, “다 만들자” scope | phase-0.25 | update project/product draft status |
-| phase-0.25 | `.ai-web/quality.yaml`; budget, responsive, accessibility, performance, SEO, security, QA thresholds | none | missing hard-blocker thresholds, budget unset | phase-0.5 | set quality status draft/ready |
+| phase-0.25 | `.ai-web/quality.yaml`; `quality.approved: true`; budget, responsive, accessibility, performance, SEO, security, QA thresholds | none | missing hard-blocker thresholds, budget unset, quality contract not explicitly approved | phase-0.5 | set quality status draft/ready |
 | phase-0.5 | `.ai-web/stack.md`; selected profile A/B/C/D, canonical default, scaffold target, deploy baseline | Gate 1A | unsupported profile, ambiguous scaffold target, design generation cap exceeded, QA timeout recovery exhausted, or metered adapter budget over limit | phase-1 | record Gate 1A approval hash |
 | phase-1 | `.ai-web/product.md`; target user, problem, value proposition, primary journey, MVP scope, non-goals | none | missing conversion goal, MVP scope not bounded | phase-1.5 | mark product ready_for_gate |
 | phase-1.5 | `.ai-web/brand.md`, `.ai-web/content.md`; content provenance, SEO title/description, CTA strategy | none | unverified regulated/legal claims, missing content owner/source | phase-2 | mark brand/content ready_for_gate |
@@ -48,9 +48,9 @@
 | phase-4 | `.ai-web/DESIGN.md` and root `DESIGN.md`; tokens, typography, spacing, components, forbidden patterns | none | arbitrary tokens, missing accessibility rules, candidate not traceable | phase-5 | mark design system approved/ready |
 | phase-5 | root `AGENTS.md`, project README draft, implementation adapter config | none | missing instruction mapping for Codex/Claude, missing permissions policy | phase-6 | mark repo rules ready |
 | phase-6 | app scaffold task packet done; install/build/test commands exist; lockfile checksum recorded | none | scaffold target mismatch, install/build/test unavailable | phase-7 | record scaffold baseline |
-| phase-7 | design tokens and primitives implemented; component audit passes | none | inline random style, variant count exceeds quality contract | phase-8 | mark UI primitives complete |
+| phase-7 | design tokens and primitives implemented; component audit passes; `implementation.completed_tasks[]` records design-token, component-primitive, and component-audit completion evidence | none | missing completion evidence, inline random style, variant count exceeds quality contract | phase-8 | mark UI primitives complete |
 | phase-8 | Golden Page task done, Golden Flow QA result, Gate 3 draft | Gate 3 | no desktop/mobile evidence, primary flow exceeds allowed steps, critical QA open | phase-9 | record Gate 3 approval hash |
-| phase-9 | task packets for remaining pages/features; each has verification/evidence | none | task dependencies unresolved, blocking QA failure | phase-10 or phase-11 | update task completion state |
+| phase-9 | remaining page/feature tasks completed; `implementation.completed_tasks[]` records remaining page/feature completion evidence | none | task dependencies unresolved, missing completion evidence, blocking QA failure | phase-10 or phase-11 | update task completion state |
 | phase-10 | current QA checklist, valid QA result JSON, fix packets or accepted risks | none | invalid result schema, evidence missing, blocking failure unresolved | phase-9 or phase-11 | close QA loop or generate fix task |
 | phase-11 | `.ai-web/deploy.md`, final QA report, post-launch backlog, rollback dry-run, Gate 4 draft | Gate 4 | deploy rollback not defined, high/critical failure without accepted risk, env/DNS/monitoring missing | complete | record release readiness |
 
@@ -61,6 +61,7 @@
 - `aiweb init --profile` records `implementation.stack_profile` and `implementation.scaffold_target`; it does **not** scaffold application code.
 - Actual application scaffold belongs to Phase 6 task packet.
 - `qa.open_failures[]` is derived from valid QA result JSON, not manually typed strings.
+- `qa.open_failures[]` blocks general `advance` only from Phase 7 onward; pre-QA phases must still be able to re-enter after rollback when their own phase guard is satisfied.
 - `accepted_risks[]` must include owner, severity, mitigation, expiry, and release-blocker flag.
 
 ## 5. Negative test fixtures required
@@ -85,4 +86,4 @@ Implementation must include fixtures for:
 - QA run이 60분을 넘기면 `F-QA-TIMEOUT`을 생성한다.
 - Director는 logs/screenshots/state를 읽고 원인을 분류한 뒤 fix packet을 생성한다.
 - 같은 task에서 timeout recovery는 기본 3회까지 자동 반복한다.
-- 3회 초과 시 Phase 10 block 또는 원인 Phase rollback을 권장한다.
+- 3회 초과 시 `qa-report`는 budget-blocked 계열로 실패하며 새 `F-QA-TIMEOUT` open failure 또는 fix packet을 생성하지 않는다.

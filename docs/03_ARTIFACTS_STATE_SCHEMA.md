@@ -153,11 +153,13 @@ design_candidates:
   selected_path: ".ai-web/design-candidates/selected.md"
   selected_candidate: null
   regeneration_requested: false
+  regeneration_rounds: 0
   gate_2_draft_path: ".ai-web/gates/gate-2-design.md"
 
 implementation:
   stack_profile: null
   scaffold_target: null
+  scaffold_created: false
   current_task: null
   completed_tasks: []
 
@@ -171,9 +173,11 @@ deploy:
   plan: ".ai-web/deploy.md"
   post_launch_backlog: ".ai-web/post-launch-backlog.md"
   rollback_defined: false
+  rollback_dry_run_result: null
 
 invalidations: []
 decisions: []
+snapshots: []
 ```
 
 ## 4. strict validation schema
@@ -293,7 +297,7 @@ artifact: ".ai-web/gates/<gate>.md"
 
 ### Budget
 
-`quality.yaml`의 budget guard는 state에도 요약된다. 기본 cost mode는 GPT Pro/구독 사용량 기반 `subscription_usage`이며 model/image cost는 집계하지 않는다. API metered adapter일 때만 `F-BUDGET`으로 model/deploy action을 block한다. design generation은 총 10회 cap으로 제한하고, QA는 60분 초과 시 `F-QA-TIMEOUT` recovery loop로 전환한다.
+`quality.yaml`의 budget guard는 state에도 요약된다. 기본 cost mode는 GPT Pro/구독 사용량 기반 `subscription_usage`이며 model/image cost는 집계하지 않는다. API metered adapter일 때만 `F-BUDGET`으로 model/deploy action을 block한다. design generation은 총 10회 cap으로 제한하고, QA는 60분 초과 시 `F-QA-TIMEOUT` recovery loop로 전환한다. `aiweb init`이 복사한 기본 `quality.yaml`은 `quality.approved: false`이며, Phase 0.25를 통과하려면 사람이 품질 계약을 검토한 뒤 `true`로 명시해야 한다.
 
 ### Adapter registry
 
@@ -308,10 +312,13 @@ open_failures:
   - id: ""
     source_result: ".ai-web/qa/results/...json"
     check_id: ""
+    task_id: ""
     severity: critical|high|medium|low|info
     blocking: true
     accepted_risk_id: null
 ```
+
+`qa.open_failures[]`는 Phase 7 이상에서 일반 `advance` blocker가 된다. Phase 0~6 rollback/re-entry는 해당 Phase 자체 guard가 만족되면 QA failure 때문에 영구 차단되지 않는다.
 
 ### Snapshot / rollback metadata
 

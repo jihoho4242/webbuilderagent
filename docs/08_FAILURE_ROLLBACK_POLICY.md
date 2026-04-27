@@ -146,4 +146,4 @@ QA가 60분을 넘기면 `F-QA-TIMEOUT`으로 분류한다. 기본 처리 순서
 2. timeout 원인을 precondition, selector, runtime, network, adapter, checklist 과다 중 하나로 분류한다.
 3. fix packet을 생성하고 implementation adapter로 수정한다.
 4. QA를 재실행한다.
-5. 같은 task에서 3회 연속 timeout이면 Phase 10 block 또는 원인 Phase rollback을 기록한다.
+5. 같은 task의 `F-QA-TIMEOUT` open failure가 `max_qa_timeout_recovery_cycles`에 도달하면 다음 `qa-report`는 budget-blocked 계열로 실패하며 새 timeout open failure/fix packet을 만들지 않는다.

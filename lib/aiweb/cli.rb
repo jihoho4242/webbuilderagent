@@ -14,7 +14,7 @@ module Aiweb
     EXIT_UNSAFE_EXTERNAL_ACTION = 5
     EXIT_INTERNAL_ERROR = 10
 
-    MUTATION_COMMANDS = %w[init interview run ingest-design next-task qa-checklist qa-report advance rollback snapshot design-prompt].freeze
+    MUTATION_COMMANDS = %w[init interview run ingest-design next-task qa-checklist qa-report advance rollback resolve-blocker snapshot design-prompt].freeze
 
     def initialize(argv, root)
       @argv = argv.dup
@@ -133,6 +133,11 @@ module Aiweb
           raise UserError.new("rollback requires --to or --failure", EXIT_VALIDATION_FAILED)
         end
         project.rollback(to: opts[:to], failure: opts[:failure], reason: opts[:reason], dry_run: @dry_run)
+      when "resolve-blocker"
+        opts = parse_options do |o, options|
+          o.on("--reason REASON") { |v| options[:reason] = v }
+        end
+        project.resolve_blocker(reason: opts[:reason], dry_run: @dry_run)
       when "snapshot"
         opts = parse_options do |o, options|
           o.on("--reason REASON") { |v| options[:reason] = v }
@@ -162,12 +167,13 @@ module Aiweb
           interview --idea "..."
           run
           design-prompt [--force]
-          ingest-design [--title TITLE] [--source SOURCE] [--notes NOTES] [--selected] [--force]
+          ingest-design [--id ID] [--title TITLE] [--source SOURCE] [--notes NOTES] [--selected] [--force]
           next-task [--type TYPE] [--force]
           qa-checklist [--force]
           qa-report [--from PATH] [--status passed|failed|blocked] [--duration-minutes N] [--timed-out] [--force]
           advance
-          rollback --to phase-4 --reason "..."
+          rollback [--to PHASE] [--failure CODE] [--reason "..."]
+          resolve-blocker --reason "..."
           snapshot [--reason "..."]
 
         Global flags:
@@ -235,8 +241,8 @@ module Aiweb
 
     def exit_code_for(command, result)
       return EXIT_VALIDATION_FAILED if result["validation_errors"] && !result["validation_errors"].empty?
-      return EXIT_SUCCESS if %w[help version status init interview run design-prompt ingest-design next-task qa-checklist qa-report rollback snapshot].include?(command)
-      if command == "advance" && !(result["blocking_issues"] || []).empty?
+      return EXIT_SUCCESS if %w[help version status init interview run design-prompt ingest-design next-task qa-checklist qa-report rollback resolve-blocker snapshot].include?(command)
+      if command == "advance" && result["action_taken"] == "advance blocked"
         issue = result["blocking_issues"].join(" ")
         return EXIT_BUDGET_BLOCKED if issue =~ /budget|candidate cap|design generation cap/i
         return EXIT_PHASE_BLOCKED

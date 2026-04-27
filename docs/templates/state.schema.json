@@ -563,6 +563,7 @@
         "id",
         "source_result",
         "check_id",
+        "task_id",
         "severity",
         "blocking",
         "accepted_risk_id"
@@ -575,6 +576,9 @@
           "type": "string"
         },
         "check_id": {
+          "type": "string"
+        },
+        "task_id": {
           "type": "string"
         },
         "severity": {

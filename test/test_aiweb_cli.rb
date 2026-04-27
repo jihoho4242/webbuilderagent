@@ -41,6 +41,32 @@ class AiwebCliTest < Minitest::Test
     write_state(state)
   end
 
+  def approve_quality_contract
+    quality = YAML.load_file(".ai-web/quality.yaml")
+    quality["quality"]["approved"] = true
+    File.write(".ai-web/quality.yaml", YAML.dump(quality))
+  end
+
+  def append_open_failure(check_id: "F-QA", task_id: "golden", severity: "high", blocking: true)
+    state = load_state
+    state["qa"]["open_failures"] << {
+      "id" => "#{check_id}-seed",
+      "source_result" => ".ai-web/qa/results/seed.json",
+      "check_id" => check_id,
+      "task_id" => task_id,
+      "severity" => severity,
+      "blocking" => blocking,
+      "accepted_risk_id" => nil
+    }
+    write_state(state)
+  end
+
+  def add_completed_tasks(*tasks)
+    state = load_state
+    state["implementation"]["completed_tasks"].concat(tasks)
+    write_state(state)
+  end
+
   def test_init_profile_d_creates_director_workspace_without_app_scaffold
     in_tmp do
       payload, code = json_cmd("init", "--profile", "D")
@@ -150,6 +176,41 @@ class AiwebCliTest < Minitest::Test
 
       state = load_state
       assert_equal "F-QA-TIMEOUT", state.dig("qa", "open_failures", 0, "check_id")
+
+      status_payload, status_code = json_cmd("status")
+      assert_equal 0, status_code
+      assert_nil status_payload["validation_errors"]
+    end
+  end
+
+  def test_qa_timeout_recovery_cap_blocks_before_new_failure_or_fix_packet
+    in_tmp do
+      json_cmd("init")
+      set_phase("phase-10")
+      state = load_state
+      state["budget"]["max_qa_timeout_recovery_cycles"] = 2
+      state["qa"]["open_failures"] = 2.times.map do |index|
+        {
+          "id" => "F-QA-TIMEOUT-seed-#{index + 1}",
+          "source_result" => ".ai-web/qa/results/seed-#{index + 1}.json",
+          "check_id" => "F-QA-TIMEOUT",
+          "task_id" => "golden",
+          "severity" => "high",
+          "blocking" => true,
+          "accepted_risk_id" => nil
+        }
+      end
+      write_state(state)
+
+      before_state = File.read(".ai-web/state.yaml")
+      before_fix_packets = Dir.glob(".ai-web/tasks/fix-F-QA-TIMEOUT*")
+      payload, code = json_cmd("qa-report", "--status", "failed", "--task-id", "golden", "--duration-minutes", "61")
+
+      assert_equal 3, code
+      assert_match(/timeout recovery budget exceeded/i, payload.dig("error", "message"))
+      assert_equal before_state, File.read(".ai-web/state.yaml")
+      assert_equal before_fix_packets, Dir.glob(".ai-web/tasks/fix-F-QA-TIMEOUT*")
+      assert_empty Dir.glob(".ai-web/qa/results/*.json")
     end
   end
 
@@ -278,6 +339,136 @@ class AiwebCliTest < Minitest::Test
       state = load_state
       assert_equal true, state.dig("phase", "blocked")
       assert_equal "F-QA", state.dig("invalidations", -1, "failure")
+    end
+  end
+
+  def test_rollback_blocks_advance_until_resolved
+    in_tmp do
+      json_cmd("init")
+      json_cmd("interview", "--idea", "로컬 카페 웹사이트")
+      rollback_payload, rollback_code = json_cmd("rollback", "--to", "phase-0", "--failure", "F-QA", "--reason", "QA root cause")
+      assert_equal 0, rollback_code
+      assert_equal "phase-0", rollback_payload["current_phase"]
+
+      blocked_payload, blocked_code = json_cmd("advance")
+      assert_equal 2, blocked_code
+      assert_equal "phase-0", blocked_payload["current_phase"]
+      assert_match(/rollback/i, blocked_payload["blocking_issues"].join("\n"))
+      assert_equal true, load_state.dig("phase", "blocked")
+
+      blocked_again_payload, blocked_again_code = json_cmd("advance")
+      assert_equal 2, blocked_again_code
+      assert_equal 1, blocked_again_payload["blocking_issues"].join("\n").scan(/resolve-blocker/).length
+
+      resolved_payload, resolved_code = json_cmd("resolve-blocker", "--reason", "root cause fixed and evidence recorded")
+      assert_equal 0, resolved_code
+      assert_equal false, load_state.dig("phase", "blocked")
+      assert_equal "resolved phase blocker", resolved_payload["action_taken"]
+
+      advanced_payload, advanced_code = json_cmd("advance")
+      assert_equal 0, advanced_code
+      assert_equal "phase-0.25", advanced_payload["current_phase"]
+    end
+  end
+
+  def test_phase_7_advance_requires_design_token_primitives_and_audit_evidence
+    in_tmp do
+      json_cmd("init")
+      set_phase("phase-7")
+
+      blocked_payload, blocked_code = json_cmd("advance")
+      assert_equal 2, blocked_code
+      joined = blocked_payload["blocking_issues"].join("\n")
+      assert_match(/design tokens/i, joined)
+      assert_match(/component primitives/i, joined)
+      assert_match(/component audit/i, joined)
+
+      add_completed_tasks("design tokens implemented", "component primitives implemented", "component audit passed")
+      advanced_payload, advanced_code = json_cmd("advance")
+      assert_equal 0, advanced_code
+      assert_equal "phase-8", advanced_payload["current_phase"]
+    end
+  end
+
+  def test_phase_9_advance_requires_remaining_page_feature_completion_evidence
+    in_tmp do
+      json_cmd("init")
+      set_phase("phase-9")
+
+      blocked_payload, blocked_code = json_cmd("advance")
+      assert_equal 2, blocked_code
+      assert_match(/remaining page\/feature completion/i, blocked_payload["blocking_issues"].join("\n"))
+
+      add_completed_tasks("phase-9 remaining page feature completion evidence")
+      advanced_payload, advanced_code = json_cmd("advance")
+      assert_equal 0, advanced_code
+      assert_equal "phase-10", advanced_payload["current_phase"]
+    end
+  end
+
+  def test_open_qa_failures_do_not_block_phase_zero_advance
+    in_tmp do
+      json_cmd("init")
+      json_cmd("interview", "--idea", "로컬 카페 웹사이트")
+      append_open_failure
+
+      payload, code = json_cmd("advance")
+      assert_equal 0, code
+      assert_equal "phase-0.25", payload["current_phase"]
+      refute_match(/open QA failures/, payload["blocking_issues"].join("\n"))
+    end
+  end
+
+  def test_existing_state_lock_preempts_mutation_without_cleanup
+    in_tmp do
+      json_cmd("init")
+      before_state = File.read(".ai-web/state.yaml")
+      File.write(".ai-web/.lock", "pid=seed\ncreated_at=seed\n")
+
+      payload, code = json_cmd("interview", "--idea", "blocked mutation")
+      assert_equal 1, code
+      assert_match(/state lock exists/, payload.dig("error", "message"))
+      assert File.exist?(".ai-web/.lock")
+      assert_equal before_state, File.read(".ai-web/state.yaml")
+      refute_match(/blocked mutation/, File.read(".ai-web/project.md"))
+    end
+  end
+
+  def test_phase_0_25_blocks_until_quality_contract_is_approved
+    in_tmp do
+      json_cmd("init")
+      json_cmd("interview", "--idea", "로컬 카페 웹사이트")
+      payload, code = json_cmd("advance")
+      assert_equal 0, code
+      assert_equal "phase-0.25", payload["current_phase"]
+
+      blocked_payload, blocked_code = json_cmd("advance")
+      assert_equal 2, blocked_code
+      assert_match(/quality contract.*approved/i, blocked_payload["blocking_issues"].join("\n"))
+
+      approve_quality_contract
+      advanced_payload, advanced_code = json_cmd("advance")
+      assert_equal 0, advanced_code
+      assert_equal "phase-0.5", advanced_payload["current_phase"]
+    end
+  end
+
+  def test_help_and_cli_spec_include_option_surface
+    stdout, stderr, code = run_aiweb("help")
+    assert_equal 0, code
+    assert_equal "", stderr
+    spec = File.read(File.expand_path("../docs/09_AIWEB_CLI_SPEC.md", __dir__))
+
+    %w[design-prompt ingest-design next-task qa-checklist qa-report rollback snapshot].each do |command|
+      assert_includes stdout, command
+      assert_includes spec, command
+    end
+
+    ["ingest-design [--id ID]", "--selected", "rollback [--to PHASE] [--failure CODE]", "qa-report [--from PATH]", "--duration-minutes N", "--timed-out"].each do |snippet|
+      assert_includes stdout, snippet
+    end
+    ["aiweb ingest-design [--id ID]", "aiweb rollback --failure"].each do |snippet|
+      assert_includes spec, snippet
     end
   end
 

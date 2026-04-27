@@ -28,6 +28,8 @@ Phase-sensitive commands are guarded by the Director state machine:
 ./bin/aiweb qa-report --status failed --task-id golden-page --duration-minutes 61
 ```
 
+Quality is an explicit contract. After entering phase-0.25, review `.ai-web/quality.yaml` and set `quality.approved: true` before advancing again.
+
 Global flags:
 
 ```bash
@@ -41,6 +43,13 @@ Manual repair/override for guarded commands:
 ./bin/aiweb design-prompt --force
 ./bin/aiweb ingest-design --force --title "Candidate 1"
 ./bin/aiweb qa-report --force --status failed --task-id golden-page
+```
+
+Rollback leaves the phase blocked until recovery evidence is recorded:
+
+```bash
+./bin/aiweb rollback --failure F-QA --reason "QA root cause"
+./bin/aiweb resolve-blocker --reason "root cause fixed and evidence recorded"
 ```
 
 ## Verification

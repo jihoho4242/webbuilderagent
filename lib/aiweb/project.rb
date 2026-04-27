@@ -261,6 +261,7 @@ module Aiweb
         result = from ? load_json_file(from) : default_qa_result(status, task_id, duration_minutes, timed_out)
         normalize_qa_result!(result, state)
         validate_qa_result!(result)
+        enforce_qa_timeout_recovery_budget!(state, result)
 
         result_id = "qa-#{Time.now.utc.strftime("%Y%m%dT%H%M%SZ")}-#{slug(result["task_id"])}"
         path = File.join(aiweb_dir, "qa", "results", "#{result_id}.json")
@@ -323,6 +324,26 @@ module Aiweb
         changes << write_yaml(state_path, state, dry_run)
         payload = status_hash(state: state, changed_files: compact_changes(changes))
         payload["action_taken"] = "recorded rollback decision"
+      end
+      payload
+    end
+
+    def resolve_blocker(reason: nil, dry_run: false)
+      assert_initialized!
+      reason = reason.to_s.strip
+      raise UserError.new("resolve-blocker requires --reason", 1) if reason.empty?
+
+      changes = []
+      payload = nil
+      mutation(dry_run: dry_run) do
+        state = load_state
+        state["phase"]["blocked"] = false
+        state["phase"]["block_reason"] = ""
+        add_decision!(state, "blocker_resolved", reason)
+        state["project"]["updated_at"] = now
+        changes << write_yaml(state_path, state, dry_run)
+        payload = status_hash(state: state, changed_files: compact_changes(changes))
+        payload["action_taken"] = "resolved phase blocker"
       end
       payload
     end
@@ -394,6 +415,8 @@ module Aiweb
         changes << write_yaml(state_path, state, dry_run)
         payload = status_hash(state: state, changed_files: compact_changes(changes))
         payload["action_taken"] = action
+        payload["blocking_issues"] = []
+        payload["next_action"] = next_action_for(state, [])
       end
       payload
     rescue BlockedAdvance => e
@@ -516,12 +539,17 @@ module Aiweb
       end
       FileUtils.mkdir_p(aiweb_dir)
       lock = File.join(aiweb_dir, ".lock")
-      raise UserError.new("state lock exists: #{lock}", 1) if File.exist?(lock)
+      lock_acquired = false
       begin
-        File.write(lock, "pid=#{Process.pid}\ncreated_at=#{now}\n")
+        File.open(lock, File::WRONLY | File::CREAT | File::EXCL) do |file|
+          lock_acquired = true
+          file.write("pid=#{Process.pid}\ncreated_at=#{now}\n")
+        end
         yield
+      rescue Errno::EEXIST
+        raise UserError.new("state lock exists: #{lock}. If this is stale, remove it only after confirming no aiweb command is running.", 1)
       ensure
-        FileUtils.rm_f(lock)
+        FileUtils.rm_f(lock) if lock_acquired
       end
     end
 
@@ -706,11 +734,13 @@ module Aiweb
       blockers = []
       current = state.dig("phase", "current")
       artifacts = state["artifacts"] || {}
+      blockers.concat(phase_lock_blockers(state))
       case current
       when "phase-0"
         blockers.concat(missing_artifacts(artifacts, %w[project product]))
       when "phase-0.25"
         blockers.concat(missing_artifacts(artifacts, %w[quality]))
+        blockers.concat(quality_contract_blockers)
       when "phase-0.5"
         blockers << "implementation.stack_profile is required" if blank?(state.dig("implementation", "stack_profile"))
         blockers.concat(missing_artifacts(artifacts, %w[stack]))
@@ -745,9 +775,19 @@ module Aiweb
         blockers << "root AGENTS.md is missing" unless File.exist?(File.join(root, "AGENTS.md"))
       when "phase-6"
         blockers << "implementation.current_task is required for bootstrap" if blank?(state.dig("implementation", "current_task"))
+      when "phase-7"
+        blockers.concat(completed_task_evidence_blockers(state, {
+          "design tokens" => [/design[-_ ]?tokens?/i],
+          "component primitives" => [/component[-_ ]?primitives?/i],
+          "component audit" => [/component[-_ ]?audit/i]
+        }))
       when "phase-8"
         blockers << "Gate 3 golden flow artifact is missing" unless File.exist?(File.join(root, state.dig("gates", "gate_3_golden_flow", "artifact").to_s))
         blockers << "Gate 3 golden flow approval is pending" unless gate_approved?(state, "gate_3_golden_flow")
+      when "phase-9"
+        blockers.concat(completed_task_evidence_blockers(state, {
+          "remaining page/feature completion" => [/phase[-_ ]?9/i, /remaining/i, /page/i, /feature/i]
+        }))
       when "phase-10"
         blockers << "QA checklist is required" if blank?(state.dig("qa", "current_checklist")) || !File.exist?(File.join(root, state.dig("qa", "current_checklist").to_s))
       when "phase-11"
@@ -759,8 +799,20 @@ module Aiweb
       end
       blockers.concat(approved_hash_drift_blockers(state))
       open_failures = state.dig("qa", "open_failures") || []
-      blockers << "open QA failures: #{open_failures.length}" unless open_failures.empty?
+      blocking_open_failures = open_failures.select { |failure| failure["blocking"] != false }
+      blockers << "open QA failures: #{blocking_open_failures.length}" if qa_failures_block_phase?(current) && !blocking_open_failures.empty?
       blockers
+    end
+
+    def phase_lock_blockers(state)
+      return [] unless state.dig("phase", "blocked") == true
+
+      reason = state.dig("phase", "block_reason").to_s
+      return [] unless reason.start_with?("rollback:") || reason.start_with?("phase is blocked by rollback:")
+
+      detail = reason.sub(/^rollback:\s*/, "").sub(/^phase is blocked by rollback:\s*/, "")
+      detail = detail.sub(/; run aiweb resolve-blocker .*$/, "")
+      ["phase is blocked by rollback: #{detail}; run aiweb resolve-blocker --reason \"...\" after recovery evidence is recorded"]
     end
 
     def missing_artifacts(artifacts, keys)
@@ -885,6 +937,33 @@ module Aiweb
 
     def blank?(value)
       value.nil? || value.to_s.strip.empty?
+    end
+
+    def qa_failures_block_phase?(current)
+      phase_index = PHASES.index(current)
+      threshold = PHASES.index("phase-7")
+      !phase_index.nil? && !threshold.nil? && phase_index >= threshold
+    end
+
+    def quality_contract_blockers
+      return ["quality.yaml is missing"] unless File.exist?(quality_path)
+
+      quality = YAML.load_file(quality_path)
+      errors = validate_json_schema(quality, load_schema("quality.schema.json"))
+      return errors.map { |error| "quality.schema: #{error}" } unless errors.empty?
+
+      approved = quality.dig("quality", "approved")
+      approved == true ? [] : ["quality contract must be explicitly approved in .ai-web/quality.yaml (quality.approved: true)"]
+    rescue Psych::SyntaxError => e
+      ["cannot parse quality.yaml: #{e.message}"]
+    end
+
+    def completed_task_evidence_blockers(state, requirements)
+      evidence = Array(state.dig("implementation", "completed_tasks")).map(&:to_s)
+      requirements.each_with_object([]) do |(label, patterns), blockers|
+        matched = evidence.any? { |value| patterns.any? { |pattern| value.match?(pattern) } }
+        blockers << "#{label} completed task evidence is required" unless matched
+      end
     end
 
     def stub_file?(path)
@@ -1280,6 +1359,29 @@ module Aiweb
       result["timed_out"] == true || result["duration_minutes"].to_f > (state.dig("budget", "max_qa_runtime_minutes") || 60).to_f
     end
 
+    def enforce_qa_timeout_recovery_budget!(state, result)
+      return unless qa_timeout?(result, state)
+
+      max_cycles = (state.dig("budget", "max_qa_timeout_recovery_cycles") || 3).to_i
+      task_id = result["task_id"].to_s
+      used = qa_timeout_recovery_cycles_used(state, task_id)
+      return if used < max_cycles
+
+      raise UserError.new(
+        "QA timeout recovery budget exceeded for task #{task_id.inspect}: #{used}/#{max_cycles} F-QA-TIMEOUT cycles already recorded",
+        3
+      )
+    end
+
+    def qa_timeout_recovery_cycles_used(state, task_id)
+      (state.dig("qa", "open_failures") || []).count do |failure|
+        next false unless failure["check_id"] == "F-QA-TIMEOUT"
+
+        failure_task = failure["task_id"]
+        failure_task.nil? || failure_task.to_s == task_id.to_s
+      end
+    end
+
     def qa_failures_from_result(result, state, source_result)
       failures = []
       timestamp = Time.now.utc.strftime("%Y%m%dT%H%M%SZ")
@@ -1293,6 +1395,7 @@ module Aiweb
           "id" => "F-QA-#{timestamp}-#{slug(check_id)}",
           "source_result" => source_result,
           "check_id" => check_id,
+          "task_id" => result["task_id"],
           "severity" => check["severity"],
           "blocking" => true,
           "accepted_risk_id" => nil
@@ -1304,6 +1407,7 @@ module Aiweb
           "id" => "F-QA-TIMEOUT-#{timestamp}",
           "source_result" => source_result,
           "check_id" => "F-QA-TIMEOUT",
+          "task_id" => result["task_id"],
           "severity" => "high",
           "blocking" => true,
           "accepted_risk_id" => nil
@@ -1313,6 +1417,7 @@ module Aiweb
           "id" => "F-QA-#{timestamp}-status",
           "source_result" => source_result,
           "check_id" => "QA-STATUS-#{result["status"].upcase}",
+          "task_id" => result["task_id"],
           "severity" => "medium",
           "blocking" => true,
           "accepted_risk_id" => nil
@@ -1418,6 +1523,7 @@ module Aiweb
       when "phase-6" then "bootstrap"
       when "phase-7" then "design-tokens"
       when "phase-8" then "golden-page"
+      when "phase-9" then "remaining-pages-features"
       when "phase-11" then "deploy-preparation"
       else "phase-#{state.dig("phase", "current")}-work"
       end

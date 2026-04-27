@@ -125,7 +125,7 @@ Budget is a guardrail, not a billing system. 이 프로젝트의 기본값은 GP
 
 Design generation은 비용보다 **품질 탐색 폭과 무한 재생성 방지**가 목적이므로 총 10회까지 허용한다.
 
-QA는 1회 실행이 60분을 넘기면 단순 실패로 멈추지 않고 `F-QA-TIMEOUT`으로 기록한 뒤 자체 진단 → fix packet 생성/수정 → 재실행 루프에 들어간다. 단, 같은 task에서 timeout recovery가 3회 연속 실패하면 architecture/requirements blocker로 승격한다.
+QA는 1회 실행이 60분을 넘기면 단순 실패로 멈추지 않고 `F-QA-TIMEOUT`으로 기록한 뒤 자체 진단 → fix packet 생성/수정 → 재실행 루프에 들어간다. 단, 같은 task의 `F-QA-TIMEOUT` open failure가 `max_qa_timeout_recovery_cycles`에 도달하면 다음 `qa-report`는 budget-blocked 계열로 실패하며 새 open failure/fix packet을 만들지 않는다.
 
 ## 7. Gate 4 release recommendation rules
 
@@ -176,4 +176,4 @@ Timeout cause 분류:
 - QA checklist too broad
 - adapter/browser failure
 
-Timeout recovery는 사용자에게 매번 묻지 않는다. 3회 연속 실패하거나 scope/architecture 변경이 필요할 때만 blocker로 보고한다.
+Timeout recovery는 사용자에게 매번 묻지 않는다. 같은 task의 timeout open failure가 recovery cap에 도달하거나 scope/architecture 변경이 필요할 때만 blocker로 보고한다.

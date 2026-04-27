@@ -1,4 +1,5 @@
 quality:
+  approved: false
   responsive:
     required: true
     viewports:

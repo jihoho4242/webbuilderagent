@@ -12,6 +12,7 @@
       "type": "object",
       "additionalProperties": true,
       "required": [
+        "approved",
         "responsive",
         "accessibility",
         "performance",
@@ -23,6 +24,9 @@
         "budget"
       ],
       "properties": {
+        "approved": {
+          "type": "boolean"
+        },
         "responsive": {
           "type": "object"
         },
