@@ -57,6 +57,13 @@ module Aiweb
           @json = true
         when "--dry-run"
           @dry_run = true
+        when "--path"
+          value = @argv.shift
+          raise OptionParser::MissingArgument, "--path" if value.to_s.empty?
+
+          @root = File.expand_path(value)
+        when /\A--path=(.+)\z/
+          @root = File.expand_path($1)
         else
           kept << arg
         end
@@ -190,6 +197,7 @@ module Aiweb
         Global flags:
           --json       machine-readable output
           --dry-run    plan mutation without writing files
+          --path PATH  run against a project directory
 
         Phase-sensitive commands are guarded:
           design-prompt: phase-3 or phase-3.5

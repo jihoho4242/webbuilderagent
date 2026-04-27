@@ -63,6 +63,13 @@ aiweb start \
 
 `--no-advance`를 쓰면 `init`과 `interview`만 실행하고 phase-0에 머문다.
 
+이후 명령은 같은 프로젝트 폴더에서 실행하거나 전역 `--path`를 붙여 실행한다.
+
+```bash
+aiweb --path ~/Desktop/aiweb-dogfood-cafe status
+aiweb --path ~/Desktop/aiweb-dogfood-cafe advance
+```
+
 ### `aiweb init`
 
 생성:
@@ -318,6 +325,7 @@ MVP 3:
 ```bash
 aiweb <cmd> --dry-run
 aiweb <cmd> --json
+aiweb --path <project-path> <cmd>
 ```
 
 공통 규칙:

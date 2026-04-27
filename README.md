@@ -11,6 +11,12 @@ This repository now includes a first working `aiweb` Director CLI. The CLI is in
 ```
 
 `start` creates the target folder, initializes profile D by default, drafts the first interview artifacts, and advances to the phase-0.25 quality gate.
+Use `--path` on later commands to keep working against that generated project:
+
+```bash
+./bin/aiweb --path ~/Desktop/aiweb-dogfood-cafe status
+./bin/aiweb --path ~/Desktop/aiweb-dogfood-cafe advance
+```
 
 Phase-sensitive commands are guarded by the Director state machine:
 

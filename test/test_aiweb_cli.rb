@@ -147,6 +147,27 @@ class AiwebCliTest < Minitest::Test
     end
   end
 
+  def test_global_path_runs_followup_commands_against_target_project
+    in_tmp do |dir|
+      target = File.join(dir, "path-target")
+      start_payload, start_code = json_cmd("start", "--path", target, "--idea", "동네 병원 웹사이트")
+      assert_equal 0, start_code
+      assert_equal "phase-0.25", start_payload["current_phase"]
+
+      status_stdout, status_stderr, status_code = run_aiweb("--path", target, "status", "--json")
+      status_payload = JSON.parse(status_stdout)
+      assert_equal 0, status_code
+      assert_equal "", status_stderr
+      assert_equal "phase-0.25", status_payload["current_phase"]
+
+      dry_run_stdout, dry_run_stderr, dry_run_code = run_aiweb("--path=#{target}", "advance", "--dry-run", "--json")
+      dry_run_payload = JSON.parse(dry_run_stdout)
+      assert_equal 2, dry_run_code
+      assert_equal "", dry_run_stderr
+      assert_match(/quality contract.*approved/i, dry_run_payload["blocking_issues"].join("\n"))
+    end
+  end
+
   def test_init_dry_run_writes_nothing_and_outputs_planned_changes
     in_tmp do
       payload, code = json_cmd("init", "--profile", "D", "--dry-run")
@@ -521,10 +542,10 @@ class AiwebCliTest < Minitest::Test
       assert_includes spec, command
     end
 
-    ["start [--path PATH]", "--no-advance", "ingest-design [--id ID]", "--selected", "rollback [--to PHASE] [--failure CODE]", "qa-report [--from PATH]", "--duration-minutes N", "--timed-out"].each do |snippet|
+    ["start [--path PATH]", "--no-advance", "--path PATH", "ingest-design [--id ID]", "--selected", "rollback [--to PHASE] [--failure CODE]", "qa-report [--from PATH]", "--duration-minutes N", "--timed-out"].each do |snippet|
       assert_includes stdout, snippet
     end
-    ["aiweb start --path", "aiweb ingest-design [--id ID]", "aiweb rollback --failure"].each do |snippet|
+    ["aiweb start --path", "aiweb --path <project-path> <cmd>", "aiweb ingest-design [--id ID]", "aiweb rollback --failure"].each do |snippet|
       assert_includes spec, snippet
     end
   end
