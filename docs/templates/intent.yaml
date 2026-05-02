@@ -1,0 +1,18 @@
+schema_version: 1
+original_intent: ""
+archetype: "landing-page"
+surface: "website"
+not_surface: "app-dashboard"
+primary_user: "prospective visitor evaluating the offer"
+primary_interaction: "scan the offer and choose a clear call to action"
+must_have_first_view:
+  - hero_headline
+  - value_proposition
+  - primary_cta
+  - trust_signal
+must_not_have:
+  - unclear_cta
+  - fake_app_controls
+semantic_risks:
+  - burying the value proposition below the fold
+  - presenting too many competing CTAs

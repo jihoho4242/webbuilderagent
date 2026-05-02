@@ -108,9 +108,11 @@
       "type": "object",
       "additionalProperties": false,
       "required": [
+        "intent",
         "project",
         "quality",
         "product",
+        "first_view_contract",
         "stack",
         "brand",
         "content",
@@ -127,6 +129,9 @@
         "post_launch_backlog"
       ],
       "properties": {
+        "intent": {
+          "$ref": "#/$defs/artifact"
+        },
         "project": {
           "$ref": "#/$defs/artifact"
         },
@@ -134,6 +139,9 @@
           "$ref": "#/$defs/artifact"
         },
         "product": {
+          "$ref": "#/$defs/artifact"
+        },
+        "first_view_contract": {
           "$ref": "#/$defs/artifact"
         },
         "stack": {

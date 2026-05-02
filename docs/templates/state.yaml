@@ -51,16 +51,18 @@ gates:
     accepted_risks: []
     artifact: ".ai-web/gates/gate-4-predeploy.md"
 artifacts:
+  intent: { path: ".ai-web/intent.yaml", status: "stub" }
+  first_view_contract: { path: ".ai-web/first-view-contract.md", status: "stub" }
   project: { path: ".ai-web/project.md", status: "stub" }
   quality: { path: ".ai-web/quality.yaml", status: "stub" }
-  product: { path: ".ai-web/product.md", status: "missing" }
+  product: { path: ".ai-web/product.md", status: "stub" }
   stack: { path: ".ai-web/stack.md", status: "missing" }
-  brand: { path: ".ai-web/brand.md", status: "missing" }
-  content: { path: ".ai-web/content.md", status: "missing" }
-  ia: { path: ".ai-web/ia.md", status: "missing" }
-  data: { path: ".ai-web/data.md", status: "missing" }
-  security: { path: ".ai-web/security.md", status: "missing" }
-  design_brief: { path: ".ai-web/design-brief.md", status: "missing" }
+  brand: { path: ".ai-web/brand.md", status: "stub" }
+  content: { path: ".ai-web/content.md", status: "stub" }
+  ia: { path: ".ai-web/ia.md", status: "stub" }
+  data: { path: ".ai-web/data.md", status: "stub" }
+  security: { path: ".ai-web/security.md", status: "stub" }
+  design_brief: { path: ".ai-web/design-brief.md", status: "stub" }
   design_candidates:
     path: ".ai-web/design-candidates/"
     status: "missing"
@@ -68,10 +70,10 @@ artifacts:
     count: 0
   design_comparison: { path: ".ai-web/design-candidates/comparison.md", status: "missing" }
   selected_design_candidate: { path: ".ai-web/design-candidates/selected.md", status: "missing" }
-  design_system: { path: ".ai-web/DESIGN.md", status: "missing" }
-  deploy: { path: ".ai-web/deploy.md", status: "missing" }
-  final_qa_report: { path: ".ai-web/qa/final-report.md", status: "missing" }
-  post_launch_backlog: { path: ".ai-web/post-launch-backlog.md", status: "missing" }
+  design_system: { path: ".ai-web/DESIGN.md", status: "stub" }
+  deploy: { path: ".ai-web/deploy.md", status: "stub" }
+  final_qa_report: { path: ".ai-web/qa/final-report.md", status: "stub" }
+  post_launch_backlog: { path: ".ai-web/post-launch-backlog.md", status: "stub" }
 design_candidates:
   min_required: 2
   max_allowed: 10

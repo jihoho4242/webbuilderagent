@@ -64,11 +64,14 @@ Phase 10은 마지막 단계가 아니라 Phase 7 이후 계속 실행되는 QA 
 
 산출물:
 
+- `.ai-web/intent.yaml`
 - `.ai-web/project.md`
 - `.ai-web/product.md` 초안
 
 통과 조건:
 
+- 요청이 앱인지 웹사이트인지 `intent.yaml`에 분류되어 있다.
+- 앱 요청은 피해야 할 표면(`not_surface`)과 첫 화면 필수 요소를 갖는다.
 - “일단 다 만들자”가 금지되어 있다.
 - 1차 릴리즈 범위가 명확하다.
 

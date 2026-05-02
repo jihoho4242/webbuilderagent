@@ -8,6 +8,8 @@
 .ai-web/
   state.yaml
   quality.yaml
+  intent.yaml
+  intent.schema.json
   decisions.md
   project.md
   product.md
@@ -50,6 +52,7 @@
 |---|---|
 | 현재 Phase | `.ai-web/state.yaml` |
 | 품질 기준 | `.ai-web/quality.yaml` |
+| 의도/표면/첫 화면 보존 계약 | `.ai-web/intent.yaml` |
 | 제품 방향 | `.ai-web/product.md` |
 | 스택 | `.ai-web/stack.md` |
 | 브랜드/말투 | `.ai-web/brand.md` |
@@ -127,6 +130,7 @@ gates:
     artifact: ".ai-web/gates/gate-4-predeploy.md"
 
 artifacts:
+  intent: { path: ".ai-web/intent.yaml", status: "missing" }
   project: { path: ".ai-web/project.md", status: "missing" }
   quality: { path: ".ai-web/quality.yaml", status: "missing" }
   product: { path: ".ai-web/product.md", status: "missing" }
