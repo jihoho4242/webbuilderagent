@@ -5,6 +5,7 @@ require "optparse"
 require "stringio"
 
 require_relative "registry"
+require_relative "intent_router"
 
 module Aiweb
   class CLI
@@ -93,7 +94,7 @@ module Aiweb
         end
         opts[:idea] ||= @argv.join(" ")
         target_root = opts[:path].to_s.strip.empty? ? @root : File.expand_path(opts[:path])
-        Project.new(target_root).start(idea: opts[:idea], profile: opts[:profile] || "D", advance: opts.fetch(:advance, true), dry_run: @dry_run)
+        Project.new(target_root).start(idea: opts[:idea], profile: opts[:profile], advance: opts.fetch(:advance, true), dry_run: @dry_run)
       when "init"
         opts = parse_options do |o, options|
           o.on("--profile PROFILE") { |v| options[:profile] = v }
@@ -101,6 +102,8 @@ module Aiweb
         project.init(profile: opts[:profile], dry_run: @dry_run)
       when "status"
         project.status
+      when "intent"
+        dispatch_intent
       when *REGISTRY_COMMANDS
         dispatch_registry(command)
       when "interview"
@@ -174,6 +177,34 @@ module Aiweb
       end
     end
 
+    def dispatch_intent
+      subcommand = @argv.shift || "route"
+      unless subcommand == "route"
+        raise UserError.new("unknown intent command #{subcommand.inspect}; expected route", EXIT_VALIDATION_FAILED)
+      end
+
+      opts = parse_options do |o, options|
+        o.on("--idea IDEA") { |v| options[:idea] = v }
+      end
+      if opts[:idea] && !@argv.empty?
+        raise UserError.new("intent route does not accept extra positional arguments when --idea is provided: #{@argv.join(", ")}", EXIT_VALIDATION_FAILED)
+      end
+      idea = opts[:idea] || @argv.join(" ")
+      idea = IntentRouter.normalize_idea(idea)
+      raise UserError.new("intent route requires --idea or a positional idea", EXIT_VALIDATION_FAILED) if idea.empty?
+
+      {
+        "schema_version" => 1,
+        "current_phase" => nil,
+        "action_taken" => "routed intent",
+        "changed_files" => [],
+        "blocking_issues" => [],
+        "missing_artifacts" => [],
+        "intent" => IntentRouter.route(idea),
+        "next_action" => "use recommended_skill and recommended_design_system when drafting implementation artifacts"
+      }
+    end
+
     def dispatch_registry(command)
       subcommand = @argv.shift || "list"
       unless subcommand == "list"
@@ -206,6 +237,7 @@ module Aiweb
           init [--profile A|B|C|D]
           status
           interview --idea "..."
+          intent route --idea "..."
           run
           design-prompt [--force]
           ingest-design [--id ID] [--title TITLE] [--source SOURCE] [--notes NOTES] [--selected] [--force]
@@ -274,6 +306,7 @@ module Aiweb
 
     def human_result(result)
       return human_registry_result(result) if result["registry"]
+      return human_intent_result(result) if result["intent"]
 
       changed = result["changed_files"] || result["artifacts_changed"] || []
       blockers = result["blocking_issues"] || []
@@ -284,6 +317,23 @@ module Aiweb
         "Blocking issues: #{blockers.empty? ? "none" : blockers.join("; ")}",
         "Next command: #{result["next_action"] || "n/a"}"
       ].join("\n")
+    end
+
+    def human_intent_result(result)
+      intent = result.fetch("intent")
+      lines = [
+        "Intent route",
+        "- Archetype: #{intent.fetch("archetype")}",
+        "- Surface: #{intent.fetch("surface")}",
+        "- Recommended skill: #{intent.fetch("recommended_skill")}",
+        "- Recommended design system: #{intent.fetch("recommended_design_system")}",
+        "- Recommended profile: #{intent.fetch("recommended_profile")}",
+        "- Framework: #{intent.fetch("framework")}",
+        "- Safety sensitive: #{intent.fetch("safety_sensitive")}",
+        "- Style keywords: #{intent.fetch("style_keywords").join(", ")}",
+        "- Forbidden design patterns: #{intent.fetch("forbidden_design_patterns").join("; ")}"
+      ]
+      lines.join("\n")
     end
 
     def human_registry_result(result)
@@ -310,7 +360,7 @@ module Aiweb
 
     def exit_code_for(command, result)
       return EXIT_VALIDATION_FAILED if result["validation_errors"] && !result["validation_errors"].empty?
-      return EXIT_SUCCESS if REGISTRY_COMMANDS.include?(command)
+      return EXIT_SUCCESS if REGISTRY_COMMANDS.include?(command) || command == "intent"
       return EXIT_SUCCESS if %w[help version status start init interview run design-prompt ingest-design next-task qa-checklist qa-report rollback resolve-blocker snapshot].include?(command)
       if command == "advance" && result["action_taken"] == "advance blocked"
         issue = result["blocking_issues"].join(" ")

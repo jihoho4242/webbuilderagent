@@ -11,7 +11,7 @@ class WebbuilderLauncher
     help --help -h version --version
     start init status interview run design-prompt ingest-design next-task
     qa-checklist qa-report advance rollback resolve-blocker snapshot
-    design-systems skills craft
+    design-systems skills craft intent
   ].freeze
 
   def initialize(argv, stdin: STDIN, stdout: STDOUT, stderr: STDERR, root: Dir.pwd)
@@ -97,7 +97,7 @@ class WebbuilderLauncher
   def direct_start_options
     options = {
       path: default_project_path,
-      profile: "D",
+      profile: nil,
       advance: true,
       idea: "",
       json: false,
@@ -133,6 +133,7 @@ class WebbuilderLauncher
     end
 
     options[:idea] = idea_parts.join(" ").strip
+    apply_recommended_profile!(options) unless options[:idea].empty?
     options
   end
 
@@ -142,11 +143,19 @@ class WebbuilderLauncher
     value
   end
 
+  def apply_recommended_profile!(options)
+    return options unless options[:profile].to_s.empty?
+
+    options[:profile] = Aiweb::IntentRouter.route(options[:idea]).fetch("recommended_profile")
+    options
+  end
+
   def interview_for_start(options)
     @stdout.puts "웹빌더를 시작합니다. 처음부터 필요한 순서대로 잡아갈게요."
     @stdout.puts
 
     options[:idea] = ask_required("만들고 싶은 웹을 한 문장으로 적어줘")
+    apply_recommended_profile!(options)
     options[:path] = ask("프로젝트 폴더", options[:path])
     options[:profile] = ask("스택 프로필 A/B/C/D", options[:profile]).upcase
     advance_answer = ask("품질 계약 게이트까지 자동 진행", options[:advance] ? "Y" : "N")
@@ -193,7 +202,9 @@ class WebbuilderLauncher
     args = []
     args << "--json" if options[:json]
     args << "--dry-run" if options[:dry_run]
-    args += ["start", "--path", options[:path], "--profile", options[:profile], "--idea", options[:idea]]
+    args += ["start", "--path", options[:path]]
+    args += ["--profile", options[:profile]] unless options[:profile].to_s.empty?
+    args += ["--idea", options[:idea]]
     args << "--no-advance" unless options[:advance]
     args
   end

@@ -17,28 +17,121 @@
     "semantic_risks"
   ],
   "properties": {
-    "schema_version": { "type": "integer", "const": 1 },
-    "original_intent": { "type": "string" },
-    "archetype": { "type": "string", "minLength": 1 },
-    "surface": { "type": "string", "enum": ["website", "app"] },
-    "not_surface": { "type": "string", "minLength": 1 },
-    "primary_user": { "type": "string", "minLength": 1 },
-    "primary_interaction": { "type": "string", "minLength": 1 },
+    "schema_version": {
+      "type": "integer",
+      "const": 1
+    },
+    "original_intent": {
+      "type": "string"
+    },
+    "archetype": {
+      "type": "string",
+      "minLength": 1
+    },
+    "surface": {
+      "type": "string",
+      "enum": [
+        "website",
+        "app"
+      ]
+    },
+    "not_surface": {
+      "type": "string",
+      "minLength": 1
+    },
+    "primary_user": {
+      "type": "string",
+      "minLength": 1
+    },
+    "primary_interaction": {
+      "type": "string",
+      "minLength": 1
+    },
     "must_have_first_view": {
       "type": "array",
-      "items": { "type": "string", "minLength": 1 }
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
     },
     "must_not_have": {
       "type": "array",
-      "items": { "type": "string", "minLength": 1 }
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
     },
     "semantic_risks": {
       "type": "array",
-      "items": { "type": "string", "minLength": 1 }
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
     },
     "qa": {
       "type": "array",
-      "items": { "type": "string", "minLength": 1 }
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "recommended_skill": {
+      "type": "string",
+      "enum": [
+        "premium-landing-page",
+        "service-business-site",
+        "saas-product-page",
+        "ecommerce-category-page"
+      ]
+    },
+    "recommended_design_system": {
+      "type": "string",
+      "enum": [
+        "luxury-editorial",
+        "local-service-trust",
+        "conversion-saas",
+        "mobile-commerce"
+      ]
+    },
+    "recommended_profile": {
+      "type": "string",
+      "enum": [
+        "A",
+        "B",
+        "C",
+        "D"
+      ]
+    },
+    "framework": {
+      "type": "string",
+      "minLength": 1
+    },
+    "style_keywords": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "forbidden_design_patterns": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "safety_sensitive": {
+      "type": "boolean"
+    },
+    "market_archetype": {
+      "type": "string",
+      "enum": [
+        "premium",
+        "service",
+        "saas",
+        "ecommerce",
+        "fallback"
+      ]
     }
   }
 }

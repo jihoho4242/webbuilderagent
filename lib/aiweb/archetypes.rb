@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require_relative "intent_router"
+
 module Aiweb
   module Archetypes
     STOCK_TERMS = /주비서|주식|증권|투자|종목|시세|호가|주문|계좌|stock|stocks|trading|broker|brokerage|portfolio|quote|order/i.freeze
@@ -90,7 +92,17 @@ module Aiweb
         "original_intent" => text,
         "archetype" => key
       )
-      stock_assistant?(text) ? stock_assistant_intent(intent) : intent
+      intent = stock_assistant?(text) ? stock_assistant_intent(intent) : intent
+      merge_router_fields(intent, IntentRouter.route(text))
+    end
+
+    def self.merge_router_fields(intent, route)
+      route.each_with_object(intent.dup) do |(name, value), memo|
+        next if %w[schema_version original_intent].include?(name)
+
+        target_name = name == "archetype" ? "market_archetype" : name
+        memo[target_name] = value.is_a?(Array) ? value.dup : value
+      end
     end
 
     def self.definition(key)

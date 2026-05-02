@@ -7,6 +7,7 @@ require "time"
 require "yaml"
 
 require_relative "archetypes"
+require_relative "intent_router"
 
 module Aiweb
   class UserError < StandardError
@@ -121,11 +122,12 @@ module Aiweb
       payload
     end
 
-    def start(idea:, profile: "D", advance: true, dry_run: false)
+    def start(idea:, profile: nil, advance: true, dry_run: false)
       idea = idea.to_s.strip
       raise UserError.new("start requires --idea", 1) if idea.empty?
 
-      selected_profile = profile.to_s.strip.empty? ? "D" : profile.to_s.strip
+      route = IntentRouter.route(idea)
+      selected_profile = profile.to_s.strip.empty? ? route.fetch("recommended_profile") : profile.to_s.strip
       Profiles.fetch!(selected_profile)
 
       if dry_run
@@ -1273,7 +1275,7 @@ module Aiweb
     end
 
     def safety_sensitive_idea?(idea)
-      idea.to_s.match?(/stock|invest|trading|broker|order|payment|checkout|account|token|approval|medical|clinic|health|legal|law|finance|bank|insurance|주식|투자|증권|주문|결제|계좌|토큰|승인|의료|병원|법률|금융|은행|보험/i)
+      IntentRouter.sensitive?(idea)
     end
 
     def bullet_list(items)

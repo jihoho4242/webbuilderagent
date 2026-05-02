@@ -305,7 +305,7 @@ class AiwebCliTest < Minitest::Test
       assert_equal "phase-0.25", payload["current_phase"]
       assert_equal "started director workspace and advanced to quality gate", payload["action_taken"]
       assert_match(/quality\.approved/, payload["next_action"])
-      assert_includes payload["start_steps"], "aiweb init --profile D"
+      assert_includes payload["start_steps"], "aiweb init --profile B"
       assert File.exist?(File.join(target, ".ai-web", "state.yaml"))
       assert File.exist?(File.join(target, ".ai-web", "project.md"))
       assert_match(/Wrong interpretations to avoid/, File.read(File.join(target, ".ai-web", "product.md")))
@@ -313,8 +313,35 @@ class AiwebCliTest < Minitest::Test
       refute File.exist?(File.join(target, "package.json")), "start must not scaffold app code"
 
       state = YAML.load_file(File.join(target, ".ai-web", "state.yaml"))
-      assert_equal "D", state.dig("implementation", "stack_profile")
+      assert_equal "B", state.dig("implementation", "stack_profile")
       assert_match(/성수동 감성 로컬 카페/, File.read(File.join(target, ".ai-web", "project.md")))
+    end
+  end
+
+  def test_start_uses_router_profile_unless_explicit_profile_is_given
+    in_tmp do |dir|
+      auto_target = File.join(dir, "auto-profile")
+      _payload, auto_code = json_cmd(
+        "start",
+        "--path", auto_target,
+        "--idea", "SaaS login portal for regulated medical account payments",
+        "--no-advance"
+      )
+      assert_equal 0, auto_code
+      auto_state = YAML.load_file(File.join(auto_target, ".ai-web", "state.yaml"))
+      assert_equal "A", auto_state.dig("implementation", "stack_profile")
+
+      explicit_target = File.join(dir, "explicit-profile")
+      _explicit_payload, explicit_code = json_cmd(
+        "start",
+        "--path", explicit_target,
+        "--profile", "D",
+        "--idea", "SaaS login portal for regulated medical account payments",
+        "--no-advance"
+      )
+      assert_equal 0, explicit_code
+      explicit_state = YAML.load_file(File.join(explicit_target, ".ai-web", "state.yaml"))
+      assert_equal "D", explicit_state.dig("implementation", "stack_profile")
     end
   end
 
@@ -382,6 +409,8 @@ class AiwebCliTest < Minitest::Test
       assert_equal "", stderr
       assert_equal "phase-0.25", payload["current_phase"]
       assert File.exist?(File.join(target, ".ai-web", "state.yaml"))
+      state = YAML.load_file(File.join(target, ".ai-web", "state.yaml"))
+      assert_equal "B", state.dig("implementation", "stack_profile")
       refute File.exist?(File.join(target, "package.json"))
     end
   end
@@ -985,6 +1014,217 @@ class AiwebCliTest < Minitest::Test
 
     ["start [--path PATH]", "--no-advance", "--path PATH", "ingest-design [--id ID]", "--selected", "rollback [--to PHASE] [--failure CODE]", "qa-report [--from PATH]", "--duration-minutes N", "--timed-out"].each do |snippet|
       assert_includes stdout, snippet
+    end
+  end
+
+  def test_intent_router_golden_a_to_e_routes_are_deterministic
+    cases = {
+      "A regulated login app for medical account payments and admin workflows" => {
+        "archetype" => "saas",
+        "surface" => "app",
+        "recommended_skill" => "saas-product-page",
+        "recommended_design_system" => "conversion-saas",
+        "recommended_profile" => "A",
+        "safety_sensitive" => true
+      },
+      "Luxury editorial portfolio for a private brand" => {
+        "archetype" => "premium",
+        "surface" => "website",
+        "recommended_skill" => "premium-landing-page",
+        "recommended_design_system" => "luxury-editorial",
+        "recommended_profile" => "B",
+        "safety_sensitive" => false
+      },
+      "프리미엄 경영 코칭 랜딩페이지. 대표 신뢰, 고가 상담 신청, 세련된 브랜드 무드." => {
+        "archetype" => "premium",
+        "surface" => "website",
+        "recommended_skill" => "premium-landing-page",
+        "recommended_design_system" => "luxury-editorial",
+        "recommended_profile" => "B",
+        "safety_sensitive" => false
+      },
+      "Mobile ecommerce collection for handmade tea products with shipping" => {
+        "archetype" => "ecommerce",
+        "surface" => "website",
+        "recommended_skill" => "ecommerce-category-page",
+        "recommended_design_system" => "mobile-commerce",
+        "recommended_profile" => "C",
+        "safety_sensitive" => false
+      },
+      "Resources-first blog and guide library for architects" => {
+        "archetype" => "fallback",
+        "surface" => "website",
+        "recommended_skill" => "premium-landing-page",
+        "recommended_design_system" => "luxury-editorial",
+        "recommended_profile" => "D",
+        "safety_sensitive" => false
+      },
+      "성수동 병원 예약과 보험 안내를 포함한 로컬 서비스 웹사이트" => {
+        "archetype" => "service",
+        "surface" => "website",
+        "recommended_skill" => "service-business-site",
+        "recommended_design_system" => "local-service-trust",
+        "recommended_profile" => "A",
+        "safety_sensitive" => true
+      },
+      "로컬 병원 랜딩페이지. 전화 예약, 위치, 영업시간, 진료 안내." => {
+        "archetype" => "service",
+        "surface" => "website",
+        "recommended_skill" => "service-business-site",
+        "recommended_design_system" => "local-service-trust",
+        "recommended_profile" => "B",
+        "safety_sensitive" => true
+      },
+      "성수동 도수치료 클리닉 웹사이트. 전화 예약, 위치, 영업시간, 리뷰, 첫 방문 안내가 필요해." => {
+        "archetype" => "service",
+        "surface" => "website",
+        "recommended_skill" => "service-business-site",
+        "recommended_design_system" => "local-service-trust",
+        "recommended_profile" => "B",
+        "safety_sensitive" => true
+      },
+      "동네 카페 예약 서비스 웹사이트" => {
+        "archetype" => "service",
+        "surface" => "website",
+        "recommended_skill" => "service-business-site",
+        "recommended_design_system" => "local-service-trust",
+        "recommended_profile" => "B",
+        "safety_sensitive" => false
+      }
+    }
+
+    cases.each do |idea, expected|
+      payload, code = json_cmd("intent", "route", "--idea", idea)
+      assert_equal 0, code
+      route = payload.fetch("intent")
+      expected.each { |key, value| assert_equal value, route[key], "#{idea} #{key}" }
+      refute_empty route["framework"]
+      refute_empty route["style_keywords"]
+      refute_empty route["forbidden_design_patterns"]
+    end
+  end
+
+  def test_intent_router_tie_breaks_ecommerce_before_saas_service_premium
+    payload, code = json_cmd(
+      "intent",
+      "route",
+      "--idea",
+      "Premium tool service shop"
+    )
+
+    assert_equal 0, code
+    route = payload.fetch("intent")
+    assert_equal "ecommerce", route["archetype"]
+    assert_equal "ecommerce-category-page", route["recommended_skill"]
+    assert_equal "mobile-commerce", route["recommended_design_system"]
+  end
+
+  def test_intent_router_chooses_strongest_score_before_precedence
+    cases = {
+      "Premium boutique editorial brand portfolio with a tiny shop note" => "premium",
+      "B2B SaaS platform dashboard analytics workflow for teams with cart recovery insight" => "saas",
+      "Local dentist clinic appointment booking phone location hours service with shop style gift card note" => "service"
+    }
+
+    cases.each do |idea, expected_archetype|
+      payload, code = json_cmd("intent", "route", "--idea", idea)
+      assert_equal 0, code
+      assert_equal expected_archetype, payload.dig("intent", "archetype"), idea
+    end
+  end
+
+  def test_korean_medical_specialties_are_safety_sensitive
+    %w[치과 피부과 한의원 의원 정형외과 내과 외과 안과 이비인후과 산부인과].each do |specialty|
+      payload, code = json_cmd("intent", "route", "--idea", "성수동 #{specialty} 예약 안내 웹사이트")
+      assert_equal 0, code
+      assert_equal true, payload.dig("intent", "safety_sensitive"), specialty
+    end
+  end
+
+  def test_intent_route_accepts_positional_idea_and_human_output
+    stdout, stderr, code = run_aiweb("intent", "route", "동네 카페 예약 서비스 웹사이트")
+
+    assert_equal 0, code
+    assert_equal "", stderr
+    assert_match(/Intent route/, stdout)
+    assert_match(/Archetype: service/, stdout)
+    assert_match(/Recommended skill: service-business-site/, stdout)
+    assert_match(/Recommended design system: local-service-trust/, stdout)
+  end
+
+  def test_intent_route_validates_input_and_does_not_mutate_project
+    in_tmp do
+      stdout, stderr, code = run_aiweb("intent", "route", "--json")
+      payload = JSON.parse(stdout)
+
+      assert_equal 1, code
+      assert_equal "", stderr
+      assert_match(/intent route requires --idea or a positional idea/, payload.dig("error", "message"))
+      refute Dir.exist?(".ai-web")
+
+      payload, code = json_cmd("intent", "route", "--idea", "SaaS dashboard for API analytics")
+      assert_equal 0, code
+      assert_empty payload["changed_files"]
+      refute Dir.exist?(".ai-web")
+
+      extra_payload, extra_code = json_cmd("intent", "route", "--idea", "SaaS dashboard", "extra")
+      assert_equal 1, extra_code
+      assert_match(/does not accept extra positional arguments/, extra_payload.dig("error", "message"))
+      refute Dir.exist?(".ai-web")
+    end
+  end
+
+  def test_webbuilder_passes_intent_route_through_to_aiweb
+    stdout, stderr, code = run_webbuilder("intent", "route", "--idea", "online shop for stationery", "--json")
+    payload = JSON.parse(stdout)
+
+    assert_equal 0, code
+    assert_equal "", stderr
+    assert_equal "ecommerce", payload.dig("intent", "archetype")
+    assert_equal "ecommerce-category-page", payload.dig("intent", "recommended_skill")
+  end
+
+  def test_intent_schema_keeps_router_fields_optional_for_v1_projects
+    in_tmp do
+      json_cmd("init", "--profile", "D")
+      legacy_intent = {
+        "schema_version" => 1,
+        "original_intent" => "legacy landing page",
+        "archetype" => "landing-page",
+        "surface" => "website",
+        "not_surface" => "app-dashboard",
+        "primary_user" => "visitor",
+        "primary_interaction" => "read and click",
+        "must_have_first_view" => ["hero_headline"],
+        "must_not_have" => ["fake_app_controls"],
+        "semantic_risks" => ["generic copy"]
+      }
+      File.write(".ai-web/intent.yaml", YAML.dump(legacy_intent))
+
+      payload, code = json_cmd("status")
+      assert_equal 0, code
+      assert_empty Array(payload["validation_errors"])
+    end
+  end
+
+  def test_interview_merges_router_fields_into_intent_yaml
+    in_tmp do
+      json_cmd("init", "--profile", "D")
+      payload, code = json_cmd("interview", "--idea", "SaaS product page for API analytics teams")
+
+      assert_equal 0, code
+      assert_includes payload["changed_files"], ".ai-web/intent.yaml"
+      intent = YAML.load_file(".ai-web/intent.yaml")
+      route = Aiweb::IntentRouter.route("SaaS product page for API analytics teams")
+      assert_equal route["archetype"], intent["market_archetype"]
+      assert_equal route["surface"], intent["surface"]
+      assert_equal route["recommended_skill"], intent["recommended_skill"]
+      assert_equal route["recommended_design_system"], intent["recommended_design_system"]
+      assert_equal route["recommended_profile"], intent["recommended_profile"]
+      assert_equal route["framework"], intent["framework"]
+      assert_equal route["safety_sensitive"], intent["safety_sensitive"]
+      refute_empty intent["style_keywords"]
+      refute_empty intent["forbidden_design_patterns"]
     end
   end
 
