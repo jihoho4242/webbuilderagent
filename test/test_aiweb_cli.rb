@@ -1537,6 +1537,202 @@ class AiwebCliTest < Minitest::Test
     end
   end
 
+  def assert_candidate_html_contract(html, id, design_system, skill)
+    assert_includes html, "<!-- aiweb:visual-contract:start #{id} -->"
+    assert_includes html, "<!-- aiweb:visual-contract:end #{id} -->"
+    assert_includes html, "data-aiweb-id=\"candidate.#{id}.first-view\""
+    assert_includes html, "data-aiweb-design-system=\"#{design_system}\""
+    assert_includes html, "data-aiweb-skill=\"#{skill}\""
+    assert_match(/data-aiweb-route=/, html)
+    assert_match(/No fake metrics, testimonials, logos, prices, or credentials/, html)
+  end
+
+  def test_design_generates_three_differentiated_html_candidates_and_comparison_from_design_source
+    in_tmp do
+      json_cmd("init", "--profile", "D")
+      json_cmd("interview", "--idea", "동네 카페 예약 서비스 웹사이트")
+
+      payload, code = json_cmd("design", "--candidates", "3")
+
+      assert_equal 0, code
+      assert_equal "generated design candidates", payload["action_taken"]
+      %w[candidate-01 candidate-02 candidate-03].each do |id|
+        path = ".ai-web/design-candidates/#{id}.html"
+        assert_includes payload["changed_files"], path
+        assert File.exist?(path), "#{path} should exist"
+        html = File.read(path)
+        assert_candidate_html_contract(html, id, "local-service-trust", "service-business-site")
+        assert_match(/hero headline|approved first-view contract|Primary interaction/i, html)
+      end
+      assert_equal 3, Dir.glob(".ai-web/design-candidates/candidate-*.html").length
+      assert File.exist?(".ai-web/design-candidates/comparison.md")
+      comparison = File.read(".ai-web/design-candidates/comparison.md")
+      assert_match(/Mood/, comparison)
+      assert_match(/Layout/, comparison)
+      assert_match(/Strengths/, comparison)
+      assert_match(/Tradeoffs/, comparison)
+      assert_match(/local-service-trust/, comparison)
+
+      bodies = %w[candidate-01 candidate-02 candidate-03].map { |id| File.read(".ai-web/design-candidates/#{id}.html") }
+      assert_equal 3, bodies.uniq.length, "candidate HTML files must be differentiated"
+      state = load_state
+      assert_equal 3, state.dig("design_candidates", "candidates").length
+      assert_equal 3, state.dig("artifacts", "design_candidates", "count")
+    end
+  end
+
+  def test_design_regenerates_when_only_one_candidate_exists
+    in_tmp do
+      json_cmd("init", "--profile", "D")
+      json_cmd("interview", "--idea", "동네 카페 예약 서비스 웹사이트")
+      FileUtils.mkdir_p(".ai-web/design-candidates")
+      File.write(".ai-web/design-candidates/candidate-01.html", "<html>partial draft</html>\n")
+
+      payload, code = json_cmd("design", "--candidates", "3")
+
+      assert_equal 0, code
+      assert_equal "generated design candidates", payload["action_taken"]
+      refute_equal "preserved existing design candidates", payload["action_taken"]
+      %w[candidate-01 candidate-02 candidate-03].each do |id|
+        path = ".ai-web/design-candidates/#{id}.html"
+        assert_includes payload["changed_files"], path
+        assert File.exist?(path), "#{path} should exist after regeneration"
+        assert_candidate_html_contract(File.read(path), id, "local-service-trust", "service-business-site")
+      end
+      assert_includes payload["changed_files"], ".ai-web/design-candidates/comparison.md"
+      assert File.exist?(".ai-web/design-candidates/comparison.md")
+      assert_equal 3, load_state.dig("artifacts", "design_candidates", "count")
+    end
+  end
+
+  def test_design_regenerates_when_comparison_missing_despite_all_candidates_existing
+    in_tmp do
+      json_cmd("init", "--profile", "D")
+      json_cmd("interview", "--idea", "SaaS product page for API analytics teams")
+      _payload, code = json_cmd("design", "--candidates", "3")
+      assert_equal 0, code
+      File.delete(".ai-web/design-candidates/comparison.md")
+
+      payload, regenerate_code = json_cmd("design", "--candidates", "3")
+
+      assert_equal 0, regenerate_code
+      assert_equal "generated design candidates", payload["action_taken"]
+      refute_equal "preserved existing design candidates", payload["action_taken"]
+      assert_includes payload["changed_files"], ".ai-web/design-candidates/comparison.md"
+      assert File.exist?(".ai-web/design-candidates/comparison.md")
+      comparison = File.read(".ai-web/design-candidates/comparison.md")
+      %w[candidate-01 candidate-02 candidate-03].each do |id|
+        path = ".ai-web/design-candidates/#{id}.html"
+        assert File.exist?(path), "#{path} should exist after regeneration"
+        assert_includes comparison, "| #{id} |"
+      end
+      assert_equal 3, load_state.dig("artifacts", "design_candidates", "count")
+    end
+  end
+
+  def test_design_preserves_existing_candidates_unless_force_regenerates
+    in_tmp do
+      json_cmd("init", "--profile", "D")
+      json_cmd("interview", "--idea", "SaaS product page for API analytics teams")
+      _payload, code = json_cmd("design", "--candidates", "3")
+      assert_equal 0, code
+      sentinel_path = ".ai-web/design-candidates/candidate-02.html"
+      sentinel = File.read(sentinel_path) + "\n<!-- human review note: keep -->\n"
+      File.write(sentinel_path, sentinel)
+
+      preserve_payload, preserve_code = json_cmd("design", "--candidates", "3")
+      assert_equal 0, preserve_code
+      assert_equal "preserved existing design candidates", preserve_payload["action_taken"]
+      assert_empty preserve_payload["changed_files"]
+      assert_equal sentinel, File.read(sentinel_path)
+
+      force_payload, force_code = json_cmd("design", "--candidates", "3", "--force")
+      assert_equal 0, force_code
+      assert_equal "regenerated design candidates", force_payload["action_taken"]
+      refute_equal sentinel, File.read(sentinel_path)
+      assert_includes force_payload["changed_files"], sentinel_path
+      assert_equal 1, load_state.dig("design_candidates", "regeneration_rounds")
+    end
+  end
+
+  def test_select_design_writes_selected_artifact_state_and_preserves_design_source
+    in_tmp do
+      json_cmd("init", "--profile", "D")
+      json_cmd("interview", "--idea", "온라인 쇼핑몰 상품 컬렉션 페이지")
+      custom = "# Custom DESIGN.md\n\nKeep a custom source of truth.\n"
+      File.write(".ai-web/DESIGN.md", custom)
+      json_cmd("design", "--candidates", "3")
+
+      payload, code = json_cmd("select-design", "candidate-02")
+
+      assert_equal 0, code
+      assert_equal "selected design candidate candidate-02", payload["action_taken"]
+      assert_includes payload["changed_files"], ".ai-web/design-candidates/selected.md"
+      assert_equal custom, File.read(".ai-web/DESIGN.md")
+      selected = File.read(".ai-web/design-candidates/selected.md")
+      assert_match(/Selected candidate: candidate-02/, selected)
+      assert_match(/DESIGN.md remains the source of truth/, selected)
+      state = load_state
+      assert_equal "candidate-02", state.dig("design_candidates", "selected_candidate")
+      approved = state.dig("design_candidates", "candidates").find { |candidate| candidate["id"] == "candidate-02" }
+      assert_equal "approved", approved["status"]
+    end
+  end
+
+  def test_design_prompt_and_next_task_reference_selected_design_candidate
+    in_tmp do
+      json_cmd("init", "--profile", "D")
+      json_cmd("interview", "--idea", "프리미엄 컨설턴트 랜딩페이지")
+      json_cmd("design", "--candidates", "3")
+      json_cmd("select-design", "candidate-03")
+      set_phase("phase-3")
+
+      prompt_payload, prompt_code = json_cmd("design-prompt")
+      assert_equal 0, prompt_code
+      assert_includes prompt_payload["changed_files"], ".ai-web/design-prompt.md"
+      prompt = File.read(".ai-web/design-prompt.md")
+      assert_match(/selected candidate `candidate-03`/, prompt)
+      assert_match(/design-candidates\/candidate-03.html/, prompt)
+      assert_match(/data-aiweb-id=\"candidate.candidate-03.first-view\"/, prompt)
+
+      set_phase("phase-6")
+      task_payload, task_code = json_cmd("next-task")
+      assert_equal 0, task_code
+      task_path = task_payload["changed_files"].find { |path| path.include?(".ai-web/tasks/task-") }
+      refute_nil task_path
+      assert_match(/design-candidates\/candidate-03.html/, File.read(task_path))
+    end
+  end
+
+  def test_design_cli_help_webbuilder_passthrough_and_validation
+    stdout, stderr, code = run_aiweb("help")
+    assert_equal 0, code
+    assert_equal "", stderr
+    assert_includes stdout, "design --candidates 3 [--force]"
+    assert_includes stdout, "select-design candidate-01|candidate-02|candidate-03"
+
+    in_tmp do |dir|
+      target = File.join(dir, "passthrough-design")
+      _payload, start_code = json_cmd("start", "--path", target, "--idea", "동네 카페 예약 서비스 웹사이트", "--no-advance")
+      assert_equal 0, start_code
+      web_stdout, web_stderr, web_code = run_webbuilder("--path", target, "design", "--candidates", "3", "--json")
+      web_payload = JSON.parse(web_stdout)
+      assert_equal 0, web_code
+      assert_equal "", web_stderr
+      assert_equal "generated design candidates", web_payload["action_taken"]
+
+      select_stdout, select_stderr, select_code = run_webbuilder("--path", target, "select-design", "candidate-01", "--json")
+      select_payload = JSON.parse(select_stdout)
+      assert_equal 0, select_code
+      assert_equal "", select_stderr
+      assert_equal "candidate-01", select_payload.dig("design_candidates", "selected_candidate")
+
+      invalid_payload, invalid_code = json_cmd("--path", target, "design", "--candidates", "2", "--force")
+      assert_equal 1, invalid_code
+      assert_match(/exactly 3/, invalid_payload.dig("error", "message"))
+    end
+  end
+
   def test_design_system_resolve_cli_help_and_webbuilder_passthrough
     stdout, stderr, code = run_aiweb("help")
     assert_equal 0, code

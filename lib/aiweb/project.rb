@@ -8,6 +8,7 @@ require "yaml"
 
 require_relative "archetypes"
 require_relative "design_brief"
+require_relative "design_candidate_generator"
 require_relative "design_system_resolver"
 require_relative "intent_router"
 
@@ -243,6 +244,88 @@ module Aiweb
         changes << write_yaml(state_path, state, dry_run)
         payload = status_hash(state: state, changed_files: compact_changes(changes))
         payload["action_taken"] = "generated design prompt"
+      end
+      payload
+    end
+
+    def design(candidates: 3, dry_run: false, force: false)
+      assert_initialized!
+      count = candidates.to_i
+      unless count == DesignCandidateGenerator::CANDIDATE_IDS.length
+        raise UserError.new("design candidate generation supports exactly 3 candidates; received #{candidates.inspect}", 1)
+      end
+
+      changes = []
+      payload = nil
+      mutation(dry_run: dry_run) do
+        state = load_state
+        if !force && complete_design_candidate_artifacts?
+          refresh_state!(state)
+          payload = status_hash(state: state, changed_files: [])
+          payload["action_taken"] = "preserved existing design candidates"
+          payload["next_action"] = "review .ai-web/design-candidates/comparison.md or rerun aiweb design --candidates 3 --force to regenerate"
+        else
+          intent = load_intent_artifact
+          changes << write_design_brief_if_needed(intent: intent, dry_run: dry_run, force: false)
+          changes << write_design_system_if_needed(intent: intent, dry_run: dry_run, force: false)
+          generator = design_candidate_generator(intent)
+          generator.candidates.each do |candidate|
+            path = File.join(aiweb_dir, "design-candidates", "#{candidate.id}.html")
+            changes << write_file(path, candidate.html, dry_run)
+          end
+          changes << write_file(File.join(aiweb_dir, "design-candidates", "comparison.md"), generator.comparison_markdown, dry_run)
+          state["design_candidates"]["candidates"] = generator.candidates.map do |candidate|
+            {
+              "id" => candidate.id,
+              "path" => ".ai-web/design-candidates/#{candidate.id}.html",
+              "status" => "draft"
+            }
+          end
+          state["design_candidates"]["regeneration_requested"] = false
+          state["design_candidates"]["regeneration_rounds"] = state["design_candidates"]["regeneration_rounds"].to_i + (force ? 1 : 0)
+          update_design_counts!(state)
+          mark_artifacts_from_files!(state)
+          add_decision!(state, "design_candidates_generated", "#{force ? "Regenerated" : "Generated"} 3 deterministic HTML design candidates from .ai-web/DESIGN.md")
+          state["project"]["updated_at"] = now
+          changes << write_yaml(state_path, state, dry_run)
+          payload = status_hash(state: state, changed_files: compact_changes(changes))
+          payload["action_taken"] = force ? "regenerated design candidates" : "generated design candidates"
+          payload["next_action"] = "review .ai-web/design-candidates/comparison.md then run aiweb select-design candidate-01|candidate-02|candidate-03"
+        end
+      end
+      payload
+    end
+
+    def select_design(id, dry_run: false)
+      assert_initialized!
+      selected_id = slug(id)
+      unless DesignCandidateGenerator::CANDIDATE_IDS.include?(selected_id)
+        raise UserError.new("select-design requires one of #{DesignCandidateGenerator::CANDIDATE_IDS.join(', ')}", 1)
+      end
+      candidate_path = File.join(aiweb_dir, "design-candidates", "#{selected_id}.html")
+      raise UserError.new("design candidate #{selected_id} is missing; run aiweb design --candidates 3 first", 1) unless File.exist?(candidate_path) || dry_run
+
+      changes = []
+      payload = nil
+      mutation(dry_run: dry_run) do
+        state = load_state
+        refresh_state!(state)
+        refs = state.dig("design_candidates", "candidates") || []
+        refs = DesignCandidateGenerator::CANDIDATE_IDS.map do |candidate_id|
+          ref = refs.find { |candidate| candidate["id"] == candidate_id } || { "id" => candidate_id, "path" => ".ai-web/design-candidates/#{candidate_id}.html" }
+          ref.merge("status" => candidate_id == selected_id ? "approved" : "draft")
+        end
+        state["design_candidates"]["candidates"] = refs
+        state["design_candidates"]["selected_candidate"] = selected_id
+        changes << write_file(File.join(aiweb_dir, "design-candidates", "selected.md"), selected_design_markdown(selected_id), dry_run)
+        changes << write_file(File.join(aiweb_dir, "gates", "gate-2-design.md"), gate_markdown("Gate 2 — Design", ["Selected design candidate: #{selected_id}", "Source of truth remains .ai-web/DESIGN.md", "Candidate HTML: .ai-web/design-candidates/#{selected_id}.html"], "pending"), dry_run)
+        mark_artifacts_from_files!(state)
+        add_decision!(state, "design_candidate_selected", "Selected #{selected_id}; .ai-web/DESIGN.md remains source of truth")
+        state["project"]["updated_at"] = now
+        changes << write_yaml(state_path, state, dry_run)
+        payload = status_hash(state: state, changed_files: compact_changes(changes))
+        payload["action_taken"] = "selected design candidate #{selected_id}"
+        payload["next_action"] = "keep .ai-web/DESIGN.md as source of truth; use selected candidate notes for design-prompt or next-task handoff"
       end
       payload
     end
@@ -689,14 +772,14 @@ module Aiweb
 
     def update_design_counts!(state)
       dir = File.join(aiweb_dir, "design-candidates")
-      candidate_files = Dir.exist?(dir) ? Dir.glob(File.join(dir, "candidate-*.md")).sort : []
+      candidate_files = Dir.exist?(dir) ? Dir.glob(File.join(dir, "candidate-*.{md,html}"), File::FNM_EXTGLOB).sort : []
       refs = state.dig("design_candidates", "candidates") || []
       known = refs.map { |r| r["path"] }
       candidate_files.each do |path|
         rel = relative(path)
         next if known.include?(rel)
         refs << {
-          "id" => File.basename(path, ".md"),
+          "id" => File.basename(path, File.extname(path)),
           "path" => rel,
           "status" => "draft"
         }
@@ -1377,6 +1460,58 @@ module Aiweb
       @design_system_resolver ||= DesignSystemResolver.new(root, aiweb_dir: aiweb_dir, templates_dir: templates_dir)
     end
 
+    def design_candidate_generator(intent)
+      design_path = File.join(aiweb_dir, "DESIGN.md")
+      brief_path = File.join(aiweb_dir, "design-brief.md")
+      DesignCandidateGenerator.new(
+        root: root,
+        aiweb_dir: aiweb_dir,
+        intent: intent,
+        design_markdown: File.exist?(design_path) ? File.read(design_path) : "",
+        design_brief: File.exist?(brief_path) ? File.read(brief_path) : ""
+      )
+    end
+
+    def design_candidate_html_paths
+      DesignCandidateGenerator::CANDIDATE_IDS.map do |id|
+        File.join(aiweb_dir, "design-candidates", "#{id}.html")
+      end
+    end
+
+    def complete_design_candidate_artifacts?
+      comparison_path = File.join(aiweb_dir, "design-candidates", "comparison.md")
+      design_candidate_html_paths.all? { |path| complete_design_candidate_html?(path) } && complete_design_candidate_comparison?(comparison_path)
+    end
+
+    def complete_design_candidate_html?(path)
+      return false unless File.file?(path)
+
+      id = File.basename(path, ".html")
+      html = File.read(path)
+      !blank?(html) &&
+        html.include?("<!-- aiweb:visual-contract:start #{id} -->") &&
+        html.include?("<!-- aiweb:visual-contract:end #{id} -->")
+    end
+
+    def complete_design_candidate_comparison?(path)
+      return false unless File.file?(path)
+
+      markdown = File.read(path)
+      return false if blank?(markdown)
+
+      markdown.include?("Design Candidate Comparison") &&
+        markdown.include?("| Candidate | Mood | Layout | Strengths | Tradeoffs |") &&
+        DesignCandidateGenerator::CANDIDATE_IDS.all? { |id| markdown.include?("| #{id} |") }
+    end
+
+    def selected_candidate_id
+      state = load_state_if_present
+      selected = state&.dig("design_candidates", "selected_candidate")
+      selected.to_s.strip.empty? ? nil : selected.to_s
+    rescue Psych::SyntaxError
+      nil
+    end
+
     def write_design_system_if_needed(intent:, dry_run:, force:)
       return nil unless design_system_resolver.write_needed?(force: force)
 
@@ -1389,7 +1524,16 @@ module Aiweb
       inputs = %w[product.md brand.md content.md ia.md design-brief.md DESIGN.md].map do |name|
         path = File.join(aiweb_dir, name)
         "## #{name}\n\n#{File.exist?(path) ? File.read(path) : "TODO: missing #{name}"}"
-      end.join("\n\n")
+      end
+      selected = selected_candidate_id
+      if selected
+        selected_path = File.join(aiweb_dir, "design-candidates", "selected.md")
+        candidate_path = File.join(aiweb_dir, "design-candidates", "#{selected}.html")
+        inputs << "## design-candidates/selected.md\n\n#{File.exist?(selected_path) ? File.read(selected_path) : "Selected candidate: #{selected}"}"
+        inputs << "## design-candidates/#{selected}.html\n\n#{File.exist?(candidate_path) ? File.read(candidate_path) : "TODO: missing selected candidate HTML"}"
+      end
+      inputs = inputs.join("\n\n")
+      selected_note = selected ? "Use selected candidate `#{selected}` as visual direction notes while keeping `.ai-web/DESIGN.md` authoritative." : "If deterministic candidates exist, select one with `aiweb select-design candidate-01|candidate-02|candidate-03` before implementation handoff."
       <<~MD
         # Design Prompt Handoff
 
@@ -1397,7 +1541,7 @@ module Aiweb
         Create one high-quality website design candidate based on the product, brand, content, IA, design brief, and `.ai-web/DESIGN.md` source of truth below. Produce a polished responsive homepage concept. Avoid logos or copyrighted brand marks. Emphasize layout, visual hierarchy, component style, typography mood, color system, spacing rhythm, and conversion clarity.
 
         ## Claude Design prompt
-        Convert the selected visual direction into implementation-ready rules that preserve `.ai-web/DESIGN.md`: design tokens, typography scale, color palette, component recipes, layout constraints, `data-aiweb-id` hooks, and responsive behavior. Do not invent product scope beyond the approved artifacts. Preserve the product artifact's wrong-interpretations-to-avoid guidance when choosing first-screen layout and components.
+        Convert the selected visual direction into implementation-ready rules that preserve `.ai-web/DESIGN.md`: design tokens, typography scale, color palette, component recipes, layout constraints, `data-aiweb-id` hooks, and responsive behavior. Do not invent product scope beyond the approved artifacts. Preserve the product artifact's wrong-interpretations-to-avoid guidance when choosing first-screen layout and components. #{selected_note}
 
         ## Candidate evaluation rubric
         - Conversion clarity
@@ -1457,16 +1601,22 @@ module Aiweb
         # Selected Design Candidate
 
         Selected candidate: #{selected_id}
+        Selected candidate path: .ai-web/design-candidates/#{selected_id}.html
         Selected at: #{now}
 
-        ## Reason
-        TODO: explain why this candidate best satisfies quality.yaml and product goals.
+        ## Decision
+        Use `#{selected_id}` as the review-selected visual direction for prompt and task-packet handoff. DESIGN.md remains the source of truth; `.ai-web/DESIGN.md` remains authoritative for route, tokens, components, visual contract hooks, and implementation constraints.
 
-        ## Required transformation into DESIGN.md
-        - Extract colors into tokens.
-        - Extract typography into scale and usage rules.
-        - Extract layout into responsive section rules.
-        - Extract components into reusable recipes.
+        ## Why This Candidate
+        TODO: explain why this candidate best satisfies quality.yaml, `.ai-web/DESIGN.md`, first-view obligations, and product goals.
+
+        ## Rejected Candidates
+        - TODO: summarize tradeoffs from `.ai-web/design-candidates/comparison.md`.
+
+        ## Required Adjustments Before Code Generation
+        - Keep `data-aiweb-id` hooks from the selected candidate or replace them with equally stable semantic IDs.
+        - Replace placeholder-safe proof/content slots only with source-backed copy.
+        - Resolve conflicts in favor of `.ai-web/DESIGN.md`; do not overwrite custom DESIGN.md from selection alone.
       MD
     end
 
@@ -1489,6 +1639,7 @@ module Aiweb
         - `.ai-web/product.md`
         - `.ai-web/content.md`
         - `.ai-web/DESIGN.md`
+        #{selected_candidate_id ? "- `.ai-web/design-candidates/#{selected_candidate_id}.html` (selected visual direction; DESIGN.md remains authoritative)" : "- Select a design candidate before implementation if Gate 2 has not recorded one."}
 
         ## Constraints
         - Do not perform external deploy/provider actions without explicit approval.

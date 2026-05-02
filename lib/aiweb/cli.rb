@@ -17,7 +17,7 @@ module Aiweb
     EXIT_UNSAFE_EXTERNAL_ACTION = 5
     EXIT_INTERNAL_ERROR = 10
 
-    MUTATION_COMMANDS = %w[start init interview run ingest-design next-task qa-checklist qa-report advance rollback resolve-blocker snapshot design-brief design-system design-prompt].freeze
+    MUTATION_COMMANDS = %w[start init interview run ingest-design next-task qa-checklist qa-report advance rollback resolve-blocker snapshot design-brief design-system design-prompt design select-design].freeze
     REGISTRY_COMMANDS = %w[design-systems skills craft].freeze
 
     def initialize(argv, root)
@@ -126,6 +126,23 @@ module Aiweb
           o.on("--force") { options[:force] = true }
         end
         project.design_prompt(dry_run: @dry_run, force: opts[:force])
+      when "design"
+        opts = parse_options do |o, options|
+          o.on("--candidates N") { |v| options[:candidates] = v.to_i }
+          o.on("--force") { options[:force] = true }
+        end
+        unless @argv.empty?
+          raise UserError.new("design does not accept extra positional arguments: #{@argv.join(", ")}", EXIT_VALIDATION_FAILED)
+        end
+        project.design(candidates: opts[:candidates] || 3, dry_run: @dry_run, force: opts[:force])
+      when "select-design"
+        parse_options
+        selected = @argv.shift
+        raise UserError.new("select-design requires a candidate id", EXIT_VALIDATION_FAILED) if selected.to_s.empty?
+        unless @argv.empty?
+          raise UserError.new("select-design does not accept extra positional arguments: #{@argv.join(", ")}", EXIT_VALIDATION_FAILED)
+        end
+        project.select_design(selected, dry_run: @dry_run)
       when "ingest-design"
         opts = parse_options do |o, options|
           o.on("--id ID") { |v| options[:id] = v }
@@ -265,6 +282,8 @@ module Aiweb
           design-brief [--force]
           design-system resolve [--force]
           design-prompt [--force]
+          design --candidates 3 [--force]
+          select-design candidate-01|candidate-02|candidate-03
           ingest-design [--id ID] [--title TITLE] [--source SOURCE] [--notes NOTES] [--selected] [--force]
           next-task [--type TYPE] [--force]
           qa-checklist [--force]
@@ -284,6 +303,8 @@ module Aiweb
 
         Phase-sensitive commands are guarded:
           design-prompt: phase-3 or phase-3.5
+          design: creates deterministic HTML design candidates without app scaffold
+          select-design: records selected HTML candidate without overwriting DESIGN.md
           ingest-design: phase-3.5
           next-task: phase-6 through phase-11
           qa-checklist: phase-7 through phase-11
