@@ -8,6 +8,7 @@ require "yaml"
 
 require_relative "archetypes"
 require_relative "design_brief"
+require_relative "design_system_resolver"
 require_relative "intent_router"
 
 module Aiweb
@@ -177,6 +178,7 @@ module Aiweb
         changes << write_file(File.join(aiweb_dir, "brand.md"), brand_markdown(idea), dry_run)
         changes << write_file(File.join(aiweb_dir, "content.md"), content_markdown(idea, intent), dry_run)
         changes << write_design_brief_if_needed(intent: intent, dry_run: dry_run, force: false)
+        changes << write_design_system_if_needed(intent: intent, dry_run: dry_run, force: false)
         mark_artifacts_from_files!(state)
         add_decision!(state, "interview_draft", "Generated #{intent["archetype"]} interview artifacts from idea: #{idea}")
         state["project"]["updated_at"] = now
@@ -204,6 +206,25 @@ module Aiweb
       payload
     end
 
+    def design_system_resolve(dry_run: false, force: false)
+      assert_initialized!
+      changes = []
+      payload = nil
+      mutation(dry_run: dry_run) do
+        state = load_state
+        intent = load_intent_artifact
+        changes << write_design_brief_if_needed(intent: intent, dry_run: dry_run, force: false)
+        changes << write_design_system_if_needed(intent: intent, dry_run: dry_run, force: force)
+        mark_artifacts_from_files!(state)
+        add_decision!(state, "design_system_resolve", "#{force ? "Regenerated" : "Resolved"} deterministic design source of truth")
+        state["project"]["updated_at"] = now
+        changes << write_yaml(state_path, state, dry_run)
+        payload = status_hash(state: state, changed_files: compact_changes(changes))
+        payload["action_taken"] = force ? "regenerated design source of truth" : "resolved design source of truth"
+      end
+      payload
+    end
+
     def design_prompt(dry_run: false, force: false)
       assert_initialized!
       changes = []
@@ -211,7 +232,9 @@ module Aiweb
       mutation(dry_run: dry_run) do
         state = load_state
         phase_guard!(state, "design-prompt", %w[phase-3 phase-3.5], force)
-        changes << write_design_brief_if_needed(intent: load_intent_artifact, dry_run: dry_run, force: false)
+        intent = load_intent_artifact
+        changes << write_design_brief_if_needed(intent: intent, dry_run: dry_run, force: false)
+        changes << write_design_system_if_needed(intent: intent, dry_run: dry_run, force: false)
         output = design_prompt_markdown
         path = File.join(aiweb_dir, "design-prompt.md")
         changes << write_file(path, output, dry_run)
@@ -1350,8 +1373,20 @@ module Aiweb
       write_file(path, DesignBrief.new(intent).markdown, dry_run)
     end
 
+    def design_system_resolver
+      @design_system_resolver ||= DesignSystemResolver.new(root, aiweb_dir: aiweb_dir, templates_dir: templates_dir)
+    end
+
+    def write_design_system_if_needed(intent:, dry_run:, force:)
+      return nil unless design_system_resolver.write_needed?(force: force)
+
+      brief_path = File.join(aiweb_dir, "design-brief.md")
+      design_brief = File.exist?(brief_path) ? File.read(brief_path) : DesignBrief.new(intent).markdown
+      write_file(design_system_resolver.design_path, design_system_resolver.markdown(intent: intent, design_brief: design_brief), dry_run)
+    end
+
     def design_prompt_markdown
-      inputs = %w[product.md brand.md content.md ia.md design-brief.md].map do |name|
+      inputs = %w[product.md brand.md content.md ia.md design-brief.md DESIGN.md].map do |name|
         path = File.join(aiweb_dir, name)
         "## #{name}\n\n#{File.exist?(path) ? File.read(path) : "TODO: missing #{name}"}"
       end.join("\n\n")
@@ -1359,10 +1394,10 @@ module Aiweb
         # Design Prompt Handoff
 
         ## GPT Image 2 prompt
-        Create one high-quality website design candidate based on the product, brand, content, IA, and design brief below. Produce a polished responsive homepage concept. Avoid logos or copyrighted brand marks. Emphasize layout, visual hierarchy, component style, typography mood, color system, spacing rhythm, and conversion clarity.
+        Create one high-quality website design candidate based on the product, brand, content, IA, design brief, and `.ai-web/DESIGN.md` source of truth below. Produce a polished responsive homepage concept. Avoid logos or copyrighted brand marks. Emphasize layout, visual hierarchy, component style, typography mood, color system, spacing rhythm, and conversion clarity.
 
         ## Claude Design prompt
-        Convert the selected visual direction into implementation-ready rules: design tokens, typography scale, color palette, component recipes, layout constraints, and responsive behavior. Do not invent product scope beyond the approved artifacts. Preserve the product artifact's wrong-interpretations-to-avoid guidance when choosing first-screen layout and components.
+        Convert the selected visual direction into implementation-ready rules that preserve `.ai-web/DESIGN.md`: design tokens, typography scale, color palette, component recipes, layout constraints, `data-aiweb-id` hooks, and responsive behavior. Do not invent product scope beyond the approved artifacts. Preserve the product artifact's wrong-interpretations-to-avoid guidance when choosing first-screen layout and components.
 
         ## Candidate evaluation rubric
         - Conversion clarity

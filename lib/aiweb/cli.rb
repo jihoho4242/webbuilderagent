@@ -17,7 +17,7 @@ module Aiweb
     EXIT_UNSAFE_EXTERNAL_ACTION = 5
     EXIT_INTERNAL_ERROR = 10
 
-    MUTATION_COMMANDS = %w[start init interview run ingest-design next-task qa-checklist qa-report advance rollback resolve-blocker snapshot design-brief design-prompt].freeze
+    MUTATION_COMMANDS = %w[start init interview run ingest-design next-task qa-checklist qa-report advance rollback resolve-blocker snapshot design-brief design-system design-prompt].freeze
     REGISTRY_COMMANDS = %w[design-systems skills craft].freeze
 
     def initialize(argv, root)
@@ -119,6 +119,8 @@ module Aiweb
           o.on("--force") { options[:force] = true }
         end
         project.design_brief(dry_run: @dry_run, force: opts[:force])
+      when "design-system"
+        dispatch_design_system
       when "design-prompt"
         opts = parse_options do |o, options|
           o.on("--force") { options[:force] = true }
@@ -210,6 +212,22 @@ module Aiweb
       }
     end
 
+    def dispatch_design_system
+      subcommand = @argv.shift || "resolve"
+      unless subcommand == "resolve"
+        raise UserError.new("unknown design-system command #{subcommand.inspect}; expected resolve", EXIT_VALIDATION_FAILED)
+      end
+
+      opts = parse_options do |o, options|
+        o.on("--force") { options[:force] = true }
+      end
+      unless @argv.empty?
+        raise UserError.new("design-system resolve does not accept extra positional arguments: #{@argv.join(", ")}", EXIT_VALIDATION_FAILED)
+      end
+
+      project.design_system_resolve(dry_run: @dry_run, force: opts[:force])
+    end
+
     def dispatch_registry(command)
       subcommand = @argv.shift || "list"
       unless subcommand == "list"
@@ -245,6 +263,7 @@ module Aiweb
           intent route --idea "..."
           run
           design-brief [--force]
+          design-system resolve [--force]
           design-prompt [--force]
           ingest-design [--id ID] [--title TITLE] [--source SOURCE] [--notes NOTES] [--selected] [--force]
           next-task [--type TYPE] [--force]
@@ -367,7 +386,7 @@ module Aiweb
     def exit_code_for(command, result)
       return EXIT_VALIDATION_FAILED if result["validation_errors"] && !result["validation_errors"].empty?
       return EXIT_SUCCESS if REGISTRY_COMMANDS.include?(command) || command == "intent"
-      return EXIT_SUCCESS if %w[help version status start init interview run design-brief design-prompt ingest-design next-task qa-checklist qa-report rollback resolve-blocker snapshot].include?(command)
+      return EXIT_SUCCESS if %w[help version status start init interview run design-brief design-system design-prompt ingest-design next-task qa-checklist qa-report rollback resolve-blocker snapshot].include?(command)
       if command == "advance" && result["action_taken"] == "advance blocked"
         issue = result["blocking_issues"].join(" ")
         return EXIT_BUDGET_BLOCKED if issue =~ /budget|candidate cap|design generation cap/i

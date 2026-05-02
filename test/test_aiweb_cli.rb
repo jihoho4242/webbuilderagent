@@ -135,6 +135,40 @@ class AiwebCliTest < Minitest::Test
     sections.transform_values(&:strip)
   end
 
+
+  def design_system_sections(markdown)
+    sections = {}
+    current = nil
+    markdown.each_line do |line|
+      if (match = line.match(/\A## (.+?)\s*\z/))
+        current = match[1]
+        sections[current] = +""
+      elsif current
+        sections[current] << line
+      end
+    end
+    sections.transform_values(&:strip)
+  end
+
+  def assert_design_system_complete(markdown)
+    required = [
+      "Source Route",
+      "Downstream Constraints",
+      "First-view Obligations",
+      "Component and Token Guardrails",
+      "PR4 Design Brief",
+      "Selected Design System: local-service-trust",
+      "Relevant Craft Rules",
+      "Candidate Generation Contract",
+      "Implementation Contract"
+    ]
+    sections = design_system_sections(markdown)
+    required.each do |section|
+      assert sections.key?(section), "missing DESIGN.md section #{section.inspect}"
+      refute_empty sections[section], "section #{section.inspect} must be non-empty"
+    end
+  end
+
   def assert_design_brief_complete(markdown)
     required = [
       "Product Type",
@@ -1046,11 +1080,11 @@ class AiwebCliTest < Minitest::Test
     assert_equal 0, code
     assert_equal "", stderr
 
-    %w[start design-brief design-prompt ingest-design next-task qa-checklist qa-report rollback snapshot].each do |command|
+    %w[start design-brief design-system design-prompt ingest-design next-task qa-checklist qa-report rollback snapshot].each do |command|
       assert_includes stdout, command
     end
 
-    ["start [--path PATH]", "--no-advance", "--path PATH", "design-brief [--force]", "ingest-design [--id ID]", "--selected", "rollback [--to PHASE] [--failure CODE]", "qa-report [--from PATH]", "--duration-minutes N", "--timed-out"].each do |snippet|
+    ["start [--path PATH]", "--no-advance", "--path PATH", "design-brief [--force]", "design-system resolve [--force]", "ingest-design [--id ID]", "--selected", "rollback [--to PHASE] [--failure CODE]", "qa-report [--from PATH]", "--duration-minutes N", "--timed-out"].each do |snippet|
       assert_includes stdout, snippet
     end
   end
@@ -1360,7 +1394,9 @@ class AiwebCliTest < Minitest::Test
       prompt = File.read(".ai-web/design-prompt.md")
       assert_design_brief_complete(brief)
       assert_includes prompt, "## design-brief.md"
+      assert_includes prompt, "## DESIGN.md"
       assert_includes prompt, "Design system ID: conversion-saas"
+      assert_includes prompt, "Selected design system ID: conversion-saas"
       assert_includes prompt, "Skill ID: saas-product-page"
     end
   end
@@ -1400,6 +1436,125 @@ class AiwebCliTest < Minitest::Test
       refute_equal custom, regenerated
       assert_design_brief_complete(regenerated)
       assert_match(/local-service-trust/, regenerated)
+    end
+  end
+
+
+  def test_design_system_resolve_synthesizes_design_source_of_truth_from_route_brief_assets_and_craft
+    in_tmp do
+      json_cmd("init", "--profile", "D")
+      json_cmd("interview", "--idea", "동네 치과 예약 문의 웹사이트")
+
+      design = File.read(".ai-web/DESIGN.md")
+      assert_design_system_complete(design)
+      assert_includes design, "<!-- aiweb:design-system-resolved:v1 -->"
+      assert_match(/Selected design system ID: local-service-trust/, design)
+      assert_match(/Selected skill ID: service-business-site/, design)
+      assert_match(/Craft rule IDs: anti-ai-slop, color, typography, spacing-responsive/, design)
+      assert_match(/Must show: hero_headline|Must show: chat_input|Must show: featured_products|Must show: metric_cards|Must show: input_form/, design)
+      assert_match(/data-aiweb-id/, design)
+      assert_match(/Mobile-first/, design)
+      assert_match(/No generic AI-slop/, design)
+      assert_match(/Component\/token guardrails/i, design)
+      assert_match(/# Local Service Trust Design System/, design)
+      assert_match(/# Craft Rule: Typography/, design)
+      assert_match(/# Craft Rule: Color/, design)
+      assert_match(/# Craft Rule: Spacing and Responsive Layout/, design)
+      assert_match(/# Craft Rule: Anti-AI-Slop/, design)
+    end
+  end
+
+  def test_design_system_resolve_preserves_custom_design_unless_force_regenerated
+    in_tmp do
+      json_cmd("init", "--profile", "D")
+      json_cmd("interview", "--idea", "성수동 감성 로컬 카페 웹사이트")
+      custom = <<~MD
+        # Custom DESIGN.md
+
+        ## Human Direction
+        Preserve the hand-painted sign, neighborhood map motif, and bespoke color names.
+      MD
+      File.write(".ai-web/DESIGN.md", custom)
+
+      preserve_payload, preserve_code = json_cmd("design-system", "resolve")
+      assert_equal 0, preserve_code
+      refute_includes preserve_payload["changed_files"], ".ai-web/DESIGN.md"
+      assert_equal custom, File.read(".ai-web/DESIGN.md")
+
+      forced_payload, forced_code = json_cmd("design-system", "resolve", "--force")
+      assert_equal 0, forced_code
+      assert_includes forced_payload["changed_files"], ".ai-web/DESIGN.md"
+      regenerated = File.read(".ai-web/DESIGN.md")
+      refute_equal custom, regenerated
+      assert_match(/Selected design system ID: local-service-trust/, regenerated)
+      assert_match(/service-business-site/, regenerated)
+    end
+  end
+
+  def test_design_system_resolve_preserves_template_shaped_custom_design_without_force
+    in_tmp do
+      json_cmd("init", "--profile", "D")
+      json_cmd("interview", "--idea", "성수동 감성 로컬 카페 웹사이트")
+      custom = <<~MD
+        # DESIGN.md
+
+        ## Color Tokens
+        Keep the founder's hand-mixed persimmon paint as `--color-founder-persimmon`.
+
+        ## Forbidden Patterns
+        Never replace the neighborhood map motif with generic cafe stock-photo cards.
+      MD
+      File.write(".ai-web/DESIGN.md", custom)
+
+      preserve_payload, preserve_code = json_cmd("design-system", "resolve")
+
+      assert_equal 0, preserve_code
+      refute_includes preserve_payload["changed_files"], ".ai-web/DESIGN.md"
+      assert_includes File.read(".ai-web/DESIGN.md"), "founder's hand-mixed persimmon paint"
+      assert_equal custom, File.read(".ai-web/DESIGN.md")
+    end
+  end
+
+  def test_design_prompt_generates_missing_design_system_and_embeds_design_source_of_truth
+    in_tmp do
+      json_cmd("init", "--profile", "D")
+      json_cmd("interview", "--idea", "SaaS product page for API analytics teams")
+      FileUtils.rm_f(".ai-web/DESIGN.md")
+      set_phase("phase-3")
+
+      payload, code = json_cmd("design-prompt")
+
+      assert_equal 0, code
+      assert_includes payload["changed_files"], ".ai-web/DESIGN.md"
+      assert_includes payload["changed_files"], ".ai-web/design-prompt.md"
+      design = File.read(".ai-web/DESIGN.md")
+      prompt = File.read(".ai-web/design-prompt.md")
+      assert_match(/Selected design system ID: conversion-saas/, design)
+      assert_includes prompt, "## DESIGN.md"
+      assert_includes prompt, "AI Web Design Source of Truth"
+      assert_includes prompt, "data-aiweb-id"
+      assert_includes prompt, "Selected design system ID: conversion-saas"
+    end
+  end
+
+  def test_design_system_resolve_cli_help_and_webbuilder_passthrough
+    stdout, stderr, code = run_aiweb("help")
+    assert_equal 0, code
+    assert_equal "", stderr
+    assert_includes stdout, "design-system resolve [--force]"
+
+    in_tmp do |dir|
+      target = File.join(dir, "passthrough-design-system")
+      _payload, start_code = json_cmd("start", "--path", target, "--idea", "동네 카페 예약 서비스 웹사이트", "--no-advance")
+      assert_equal 0, start_code
+      File.write(File.join(target, ".ai-web", "DESIGN.md"), File.read(File.join(REPO_ROOT, "docs", "templates", "DESIGN.md")))
+
+      web_stdout, web_stderr, web_code = run_webbuilder("--path", target, "design-system", "resolve", "--json")
+      web_payload = JSON.parse(web_stdout)
+      assert_equal 0, web_code
+      assert_equal "", web_stderr
+      assert_includes web_payload["changed_files"], ".ai-web/DESIGN.md"
+      assert_match(/resolved design source of truth/, web_payload["action_taken"])
     end
   end
 
