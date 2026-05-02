@@ -4,3 +4,7 @@
 # OS/editor noise
 .DS_Store
 *.swp
+
+# Local environment files
+.env
+.env.*

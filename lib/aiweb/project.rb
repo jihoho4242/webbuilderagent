@@ -7,6 +7,7 @@ require "time"
 require "yaml"
 
 require_relative "archetypes"
+require_relative "design_brief"
 require_relative "intent_router"
 
 module Aiweb
@@ -175,12 +176,30 @@ module Aiweb
         changes << write_file(File.join(aiweb_dir, "product.md"), product_markdown(idea, intent), dry_run)
         changes << write_file(File.join(aiweb_dir, "brand.md"), brand_markdown(idea), dry_run)
         changes << write_file(File.join(aiweb_dir, "content.md"), content_markdown(idea, intent), dry_run)
+        changes << write_design_brief_if_needed(intent: intent, dry_run: dry_run, force: false)
         mark_artifacts_from_files!(state)
         add_decision!(state, "interview_draft", "Generated #{intent["archetype"]} interview artifacts from idea: #{idea}")
         state["project"]["updated_at"] = now
         changes << write_yaml(state_path, state, dry_run)
         payload = status_hash(state: state, changed_files: compact_changes(changes))
         payload["action_taken"] = "generated interview drafts"
+      end
+      payload
+    end
+
+    def design_brief(dry_run: false, force: false)
+      assert_initialized!
+      changes = []
+      payload = nil
+      mutation(dry_run: dry_run) do
+        state = load_state
+        changes << write_design_brief_if_needed(intent: load_intent_artifact, dry_run: dry_run, force: force)
+        mark_artifacts_from_files!(state)
+        add_decision!(state, "design_brief", "#{force ? "Regenerated" : "Generated"} deterministic design brief")
+        state["project"]["updated_at"] = now
+        changes << write_yaml(state_path, state, dry_run)
+        payload = status_hash(state: state, changed_files: compact_changes(changes))
+        payload["action_taken"] = force ? "regenerated design brief" : "generated design brief"
       end
       payload
     end
@@ -192,6 +211,7 @@ module Aiweb
       mutation(dry_run: dry_run) do
         state = load_state
         phase_guard!(state, "design-prompt", %w[phase-3 phase-3.5], force)
+        changes << write_design_brief_if_needed(intent: load_intent_artifact, dry_run: dry_run, force: false)
         output = design_prompt_markdown
         path = File.join(aiweb_dir, "design-prompt.md")
         changes << write_file(path, output, dry_run)
@@ -1321,6 +1341,13 @@ module Aiweb
         - Title: TODO
         - Description: TODO
       MD
+    end
+
+    def write_design_brief_if_needed(intent:, dry_run:, force:)
+      path = File.join(aiweb_dir, "design-brief.md")
+      return nil if !force && File.exist?(path) && !stub_file?(path)
+
+      write_file(path, DesignBrief.new(intent).markdown, dry_run)
     end
 
     def design_prompt_markdown

@@ -17,7 +17,7 @@ module Aiweb
     EXIT_UNSAFE_EXTERNAL_ACTION = 5
     EXIT_INTERNAL_ERROR = 10
 
-    MUTATION_COMMANDS = %w[start init interview run ingest-design next-task qa-checklist qa-report advance rollback resolve-blocker snapshot design-prompt].freeze
+    MUTATION_COMMANDS = %w[start init interview run ingest-design next-task qa-checklist qa-report advance rollback resolve-blocker snapshot design-brief design-prompt].freeze
     REGISTRY_COMMANDS = %w[design-systems skills craft].freeze
 
     def initialize(argv, root)
@@ -114,6 +114,11 @@ module Aiweb
         project.interview(idea: opts[:idea], dry_run: @dry_run)
       when "run"
         project.run(dry_run: @dry_run)
+      when "design-brief"
+        opts = parse_options do |o, options|
+          o.on("--force") { options[:force] = true }
+        end
+        project.design_brief(dry_run: @dry_run, force: opts[:force])
       when "design-prompt"
         opts = parse_options do |o, options|
           o.on("--force") { options[:force] = true }
@@ -239,6 +244,7 @@ module Aiweb
           interview --idea "..."
           intent route --idea "..."
           run
+          design-brief [--force]
           design-prompt [--force]
           ingest-design [--id ID] [--title TITLE] [--source SOURCE] [--notes NOTES] [--selected] [--force]
           next-task [--type TYPE] [--force]
@@ -361,7 +367,7 @@ module Aiweb
     def exit_code_for(command, result)
       return EXIT_VALIDATION_FAILED if result["validation_errors"] && !result["validation_errors"].empty?
       return EXIT_SUCCESS if REGISTRY_COMMANDS.include?(command) || command == "intent"
-      return EXIT_SUCCESS if %w[help version status start init interview run design-prompt ingest-design next-task qa-checklist qa-report rollback resolve-blocker snapshot].include?(command)
+      return EXIT_SUCCESS if %w[help version status start init interview run design-brief design-prompt ingest-design next-task qa-checklist qa-report rollback resolve-blocker snapshot].include?(command)
       if command == "advance" && result["action_taken"] == "advance blocked"
         issue = result["blocking_issues"].join(" ")
         return EXIT_BUDGET_BLOCKED if issue =~ /budget|candidate cap|design generation cap/i

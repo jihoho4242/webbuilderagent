@@ -121,6 +121,44 @@ class AiwebCliTest < Minitest::Test
     write_state(state)
   end
 
+  def design_brief_sections(markdown)
+    sections = {}
+    current = nil
+    markdown.each_line do |line|
+      if (match = line.match(/\A## (.+?)\s*\z/))
+        current = match[1]
+        sections[current] = +""
+      elsif current
+        sections[current] << line
+      end
+    end
+    sections.transform_values(&:strip)
+  end
+
+  def assert_design_brief_complete(markdown)
+    required = [
+      "Product Type",
+      "Audience",
+      "Emotional Target",
+      "Brand Adjectives",
+      "Preferred Mood",
+      "Non-preferred Mood",
+      "Typography Direction",
+      "Color Direction",
+      "Layout Density",
+      "Imagery/Icon Direction",
+      "Motion Intensity",
+      "First-view Obligations",
+      "Forbidden Patterns",
+      "Candidate Generation Instructions"
+    ]
+    sections = design_brief_sections(markdown)
+    required.each do |section|
+      assert sections.key?(section), "missing design brief section #{section.inspect}"
+      refute_empty sections[section], "section #{section.inspect} must be non-empty"
+    end
+  end
+
   def test_init_profile_d_creates_director_workspace_without_app_scaffold
     in_tmp do
       payload, code = json_cmd("init", "--profile", "D")
@@ -1008,11 +1046,11 @@ class AiwebCliTest < Minitest::Test
     assert_equal 0, code
     assert_equal "", stderr
 
-    %w[start design-prompt ingest-design next-task qa-checklist qa-report rollback snapshot].each do |command|
+    %w[start design-brief design-prompt ingest-design next-task qa-checklist qa-report rollback snapshot].each do |command|
       assert_includes stdout, command
     end
 
-    ["start [--path PATH]", "--no-advance", "--path PATH", "ingest-design [--id ID]", "--selected", "rollback [--to PHASE] [--failure CODE]", "qa-report [--from PATH]", "--duration-minutes N", "--timed-out"].each do |snippet|
+    ["start [--path PATH]", "--no-advance", "--path PATH", "design-brief [--force]", "ingest-design [--id ID]", "--selected", "rollback [--to PHASE] [--failure CODE]", "qa-report [--from PATH]", "--duration-minutes N", "--timed-out"].each do |snippet|
       assert_includes stdout, snippet
     end
   end
@@ -1225,6 +1263,143 @@ class AiwebCliTest < Minitest::Test
       assert_equal route["safety_sensitive"], intent["safety_sensitive"]
       refute_empty intent["style_keywords"]
       refute_empty intent["forbidden_design_patterns"]
+    end
+  end
+
+  def test_interview_generates_non_placeholder_design_brief_with_required_sections
+    in_tmp do
+      json_cmd("init", "--profile", "D")
+      payload, code = json_cmd("interview", "--idea", "성수동 감성 로컬 카페 웹사이트")
+
+      assert_equal 0, code
+      assert_includes payload["changed_files"], ".ai-web/design-brief.md"
+      brief = File.read(".ai-web/design-brief.md")
+      assert_design_brief_complete(brief)
+      refute_match(/\bTODO\b/, brief)
+      assert_match(/service-business-site/, brief)
+      assert_match(/local-service-trust/, brief)
+      assert_match(/anti-ai-slop, color, typography, spacing-responsive/, brief)
+    end
+  end
+
+  def test_start_generates_design_brief_from_existing_pr3_intent_without_reclassification
+    in_tmp do |dir|
+      target = File.join(dir, "stock-assistant")
+      payload, code = json_cmd(
+        "start",
+        "--path", target,
+        "--idea", "주비서, 국내 주식 투자자를 위한 conversational stock assistant",
+        "--no-advance"
+      )
+
+      assert_equal 0, code
+      assert_includes payload["changed_files"], ".ai-web/design-brief.md"
+      brief = File.read(File.join(target, ".ai-web", "design-brief.md"))
+      assert_design_brief_complete(brief)
+      assert_match(/Intent archetype: chat-assistant-webapp/, brief)
+      assert_match(/Market route: fallback/, brief)
+      assert_match(/Design system ID: luxury-editorial/, brief)
+      assert_match(/Skill ID: premium-landing-page/, brief)
+      assert_match(/Must show: chat_input/, brief)
+      assert_match(/real_broker_order_execution/, brief)
+      assert_match(/Safety overlay/, brief)
+    end
+  end
+
+  def test_design_brief_prompt_specific_mood_overlays_are_deterministic
+    examples = {
+      "프리미엄 고급스럽게 부티크 스튜디오 랜딩페이지" => [/고급스럽게\/프리미엄/, /luxurious/, /refined materials/],
+      "인스타 감성 카페 예약 웹사이트" => [/인스타 감성\/감성/, /atmospheric/, /shareable detail/],
+      "믿음직하게 신뢰 주는 세무 상담 웹사이트" => [/믿음직하게\/신뢰/, /credible/, /stable hierarchy/]
+    }
+
+    examples.each do |idea, expectations|
+      in_tmp do
+        json_cmd("init", "--profile", "D")
+        _payload, code = json_cmd("interview", "--idea", idea)
+        assert_equal 0, code
+        brief = File.read(".ai-web/design-brief.md")
+        assert_design_brief_complete(brief)
+        expectations.each { |pattern| assert_match(pattern, brief, idea) }
+      end
+    end
+  end
+
+  def test_design_brief_is_route_aware_for_all_pr2_design_systems_and_skills
+    cases = {
+      "SaaS product page for API analytics teams" => %w[conversion-saas saas-product-page product-led],
+      "온라인 쇼핑몰 상품 컬렉션 페이지" => %w[mobile-commerce ecommerce-category-page Shoppable],
+      "동네 치과 예약 문의 웹사이트" => %w[local-service-trust service-business-site Local],
+      "프리미엄 컨설턴트 랜딩페이지" => %w[luxury-editorial premium-landing-page Premium]
+    }
+
+    cases.each do |idea, expected|
+      in_tmp do
+        json_cmd("init", "--profile", "D")
+        _payload, code = json_cmd("interview", "--idea", idea)
+        assert_equal 0, code
+        brief = File.read(".ai-web/design-brief.md")
+        expected.each { |text| assert_includes brief, text, idea }
+      end
+    end
+  end
+
+  def test_design_prompt_generates_missing_design_brief_and_embeds_it
+    in_tmp do
+      json_cmd("init", "--profile", "D")
+      json_cmd("interview", "--idea", "SaaS product page for API analytics teams")
+      FileUtils.rm_f(".ai-web/design-brief.md")
+      set_phase("phase-3")
+
+      payload, code = json_cmd("design-prompt")
+
+      assert_equal 0, code
+      assert_includes payload["changed_files"], ".ai-web/design-brief.md"
+      assert_includes payload["changed_files"], ".ai-web/design-prompt.md"
+      brief = File.read(".ai-web/design-brief.md")
+      prompt = File.read(".ai-web/design-prompt.md")
+      assert_design_brief_complete(brief)
+      assert_includes prompt, "## design-brief.md"
+      assert_includes prompt, "Design system ID: conversion-saas"
+      assert_includes prompt, "Skill ID: saas-product-page"
+    end
+  end
+
+  def test_design_brief_preserves_custom_content_unless_force_regenerated
+    in_tmp do
+      json_cmd("init", "--profile", "D")
+      json_cmd("interview", "--idea", "성수동 감성 로컬 카페 웹사이트")
+      custom = <<~MD
+        # Design Brief
+
+        ## Custom Direction
+        Keep the founder's hand-drawn menu board aesthetic and one-off local references.
+      MD
+      File.write(".ai-web/design-brief.md", custom)
+      set_phase("phase-3")
+
+      _prompt_payload, prompt_code = json_cmd("design-prompt")
+      assert_equal 0, prompt_code
+      assert_equal custom, File.read(".ai-web/design-brief.md")
+
+      forced_prompt_payload, forced_prompt_code = json_cmd("design-prompt", "--force")
+      assert_equal 0, forced_prompt_code
+      assert_includes forced_prompt_payload["changed_files"], ".ai-web/design-prompt.md"
+      refute_includes forced_prompt_payload["changed_files"], ".ai-web/design-brief.md"
+      assert_equal custom, File.read(".ai-web/design-brief.md")
+
+      preserve_payload, preserve_code = json_cmd("design-brief")
+      assert_equal 0, preserve_code
+      refute_includes preserve_payload["changed_files"], ".ai-web/design-brief.md"
+      assert_equal custom, File.read(".ai-web/design-brief.md")
+
+      regen_payload, regen_code = json_cmd("design-brief", "--force")
+      assert_equal 0, regen_code
+      assert_includes regen_payload["changed_files"], ".ai-web/design-brief.md"
+      regenerated = File.read(".ai-web/design-brief.md")
+      refute_equal custom, regenerated
+      assert_design_brief_complete(regenerated)
+      assert_match(/local-service-trust/, regenerated)
     end
   end
 
