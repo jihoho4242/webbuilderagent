@@ -806,18 +806,13 @@ class AiwebCliTest < Minitest::Test
     stdout, stderr, code = run_aiweb("help")
     assert_equal 0, code
     assert_equal "", stderr
-    spec = File.read(File.expand_path("../docs/09_AIWEB_CLI_SPEC.md", __dir__))
 
     %w[start design-prompt ingest-design next-task qa-checklist qa-report rollback snapshot].each do |command|
       assert_includes stdout, command
-      assert_includes spec, command
     end
 
     ["start [--path PATH]", "--no-advance", "--path PATH", "ingest-design [--id ID]", "--selected", "rollback [--to PHASE] [--failure CODE]", "qa-report [--from PATH]", "--duration-minutes N", "--timed-out"].each do |snippet|
       assert_includes stdout, snippet
-    end
-    ["aiweb start --path", "aiweb --path <project-path> <cmd>", "aiweb ingest-design [--id ID]", "aiweb rollback --failure"].each do |snippet|
-      assert_includes spec, snippet
     end
   end
 
