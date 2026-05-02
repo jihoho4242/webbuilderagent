@@ -82,12 +82,17 @@ class AiwebCliTest < Minitest::Test
       assert_equal 0, code
       assert_equal "phase-0", payload["current_phase"]
       assert File.exist?(".ai-web/state.yaml")
+      assert File.exist?(".ai-web/intent.yaml")
+      assert File.exist?(".ai-web/intent.schema.json")
       assert File.exist?(".ai-web/quality.yaml")
       assert File.exist?(".ai-web/qa/final-report.md")
       assert File.exist?(".ai-web/deploy.md")
       assert File.exist?(".ai-web/post-launch-backlog.md")
       assert File.exist?("AGENTS.md")
       assert File.exist?("DESIGN.md")
+      assert_match(/Wrong Interpretations to Avoid/, File.read(".ai-web/product.md"))
+      assert_match(/Wrong Interpretations to Avoid/, File.read(".ai-web/DESIGN.md"))
+      assert_match(/Wrong Interpretations to Avoid/, File.read("DESIGN.md"))
       refute File.exist?("package.json"), "init must not scaffold app code"
 
       state = load_state
@@ -96,6 +101,30 @@ class AiwebCliTest < Minitest::Test
       assert_equal "subscription_usage", state.dig("budget", "cost_mode")
       assert_equal 10, state.dig("budget", "max_design_candidates")
       assert_equal 60, state.dig("budget", "max_qa_runtime_minutes")
+    end
+  end
+
+  def test_start_preserves_chat_assistant_intent_as_app_not_landing_page
+    in_tmp do |dir|
+      target = File.join(dir, "jubi-assistant")
+
+      payload, code = json_cmd(
+        "start",
+        "--path", target,
+        "--idea", "주비서, 국내 주식 투자자를 위한 conversational stock assistant"
+      )
+
+      assert_equal 0, code
+      assert_includes payload["changed_files"], ".ai-web/intent.yaml"
+
+      intent = YAML.load_file(File.join(target, ".ai-web", "intent.yaml"))
+      assert_equal "주비서, 국내 주식 투자자를 위한 conversational stock assistant", intent["original_intent"]
+      assert_equal "chat-assistant-webapp", intent["archetype"]
+      assert_equal "app", intent["surface"]
+      assert_equal "landing-page", intent["not_surface"]
+      assert_includes intent["must_have_first_view"], "chat_input"
+      assert_includes intent["must_have_first_view"], "stock_status_panel"
+      assert_includes intent["must_not_have"], "landing_page_hero_as_primary_experience"
     end
   end
 
@@ -116,6 +145,8 @@ class AiwebCliTest < Minitest::Test
       assert_includes payload["start_steps"], "aiweb init --profile D"
       assert File.exist?(File.join(target, ".ai-web", "state.yaml"))
       assert File.exist?(File.join(target, ".ai-web", "project.md"))
+      assert_match(/Wrong interpretations to avoid/, File.read(File.join(target, ".ai-web", "product.md")))
+      assert_match(/generic landing page/, File.read(File.join(target, ".ai-web", "product.md")))
       refute File.exist?(File.join(target, "package.json")), "start must not scaffold app code"
 
       state = YAML.load_file(File.join(target, ".ai-web", "state.yaml"))
@@ -253,7 +284,54 @@ class AiwebCliTest < Minitest::Test
       assert_equal 0, code
       refute File.exist?(".ai-web")
       assert_includes payload["changed_files"], ".ai-web/state.yaml"
+      assert_includes payload["changed_files"], ".ai-web/intent.yaml"
+      assert_includes payload["changed_files"], ".ai-web/intent.schema.json"
       assert_equal true, payload["dry_run"]
+    end
+  end
+
+
+  def test_interview_detects_basic_archetypes_and_writes_first_view_contract
+    cases = {
+      "AI chat assistant for domestic stock questions" => "chat-assistant-webapp",
+      "Operations dashboard for warehouse metrics" => "dashboard",
+      "Invoice calculator tool for freelancers" => "tool",
+      "Online shop commerce site for handmade tea" => "commerce",
+      "Playable browser game with score" => "game",
+      "Landing page for a neighborhood yoga studio" => "landing-page"
+    }
+
+    cases.each do |idea, expected_archetype|
+      in_tmp do
+        json_cmd("init", "--profile", "D")
+        payload, code = json_cmd("interview", "--idea", idea)
+
+        assert_equal 0, code
+        assert_includes payload["changed_files"], ".ai-web/intent.yaml"
+        assert_includes payload["changed_files"], ".ai-web/first-view-contract.md"
+
+        intent = YAML.load_file(".ai-web/intent.yaml")
+        assert_equal expected_archetype, intent["archetype"]
+        refute_empty intent["must_have_first_view"]
+        assert_match(/#{Regexp.escape(expected_archetype)}/, File.read(".ai-web/first-view-contract.md"))
+      end
+    end
+  end
+
+  def test_chat_assistant_qa_checklist_rejects_landing_page_first_screen
+    in_tmp do
+      json_cmd("init", "--profile", "D")
+      json_cmd("interview", "--idea", "주비서 대화형 국내 주식 assistant")
+      set_phase("phase-10")
+
+      payload, code = json_cmd("qa-checklist")
+      assert_equal 0, code
+      assert_includes payload["changed_files"], ".ai-web/qa/current-checklist.md"
+
+      checklist = File.read(".ai-web/qa/current-checklist.md")
+      assert_match(/chat input/i, checklist)
+      assert_match(/not landing-page/i, checklist)
+      assert_match(/first-view-contract/, checklist)
     end
   end
 
@@ -279,6 +357,20 @@ class AiwebCliTest < Minitest::Test
       assert_equal 0, code
       assert_equal "phase-0.25", payload["current_phase"]
       assert_empty payload["blocking_issues"]
+    end
+  end
+
+  def test_interview_product_artifact_names_safety_mocked_blocked_excluded_scope
+    in_tmp do
+      json_cmd("init", "--profile", "D")
+      json_cmd("interview", "--idea", "주비서, conversational domestic stock assistant")
+
+      product = File.read(".ai-web/product.md")
+      assert_match(/Mocked \/ blocked \/ excluded for safety/, product)
+      assert_match(/Mocked: external account data/, product)
+      assert_match(/Locked\/preview only: order, payment, or broker actions/, product)
+      assert_match(/Blocked: credential collection, real account tokens, approval keys.*real order execution/, product)
+      assert_match(/Excluded: medical, legal, financial, investment/, product)
     end
   end
 
@@ -454,6 +546,7 @@ class AiwebCliTest < Minitest::Test
       forced_prompt, forced_code = json_cmd("design-prompt", "--force")
       assert_equal 0, forced_code
       assert_includes forced_prompt["changed_files"], ".ai-web/design-prompt.md"
+      assert_match(/wrong-interpretations-to-avoid/, File.read(".ai-web/design-prompt.md"))
 
       blocked_ingest, ingest_code = json_cmd("ingest-design", "--title", "Too early")
       assert_equal 2, ingest_code
@@ -478,6 +571,45 @@ class AiwebCliTest < Minitest::Test
       blocked_qa, qa_code = json_cmd("qa-report", "--status", "passed", "--task-id", "too-early")
       assert_equal 2, qa_code
       assert_match(/qa-report requires current phase/, blocked_qa.dig("error", "message"))
+    end
+  end
+
+  def test_qa_checklist_adds_stock_assistant_semantic_safety_checks
+    in_tmp do
+      json_cmd("init")
+      json_cmd(
+        "interview",
+        "--idea",
+        "주비서: 국내 주식 질문에 답하고 주문 미리보기를 보여주는 대화형 stock assistant app"
+      )
+      set_phase("phase-9")
+
+      payload, code = json_cmd("qa-checklist")
+
+      assert_equal 0, code
+      assert_includes payload["changed_files"], ".ai-web/qa/current-checklist.md"
+      checklist = File.read(".ai-web/qa/current-checklist.md")
+      assert_match(/Semantic intent checks/, checklist)
+      assert_match(/not a marketing-only landing page/, checklist)
+      assert_match(/preview\/confirmation UI and cannot submit a real broker order/, checklist)
+      assert_match(/Real account numbers, access tokens, approval keys, broker credentials/, checklist)
+      assert_match(/real trading\/account access is locked, unavailable, mocked, or sandbox-only/, checklist)
+    end
+  end
+
+  def test_qa_checklist_omits_stock_semantic_safety_checks_for_generic_sites
+    in_tmp do
+      json_cmd("init")
+      json_cmd("interview", "--idea", "성수동 감성 로컬 카페 웹사이트")
+      set_phase("phase-9")
+
+      _payload, code = json_cmd("qa-checklist")
+
+      assert_equal 0, code
+      checklist = File.read(".ai-web/qa/current-checklist.md")
+      refute_match(/Semantic intent checks/, checklist)
+      refute_match(/real broker order/, checklist)
+      refute_match(/access tokens, approval keys/, checklist)
     end
   end
 

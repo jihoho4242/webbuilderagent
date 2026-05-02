@@ -6,6 +6,8 @@ require "json"
 require "time"
 require "yaml"
 
+require_relative "archetypes"
+
 module Aiweb
   class UserError < StandardError
     attr_reader :exit_code
@@ -164,12 +166,15 @@ module Aiweb
       payload = nil
       mutation(dry_run: dry_run) do
         state = load_state
-        changes << write_file(File.join(aiweb_dir, "project.md"), project_markdown(idea, state), dry_run)
-        changes << write_file(File.join(aiweb_dir, "product.md"), product_markdown(idea), dry_run)
+        intent = classify_intent(idea)
+        changes << write_yaml(File.join(aiweb_dir, "intent.yaml"), intent, dry_run)
+        changes << write_file(File.join(aiweb_dir, "first-view-contract.md"), first_view_contract_markdown(intent, idea), dry_run)
+        changes << write_file(File.join(aiweb_dir, "project.md"), project_markdown(idea, state, intent), dry_run)
+        changes << write_file(File.join(aiweb_dir, "product.md"), product_markdown(idea, intent), dry_run)
         changes << write_file(File.join(aiweb_dir, "brand.md"), brand_markdown(idea), dry_run)
-        changes << write_file(File.join(aiweb_dir, "content.md"), content_markdown(idea), dry_run)
+        changes << write_file(File.join(aiweb_dir, "content.md"), content_markdown(idea, intent), dry_run)
         mark_artifacts_from_files!(state)
-        add_decision!(state, "interview_draft", "Generated draft interview artifacts from idea: #{idea}")
+        add_decision!(state, "interview_draft", "Generated #{intent["archetype"]} interview artifacts from idea: #{idea}")
         state["project"]["updated_at"] = now
         changes << write_yaml(state_path, state, dry_run)
         payload = status_hash(state: state, changed_files: compact_changes(changes))
@@ -514,6 +519,9 @@ module Aiweb
         "state.schema.json" => File.join(aiweb_dir, "state.schema.json"),
         "quality.schema.json" => File.join(aiweb_dir, "quality.schema.json"),
         "qa-result.schema.json" => File.join(aiweb_dir, "qa", "qa-result.schema.json"),
+        "intent.schema.json" => File.join(aiweb_dir, "intent.schema.json"),
+        "intent.yaml" => File.join(aiweb_dir, "intent.yaml"),
+        "first-view-contract.md" => File.join(aiweb_dir, "first-view-contract.md"),
         "project.md" => File.join(aiweb_dir, "project.md"),
         "product.md" => File.join(aiweb_dir, "product.md"),
         "brand.md" => File.join(aiweb_dir, "brand.md"),
@@ -662,6 +670,7 @@ module Aiweb
       errors = []
       schema_errors = validate_json_schema(state, load_schema("state.schema.json"))
       errors.concat(schema_errors.map { |error| "state.schema: #{error}" })
+      errors.concat(validate_intent_shape)
       REQUIRED_TOP_LEVEL_STATE_KEYS.each { |key| errors << "missing #{key}" unless state.key?(key) }
       unknown = state.keys - REQUIRED_TOP_LEVEL_STATE_KEYS
       errors << "unknown top-level keys: #{unknown.join(", ")}" unless unknown.empty?
@@ -675,6 +684,17 @@ module Aiweb
       errors << "Gate 1B key missing" unless state.dig("gates", "gate_1b_product_content_ia_data_security")
       validate_accepted_risks(state, errors)
       errors
+    end
+
+    def validate_intent_shape
+      path = File.join(aiweb_dir, "intent.yaml")
+      return ["intent artifact missing"] unless File.exist?(path)
+      return [] if stub_file?(path)
+
+      intent = YAML.load_file(path)
+      validate_json_schema(intent, load_schema("intent.schema.json")).map { |error| "intent.schema: #{error}" }
+    rescue Psych::SyntaxError => e
+      ["intent.yaml parse failed: #{e.message}"]
     end
 
     def validate_qa_result!(result)
@@ -774,7 +794,7 @@ module Aiweb
       blockers.concat(phase_lock_blockers(state))
       case current
       when "phase-0"
-        blockers.concat(missing_artifacts(artifacts, %w[project product]))
+        blockers.concat(missing_artifacts(artifacts, %w[project product intent first_view_contract]))
       when "phase-0.25"
         blockers.concat(missing_artifacts(artifacts, %w[quality]))
         blockers.concat(quality_contract_blockers)
@@ -1118,6 +1138,10 @@ module Aiweb
       MD
     end
 
+    def classify_intent(idea)
+      Archetypes.classify(idea)
+    end
+
     def gate_markdown(title, scope, status)
       <<~MD
         # #{title}
@@ -1137,7 +1161,40 @@ module Aiweb
       MD
     end
 
-    def project_markdown(idea, state)
+
+    def first_view_contract_markdown(intent, idea)
+      <<~MD
+        # First View Contract
+
+        ## Source idea
+        #{idea}
+
+        ## Archetype
+        #{intent["archetype"]}
+
+        ## Surface
+        #{intent["surface"]}
+
+        ## Primary interaction above the fold
+        #{intent["primary_interaction"]}
+
+        ## Must be visible without scrolling
+        #{bullet_list(intent["must_have_first_view"])}
+
+        ## Must not be the first-screen experience
+        #{bullet_list(intent["must_not_have"])}
+
+        ## Mobile expectations
+        - The primary interaction remains visible or reachable in the initial viewport.
+        - Supporting panels stack below the core interaction without hiding the action.
+
+        ## Desktop expectations
+        - The primary interaction and supporting context are visible together.
+        - Secondary marketing or explanatory content must not displace the core interface.
+      MD
+    end
+
+    def project_markdown(idea, state, intent = Archetypes.classify(idea))
       <<~MD
         # Project
 
@@ -1146,6 +1203,11 @@ module Aiweb
 
         ## Project ID
         #{state.dig("project", "id")}
+
+        ## Detected archetype
+        - Archetype: #{intent["archetype"]}
+        - Surface: #{intent["surface"]}
+        - Primary interaction: #{intent["primary_interaction"]}
 
         ## Interview questions still to answer
         - Who is the primary visitor?
@@ -1156,29 +1218,66 @@ module Aiweb
       MD
     end
 
-    def product_markdown(idea)
+    def product_markdown(idea, intent = Archetypes.classify(idea))
       <<~MD
         # Product
 
         ## One-line concept
         #{idea}
 
+        ## Detected archetype
+        #{intent["archetype"]} (#{intent["surface"]})
+
         ## Target user
-        TODO: define primary visitor/customer.
+        The primary user implied by the idea should be served by the #{intent["surface"]} experience before secondary marketing content.
 
         ## Value proposition
-        TODO: define why visitors should care.
+        Provide a focused #{intent["archetype"]} experience whose first screen supports the core interaction: #{intent["primary_interaction"]}.
 
-        ## Primary conversion
-        TODO: define the main action visitors should take.
+        ## Primary conversion / action
+        #{intent["primary_interaction"]}.
+
+        ## Wrong interpretations to avoid
+        Do not turn this into a generic landing page or #{intent["not_surface"]} when the requested archetype requires #{intent["surface"]}.
 
         ## Release scope
-        - Must-have pages/features for first release.
-        - Explicitly excluded scope.
+        #{bullet_list(intent["must_have_first_view"].map { |item| "First-view requirement: #{item}" })}
+        #{bullet_list(intent["must_not_have"].map { |item| "Excluded or blocked: #{item}" })}
+
+        #{mocked_blocked_excluded_markdown(idea)}
 
         ## Success metrics
-        - TODO: define conversion/engagement/SEO metrics.
+        - First-view contract is satisfied without scrolling on mobile and desktop.
+        - Semantic QA passes for #{intent["archetype"]}.
       MD
+    end
+
+    def mocked_blocked_excluded_markdown(idea)
+      if safety_sensitive_idea?(idea)
+        <<~MD.chomp
+          ## Mocked / blocked / excluded for safety
+          - Mocked: external account data, third-party API responses, payments/orders, regulated decisions, or provider callbacks until approved integrations exist.
+          - Locked/preview only: order, payment, or broker actions may show a review/confirmation preview, but must not execute a real order or provider-side transaction.
+          - Blocked: credential collection, real account tokens, approval keys, payment capture, real order execution, production deploys, or irreversible provider actions without explicit human approval.
+          - Excluded: medical, legal, financial, investment, or safety-critical advice presented as authoritative without source review, owner approval, and clear user-facing safety framing.
+        MD
+      else
+        <<~MD.chomp
+          ## Mocked / blocked / excluded for safety
+          - Mocked: unavailable third-party data, provider callbacks, or external integrations until approved sources exist.
+          - Locked/preview only: sensitive external actions may show a review/confirmation preview, but must not execute a real provider-side transaction.
+          - Blocked: credential collection, payment capture, real order execution, production deploys, or irreversible external actions without explicit human approval.
+          - Excluded: regulated or safety-critical claims that lack source review, owner approval, and clear user-facing safety framing.
+        MD
+      end
+    end
+
+    def safety_sensitive_idea?(idea)
+      idea.to_s.match?(/stock|invest|trading|broker|order|payment|checkout|account|token|approval|medical|clinic|health|legal|law|finance|bank|insurance|주식|투자|증권|주문|결제|계좌|토큰|승인|의료|병원|법률|금융|은행|보험/i)
+    end
+
+    def bullet_list(items)
+      Array(items).map { |item| "- #{item}" }.join("\n")
     end
 
     def brand_markdown(idea)
@@ -1198,7 +1297,7 @@ module Aiweb
       MD
     end
 
-    def content_markdown(idea)
+    def content_markdown(idea, intent = Archetypes.classify(idea))
       <<~MD
         # Content
 
@@ -1208,12 +1307,13 @@ module Aiweb
         ## Idea
         #{idea}
 
-        ## Page copy outline
-        - Hero headline / subheadline / primary CTA
-        - Benefits or services
-        - Proof / trust section
-        - FAQ if conversion site
-        - Contact or conversion section
+        ## First-view content outline
+        #{bullet_list(intent["must_have_first_view"].map { |item| item.tr("_", " ").capitalize })}
+
+        ## Supporting content outline
+        - Context that explains the value proposition.
+        - Proof, help, or trust cues appropriate for #{intent["archetype"]}.
+        - Follow-up action that reinforces the primary interaction.
 
         ## SEO draft
         - Title: TODO
@@ -1233,7 +1333,7 @@ module Aiweb
         Create one high-quality website design candidate based on the product, brand, content, IA, and design brief below. Produce a polished responsive homepage concept. Avoid logos or copyrighted brand marks. Emphasize layout, visual hierarchy, component style, typography mood, color system, spacing rhythm, and conversion clarity.
 
         ## Claude Design prompt
-        Convert the selected visual direction into implementation-ready rules: design tokens, typography scale, color palette, component recipes, layout constraints, and responsive behavior. Do not invent product scope beyond the approved artifacts.
+        Convert the selected visual direction into implementation-ready rules: design tokens, typography scale, color palette, component recipes, layout constraints, and responsive behavior. Do not invent product scope beyond the approved artifacts. Preserve the product artifact's wrong-interpretations-to-avoid guidance when choosing first-screen layout and components.
 
         ## Candidate evaluation rubric
         - Conversion clarity
@@ -1320,6 +1420,8 @@ module Aiweb
         ## Inputs
         - `.ai-web/state.yaml`
         - `.ai-web/quality.yaml`
+        - `.ai-web/intent.yaml`
+        - `.ai-web/first-view-contract.md`
         - `.ai-web/product.md`
         - `.ai-web/content.md`
         - `.ai-web/DESIGN.md`
@@ -1342,6 +1444,7 @@ module Aiweb
     end
 
     def qa_checklist_markdown(state)
+      semantic_checks = semantic_qa_checks(state)
       <<~MD
         # QA Checklist
 
@@ -1352,6 +1455,9 @@ module Aiweb
         - Stop a single QA run at #{state.dig("budget", "max_qa_runtime_minutes") || 60} minutes.
         - If timed out, create F-QA-TIMEOUT, capture logs/screenshots/state, diagnose cause, generate fix packet, rerun.
 
+        ## Semantic checks
+        #{semantic_qa_items(state)}
+
         ## Checks
         - [ ] Mobile viewport has no horizontal scroll.
         - [ ] Tablet and desktop layouts preserve hierarchy.
@@ -1361,7 +1467,114 @@ module Aiweb
         - [ ] Primary CTA appears above the fold.
         - [ ] Console/network errors are captured.
         - [ ] Screenshots/evidence paths are recorded.
+        #{semantic_checks.empty? ? "" : "\n## Semantic intent checks\n#{semantic_checks.map { |check| "- [ ] #{check}" }.join("\n")}\n"}
       MD
+    end
+
+    def semantic_qa_items(state)
+      intent = load_intent_artifact
+      first_view_path = File.join(aiweb_dir, "first-view-contract.md")
+      first_view_reference = File.exist?(first_view_path) ? "`.ai-web/first-view-contract.md`" : "missing `.ai-web/first-view-contract.md`"
+
+      archetype = intent["archetype"].to_s
+      surface = intent["surface"].to_s
+      not_surface = intent["not_surface"].to_s
+      primary_interaction = intent["primary_interaction"].to_s
+      must_have = Array(intent["must_have_first_view"] || [])
+      must_not = Array(intent["must_not_have"] || [])
+      risks = Array(intent["semantic_risks"] || [])
+
+      lines = []
+      lines << "- [ ] Intent artifact (`.ai-web/intent.yaml`) is present and matches the built product experience."
+      lines << "- [ ] First-view contract is present and referenced: #{first_view_reference}."
+      lines << "- [ ] First viewport behaves as #{archetype.empty? ? "the detected archetype" : archetype}#{surface.empty? ? "" : " (#{surface})"}, not #{not_surface.empty? ? "the forbidden surface" : not_surface}."
+      lines << "- [ ] Primary interaction is visible and testable: #{primary_interaction}." unless primary_interaction.empty?
+      must_have.each do |item|
+        lines << "- [ ] Required first-view element is visible: #{item.tr("_", " ")}."
+      end
+      must_not.each do |item|
+        lines << "- [ ] Forbidden first-view or safety pattern is absent: #{item}."
+      end
+      risks.each do |risk|
+        lines << "- [ ] Semantic risk is explicitly checked: #{risk}."
+      end
+      lines.join("\n")
+    end
+
+    def load_intent_artifact
+      path = File.join(aiweb_dir, "intent.yaml")
+      return Archetypes.classify("") unless File.exist?(path)
+      return Archetypes.classify("") if stub_file?(path)
+
+      intent = YAML.load_file(path) || {}
+      return Archetypes.classify("") unless intent.is_a?(Hash)
+
+      fallback = if intent["archetype"].to_s.empty? || intent["archetype"].to_s.start_with?("TODO")
+                   Archetypes.classify("")
+                 else
+                   begin
+                     Archetypes.definition(intent["archetype"]).merge("archetype" => intent["archetype"], "schema_version" => 1)
+                   rescue KeyError
+                     Archetypes.classify("")
+                   end
+                 end
+      fallback.merge(intent.reject { |_key, value| value.nil? || (value.respond_to?(:empty?) && value.empty?) })
+    rescue Psych::SyntaxError
+      Archetypes.classify("")
+    end
+
+    def semantic_qa_checks(state)
+      corpus = semantic_intent_corpus(state)
+      checks = []
+      checks.concat(stock_app_semantic_qa_checks) if stock_app_intent?(corpus)
+      checks
+    end
+
+    def semantic_intent_corpus(state)
+      artifact_paths = %w[project product content ia data security].map do |key|
+        state.dig("artifacts", key, "path")
+      end.compact
+      default_paths = %w[
+        .ai-web/intent.yaml
+        .ai-web/first-view-contract.md
+        .ai-web/project.md
+        .ai-web/product.md
+        .ai-web/content.md
+        .ai-web/ia.md
+        .ai-web/data.md
+        .ai-web/security.md
+      ]
+      (artifact_paths + default_paths).uniq.map do |relative_path|
+        path = File.expand_path(relative_path.to_s, root)
+        next unless path.start_with?(File.expand_path(root))
+        next unless File.file?(path)
+
+        File.read(path)
+      end.compact.join("\n").downcase
+    end
+
+    def stock_app_intent?(corpus)
+      stock_terms = [
+        "stock", "stocks", "trading", "broker", "brokerage", "quote", "portfolio",
+        "주식", "국내 주식", "투자", "증권", "종목", "호가", "포트폴리오"
+      ]
+      app_terms = [
+        "assistant", "chat", "order", "account", "token", "approval", "console",
+        "비서", "챗", "채팅", "주문", "계좌", "토큰", "승인", "앱"
+      ]
+      stock_terms.any? { |term| corpus.include?(term) } &&
+        app_terms.any? { |term| corpus.include?(term) }
+    end
+
+    def stock_app_semantic_qa_checks
+      [
+        "The first screen presents an app interface for the stock assistant, not a marketing-only landing page.",
+        "A stock question can be entered and produces visible user/assistant message states or mocked response states.",
+        "Stock quote/status context is visible when the assistant references a symbol or market request.",
+        "Any order-related action is limited to preview/confirmation UI and cannot submit a real broker order.",
+        "Real account numbers, access tokens, approval keys, broker credentials, and live trading secrets are absent from UI, code, logs, fixtures, and evidence.",
+        "The UI clearly states that real trading/account access is locked, unavailable, mocked, or sandbox-only until explicit human approval and credential setup."
+      ]
     end
 
     def default_qa_result(status, task_id, duration_minutes, timed_out)
