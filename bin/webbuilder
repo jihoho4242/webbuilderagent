@@ -9,7 +9,7 @@ require "time"
 class WebbuilderLauncher
   KNOWN_COMMANDS = %w[
     help --help -h version --version
-    start init status interview run design-brief design-system design-prompt design select-design scaffold ingest-design next-task
+    start init status runtime-plan scaffold-status interview run design-brief design-system design-prompt design select-design scaffold ingest-design next-task
     qa-checklist qa-report advance rollback resolve-blocker snapshot
     design-systems skills craft intent
   ].freeze
@@ -58,6 +58,7 @@ class WebbuilderLauncher
         웹빌더 --path ~/Desktop/my-site status
         웹빌더 --path ~/Desktop/my-site advance
         웹빌더 --path ~/Desktop/my-site scaffold --profile D
+        웹빌더 --path ~/Desktop/my-site runtime-plan
 
       웹빌더가 숙지한 시작 순서:
         Phase 0: 웹 유형 / 난이도 / 릴리즈 범위 결정
@@ -69,6 +70,8 @@ class WebbuilderLauncher
 
       기본 스택 프로필:
         D — Astro + MDX/Content Collections + Cloudflare Pages + Tailwind
+
+      런타임 준비 확인은 runtime-plan 또는 scaffold-status로 패키지 설치/Node 실행 없이 읽기 전용으로 점검한다.
 
       고급 명령은 기존 aiweb 명령과 동일하게 사용할 수 있다.
     HELP

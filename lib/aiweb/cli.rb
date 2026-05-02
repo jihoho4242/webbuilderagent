@@ -18,6 +18,7 @@ module Aiweb
     EXIT_INTERNAL_ERROR = 10
 
     MUTATION_COMMANDS = %w[start init interview run ingest-design next-task qa-checklist qa-report advance rollback resolve-blocker snapshot design-brief design-system design-prompt design select-design scaffold].freeze
+    RUNTIME_PLAN_COMMANDS = %w[runtime-plan scaffold-status].freeze
     REGISTRY_COMMANDS = %w[design-systems skills craft].freeze
 
     def initialize(argv, root)
@@ -102,6 +103,12 @@ module Aiweb
         project.init(profile: opts[:profile], dry_run: @dry_run)
       when "status"
         project.status
+      when *RUNTIME_PLAN_COMMANDS
+        parse_options
+        unless @argv.empty?
+          raise UserError.new("#{command} does not accept extra positional arguments: #{@argv.join(", ")}", EXIT_VALIDATION_FAILED)
+        end
+        project.runtime_plan
       when "intent"
         dispatch_intent
       when *REGISTRY_COMMANDS
@@ -294,6 +301,7 @@ module Aiweb
           design --candidates 3 [--force]
           select-design candidate-01|candidate-02|candidate-03
           scaffold --profile D [--force]
+          runtime-plan (alias: scaffold-status)
           ingest-design [--id ID] [--title TITLE] [--source SOURCE] [--notes NOTES] [--selected] [--force]
           next-task [--type TYPE] [--force]
           qa-checklist [--force]
@@ -316,6 +324,7 @@ module Aiweb
           design: creates deterministic HTML design candidates without app scaffold
           select-design: records selected HTML candidate without overwriting DESIGN.md
           scaffold: creates Profile D Astro-style static app skeleton without installing packages
+          runtime-plan/scaffold-status: read-only runtime readiness metadata; does not install or launch Node
           ingest-design: phase-3.5
           next-task: phase-6 through phase-11
           qa-checklist: phase-7 through phase-11
@@ -364,6 +373,7 @@ module Aiweb
     def human_result(result)
       return human_registry_result(result) if result["registry"]
       return human_intent_result(result) if result["intent"]
+      return human_runtime_plan_result(result) if result["runtime_plan"]
 
       changed = result["changed_files"] || result["artifacts_changed"] || []
       blockers = result["blocking_issues"] || []
@@ -393,6 +403,21 @@ module Aiweb
       lines.join("\n")
     end
 
+    def human_runtime_plan_result(result)
+      plan = result.fetch("runtime_plan")
+      blockers = plan.fetch("blockers", [])
+      lines = [
+        "Runtime readiness: #{plan.fetch("readiness")}",
+        "Scaffold: profile=#{plan.dig("scaffold", "profile") || "n/a"} framework=#{plan.dig("scaffold", "framework") || "n/a"} package_manager=#{plan.dig("scaffold", "package_manager") || "n/a"}",
+        "Commands: dev=#{plan.dig("scaffold", "dev_command") || "n/a"} build=#{plan.dig("scaffold", "build_command") || "n/a"}",
+        "Selected design: #{plan.dig("design", "selected_candidate") || "none"}",
+        "Missing files: #{plan.fetch("missing_required_scaffold_files").empty? ? "none" : plan.fetch("missing_required_scaffold_files").join(", ")}",
+        "Blockers: #{blockers.empty? ? "none" : blockers.join("; ")}",
+        "Next command: #{result["next_action"] || "n/a"}"
+      ]
+      lines.join("\n")
+    end
+
     def human_registry_result(result)
       registry_payload = result.fetch("registry")
       items = registry_payload.fetch("items")
@@ -417,6 +442,7 @@ module Aiweb
 
     def exit_code_for(command, result)
       return EXIT_VALIDATION_FAILED if result["validation_errors"] && !result["validation_errors"].empty?
+      return result.dig("runtime_plan", "readiness") == "ready" ? EXIT_SUCCESS : EXIT_VALIDATION_FAILED if RUNTIME_PLAN_COMMANDS.include?(command)
       return EXIT_SUCCESS if REGISTRY_COMMANDS.include?(command) || command == "intent"
       return EXIT_SUCCESS if %w[help version status start init interview run design-brief design-system design-prompt design select-design scaffold ingest-design next-task qa-checklist qa-report rollback resolve-blocker snapshot].include?(command)
       if command == "advance" && result["action_taken"] == "advance blocked"

@@ -1966,6 +1966,196 @@ class AiwebCliTest < Minitest::Test
     end
   end
 
+  def test_runtime_plan_blocks_uninitialized_and_unscaffolded_without_writes
+    in_tmp do
+      payload, code = json_cmd("runtime-plan")
+      assert_equal 1, code
+      assert_equal "blocked", payload.dig("runtime_plan", "readiness")
+      assert_match(/not initialized/, payload["blocking_issues"].join("\n"))
+      refute File.exist?(".ai-web"), "runtime-plan must not initialize or write state"
+
+      json_cmd("init", "--profile", "D")
+      env_body = "SECRET=do-not-touch\n"
+      File.write(".env", env_body)
+      before_state = File.read(".ai-web/state.yaml")
+      unscaffolded_payload, unscaffolded_code = json_cmd("runtime-plan")
+
+      assert_equal 1, unscaffolded_code
+      assert_equal "blocked", unscaffolded_payload.dig("runtime_plan", "readiness")
+      assert_equal false, unscaffolded_payload.dig("runtime_plan", "scaffold", "scaffold_created")
+      assert_includes unscaffolded_payload.dig("runtime_plan", "missing_required_scaffold_files"), "package.json"
+      assert_match(/Scaffold has not been created/, unscaffolded_payload["blocking_issues"].join("\n"))
+      assert_equal before_state, File.read(".ai-web/state.yaml"), "runtime-plan must not persist refreshed state"
+      assert_equal env_body, File.read(".env"), "runtime-plan must not modify .env"
+    end
+  end
+
+  def test_runtime_plan_ready_after_profile_d_scaffold
+    in_tmp do
+      prepare_profile_d_design_flow
+      json_cmd("scaffold", "--profile", "D")
+
+      payload, code = json_cmd("runtime-plan")
+
+      assert_equal 0, code
+      assert_equal "reported runtime plan", payload["action_taken"]
+      assert_equal "ready", payload.dig("runtime_plan", "readiness")
+      assert_empty payload.dig("runtime_plan", "blockers")
+      assert_equal true, payload.dig("runtime_plan", "scaffold", "scaffold_created")
+      assert_equal "D", payload.dig("runtime_plan", "scaffold", "profile")
+      assert_equal "Astro", payload.dig("runtime_plan", "scaffold", "framework")
+      assert_equal "pnpm", payload.dig("runtime_plan", "scaffold", "package_manager")
+      assert_equal "pnpm dev", payload.dig("runtime_plan", "scaffold", "dev_command")
+      assert_equal "pnpm build", payload.dig("runtime_plan", "scaffold", "build_command")
+      assert_equal "candidate-02", payload.dig("runtime_plan", "design", "selected_candidate")
+      assert_equal true, payload.dig("runtime_plan", "design", "design_md_present")
+      assert_empty payload.dig("runtime_plan", "missing_required_scaffold_files")
+      assert_equal true, payload.dig("runtime_plan", "package_json", "scripts", "dev", "matches")
+      assert_equal true, payload.dig("runtime_plan", "package_json", "dependencies", "astro", "present")
+    end
+  end
+
+  def test_runtime_plan_blocks_selected_design_drift_between_state_metadata_and_generated_content
+    in_tmp do
+      prepare_profile_d_design_flow
+      json_cmd("scaffold", "--profile", "D")
+
+      state = load_state
+      state["design_candidates"]["selected_candidate"] = "candidate-01"
+      write_state(state)
+
+      payload, code = json_cmd("runtime-plan")
+
+      assert_equal 1, code
+      assert_equal "blocked", payload.dig("runtime_plan", "readiness")
+      joined = payload["blocking_issues"].join("\n")
+      assert_match(/state design_candidates\.selected_candidate \("candidate-01"\) does not match scaffold metadata selected_candidate \("candidate-02"\)/, joined)
+      assert_match(/generated scaffold content src\/content\/site\.json selected_candidate \("candidate-02"\) does not match selected design \("candidate-01"\)/, joined)
+      assert_equal "candidate-01", payload.dig("runtime_plan", "design", "state_selected_candidate")
+      assert_equal "candidate-02", payload.dig("runtime_plan", "design", "metadata_selected_candidate")
+      assert_equal "candidate-02", payload.dig("runtime_plan", "design", "generated_reference", "selected_candidate")
+    end
+  end
+
+  def test_runtime_plan_blocks_generated_scaffold_selected_design_drift
+    in_tmp do
+      prepare_profile_d_design_flow
+      json_cmd("scaffold", "--profile", "D")
+      site = JSON.parse(File.read("src/content/site.json"))
+      site["selected_candidate"] = "candidate-03"
+      site["selected_candidate_path"] = ".ai-web/design-candidates/candidate-03.html"
+      File.write("src/content/site.json", JSON.pretty_generate(site))
+
+      payload, code = json_cmd("runtime-plan")
+
+      assert_equal 1, code
+      assert_equal "blocked", payload.dig("runtime_plan", "readiness")
+      joined = payload["blocking_issues"].join("\n")
+      assert_match(/generated scaffold content src\/content\/site\.json selected_candidate \("candidate-03"\) does not match selected design \("candidate-02"\)/, joined)
+      assert_match(/generated scaffold content src\/content\/site\.json selected_candidate \("candidate-03"\) does not match scaffold metadata selected_candidate \("candidate-02"\)/, joined)
+    end
+  end
+
+  def test_runtime_plan_blocks_unsafe_scaffold_metadata_paths_without_reading_them
+    unsafe_paths = {
+      "absolute" => File.join(Dir.tmpdir, "aiweb-unsafe-scaffold-profile-D.json"),
+      "traversal" => "../outside-scaffold-profile-D.json",
+      "env_like" => ".ai-web/.env.local"
+    }
+
+    unsafe_paths.each do |label, unsafe_path|
+      in_tmp do
+        prepare_profile_d_design_flow
+        json_cmd("scaffold", "--profile", "D")
+        state = load_state
+        state["implementation"]["scaffold_metadata_path"] = unsafe_path
+        write_state(state)
+
+        payload, code = json_cmd("runtime-plan")
+
+        assert_equal 1, code, label
+        assert_equal "blocked", payload.dig("runtime_plan", "readiness"), label
+        assert_equal false, payload.dig("runtime_plan", "scaffold", "metadata_path_safe"), label
+        assert_equal false, payload.dig("runtime_plan", "metadata", "path_safe"), label
+        assert_equal false, payload.dig("runtime_plan", "metadata", "present"), "unsafe metadata path must not be read even when the expected metadata file exists (#{label})"
+        assert_match(/Unsafe scaffold metadata path/, payload["blocking_issues"].join("\n"), label)
+      end
+    end
+  end
+
+  def test_scaffold_status_alias_reports_missing_files_blocked_read_only
+    in_tmp do
+      prepare_profile_d_design_flow
+      json_cmd("scaffold", "--profile", "D")
+      FileUtils.rm_f("src/components/Hero.astro")
+      before_state = File.read(".ai-web/state.yaml")
+
+      payload, code = json_cmd("scaffold-status")
+
+      assert_equal 1, code
+      assert_equal "blocked", payload.dig("runtime_plan", "readiness")
+      assert_includes payload.dig("runtime_plan", "missing_required_scaffold_files"), "src/components/Hero.astro"
+      assert_match(/Required scaffold file src\/components\/Hero\.astro is missing/, payload["blocking_issues"].join("\n"))
+      assert_equal before_state, File.read(".ai-web/state.yaml")
+      refute File.exist?("src/components/Hero.astro"), "scaffold-status must not repair missing files"
+    end
+  end
+
+  def test_runtime_plan_blocks_malformed_or_incomplete_package_json
+    in_tmp do
+      prepare_profile_d_design_flow
+      json_cmd("scaffold", "--profile", "D")
+
+      File.write("package.json", "{ broken json")
+      malformed_payload, malformed_code = json_cmd("runtime-plan")
+      assert_equal 1, malformed_code
+      assert_equal "blocked", malformed_payload.dig("runtime_plan", "readiness")
+      assert_equal false, malformed_payload.dig("runtime_plan", "package_json", "valid_json")
+      assert_match(/package\.json is malformed/, malformed_payload["blocking_issues"].join("\n"))
+
+      File.write("package.json", JSON.pretty_generate("scripts" => { "dev" => "vite dev" }, "dependencies" => { "astro" => "latest" }))
+      incomplete_payload, incomplete_code = json_cmd("runtime-plan")
+      assert_equal 1, incomplete_code
+      joined = incomplete_payload["blocking_issues"].join("\n")
+      assert_match(/script "dev" should be "astro dev"/, joined)
+      assert_match(/script "build" should be "astro build"/, joined)
+      assert_match(/dependency "@astrojs\/mdx" is missing/, joined)
+    end
+  end
+
+  def test_runtime_plan_help_and_webbuilder_passthrough
+    stdout, stderr, code = run_aiweb("help")
+    assert_equal 0, code
+    assert_equal "", stderr
+    assert_includes stdout, "runtime-plan (alias: scaffold-status)"
+
+    help_stdout, help_stderr, help_code = run_webbuilder("--help")
+    assert_equal 0, help_code
+    assert_equal "", help_stderr
+    assert_match(/runtime-plan 또는 scaffold-status/, help_stdout)
+
+    in_tmp do |dir|
+      target = File.join(dir, "passthrough-runtime-plan")
+      _payload, start_code = json_cmd("start", "--path", target, "--profile", "D", "--idea", "콘텐츠 브랜드 사이트", "--no-advance")
+      assert_equal 0, start_code
+      _brief_payload, brief_code = json_cmd("--path", target, "design-brief", "--force")
+      assert_equal 0, brief_code
+      File.write(File.join(target, ".ai-web", "DESIGN.md"), "# Custom Design System\n\nUse editorial calm, clear hierarchy, and source-backed proof only.\n")
+      _design_payload, design_code = json_cmd("--path", target, "design", "--candidates", "3")
+      assert_equal 0, design_code
+      _select_payload, select_code = json_cmd("--path", target, "select-design", "candidate-02")
+      assert_equal 0, select_code
+      _scaffold_payload, scaffold_code = json_cmd("--path", target, "scaffold", "--profile", "D")
+      assert_equal 0, scaffold_code
+
+      web_stdout, web_stderr, web_code = run_webbuilder("--path", target, "scaffold-status", "--json")
+      web_payload = JSON.parse(web_stdout)
+      assert_equal 0, web_code
+      assert_equal "", web_stderr
+      assert_equal "ready", web_payload.dig("runtime_plan", "readiness")
+    end
+  end
+
   def valid_qa_result
     {
       "schema_version" => 1,
