@@ -4,6 +4,8 @@ require "json"
 require "optparse"
 require "stringio"
 
+require_relative "registry"
+
 module Aiweb
   class CLI
     EXIT_SUCCESS = 0
@@ -15,6 +17,7 @@ module Aiweb
     EXIT_INTERNAL_ERROR = 10
 
     MUTATION_COMMANDS = %w[start init interview run ingest-design next-task qa-checklist qa-report advance rollback resolve-blocker snapshot design-prompt].freeze
+    REGISTRY_COMMANDS = %w[design-systems skills craft].freeze
 
     def initialize(argv, root)
       @argv = argv.dup
@@ -46,6 +49,10 @@ module Aiweb
 
     def project
       @project ||= Project.new(@root)
+    end
+
+    def registry
+      @registry ||= Registry.new(@root)
     end
 
     def parse_global_flags!
@@ -94,6 +101,8 @@ module Aiweb
         project.init(profile: opts[:profile], dry_run: @dry_run)
       when "status"
         project.status
+      when *REGISTRY_COMMANDS
+        dispatch_registry(command)
       when "interview"
         opts = parse_options do |o, options|
           o.on("--idea IDEA") { |v| options[:idea] = v }
@@ -165,6 +174,20 @@ module Aiweb
       end
     end
 
+    def dispatch_registry(command)
+      subcommand = @argv.shift || "list"
+      unless subcommand == "list"
+        raise UserError.new("unknown #{command} command #{subcommand.inspect}; expected list", EXIT_VALIDATION_FAILED)
+      end
+
+      parse_options
+      unless @argv.empty?
+        raise UserError.new("#{command} list does not accept extra positional arguments: #{@argv.join(", ")}", EXIT_VALIDATION_FAILED)
+      end
+
+      registry.list(command)
+    end
+
     def parse_options
       options = {}
       parser = OptionParser.new do |o|
@@ -193,6 +216,9 @@ module Aiweb
           rollback [--to PHASE] [--failure CODE] [--reason "..."]
           resolve-blocker --reason "..."
           snapshot [--reason "..."]
+          design-systems list
+          skills list
+          craft list
 
         Global flags:
           --json       machine-readable output
@@ -247,6 +273,8 @@ module Aiweb
     end
 
     def human_result(result)
+      return human_registry_result(result) if result["registry"]
+
       changed = result["changed_files"] || result["artifacts_changed"] || []
       blockers = result["blocking_issues"] || []
       [
@@ -258,8 +286,31 @@ module Aiweb
       ].join("\n")
     end
 
+    def human_registry_result(result)
+      registry_payload = result.fetch("registry")
+      items = registry_payload.fetch("items")
+      lines = ["#{registry_payload.fetch("label")} (#{registry_payload.fetch("count")})"]
+      unless registry_payload.fetch("exists")
+        lines << "Directory not found: #{registry_payload.fetch("directory")}/"
+      end
+      if items.empty?
+        lines << "No #{registry_payload.fetch("singular")} entries found."
+      else
+        items.each do |item|
+          description = item["description"].to_s.empty? ? "" : " — #{item["description"]}"
+          lines << "- #{item["id"]}: #{item["title"]} (#{item["path"]})#{description}"
+        end
+      end
+      validation_errors = result["validation_errors"] || []
+      warnings = result["warnings"] || []
+      lines << "Validation errors: #{validation_errors.join("; ")}" unless validation_errors.empty?
+      lines << "Warnings: #{warnings.join("; ")}" unless warnings.empty?
+      lines.join("\n")
+    end
+
     def exit_code_for(command, result)
       return EXIT_VALIDATION_FAILED if result["validation_errors"] && !result["validation_errors"].empty?
+      return EXIT_SUCCESS if REGISTRY_COMMANDS.include?(command)
       return EXIT_SUCCESS if %w[help version status start init interview run design-prompt ingest-design next-task qa-checklist qa-report rollback resolve-blocker snapshot].include?(command)
       if command == "advance" && result["action_taken"] == "advance blocked"
         issue = result["blocking_issues"].join(" ")

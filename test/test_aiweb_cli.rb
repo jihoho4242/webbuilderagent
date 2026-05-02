@@ -13,6 +13,7 @@ require "aiweb/project"
 class AiwebCliTest < Minitest::Test
   AIWEB = File.expand_path("../bin/aiweb", __dir__)
   WEBBUILDER = File.expand_path("../bin/webbuilder", __dir__)
+  REPO_ROOT = File.expand_path("..", __dir__)
 
   def in_tmp
     Dir.mktmpdir("aiweb-test-") do |dir|
@@ -34,6 +35,50 @@ class AiwebCliTest < Minitest::Test
     stdout, stderr, code = run_aiweb(*args, "--json")
     assert_equal "", stderr, "stderr should be empty for JSON command: #{stderr}"
     [JSON.parse(stdout), code]
+  end
+
+  def write_registry_fixture(root)
+    FileUtils.mkdir_p(File.join(root, "design-systems", "aurora"))
+    File.write(
+      File.join(root, "design-systems", "aurora", "metadata.json"),
+      JSON.pretty_generate(
+        "id" => "aurora",
+        "title" => "Aurora Design System",
+        "description" => "Editorial gradients and motion primitives"
+      )
+    )
+
+    FileUtils.mkdir_p(File.join(root, "design-systems", "open-design"))
+    File.write(
+      File.join(root, "design-systems", "open-design", "DESIGN.md"),
+      "# Open Design System\n\nOpen-design primitives for flexible site composition.\n"
+    )
+
+    FileUtils.mkdir_p(File.join(root, "skills", "conversion-copy"))
+    File.write(
+      File.join(root, "skills", "conversion-copy", "README.md"),
+      "# Conversion Copy\n\nLanding-page persuasion patterns.\n"
+    )
+
+    FileUtils.mkdir_p(File.join(root, "skills", "premium-landing"))
+    File.write(
+      File.join(root, "skills", "premium-landing", "SKILL.md"),
+      "# Premium Landing Skill\n\nHigh-end landing page structure and conversion patterns.\n"
+    )
+
+    FileUtils.mkdir_p(File.join(root, "craft"))
+    File.write(
+      File.join(root, "craft", "hero-pattern.md"),
+      "# Hero Pattern\n\nAbove-the-fold composition recipe.\n"
+    )
+  end
+
+  def expected_repo_registry_ids
+    {
+      "design-systems" => %w[conversion-saas local-service-trust luxury-editorial mobile-commerce],
+      "skills" => %w[ecommerce-category-page premium-landing-page saas-product-page service-business-site],
+      "craft" => %w[anti-ai-slop color spacing-responsive typography]
+    }
   end
 
   def load_state
@@ -101,6 +146,124 @@ class AiwebCliTest < Minitest::Test
       assert_equal "subscription_usage", state.dig("budget", "cost_mode")
       assert_equal 10, state.dig("budget", "max_design_candidates")
       assert_equal 60, state.dig("budget", "max_qa_runtime_minutes")
+    end
+  end
+
+  def test_registry_list_commands_scan_repo_root_directories_as_json
+    in_tmp do |dir|
+      write_registry_fixture(dir)
+
+      payload, code = json_cmd("--path", dir, "design-systems", "list")
+      assert_equal 0, code
+      assert_equal "design-systems", payload.dig("registry", "name")
+      assert_equal true, payload.dig("registry", "exists")
+      assert_equal 2, payload.dig("registry", "count")
+      aurora_item = payload.dig("registry", "items").find { |item| item["id"] == "aurora" }
+      assert_equal(
+        {
+          "id" => "aurora",
+          "title" => "Aurora Design System",
+          "description" => "Editorial gradients and motion primitives",
+          "path" => "design-systems/aurora",
+          "kind" => "directory",
+          "metadata_path" => "design-systems/aurora/metadata.json"
+        },
+        aurora_item
+      )
+      open_design_item = payload.dig("registry", "items").find { |item| item["id"] == "open-design" }
+      assert_equal "Open Design System", open_design_item["title"]
+      assert_equal "Open-design primitives for flexible site composition.", open_design_item["description"]
+      assert_equal "design-systems/open-design/DESIGN.md", open_design_item["metadata_path"]
+
+      skills_payload, skills_code = json_cmd("--path", dir, "skills", "list")
+      assert_equal 0, skills_code
+      conversion_item = skills_payload.dig("registry", "items").find { |item| item["id"] == "conversion-copy" }
+      assert_equal "Conversion Copy", conversion_item["title"]
+      assert_equal "Landing-page persuasion patterns.", conversion_item["description"]
+      premium_item = skills_payload.dig("registry", "items").find { |item| item["id"] == "premium-landing" }
+      assert_equal "Premium Landing Skill", premium_item["title"]
+      assert_equal "High-end landing page structure and conversion patterns.", premium_item["description"]
+      assert_equal "skills/premium-landing/SKILL.md", premium_item["metadata_path"]
+
+      craft_payload, craft_code = json_cmd("--path", dir, "craft", "list")
+      assert_equal 0, craft_code
+      assert_equal "hero-pattern", craft_payload.dig("registry", "items", 0, "id")
+      assert_equal "Hero Pattern", craft_payload.dig("registry", "items", 0, "title")
+    end
+  end
+
+  def test_registry_list_commands_emit_human_output_and_handle_missing_directories
+    in_tmp do |dir|
+      write_registry_fixture(dir)
+
+      stdout, stderr, code = run_aiweb("--path", dir, "design-systems", "list")
+      assert_equal 0, code
+      assert_equal "", stderr
+      assert_match(/Design systems \(2\)/, stdout)
+      assert_match(/aurora: Aurora Design System/, stdout)
+      assert_match(%r{design-systems/aurora}, stdout)
+
+      missing_stdout, missing_stderr, missing_code = run_aiweb("--path", dir, "unknown-registry", "list")
+      assert_equal 1, missing_code
+      assert_equal "", missing_stdout
+      assert_match(/unknown command/, missing_stderr)
+
+      empty_dir = File.join(dir, "empty")
+      FileUtils.mkdir_p(empty_dir)
+      empty_payload, empty_code = json_cmd("--path", empty_dir, "craft", "list")
+      assert_equal 0, empty_code
+      assert_equal false, empty_payload.dig("registry", "exists")
+      assert_equal ["craft"], empty_payload["missing_artifacts"]
+    end
+  end
+
+  def test_registry_list_commands_are_ready_for_repo_assets_when_present
+    expected_repo_registry_ids.each do |command, expected_ids|
+      payload, code = json_cmd("--path", REPO_ROOT, command, "list")
+
+      assert_equal 0, code
+      assert_empty payload["validation_errors"]
+      assert_equal command, payload.dig("registry", "directory")
+      assert_equal expected_ids.length, payload.dig("registry", "count")
+      assert_equal expected_ids, payload.dig("registry", "items").map { |item| item["id"] }
+      payload.dig("registry", "items").each do |item|
+        assert item["title"].to_s.length >= 8, "#{item["id"]} should ship a descriptive title"
+        assert item["description"].to_s.length >= 40, "#{item["id"]} should ship non-thin metadata"
+        assert item["metadata_path"].to_s.length.positive?, "#{item["id"]} should expose a metadata source"
+        assert File.exist?(File.join(REPO_ROOT, item["path"]))
+      end
+    end
+  end
+
+  def test_registry_list_reports_invalid_structured_metadata
+    in_tmp do |dir|
+      FileUtils.mkdir_p(File.join(dir, "design-systems", "broken-json"))
+      File.write(File.join(dir, "design-systems", "broken-json", "metadata.json"), "{ broken json")
+
+      payload, code = json_cmd("--path", dir, "design-systems", "list")
+      assert_equal 1, code
+      assert payload["validation_errors"].any? { |error| error.include?("design-systems/broken-json/metadata.json") && error.include?("invalid JSON") }
+      assert payload["warnings"].any? { |warning| warning.include?("metadata could not be loaded") }
+      assert_match(/registry metadata validation failed/, payload["blocking_issues"].join("\n"))
+      assert_equal "broken-json", payload.dig("registry", "items", 0, "id")
+
+      FileUtils.mkdir_p(File.join(dir, "skills", "broken-yaml"))
+      File.write(File.join(dir, "skills", "broken-yaml", "metadata.yml"), "id: [unterminated")
+
+      yaml_payload, yaml_code = json_cmd("--path", dir, "skills", "list")
+      assert_equal 1, yaml_code
+      assert yaml_payload["validation_errors"].any? { |error| error.include?("skills/broken-yaml/metadata.yml") && error.include?("invalid YAML") }
+      assert yaml_payload["warnings"].any? { |warning| warning.include?("metadata could not be loaded") }
+    end
+  end
+
+  def test_registry_list_rejects_extra_positional_arguments
+    in_tmp do |dir|
+      write_registry_fixture(dir)
+
+      payload, code = json_cmd("--path", dir, "design-systems", "list", "extra")
+      assert_equal 1, code
+      assert_match(/does not accept extra positional arguments: extra/, payload.dig("error", "message"))
     end
   end
 
@@ -257,6 +420,15 @@ class AiwebCliTest < Minitest::Test
       assert_equal 0, code
       assert_equal "", stderr
       assert_equal "phase-0.25", payload["current_phase"]
+
+      write_registry_fixture(target)
+      registry_stdout, registry_stderr, registry_code = run_webbuilder("--path", target, "design-systems", "list", "--json")
+      registry_payload = JSON.parse(registry_stdout)
+
+      assert_equal 0, registry_code
+      assert_equal "", registry_stderr
+      assert_equal "design-systems", registry_payload.dig("registry", "name")
+      assert_equal "Open Design System", registry_payload.dig("registry", "items").find { |item| item["id"] == "open-design" }["title"]
     end
   end
 

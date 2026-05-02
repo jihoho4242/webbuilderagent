@@ -11,6 +11,7 @@ class WebbuilderLauncher
     help --help -h version --version
     start init status interview run design-prompt ingest-design next-task
     qa-checklist qa-report advance rollback resolve-blocker snapshot
+    design-systems skills craft
   ].freeze
 
   def initialize(argv, stdin: STDIN, stdout: STDOUT, stderr: STDERR, root: Dir.pwd)
