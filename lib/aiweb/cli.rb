@@ -17,7 +17,7 @@ module Aiweb
     EXIT_UNSAFE_EXTERNAL_ACTION = 5
     EXIT_INTERNAL_ERROR = 10
 
-    MUTATION_COMMANDS = %w[start init interview run ingest-design next-task qa-checklist qa-report advance rollback resolve-blocker snapshot design-brief design-system design-prompt design select-design].freeze
+    MUTATION_COMMANDS = %w[start init interview run ingest-design next-task qa-checklist qa-report advance rollback resolve-blocker snapshot design-brief design-system design-prompt design select-design scaffold].freeze
     REGISTRY_COMMANDS = %w[design-systems skills craft].freeze
 
     def initialize(argv, root)
@@ -143,6 +143,15 @@ module Aiweb
           raise UserError.new("select-design does not accept extra positional arguments: #{@argv.join(", ")}", EXIT_VALIDATION_FAILED)
         end
         project.select_design(selected, dry_run: @dry_run)
+      when "scaffold"
+        opts = parse_options do |o, options|
+          o.on("--profile PROFILE") { |v| options[:profile] = v }
+          o.on("--force") { options[:force] = true }
+        end
+        unless @argv.empty?
+          raise UserError.new("scaffold does not accept extra positional arguments: #{@argv.join(", ")}", EXIT_VALIDATION_FAILED)
+        end
+        project.scaffold(profile: opts[:profile] || "D", dry_run: @dry_run, force: opts[:force])
       when "ingest-design"
         opts = parse_options do |o, options|
           o.on("--id ID") { |v| options[:id] = v }
@@ -284,6 +293,7 @@ module Aiweb
           design-prompt [--force]
           design --candidates 3 [--force]
           select-design candidate-01|candidate-02|candidate-03
+          scaffold --profile D [--force]
           ingest-design [--id ID] [--title TITLE] [--source SOURCE] [--notes NOTES] [--selected] [--force]
           next-task [--type TYPE] [--force]
           qa-checklist [--force]
@@ -305,6 +315,7 @@ module Aiweb
           design-prompt: phase-3 or phase-3.5
           design: creates deterministic HTML design candidates without app scaffold
           select-design: records selected HTML candidate without overwriting DESIGN.md
+          scaffold: creates Profile D Astro-style static app skeleton without installing packages
           ingest-design: phase-3.5
           next-task: phase-6 through phase-11
           qa-checklist: phase-7 through phase-11
@@ -407,7 +418,7 @@ module Aiweb
     def exit_code_for(command, result)
       return EXIT_VALIDATION_FAILED if result["validation_errors"] && !result["validation_errors"].empty?
       return EXIT_SUCCESS if REGISTRY_COMMANDS.include?(command) || command == "intent"
-      return EXIT_SUCCESS if %w[help version status start init interview run design-brief design-system design-prompt ingest-design next-task qa-checklist qa-report rollback resolve-blocker snapshot].include?(command)
+      return EXIT_SUCCESS if %w[help version status start init interview run design-brief design-system design-prompt design select-design scaffold ingest-design next-task qa-checklist qa-report rollback resolve-blocker snapshot].include?(command)
       if command == "advance" && result["action_taken"] == "advance blocked"
         issue = result["blocking_issues"].join(" ")
         return EXIT_BUDGET_BLOCKED if issue =~ /budget|candidate cap|design generation cap/i

@@ -1754,6 +1754,218 @@ class AiwebCliTest < Minitest::Test
     end
   end
 
+
+  def prepare_profile_d_design_flow
+    json_cmd("init", "--profile", "D")
+    json_cmd("interview", "--idea", "프리미엄 콘텐츠 마케팅 사이트")
+    json_cmd("design-brief", "--force")
+    File.write(".ai-web/DESIGN.md", "# Custom Design System\n\nUse editorial calm, clear hierarchy, and source-backed proof only.\n")
+    json_cmd("design", "--candidates", "3")
+    json_cmd("select-design", "candidate-02")
+  end
+
+  def refute_scaffold_outputs(*allowed_existing)
+    scaffold_outputs = %w[
+      package.json
+      astro.config.mjs
+      tailwind.config.mjs
+      src/pages/index.astro
+      src/components/Hero.astro
+      src/components/SectionCard.astro
+      src/content/site.json
+      src/styles/global.css
+      public/.gitkeep
+      .ai-web/scaffold-profile-D.json
+    ] - allowed_existing
+    scaffold_outputs.each do |path|
+      refute File.exist?(path), "#{path} should not be written when scaffold preflight fails"
+    end
+    state = load_state
+    refute_equal true, state.dig("implementation", "scaffold_created")
+  end
+
+  def test_scaffold_profile_d_requires_substantive_design_source_before_writing
+    in_tmp do
+      json_cmd("init", "--profile", "D")
+      json_cmd("interview", "--idea", "프리미엄 콘텐츠 마케팅 사이트")
+      FileUtils.rm_f(".ai-web/DESIGN.md")
+
+      missing_payload, missing_code = json_cmd("scaffold", "--profile", "D")
+      assert_equal 1, missing_code
+      assert_match(/requires substantive \.ai-web\/DESIGN\.md/, missing_payload.dig("error", "message"))
+      refute_scaffold_outputs
+
+      File.write(".ai-web/DESIGN.md", "# TODO\n\nTODO\n")
+      stub_payload, stub_code = json_cmd("scaffold", "--profile", "D")
+      assert_equal 1, stub_code
+      assert_match(/requires substantive \.ai-web\/DESIGN\.md/, stub_payload.dig("error", "message"))
+      refute_scaffold_outputs
+    end
+  end
+
+  def test_scaffold_profile_d_requires_selected_candidate_before_writing
+    in_tmp do
+      json_cmd("init", "--profile", "D")
+      json_cmd("interview", "--idea", "프리미엄 콘텐츠 마케팅 사이트")
+      json_cmd("design-brief", "--force")
+      File.write(".ai-web/DESIGN.md", "# Custom Design System\n\nUse editorial calm, clear hierarchy, and source-backed proof only.\n")
+      json_cmd("design", "--candidates", "3")
+
+      payload, code = json_cmd("scaffold", "--profile", "D")
+
+      assert_equal 1, code
+      assert_match(/requires design_candidates\.selected_candidate/, payload.dig("error", "message"))
+      refute_scaffold_outputs
+    end
+  end
+
+  def test_scaffold_profile_d_requires_selected_candidate_artifact_before_writing
+    in_tmp do
+      prepare_profile_d_design_flow
+      FileUtils.rm_f(".ai-web/design-candidates/candidate-02.html")
+
+      payload, code = json_cmd("scaffold", "--profile", "D")
+
+      assert_equal 1, code
+      assert_match(/requires selected candidate artifact \.ai-web\/design-candidates\/candidate-02\.html/, payload.dig("error", "message"))
+      refute_scaffold_outputs
+    end
+  end
+
+  def test_scaffold_profile_d_force_directory_conflict_fails_without_partial_writes
+    in_tmp do
+      prepare_profile_d_design_flow
+      FileUtils.mkdir_p("package.json")
+
+      payload, code = json_cmd("scaffold", "--profile", "D", "--force")
+
+      assert_equal 1, code
+      assert_match(/directories conflict.*package\.json.*--force only overwrites regular files/, payload.dig("error", "message"))
+      assert File.directory?("package.json")
+      refute_scaffold_outputs("package.json")
+    end
+  end
+
+  def test_scaffold_profile_d_creates_static_site_foundation_from_design_context
+    in_tmp do
+      prepare_profile_d_design_flow
+
+      payload, code = json_cmd("scaffold", "--profile", "D")
+
+      assert_equal 0, code
+      assert_equal "generated scaffold profile D", payload["action_taken"]
+      %w[
+        package.json
+        astro.config.mjs
+        tailwind.config.mjs
+        src/pages/index.astro
+        src/components/Hero.astro
+        src/content/site.json
+        src/styles/global.css
+        public/.gitkeep
+        .ai-web/scaffold-profile-D.json
+      ].each do |path|
+        assert File.exist?(path), "expected #{path} to be created"
+        assert_includes payload["changed_files"], path
+      end
+      refute File.exist?(".env"), "scaffold must never create .env"
+      refute File.exist?(".env.example"), "profile D scaffold does not need env examples"
+
+      package = JSON.parse(File.read("package.json"))
+      assert_equal true, package["private"]
+      assert_equal "astro dev", package.dig("scripts", "dev")
+      assert_equal "astro build", package.dig("scripts", "build")
+      assert_equal "latest", package.dig("dependencies", "astro")
+
+      index = File.read("src/pages/index.astro")
+      hero = File.read("src/components/Hero.astro")
+      assert_match(/data-aiweb-id="page\.home"/, index)
+      assert_match(/data-aiweb-id="component\.hero\.copy"/, hero)
+      refute_match(/testimonial|customers|\d+%|\$\d+|trusted by/i, index)
+
+      site = JSON.parse(File.read("src/content/site.json"))
+      assert_equal "candidate-02", site["selected_candidate"]
+      assert_equal ".ai-web/design-candidates/candidate-02.html", site["selected_candidate_path"]
+      assert_match(/Custom Design System/, site["design_system_excerpt"])
+      assert_match(/fake testimonials/, site["content_policy"])
+
+      metadata = JSON.parse(File.read(".ai-web/scaffold-profile-D.json"))
+      assert_equal "D", metadata["profile"]
+      assert_equal "Astro", metadata["framework"]
+      assert_equal "pnpm build", metadata["build_command"]
+      assert_equal "pnpm dev", metadata["dev_command"]
+      assert_equal "candidate-02", metadata["selected_candidate"]
+
+      state = load_state
+      assert_equal true, state.dig("implementation", "scaffold_created")
+      assert_equal "D", state.dig("implementation", "scaffold_profile")
+      assert_equal "Astro", state.dig("implementation", "scaffold_framework")
+      assert_equal "pnpm build", state.dig("implementation", "scaffold_build_command")
+      assert_equal ".ai-web/scaffold-profile-D.json", state.dig("implementation", "scaffold_metadata_path")
+    end
+  end
+
+  def test_scaffold_profile_d_preserves_existing_files_and_force_overwrites_targets
+    in_tmp do
+      prepare_profile_d_design_flow
+      json_cmd("scaffold", "--profile", "D")
+      File.write("src/pages/index.astro", "<!-- user edit -->\n")
+
+      payload, code = json_cmd("scaffold", "--profile", "D")
+      assert_equal 1, code
+      assert_match(/existing files.*src\/pages\/index\.astro/, payload.dig("error", "message"))
+      assert_equal "<!-- user edit -->\n", File.read("src/pages/index.astro")
+
+      force_payload, force_code = json_cmd("scaffold", "--profile", "D", "--force")
+      assert_equal 0, force_code
+      assert_equal "regenerated scaffold profile D", force_payload["action_taken"]
+      refute_equal "<!-- user edit -->\n", File.read("src/pages/index.astro")
+      assert_match(/data-aiweb-id="page\.home"/, File.read("src/pages/index.astro"))
+    end
+  end
+
+  def test_scaffold_profile_d_completes_partial_missing_safe_files
+    in_tmp do
+      prepare_profile_d_design_flow
+      json_cmd("scaffold", "--profile", "D")
+      FileUtils.rm_f("src/components/Hero.astro")
+
+      payload, code = json_cmd("scaffold", "--profile", "D")
+
+      assert_equal 0, code
+      assert_includes payload["changed_files"], "src/components/Hero.astro"
+      assert File.exist?("src/components/Hero.astro")
+      assert_match(/data-aiweb-id="component\.hero\.copy"/, File.read("src/components/Hero.astro"))
+    end
+  end
+
+  def test_scaffold_cli_help_and_webbuilder_passthrough
+    stdout, stderr, code = run_aiweb("help")
+    assert_equal 0, code
+    assert_equal "", stderr
+    assert_includes stdout, "scaffold --profile D [--force]"
+
+    in_tmp do |dir|
+      target = File.join(dir, "passthrough-scaffold")
+      _payload, start_code = json_cmd("start", "--path", target, "--profile", "D", "--idea", "콘텐츠 브랜드 사이트", "--no-advance")
+      assert_equal 0, start_code
+      _brief_payload, brief_code = json_cmd("--path", target, "design-brief", "--force")
+      assert_equal 0, brief_code
+      File.write(File.join(target, ".ai-web", "DESIGN.md"), "# Custom Design System\n\nUse editorial calm, clear hierarchy, and source-backed proof only.\n")
+      _design_payload, design_code = json_cmd("--path", target, "design", "--candidates", "3")
+      assert_equal 0, design_code
+      _select_payload, select_code = json_cmd("--path", target, "select-design", "candidate-02")
+      assert_equal 0, select_code
+
+      web_stdout, web_stderr, web_code = run_webbuilder("--path", target, "scaffold", "--profile", "D", "--json")
+      web_payload = JSON.parse(web_stdout)
+      assert_equal 0, web_code
+      assert_equal "", web_stderr
+      assert_equal "generated scaffold profile D", web_payload["action_taken"]
+      assert File.exist?(File.join(target, "src", "pages", "index.astro"))
+    end
+  end
+
   def valid_qa_result
     {
       "schema_version" => 1,

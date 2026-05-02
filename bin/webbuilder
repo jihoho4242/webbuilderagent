@@ -9,7 +9,7 @@ require "time"
 class WebbuilderLauncher
   KNOWN_COMMANDS = %w[
     help --help -h version --version
-    start init status interview run design-brief design-system design-prompt design select-design ingest-design next-task
+    start init status interview run design-brief design-system design-prompt design select-design scaffold ingest-design next-task
     qa-checklist qa-report advance rollback resolve-blocker snapshot
     design-systems skills craft intent
   ].freeze
@@ -57,6 +57,7 @@ class WebbuilderLauncher
       이어서 작업:
         웹빌더 --path ~/Desktop/my-site status
         웹빌더 --path ~/Desktop/my-site advance
+        웹빌더 --path ~/Desktop/my-site scaffold --profile D
 
       웹빌더가 숙지한 시작 순서:
         Phase 0: 웹 유형 / 난이도 / 릴리즈 범위 결정

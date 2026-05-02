@@ -88,6 +88,12 @@ implementation:
   stack_profile: null
   scaffold_target: null
   scaffold_created: false
+  scaffold_profile: null
+  scaffold_framework: null
+  scaffold_package_manager: null
+  scaffold_dev_command: null
+  scaffold_build_command: null
+  scaffold_metadata_path: null
   current_task: null
   completed_tasks: []
 qa:

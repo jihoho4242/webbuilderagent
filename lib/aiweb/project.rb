@@ -11,6 +11,7 @@ require_relative "design_brief"
 require_relative "design_candidate_generator"
 require_relative "design_system_resolver"
 require_relative "intent_router"
+require_relative "profiles"
 
 module Aiweb
   class UserError < StandardError
@@ -381,6 +382,54 @@ module Aiweb
       payload
     end
 
+
+    def scaffold(profile: "D", dry_run: false, force: false)
+      assert_initialized!
+      selected_profile, profile_data = Profiles.fetch!(profile)
+      unless selected_profile == "D"
+        raise UserError.new("scaffold currently supports --profile D only; received #{profile.inspect}", 1)
+      end
+
+      changes = []
+      payload = nil
+      mutation(dry_run: dry_run) do
+        state = load_state
+        ensure_scaffold_state_defaults!(state)
+        validate_scaffold_design_gate!(state)
+        files = scaffold_profile_d_files(state)
+        scaffold_metadata_path = File.join(aiweb_dir, "scaffold-profile-D.json")
+        conflicts = scaffold_conflicts(files, force: force)
+        preflight_scaffold_targets!(files, metadata_path: scaffold_metadata_path, force: force)
+
+        unless conflicts.empty?
+          raise UserError.new(
+            "scaffold profile D found existing files that differ and were preserved: #{conflicts.join(", ")}. No scaffold files were written. Rerun aiweb scaffold --profile D --force to overwrite regular scaffold files after reviewing those files.",
+            1
+          )
+        end
+
+        files.each do |relative_path, content|
+          path = File.join(root, relative_path)
+          next if File.exist?(path) && File.read(path) == content
+
+          changes << write_file(path, content, dry_run)
+        end
+
+        metadata = scaffold_profile_d_metadata(files, state, profile_data)
+        changes << write_json(scaffold_metadata_path, metadata, dry_run)
+        apply_scaffold_state!(state, metadata)
+        add_decision!(state, "scaffold_profile_d", "Generated Profile D Astro-style static app skeleton from .ai-web/DESIGN.md and selected candidate context")
+        state["project"]["updated_at"] = now
+        changes << write_yaml(state_path, state, dry_run)
+
+        payload = status_hash(state: state, changed_files: compact_changes(changes))
+        payload["action_taken"] = force ? "regenerated scaffold profile D" : "generated scaffold profile D"
+        payload["scaffold"] = metadata.reject { |key, _| key == "files" }
+        payload["next_action"] = "review generated Astro-style files; do not run package install until implementation approval"
+      end
+      payload
+    end
+
     def next_task(type: nil, dry_run: false, force: false)
       assert_initialized!
       changes = []
@@ -734,6 +783,7 @@ module Aiweb
       state["qa"]["open_failures"] ||= []
       state["design_candidates"] ||= {}
       state["design_candidates"]["candidates"] ||= []
+      ensure_scaffold_state_defaults!(state)
       state["budget"] ||= {}
       state["budget"]["cost_mode"] ||= "subscription_usage"
       state["budget"]["meter_model_cost"] = false if state["budget"]["meter_model_cost"].nil?
@@ -1224,6 +1274,367 @@ module Aiweb
           end
         end
       end
+    end
+
+
+    def ensure_scaffold_state_defaults!(state)
+      state["implementation"] ||= {}
+      state["implementation"]["scaffold_created"] = false if state["implementation"]["scaffold_created"].nil?
+      state["implementation"]["scaffold_profile"] ||= nil
+      state["implementation"]["scaffold_framework"] ||= nil
+      state["implementation"]["scaffold_package_manager"] ||= nil
+      state["implementation"]["scaffold_dev_command"] ||= nil
+      state["implementation"]["scaffold_build_command"] ||= nil
+      state["implementation"]["scaffold_metadata_path"] ||= nil
+      state
+    end
+
+    def apply_scaffold_state!(state, metadata)
+      ensure_scaffold_state_defaults!(state)
+      state["implementation"]["stack_profile"] = "D"
+      state["implementation"]["scaffold_target"] = metadata.fetch("scaffold_target")
+      state["implementation"]["scaffold_created"] = true
+      state["implementation"]["scaffold_profile"] = metadata.fetch("profile")
+      state["implementation"]["scaffold_framework"] = metadata.fetch("framework")
+      state["implementation"]["scaffold_package_manager"] = metadata.fetch("package_manager")
+      state["implementation"]["scaffold_dev_command"] = metadata.fetch("dev_command")
+      state["implementation"]["scaffold_build_command"] = metadata.fetch("build_command")
+      state["implementation"]["scaffold_metadata_path"] = ".ai-web/scaffold-profile-D.json"
+      state
+    end
+
+    def validate_scaffold_design_gate!(state)
+      design_path = File.join(aiweb_dir, "DESIGN.md")
+      if !File.file?(design_path) || stub_file?(design_path)
+        raise UserError.new("scaffold profile D requires substantive .ai-web/DESIGN.md; run aiweb design-system resolve or provide a completed design source of truth before scaffold", 1)
+      end
+
+      selected = state.dig("design_candidates", "selected_candidate").to_s.strip
+      if selected.empty?
+        raise UserError.new("scaffold profile D requires design_candidates.selected_candidate; run aiweb design --candidates 3 then aiweb select-design candidate-01|candidate-02|candidate-03 before scaffold", 1)
+      end
+
+      selected_path = selected_candidate_artifact_path(state, selected)
+      unless selected_path && File.file?(selected_path)
+        relative_selected_path = selected_path ? relative(selected_path) : ".ai-web/design-candidates/#{selected}.html"
+        raise UserError.new("scaffold profile D requires selected candidate artifact #{relative_selected_path}; rerun aiweb design --candidates 3 then aiweb select-design #{selected} before scaffold", 1)
+      end
+    end
+
+    def selected_candidate_artifact_path(state, selected)
+      ref = Array(state.dig("design_candidates", "candidates")).find { |candidate| candidate.is_a?(Hash) && candidate["id"].to_s == selected }
+      candidates = []
+      candidates << File.join(root, ref["path"].to_s) if ref && !ref["path"].to_s.strip.empty?
+      candidates << File.join(aiweb_dir, "design-candidates", "#{selected}.html")
+      candidates << File.join(aiweb_dir, "design-candidates", "#{selected}.md")
+      candidates.find { |path| File.file?(path) } || candidates.first
+    end
+
+    def preflight_scaffold_targets!(files, metadata_path:, force:)
+      conflicts = scaffold_target_type_conflicts(files.keys + [relative(metadata_path)])
+      return if conflicts.empty?
+
+      raise UserError.new("scaffold profile D cannot write because directories conflict with required scaffold files: #{conflicts.join(", ")}. Remove or rename those directories before rerunning; --force only overwrites regular files and wrote no scaffold files.", 1)
+    end
+
+    def scaffold_target_type_conflicts(relative_paths)
+      conflicts = []
+      relative_paths.each do |relative_path|
+        parts = relative_path.split(File::SEPARATOR)
+        parts.each_index do |index|
+          partial = File.join(root, *parts[0..index])
+          next unless File.exist?(partial)
+
+          if index == parts.length - 1
+            conflicts << "#{relative_path} (directory exists where file is needed)" if File.directory?(partial)
+          elsif !File.directory?(partial)
+            conflicts << "#{parts[0..index].join(File::SEPARATOR)} (file exists where directory is needed for #{relative_path})"
+            break
+          end
+        end
+      end
+      conflicts.uniq
+    end
+
+    def scaffold_conflicts(files, force:)
+      return [] if force
+
+      files.each_with_object([]) do |(relative_path, content), conflicts|
+        path = File.join(root, relative_path)
+        next unless File.file?(path)
+        next if File.read(path) == content
+
+        conflicts << relative_path
+      end
+    end
+
+    def scaffold_profile_d_metadata(files, state, profile_data)
+      selected = selected_candidate_id
+      {
+        "schema_version" => 1,
+        "profile" => "D",
+        "framework" => "Astro",
+        "package_manager" => "pnpm",
+        "dev_command" => "pnpm dev",
+        "build_command" => "pnpm build",
+        "scaffold_target" => profile_data.fetch(:scaffold_target),
+        "selected_candidate" => selected,
+        "selected_candidate_path" => selected ? ".ai-web/design-candidates/#{selected}.html" : nil,
+        "design_source" => File.exist?(File.join(aiweb_dir, "DESIGN.md")) ? ".ai-web/DESIGN.md" : nil,
+        "design_brief_source" => File.exist?(File.join(aiweb_dir, "design-brief.md")) ? ".ai-web/design-brief.md" : nil,
+        "created_at" => now,
+        "files" => files.keys.map do |relative_path|
+          {
+            "path" => relative_path,
+            "sha256" => Digest::SHA256.hexdigest(files.fetch(relative_path))
+          }
+        end
+      }
+    end
+
+    def scaffold_profile_d_files(state)
+      context = scaffold_context(state)
+      {
+        "package.json" => package_json_profile_d(context),
+        "astro.config.mjs" => astro_config_profile_d,
+        "tailwind.config.mjs" => tailwind_config_profile_d,
+        "src/styles/global.css" => global_css_profile_d,
+        "src/content/site.json" => JSON.pretty_generate(site_content_profile_d(context)) + "\n",
+        "src/components/Hero.astro" => hero_component_profile_d,
+        "src/components/SectionCard.astro" => section_card_component_profile_d,
+        "src/pages/index.astro" => index_page_profile_d(context),
+        "public/.gitkeep" => ""
+      }
+    end
+
+    def scaffold_context(state)
+      intent = load_intent_artifact
+      selected = selected_candidate_id
+      {
+        project_name: state.dig("project", "name").to_s.empty? ? File.basename(root) : state.dig("project", "name"),
+        project_id: state.dig("project", "id").to_s.empty? ? default_project_id : state.dig("project", "id"),
+        title: scaffold_title_from_artifacts(state, intent),
+        description: scaffold_description_from_artifacts(intent),
+        archetype: intent["archetype"].to_s,
+        primary_interaction: intent["primary_interaction"].to_s,
+        must_have_first_view: Array(intent["must_have_first_view"]),
+        must_not_have: Array(intent["must_not_have"]),
+        design_brief_excerpt: scaffold_excerpt(File.join(aiweb_dir, "design-brief.md")),
+        design_system_excerpt: scaffold_excerpt(File.join(aiweb_dir, "DESIGN.md")),
+        selected_candidate: selected,
+        selected_candidate_path: selected ? ".ai-web/design-candidates/#{selected}.html" : nil
+      }
+    end
+
+    def scaffold_title_from_artifacts(state, intent)
+      project_path = File.join(aiweb_dir, "project.md")
+      if File.exist?(project_path)
+        idea_line = File.read(project_path).lines.each_cons(2).find { |a, _b| a.strip == "## Idea" }
+        title = idea_line&.last.to_s.strip
+        return title unless title.empty? || title.start_with?("TODO")
+      end
+      concept = intent["original_intent"].to_s.strip
+      return concept unless concept.empty?
+
+      state.dig("project", "name").to_s
+    end
+
+    def scaffold_description_from_artifacts(intent)
+      primary = intent["primary_interaction"].to_s.strip
+      archetype = intent["archetype"].to_s.strip
+      if primary.empty? && archetype.empty?
+        "Source-backed static site scaffold generated by AI Web Director."
+      else
+        "A #{archetype.empty? ? "static" : archetype} web foundation centered on #{primary.empty? ? "the approved first-view contract" : primary}."
+      end
+    end
+
+    def scaffold_excerpt(path, max_lines = 18)
+      return "" unless File.exist?(path)
+
+      File.read(path).lines.map(&:rstrip).reject(&:empty?).first(max_lines).join("\n")
+    end
+
+    def npm_package_name(value)
+      ascii = value.to_s.downcase.gsub(/[^a-z0-9._-]+/, "-").gsub(/^-+|-+$/, "")
+      ascii = "aiweb-site" if ascii.empty? || ascii.start_with?(".", "_")
+      ascii
+    end
+
+    def package_json_profile_d(context)
+      JSON.pretty_generate(
+        "name" => npm_package_name(context.fetch(:project_id).empty? ? context.fetch(:project_name) : context.fetch(:project_id)),
+        "version" => "0.1.0",
+        "private" => true,
+        "type" => "module",
+        "scripts" => {
+          "dev" => "astro dev",
+          "build" => "astro build",
+          "preview" => "astro preview"
+        },
+        "dependencies" => {
+          "@astrojs/mdx" => "latest",
+          "@astrojs/sitemap" => "latest",
+          "astro" => "latest",
+          "tailwindcss" => "latest",
+          "@tailwindcss/vite" => "latest"
+        }
+      ) + "\n"
+    end
+
+    def astro_config_profile_d
+      <<~JS
+        import { defineConfig } from 'astro/config';
+        import mdx from '@astrojs/mdx';
+        import sitemap from '@astrojs/sitemap';
+        import tailwindcss from '@tailwindcss/vite';
+
+        export default defineConfig({
+          integrations: [mdx(), sitemap()],
+          vite: {
+            plugins: [tailwindcss()]
+          }
+        });
+      JS
+    end
+
+    def tailwind_config_profile_d
+      <<~JS
+        export default {
+          content: ['./src/**/*.{astro,html,js,jsx,md,mdx,svelte,ts,tsx,vue}'],
+          theme: {
+            extend: {
+              colors: {
+                ink: '#111827',
+                paper: '#fffaf3',
+                accent: '#2563eb'
+              }
+            }
+          }
+        };
+      JS
+    end
+
+    def global_css_profile_d
+      <<~CSS
+        @import "tailwindcss";
+
+        :root {
+          color: #111827;
+          background: #fffaf3;
+          font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        }
+
+        body {
+          margin: 0;
+          min-width: 320px;
+        }
+
+        a {
+          color: inherit;
+        }
+      CSS
+    end
+
+    def site_content_profile_d(context)
+      {
+        "schema_version" => 1,
+        "title" => context.fetch(:title),
+        "description" => context.fetch(:description),
+        "archetype" => context.fetch(:archetype),
+        "primary_interaction" => context.fetch(:primary_interaction),
+        "must_have_first_view" => context.fetch(:must_have_first_view),
+        "must_not_have" => context.fetch(:must_not_have),
+        "selected_candidate" => context.fetch(:selected_candidate),
+        "selected_candidate_path" => context.fetch(:selected_candidate_path),
+        "design_brief_excerpt" => context.fetch(:design_brief_excerpt),
+        "design_system_excerpt" => context.fetch(:design_system_excerpt),
+        "content_policy" => "Use only source-backed proof. Do not add fake testimonials, fake logos, fake customer counts, or fake metrics."
+      }
+    end
+
+    def hero_component_profile_d
+      <<~ASTRO
+        ---
+        const { title, description, primaryInteraction, selectedCandidate } = Astro.props;
+        ---
+
+        <section class="mx-auto grid max-w-6xl gap-8 px-6 py-20 md:grid-cols-[1.2fr_0.8fr] md:items-center" data-aiweb-id="page.home.hero">
+          <div data-aiweb-id="component.hero.copy">
+            <p class="mb-3 text-sm font-semibold uppercase tracking-[0.24em] text-blue-700">AI Web Director Profile D</p>
+            <h1 class="text-4xl font-bold tracking-tight text-slate-950 md:text-6xl">{title}</h1>
+            <p class="mt-5 max-w-2xl text-lg leading-8 text-slate-700">{description}</p>
+            <div class="mt-8 rounded-2xl border border-slate-200 bg-white/80 p-5 shadow-sm" data-aiweb-id="component.hero.primary-interaction">
+              <p class="text-sm font-semibold text-slate-500">Primary first-view interaction</p>
+              <p class="mt-2 text-xl font-semibold text-slate-950">{primaryInteraction || 'TODO: confirm from .ai-web/first-view-contract.md'}</p>
+            </div>
+          </div>
+          <aside class="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm" data-aiweb-id="component.hero.design-reference">
+            <p class="text-sm font-semibold text-slate-500">Design reference</p>
+            <p class="mt-2 text-2xl font-bold text-slate-950">{selectedCandidate || 'No selected candidate yet'}</p>
+            <p class="mt-3 text-sm leading-6 text-slate-600">Generated from Director artifacts. Keep DESIGN.md authoritative and replace placeholders only with source-backed content.</p>
+          </aside>
+        </section>
+      ASTRO
+    end
+
+    def section_card_component_profile_d
+      <<~ASTRO
+        ---
+        const { title, items = [], aiwebId = 'component.section-card' } = Astro.props;
+        ---
+
+        <section class="mx-auto max-w-6xl px-6 py-10" data-aiweb-id={aiwebId}>
+          <div class="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+            <h2 class="text-2xl font-bold text-slate-950">{title}</h2>
+            <ul class="mt-5 grid gap-3 text-slate-700 md:grid-cols-2">
+              {items.map((item) => <li class="rounded-2xl bg-slate-50 p-4" data-aiweb-id={`${aiwebId}.item`}>{item}</li>)}
+            </ul>
+          </div>
+        </section>
+      ASTRO
+    end
+
+    def index_page_profile_d(context)
+      <<~ASTRO
+        ---
+        import '../styles/global.css';
+        import site from '../content/site.json';
+        import Hero from '../components/Hero.astro';
+        import SectionCard from '../components/SectionCard.astro';
+
+        const title = site.title || #{context.fetch(:project_name).inspect};
+        const description = site.description || 'Static site scaffold generated from AI Web Director artifacts.';
+        ---
+
+        <html lang="ko" data-aiweb-id="document.home">
+          <head>
+            <meta charset="utf-8" />
+            <meta name="viewport" content="width=device-width, initial-scale=1" />
+            <meta name="description" content={description} />
+            <title>{title}</title>
+          </head>
+          <body class="bg-[var(--color-paper,#fffaf3)]">
+            <main data-aiweb-id="page.home">
+              <Hero
+                title={title}
+                description={description}
+                primaryInteraction={site.primary_interaction}
+                selectedCandidate={site.selected_candidate}
+              />
+              <SectionCard title="First-view obligations" items={site.must_have_first_view || []} aiwebId="page.home.first-view-obligations" />
+              <SectionCard title="Forbidden or excluded patterns" items={site.must_not_have || []} aiwebId="page.home.must-not-have" />
+              <section class="mx-auto max-w-6xl px-6 py-10" data-aiweb-id="page.home.source-notes">
+                <div class="rounded-3xl border border-dashed border-slate-300 bg-white/70 p-6">
+                  <h2 class="text-2xl font-bold text-slate-950">Source notes</h2>
+                  <p class="mt-4 text-sm leading-6 text-slate-600">Selected candidate: {site.selected_candidate || 'none'}</p>
+                  <p class="mt-2 text-sm leading-6 text-slate-600">Policy: {site.content_policy}</p>
+                </div>
+              </section>
+            </main>
+          </body>
+        </html>
+      ASTRO
     end
 
     def stack_markdown(key, data)

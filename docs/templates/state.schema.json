@@ -275,6 +275,12 @@
         "stack_profile",
         "scaffold_target",
         "scaffold_created",
+        "scaffold_profile",
+        "scaffold_framework",
+        "scaffold_package_manager",
+        "scaffold_dev_command",
+        "scaffold_build_command",
+        "scaffold_metadata_path",
         "current_task",
         "completed_tasks"
       ],
@@ -300,6 +306,25 @@
         },
         "scaffold_created": {
           "type": "boolean"
+        },
+        "scaffold_profile": {
+          "type": ["string", "null"],
+          "enum": ["D", null]
+        },
+        "scaffold_framework": {
+          "type": ["string", "null"]
+        },
+        "scaffold_package_manager": {
+          "type": ["string", "null"]
+        },
+        "scaffold_dev_command": {
+          "type": ["string", "null"]
+        },
+        "scaffold_build_command": {
+          "type": ["string", "null"]
+        },
+        "scaffold_metadata_path": {
+          "type": ["string", "null"]
         },
         "current_task": {
           "type": [
