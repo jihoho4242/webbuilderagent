@@ -24,6 +24,7 @@ Today the CLI manages the project director workspace: `.ai-web` state, phase gat
 - Expose the PR17 Component Map + Visual Edit planning foundation through `aiweb component-map` / `웹빌더 component-map` and `aiweb visual-edit` / `웹빌더 visual-edit`: it maps stable `data-aiweb-id` DOM regions to source files in `.ai-web/component-map.json`, creates selected-region visual edit handoff artifacts under `.ai-web/tasks/` and `.ai-web/visual/`, supports no-write `--dry-run`, rejects `.env` / `.env.*` map paths without reading them, and never auto-patches source, runs build/QA/browser/preview, deploys, installs packages, or calls network/AI services.
 - Expose the PR18 Profile S local scaffold and Supabase secret QA surface through `aiweb scaffold --profile S` / `웹빌더 scaffold --profile S` and `aiweb supabase-secret-qa` / `웹빌더 supabase-secret-qa`: Profile S is a local-only Next.js + Supabase SSR placeholder scaffold, uses `supabase/env.example.template` instead of `.env.example`, includes only `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` placeholders, and intentionally performs no external Supabase project creation, network calls, deploy, install, build, or preview.
 - Expose the PR19 GitHub sync and deploy planning surfaces through `aiweb github-sync`, `aiweb deploy-plan`, and `aiweb deploy --target cloudflare-pages|vercel --dry-run` / matching `웹빌더` commands: they are local-only planning commands that never run `git push`, provider CLIs, external deploys, network calls, build/preview/install, or read `.env` / `.env.*`; unsafe real deploy attempts are blocked.
+- Expose the PR20 approved dependency setup surface through `aiweb setup --install --approved` / `웹빌더 setup --install --approved`: `--dry-run` writes nothing and reports the planned install/log paths; a real install requires `--approved`, records stdout/stderr/setup metadata under `.ai-web/runs/setup-<timestamp>/`, warns about package lifecycle scripts, updates only safe setup state, and never builds, previews, runs QA, repairs, deploys, calls provider CLIs, or reads/prints `.env` / `.env.*`.
 
 ## Upgrade direction
 
@@ -40,7 +41,8 @@ The intended product direction is a design-first, natural-language webbuilder: t
 9. Select a mapped `data-aiweb-id` region and create a bounded visual edit handoff instead of regenerating the full page.
 10. For Supabase-backed work, scaffold Profile S locally with safe SSR placeholders and rerun `supabase-secret-qa` before copying values into a private local env file outside the generator guardrail.
 11. Review local-only GitHub sync and Cloudflare Pages/Vercel deploy dry-run plans before any separately approved external release work.
-12. Repair implementation manually or through later approved automation, then deploy later once gates pass and evidence is recorded.
+12. Run `setup --install --dry-run` to inspect the planned dependency install, then `setup --install --approved` only when you explicitly approve local package installation.
+13. Repair implementation manually or through later approved automation, then deploy later once gates pass and evidence is recorded.
 
 The current Director CLI is the foundation for that loop: state, gates, QA contracts, snapshots, local preview evidence, bounded repair-loop records, visual polish records/tasks/snapshots, component maps, targeted visual edit handoff records, and local-only Profile S Supabase scaffold/secret-QA records are in place before the system grows into end-to-end generation, source repair automation, and deploy. It is not yet a full app generator.
 
@@ -77,7 +79,17 @@ Use `--path` on later commands to keep working against that generated project:
 ./bin/aiweb --path ~/Desktop/aiweb-premium-service-site advance
 ```
 
-After the scaffold runtime plan reports `ready`, PR9 adds the build contract:
+After the scaffold runtime plan reports `ready`, PR20 can install project dependencies with explicit approval:
+
+```bash
+./bin/aiweb --path ~/Desktop/aiweb-premium-service-site setup --install --dry-run
+./bin/aiweb --path ~/Desktop/aiweb-premium-service-site setup --install --approved
+웹빌더 --path ~/Desktop/aiweb-premium-service-site setup --install --approved
+```
+
+`setup --install --dry-run` is a no-write/no-process preflight: it reports the planned `pnpm install` command and `.ai-web/runs/setup-<timestamp>/stdout.log`, `stderr.log`, and `setup.json` paths. Omitting both `--dry-run` and `--approved` is blocked and writes nothing. A real approved setup run supports the local `pnpm` install path, records stdout/stderr/setup metadata under `.ai-web/runs/setup-<timestamp>/`, reports lifecycle-script warnings from `package.json`, updates safe setup state such as latest run/package manager/node_modules presence, and intentionally does not build, preview, run QA, repair, deploy, call provider CLIs, or read/print `.env` / `.env.*`.
+
+After dependencies are present, PR9 adds the build contract:
 
 ```bash
 ./bin/aiweb --path ~/Desktop/aiweb-premium-service-site build --dry-run
