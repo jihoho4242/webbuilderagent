@@ -17,7 +17,7 @@ module Aiweb
     EXIT_UNSAFE_EXTERNAL_ACTION = 5
     EXIT_INTERNAL_ERROR = 10
 
-    MUTATION_COMMANDS = %w[start init interview run ingest-design next-task qa-checklist qa-report repair advance rollback resolve-blocker snapshot design-brief design-system design-prompt design select-design scaffold setup build preview qa-playwright browser-qa qa-a11y a11y-qa qa-lighthouse lighthouse-qa visual-critique visual-polish workbench component-map visual-edit supabase-secret-qa github-sync deploy-plan deploy].freeze
+    MUTATION_COMMANDS = %w[start init interview run ingest-design next-task qa-checklist qa-report repair advance rollback resolve-blocker snapshot design-brief design-system design-prompt design select-design scaffold setup build preview qa-playwright browser-qa qa-screenshot screenshot-qa qa-a11y a11y-qa qa-lighthouse lighthouse-qa visual-critique visual-polish workbench component-map visual-edit supabase-secret-qa github-sync deploy-plan deploy].freeze
     RUNTIME_PLAN_COMMANDS = %w[runtime-plan scaffold-status].freeze
     REGISTRY_COMMANDS = %w[design-systems skills craft].freeze
 
@@ -208,6 +208,9 @@ module Aiweb
       when "qa-playwright", "browser-qa"
         opts = parse_browser_qa_options(command)
         project.qa_playwright(url: opts[:url], task_id: opts[:task_id], force: opts[:force], dry_run: @dry_run)
+      when "qa-screenshot", "screenshot-qa"
+        opts = parse_browser_qa_options(command)
+        project.qa_screenshot(url: opts[:url], task_id: opts[:task_id], force: opts[:force], dry_run: @dry_run)
       when "qa-a11y", "a11y-qa"
         opts = parse_options do |o, options|
           o.on("--url URL") { |v| options[:url] = v }
@@ -232,6 +235,7 @@ module Aiweb
         opts = parse_options do |o, options|
           o.on("--screenshot PATH") { |v| options[:screenshot] = v }
           o.on("--metadata PATH") { |v| options[:metadata] = v }
+          o.on("--from-screenshots VALUE") { |v| options[:from_screenshots] = v }
           o.on("--task-id ID") { |v| options[:task_id] = v }
           o.on("--force") { options[:force] = true }
         end
@@ -242,7 +246,7 @@ module Aiweb
           return visual_critique_adapter_unavailable_payload(opts)
         end
 
-        project.visual_critique(screenshot: opts[:screenshot], metadata: opts[:metadata], task_id: opts[:task_id], force: opts[:force], dry_run: @dry_run)
+        project.visual_critique(screenshot: opts[:screenshot], metadata: opts[:metadata], from_screenshots: opts[:from_screenshots], task_id: opts[:task_id], force: opts[:force], dry_run: @dry_run)
       when "visual-polish"
         opts = parse_options do |o, options|
           o.on("--repair") { options[:repair] = true }
@@ -892,9 +896,10 @@ module Aiweb
           qa-report [--from PATH] [--status passed|failed|blocked] [--duration-minutes N] [--timed-out] [--force]
           repair [--from-qa PATH|latest] [--max-cycles N] [--force]
           qa-playwright [--url URL] [--task-id ID] [--force]
+          qa-screenshot [--url URL] [--task-id ID] [--force]
           qa-a11y [--url URL] [--task-id ID] [--force]
           qa-lighthouse [--url URL] [--task-id ID] [--force]
-          visual-critique [--screenshot PATH] [--metadata PATH] [--task-id ID] [--force]
+          visual-critique [--screenshot PATH] [--metadata PATH] [--from-screenshots latest] [--task-id ID] [--force]
           visual-polish --repair [--from-critique PATH|latest] [--max-cycles N] [--force]
           workbench [--export] [--force]
           component-map [--force]
@@ -926,9 +931,10 @@ module Aiweb
           build: runs the scaffolded Astro build only after runtime-plan is ready and records .ai-web/runs logs
           preview: starts/stops the local scaffold dev server after runtime-plan is ready; --dry-run does not write files or launch Node
           qa-playwright: runs safe local Playwright QA browser checks against localhost/127.0.0.1 preview; --dry-run does not write files or launch Node
+          qa-screenshot: captures deterministic local mobile/tablet/desktop screenshot evidence from localhost/127.0.0.1 preview; --dry-run does not write files, launch browsers, install packages, or start preview
           qa-a11y: runs safe local axe accessibility QA against localhost/127.0.0.1 preview; --dry-run does not write files or launch Node
           qa-lighthouse: runs safe local Lighthouse QA against localhost/127.0.0.1 preview; --dry-run does not write files or launch Node
-          visual-critique: records safe local visual critique from explicit screenshot/metadata evidence only; --dry-run plans .ai-web/visual artifacts without writes, browser launch, installs, repair, deploy, network, or .env access
+          visual-critique: records safe local visual critique from explicit screenshot/metadata evidence or --from-screenshots latest only; --dry-run plans .ai-web/visual artifacts without writes, browser launch, installs, repair, deploy, network, or .env access
           workbench: plans or exports a static local UI manifest under .ai-web/workbench using declarative CLI controls only; requires initialized .ai-web/state.yaml, --dry-run writes nothing, export writes only workbench artifacts, executes no controls, and never mutates state.yaml
           component-map: scans stable data-aiweb-id regions into .ai-web/component-map.json; --dry-run writes nothing and never reads .env/.env.*
           visual-edit: validates a selected data-aiweb-id target and writes only local handoff artifacts; --dry-run writes nothing and never patches source, runs QA/browser/build, deploys, or calls network/AI
@@ -940,7 +946,8 @@ module Aiweb
           qa-checklist: phase-7 through phase-11
           qa-report: phase-7 through phase-11
           repair: phase-7 through phase-11; records a bounded local repair-loop task from failed/blocked QA without running build, QA, preview, deploy, package install, or source auto-patches
-          visual-critique: phase-7 through phase-11; records deterministic local visual critique evidence from explicit input paths only
+          qa-screenshot: phase-7 through phase-11; captures deterministic local screenshot evidence for critique/human QA without starting preview or installing packages
+          visual-critique: phase-7 through phase-11; records deterministic local visual critique evidence from explicit input paths or latest screenshot metadata only
           visual-polish --repair: records safe local visual polish repair loop from failed/repair/redesign critique evidence in phase-7 through phase-11 without source edits, build, QA, preview, browser capture, deploy, package install, network, or AI calls
           component-map / visual-edit: phase-7 through phase-11; map stable DOM regions and create selected-region visual edit handoff records without source auto-patches or external execution
           Profile S: local scaffold/QA only; Supabase SSR placeholders are NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY in supabase/env.example.template, and .env.example is intentionally not generated under the no-.env guardrail
@@ -990,6 +997,7 @@ module Aiweb
       return human_intent_result(result) if result["intent"]
       return human_runtime_plan_result(result) if result["runtime_plan"]
       return human_repair_result(result) if result["repair_loop"]
+      return human_qa_screenshot_result(result) if result["screenshot_qa"]
       return human_visual_critique_result(result) if result["visual_critique"]
       return human_visual_polish_result(result) if result["visual_polish"]
       return human_workbench_result(result) if result["workbench"]
@@ -1063,6 +1071,25 @@ module Aiweb
         "Lifecycle scripts: #{Array(setup["lifecycle_scripts"] || setup["lifecycle_script_warnings"]).empty? ? "none" : Array(setup["lifecycle_scripts"] || setup["lifecycle_script_warnings"]).join(", ")}",
         "Artifacts changed: #{changed.empty? ? "none" : changed.join(", ")}",
         "Setup paths: #{paths.empty? ? "none" : paths.join(", ")}",
+        "Blocking issues: #{blockers.empty? ? "none" : blockers.join("; ")}",
+        "Next command: #{result["next_action"] || "n/a"}"
+      ].join("\n")
+    end
+
+    def human_qa_screenshot_result(result)
+      qa = result.fetch("screenshot_qa")
+      blockers = qa["blocking_issues"] || result["blocking_issues"] || []
+      screenshots = qa["screenshots"] || qa["screenshot_paths"] || []
+      artifacts = []
+      %w[metadata_path result_path run_dir stdout_log stderr_log].each do |key|
+        value = qa[key]
+        artifacts << "#{key}=#{value}" unless value.to_s.empty?
+      end
+      [
+        "Screenshot QA: #{qa["status"] || "n/a"}",
+        "Target URL: #{qa["url"] || qa.dig("target", "url") || "n/a"}",
+        "Screenshots: #{Array(screenshots).empty? ? "none" : Array(screenshots).join(", ")}",
+        "Artifacts: #{artifacts.empty? ? "none" : artifacts.join(", ")}",
         "Blocking issues: #{blockers.empty? ? "none" : blockers.join("; ")}",
         "Next command: #{result["next_action"] || "n/a"}"
       ].join("\n")
@@ -1253,6 +1280,10 @@ module Aiweb
       %w[dry_run passed].include?(result.dig("playwright_qa", "status")) ? EXIT_SUCCESS : EXIT_VALIDATION_FAILED
     end
 
+    def qa_screenshot_exit_code(result)
+      %w[dry_run passed].include?(result.dig("screenshot_qa", "status")) ? EXIT_SUCCESS : EXIT_VALIDATION_FAILED
+    end
+
     def qa_a11y_exit_code(result)
       %w[dry_run passed].include?(result.dig("a11y_qa", "status")) ? EXIT_SUCCESS : EXIT_VALIDATION_FAILED
     end
@@ -1356,6 +1387,7 @@ module Aiweb
       return build_exit_code(result) if command == "build"
       return preview_exit_code(result) if command == "preview"
       return qa_playwright_exit_code(result) if %w[qa-playwright browser-qa].include?(command)
+      return qa_screenshot_exit_code(result) if %w[qa-screenshot screenshot-qa].include?(command)
       return qa_a11y_exit_code(result) if %w[qa-a11y a11y-qa].include?(command)
       return qa_lighthouse_exit_code(result) if %w[qa-lighthouse lighthouse-qa].include?(command)
       return visual_critique_exit_code(result) if command == "visual-critique"
