@@ -2920,7 +2920,7 @@ class AiwebCliTest < Minitest::Test
       assert after_entries.any? { |path| path.start_with?(".ai-web/diffs/agent-run-") }, "approved agent-run must write diff artifacts"
       assert_equal env_size, File.size(".env")
       assert_equal env_mtime, File.mtime(".env")
-      assert_equal false, File.read(diff_path).include?(secret)
+      refute_includes File.read(diff_path), secret
       assert_agent_run_artifacts_do_not_leak_secret(secret, File.join(run_dir, "agent-run.json"), File.join(run_dir, "stdout.log"), File.join(run_dir, "stderr.log"), diff_path)
       assert_not_nil state.dig("implementation", "latest_agent_run")
       assert_match(%r{\A\.ai-web/runs/agent-run-.+/agent-run\.json\z}, state.dig("implementation", "latest_agent_run"))
