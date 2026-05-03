@@ -17,6 +17,7 @@ Today the CLI manages the project director workspace: `.ai-web` state, phase gat
 - Expose the PR10 local preview contract through `aiweb preview` / `웹빌더 preview`: it must gate on runtime-plan readiness, preserve `.env` untouched, avoid dependency installation, start only the scaffold dev server locally, record run evidence under `.ai-web`, support a no-write/no-process `--dry-run`, support `--stop` for the recorded preview PID, and explicitly avoid Playwright, axe/Lighthouse, repair, deploy, or external hosting.
 - Expose the PR11 safe Playwright browser QA contract through `aiweb qa-playwright` / `웹빌더 qa-playwright`: it must use a running local preview or explicit localhost/127.0.0.1 `--url`, preserve `.env` untouched, never install packages or start preview, require an already-present project-local Playwright executable, record run/QA evidence under `.ai-web`, support no-write/no-process `--dry-run`, and explicitly avoid axe/Lighthouse, automatic repair, deploy, or external hosting.
 - Expose safe accessibility and Lighthouse QA contracts through `aiweb qa-a11y` / `웹빌더 qa-a11y` and `aiweb qa-lighthouse` / `웹빌더 qa-lighthouse`: they follow the same local-preview, no-install, no-repair, no-deploy safety model while requiring already-installed project-local `axe` or `lighthouse` executables.
+- Expose the PR13 safe local repair-loop contract through `aiweb repair` / `웹빌더 repair`: it consumes failed/blocked QA evidence into a bounded `repair_loop` record, pre-repair snapshot, and fix task without installing packages, starting preview, running build/QA, auto-patching source, touching `.env`, deploying, or contacting external hosting.
 
 ## Upgrade direction
 
@@ -26,10 +27,10 @@ The intended product direction is a design-first, natural-language webbuilder: t
 2. Generate and compare premium, design-first candidates.
 3. Preview the selected direction in a browser.
 4. Run automated browser QA against visual, content, accessibility, and interaction expectations.
-5. Repair failures automatically where possible.
-6. Deploy later, once gates pass and evidence is recorded.
+5. Convert failed/blocked QA evidence into bounded local repair tasks and records.
+6. Repair implementation manually or through later approved automation, then deploy later once gates pass and evidence is recorded.
 
-The current Director CLI is the foundation for that loop: state, gates, QA contracts, snapshots, local preview evidence, and recovery are in place before the system grows into end-to-end generation, browser QA, repair, and deploy. It is not yet a full app generator.
+The current Director CLI is the foundation for that loop: state, gates, QA contracts, snapshots, local preview evidence, and bounded repair-loop records are in place before the system grows into end-to-end generation, source repair automation, and deploy. It is not yet a full app generator.
 
 ## Quick start
 
@@ -97,7 +98,15 @@ PR11 adds the safe local Playwright QA contract as a separate step:
 
 `qa-playwright --dry-run`, `qa-a11y --dry-run`, and `qa-lighthouse --dry-run` are planning paths only: they must not create run artifacts, start processes, install packages, touch `.env`, or invoke local QA tools. A real QA run uses the explicit localhost/127.0.0.1 `--url` when provided, otherwise the recorded running preview URL. Playwright runs only after `node_modules/.bin/playwright` exists; accessibility QA requires `node_modules/.bin/axe`; Lighthouse QA requires `node_modules/.bin/lighthouse`. Each command records stdout/stderr/tool metadata under `.ai-web/runs/<tool>-qa-*`, writes a schema-compatible QA result under `.ai-web/qa/results/`, and returns deterministic `blocked`, `failed`, or `passed` status in its JSON payload (`playwright_qa`, `a11y_qa`, or `lighthouse_qa`). Missing runtime readiness, missing preview/URL, missing `pnpm`, or missing local tooling is reported as blocked; these QA commands do not install dependencies, start/stop preview, auto-repair, deploy, or contact external hosting beyond the local preview URL.
 
-`qa-a11y` and `qa-lighthouse` are PR12 reserved command surfaces. They accept `--url`, `--task-id`, `--force`, `--dry-run`, `--json`, and `--path`, but currently return a deterministic `browser_qa.status: blocked` / adapter-unavailable result with exit code 4. They do not create `.ai-web/runs`, install packages, read or write `.env`, start or stop preview, auto-repair, deploy, or contact external hosting.
+PR13 adds the safe local repair-loop command as a follow-up to failed or blocked QA:
+
+```bash
+./bin/aiweb --path ~/Desktop/aiweb-premium-service-site repair --from-qa latest --dry-run --json
+./bin/aiweb --path ~/Desktop/aiweb-premium-service-site repair --from-qa .ai-web/qa/results/qa-example.json --max-cycles 2 --json
+웹빌더 --path ~/Desktop/aiweb-premium-service-site repair --from-qa latest --dry-run
+```
+
+`repair --from-qa latest` reads `state.qa.last_result`; an explicit `--from-qa` must point to a QA result JSON and rejects `.env` / `.env.*` paths without reading them. The command is phase-guarded for phase-7 through phase-11 unless `--force` is supplied. If the QA result is not failed, blocked, or timed out, or if the same QA task/source has exceeded `--max-cycles`, it returns a deterministic `repair_loop.status: blocked` and writes nothing. `repair --dry-run` writes nothing, copies no snapshot, starts no process, and reports the planned snapshot, repair record, and fix-task paths. A real repair loop creates a pre-repair snapshot under `.ai-web/snapshots/`, creates or reuses a fix task under `.ai-web/tasks/`, writes `.ai-web/repairs/*.json`, updates `implementation.current_task`, and records a decision. PR13 repair intentionally does not install packages, start/stop preview, run build, run Playwright/axe/Lighthouse, edit source files, auto-patch, deploy, push, or contact external hosting.
 
 Phase-sensitive commands are guarded by the Director state machine:
 
@@ -114,6 +123,7 @@ Phase-sensitive commands are guarded by the Director state machine:
 # Once current phase is phase-7 through phase-11
 ./bin/aiweb qa-checklist
 ./bin/aiweb qa-report --status failed --task-id golden-page --duration-minutes 61
+./bin/aiweb repair --from-qa latest --dry-run
 ```
 
 Quality is an explicit contract. After entering phase-0.25, review `.ai-web/quality.yaml` and set `quality.approved: true` before advancing again.
@@ -131,6 +141,7 @@ Manual repair/override for guarded commands:
 ./bin/aiweb design-prompt --force
 ./bin/aiweb ingest-design --force --title "Candidate 1"
 ./bin/aiweb qa-report --force --status failed --task-id golden-page
+./bin/aiweb repair --force --from-qa latest --dry-run
 ```
 
 Rollback leaves the phase blocked until recovery evidence is recorded:

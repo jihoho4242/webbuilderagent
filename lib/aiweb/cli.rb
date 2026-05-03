@@ -17,7 +17,7 @@ module Aiweb
     EXIT_UNSAFE_EXTERNAL_ACTION = 5
     EXIT_INTERNAL_ERROR = 10
 
-    MUTATION_COMMANDS = %w[start init interview run ingest-design next-task qa-checklist qa-report advance rollback resolve-blocker snapshot design-brief design-system design-prompt design select-design scaffold build preview qa-playwright browser-qa qa-a11y a11y-qa qa-lighthouse lighthouse-qa].freeze
+    MUTATION_COMMANDS = %w[start init interview run ingest-design next-task qa-checklist qa-report repair advance rollback resolve-blocker snapshot design-brief design-system design-prompt design select-design scaffold build preview qa-playwright browser-qa qa-a11y a11y-qa qa-lighthouse lighthouse-qa].freeze
     RUNTIME_PLAN_COMMANDS = %w[runtime-plan scaffold-status].freeze
     REGISTRY_COMMANDS = %w[design-systems skills craft].freeze
 
@@ -227,6 +227,16 @@ module Aiweb
           o.on("--force") { options[:force] = true }
         end
         project.qa_report(status: opts[:status] || "passed", task_id: opts[:task_id], duration_minutes: opts[:duration_minutes], timed_out: opts[:timed_out], from: opts[:from], dry_run: @dry_run, force: opts[:force])
+      when "repair"
+        opts = parse_options do |o, options|
+          o.on("--from-qa PATH_OR_LATEST") { |v| options[:from_qa] = v }
+          o.on("--max-cycles N") { |v| options[:max_cycles] = parse_positive_integer(v, "--max-cycles") }
+          o.on("--force") { options[:force] = true }
+        end
+        unless @argv.empty?
+          raise UserError.new("repair does not accept extra positional arguments: #{@argv.join(", ")}", EXIT_VALIDATION_FAILED)
+        end
+        project.repair(from_qa: opts[:from_qa] || "latest", max_cycles: opts[:max_cycles], dry_run: @dry_run, force: opts[:force])
       when "advance"
         project.advance(dry_run: @dry_run)
       when "rollback"
@@ -321,6 +331,15 @@ module Aiweb
       options
     end
 
+    def parse_positive_integer(value, option)
+      text = value.to_s
+      unless text.match?(/\A[1-9]\d*\z/)
+        raise UserError.new("#{option} must be a positive integer", EXIT_VALIDATION_FAILED)
+      end
+
+      text.to_i
+    end
+
     def parse_browser_qa_options(command)
       opts = parse_options do |o, options|
         o.on("--url URL") { |v| options[:url] = v }
@@ -386,6 +405,7 @@ module Aiweb
           next-task [--type TYPE] [--force]
           qa-checklist [--force]
           qa-report [--from PATH] [--status passed|failed|blocked] [--duration-minutes N] [--timed-out] [--force]
+          repair [--from-qa PATH|latest] [--max-cycles N] [--force]
           qa-playwright [--url URL] [--task-id ID] [--force]
           qa-a11y [--url URL] [--task-id ID] [--force]
           qa-lighthouse [--url URL] [--task-id ID] [--force]
@@ -417,6 +437,7 @@ module Aiweb
           next-task: phase-6 through phase-11
           qa-checklist: phase-7 through phase-11
           qa-report: phase-7 through phase-11
+          repair: phase-7 through phase-11; records a bounded local repair-loop task from failed/blocked QA without running build, QA, preview, deploy, package install, or source auto-patches
         Use --force only for manual repair/override.
       HELP
     end
@@ -462,6 +483,7 @@ module Aiweb
       return human_registry_result(result) if result["registry"]
       return human_intent_result(result) if result["intent"]
       return human_runtime_plan_result(result) if result["runtime_plan"]
+      return human_repair_result(result) if result["repair_loop"]
 
       changed = result["changed_files"] || result["artifacts_changed"] || []
       blockers = result["blocking_issues"] || []
@@ -489,6 +511,25 @@ module Aiweb
         "- Forbidden design patterns: #{intent.fetch("forbidden_design_patterns").join("; ")}"
       ]
       lines.join("\n")
+    end
+
+    def human_repair_result(result)
+      loop = result.fetch("repair_loop")
+      changed = result["changed_files"] || result["artifacts_changed"] || []
+      blockers = loop["blocking_issues"] || result["blocking_issues"] || []
+      paths = []
+      %w[repair_record_path snapshot_path fix_task_path planned_repair_record_path planned_snapshot_path planned_fix_task_path].each do |key|
+        value = loop[key]
+        paths << "#{key}=#{value}" unless value.to_s.empty?
+      end
+      [
+        "Repair loop: #{loop["status"] || "n/a"}",
+        "QA source: #{loop["qa_source"] || loop["from_qa"] || "n/a"}",
+        "Artifacts changed: #{changed.empty? ? "none" : changed.join(", ")}",
+        "Repair paths: #{paths.empty? ? "none" : paths.join(", ")}",
+        "Blocking issues: #{blockers.empty? ? "none" : blockers.join("; ")}",
+        "Next command: #{result["next_action"] || "n/a"}"
+      ].join("\n")
     end
 
     def human_runtime_plan_result(result)
@@ -548,6 +589,18 @@ module Aiweb
       %w[dry_run passed].include?(result.dig("lighthouse_qa", "status")) ? EXIT_SUCCESS : EXIT_VALIDATION_FAILED
     end
 
+    def repair_exit_code(result)
+      status = result.dig("repair_loop", "status")
+      return EXIT_SUCCESS if %w[planned dry_run created reused].include?(status)
+      return EXIT_VALIDATION_FAILED unless status == "blocked"
+
+      issues = ((result.dig("repair_loop", "blocking_issues") || []) + (result["blocking_issues"] || [])).join(" ")
+      return EXIT_BUDGET_BLOCKED if issues.match?(/budget|cycle|cap|max-cycles|max cycles/i)
+      return EXIT_PHASE_BLOCKED if issues.match?(/phase/i)
+
+      EXIT_VALIDATION_FAILED
+    end
+
     def exit_code_for(command, result)
       return EXIT_VALIDATION_FAILED if result["validation_errors"] && !result["validation_errors"].empty?
       return result.dig("runtime_plan", "readiness") == "ready" ? EXIT_SUCCESS : EXIT_VALIDATION_FAILED if RUNTIME_PLAN_COMMANDS.include?(command)
@@ -557,6 +610,7 @@ module Aiweb
       return qa_playwright_exit_code(result) if %w[qa-playwright browser-qa].include?(command)
       return qa_a11y_exit_code(result) if %w[qa-a11y a11y-qa].include?(command)
       return qa_lighthouse_exit_code(result) if %w[qa-lighthouse lighthouse-qa].include?(command)
+      return repair_exit_code(result) if command == "repair"
       return EXIT_SUCCESS if %w[help version status start init interview run design-brief design-system design-prompt design select-design scaffold ingest-design next-task qa-checklist qa-report rollback resolve-blocker snapshot].include?(command)
       if command == "advance" && result["action_taken"] == "advance blocked"
         issue = result["blocking_issues"].join(" ")

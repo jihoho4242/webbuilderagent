@@ -906,6 +906,181 @@ class AiwebCliTest < Minitest::Test
     end
   end
 
+
+
+  def test_repair_uninitialized_returns_json_error_without_creating_workspace
+    in_tmp do
+      stdout, stderr, code = run_aiweb("repair", "--json")
+      payload = JSON.parse(stdout)
+
+      assert_equal 1, code
+      assert_equal "", stderr
+      assert_equal "error", payload["status"]
+      assert_match(/init|initialized|workspace/i, payload.dig("error", "message"))
+      refute Dir.exist?(".ai-web")
+    end
+  end
+
+  def test_repair_dry_run_from_latest_failed_qa_plans_bounded_loop_without_writes
+    in_tmp do
+      json_cmd("init")
+      set_phase("phase-10")
+      FileUtils.mkdir_p("src")
+      File.write("src/app.js", "console.log('before repair');\n")
+      File.write(".env", "SECRET=do-not-touch\n")
+      _qa_payload, qa_code = json_cmd("qa-report", "--status", "failed", "--task-id", "golden")
+      assert_equal 0, qa_code
+
+      before_state = File.read(".ai-web/state.yaml")
+      before_source = File.read("src/app.js")
+      before_env = File.read(".env")
+      payload, code = json_cmd("repair", "--from-qa", "latest", "--dry-run")
+
+      assert_equal 0, code
+      assert_equal true, payload["dry_run"]
+      repair_loop = payload.fetch("repair_loop")
+      assert_equal true, repair_loop["dry_run"]
+      assert_includes %w[planned ready], repair_loop["status"]
+      assert_match(%r{\.ai-web/snapshots/}, repair_loop.fetch("planned_snapshot_path"))
+      assert_match(%r{\.ai-web/repairs/}, repair_loop.fetch("planned_repair_record_path"))
+      assert_match(%r{\.ai-web/tasks/fix-}, repair_loop.fetch("planned_fix_task_path"))
+      assert_equal before_state, File.read(".ai-web/state.yaml")
+      assert_equal before_source, File.read("src/app.js")
+      assert_equal before_env, File.read(".env")
+      assert_empty Dir.glob(".ai-web/repairs/*.json")
+      assert_empty Dir.glob(".ai-web/snapshots/*")
+    end
+  end
+
+  def test_repair_from_latest_failed_qa_creates_record_snapshot_and_current_fix_task_without_source_patch
+    in_tmp do
+      json_cmd("init")
+      set_phase("phase-10")
+      FileUtils.mkdir_p("src")
+      File.write("src/app.js", "console.log('before repair');\n")
+      File.write(".env", "SECRET=do-not-touch\n")
+      _qa_payload, qa_code = json_cmd("qa-report", "--status", "blocked", "--task-id", "golden")
+      assert_equal 0, qa_code
+
+      before_source = File.read("src/app.js")
+      before_env = File.read(".env")
+      payload, code = json_cmd("repair", "--from-qa", "latest")
+
+      assert_equal 0, code
+      repair_loop = payload.fetch("repair_loop")
+      assert_equal "created", repair_loop["status"]
+      assert_match(%r{\.ai-web/qa/results/qa-}, repair_loop.fetch("source_result"))
+      assert_match(%r{\.ai-web/snapshots/}, repair_loop.fetch("pre_repair_snapshot"))
+      assert_match(%r{\.ai-web/repairs/repair-}, repair_loop.fetch("repair_record"))
+      assert_match(%r{\.ai-web/tasks/fix-}, repair_loop.fetch("fix_task"))
+      assert_includes payload["changed_files"], repair_loop["repair_record"]
+      assert File.exist?(repair_loop["repair_record"])
+      assert File.exist?(File.join(repair_loop["pre_repair_snapshot"], "manifest.json"))
+      assert File.exist?(repair_loop["fix_task"])
+      assert_equal before_source, File.read("src/app.js")
+      assert_equal before_env, File.read(".env")
+
+      state = load_state
+      assert_equal repair_loop["fix_task"], state.dig("implementation", "current_task")
+      refute_empty state.dig("qa", "open_failures")
+      repair_record = JSON.parse(File.read(repair_loop["repair_record"]))
+      assert_equal repair_loop["source_result"], repair_record["source_result"]
+      assert_equal repair_loop["fix_task"], repair_record["fix_task"]
+      assert_equal true, repair_record["guardrails"].any? { |guardrail| guardrail =~ /no source auto-patch/i }
+    end
+  end
+
+  def test_repair_blocks_for_passing_or_missing_latest_qa_without_writes
+    in_tmp do
+      json_cmd("init")
+      set_phase("phase-10")
+
+      missing_payload, missing_code = json_cmd("repair", "--from-qa", "latest")
+      assert_includes [1, 2, 3], missing_code
+      assert_equal "blocked", missing_payload.fetch("repair_loop").fetch("status")
+      assert_empty Dir.glob(".ai-web/repairs/*.json")
+      assert_empty Dir.glob(".ai-web/snapshots/*")
+
+      _qa_payload, qa_code = json_cmd("qa-report", "--status", "passed", "--task-id", "golden")
+      assert_equal 0, qa_code
+      before_state = File.read(".ai-web/state.yaml")
+      passing_payload, passing_code = json_cmd("repair", "--from-qa", "latest")
+
+      assert_includes [1, 2, 3], passing_code
+      assert_equal "blocked", passing_payload.fetch("repair_loop").fetch("status")
+      assert_match(/no blocking|no failed|passed/i, passing_payload["blocking_issues"].join("\n"))
+      assert_equal before_state, File.read(".ai-web/state.yaml")
+      assert_empty Dir.glob(".ai-web/repairs/*.json")
+      assert_empty Dir.glob(".ai-web/snapshots/*")
+    end
+  end
+
+  def test_repair_cycle_cap_blocks_before_new_snapshot_record_or_fix_task
+    in_tmp do
+      json_cmd("init")
+      set_phase("phase-10")
+      _qa_payload, qa_code = json_cmd("qa-report", "--status", "failed", "--task-id", "golden")
+      assert_equal 0, qa_code
+      first_payload, first_code = json_cmd("repair", "--from-qa", "latest", "--max-cycles", "1")
+      assert_equal 0, first_code
+
+      before_state = File.read(".ai-web/state.yaml")
+      before_repairs = Dir.glob(".ai-web/repairs/*.json")
+      before_snapshots = Dir.glob(".ai-web/snapshots/*")
+      before_fix_tasks = Dir.glob(".ai-web/tasks/fix-*.md")
+      blocked_payload, blocked_code = json_cmd("repair", "--from-qa", "latest", "--max-cycles", "1")
+
+      assert_includes [1, 2, 3], blocked_code
+      assert_equal "blocked", blocked_payload.fetch("repair_loop").fetch("status")
+      assert_match(/cycle|cap|max/i, blocked_payload["blocking_issues"].join("\n"))
+      assert_equal before_state, File.read(".ai-web/state.yaml")
+      assert_equal before_repairs, Dir.glob(".ai-web/repairs/*.json")
+      assert_equal before_snapshots, Dir.glob(".ai-web/snapshots/*")
+      assert_equal before_fix_tasks, Dir.glob(".ai-web/tasks/fix-*.md")
+    end
+  end
+
+  def test_repair_rejects_env_path_without_reading_or_printing_secret
+    in_tmp do
+      json_cmd("init")
+      set_phase("phase-10")
+      File.write(".env", "SECRET=do-not-print\n")
+
+      stdout, stderr, code = run_aiweb("repair", "--from-qa", ".env", "--json")
+      payload = JSON.parse(stdout)
+
+      assert_equal 1, code
+      assert_equal "", stderr
+      assert_match(/\.env|unsafe|refus/i, payload.dig("error", "message"))
+      refute_includes stdout, "do-not-print"
+      assert_equal "SECRET=do-not-print\n", File.read(".env")
+      assert_empty Dir.glob(".ai-web/repairs/*.json")
+      assert_empty Dir.glob(".ai-web/snapshots/*")
+    end
+  end
+
+  def test_webbuilder_repair_passes_through_to_aiweb_engine
+    in_tmp do |dir|
+      target = File.join(dir, "repair-cafe")
+      _start_payload, start_code = json_cmd("start", "--path", target, "--idea", "동네 카페 웹사이트")
+      assert_equal 0, start_code
+      set_phase_path = File.join(target, ".ai-web", "state.yaml")
+      state = YAML.load_file(set_phase_path)
+      state["phase"]["current"] = "phase-10"
+      File.write(set_phase_path, YAML.dump(state))
+      _qa_payload, qa_code = json_cmd("--path", target, "qa-report", "--status", "failed", "--task-id", "golden")
+      assert_equal 0, qa_code
+
+      stdout, stderr, code = run_webbuilder("--path", target, "repair", "--from-qa", "latest", "--json")
+      payload = JSON.parse(stdout)
+
+      assert_equal 0, code
+      assert_equal "", stderr
+      assert_equal "created", payload.fetch("repair_loop").fetch("status")
+      assert File.exist?(File.join(target, payload.fetch("repair_loop").fetch("repair_record")))
+    end
+  end
+
   def test_phase_11_qa_report_updates_final_report
     in_tmp do
       json_cmd("init")
@@ -1192,11 +1367,11 @@ class AiwebCliTest < Minitest::Test
     assert_equal 0, code
     assert_equal "", stderr
 
-    %w[start design-brief design-system design-prompt ingest-design next-task qa-checklist qa-report rollback snapshot].each do |command|
+    %w[start design-brief design-system design-prompt ingest-design next-task qa-checklist qa-report repair rollback snapshot].each do |command|
       assert_includes stdout, command
     end
 
-    ["start [--path PATH]", "--no-advance", "--path PATH", "design-brief [--force]", "design-system resolve [--force]", "ingest-design [--id ID]", "--selected", "rollback [--to PHASE] [--failure CODE]", "qa-report [--from PATH]", "--duration-minutes N", "--timed-out"].each do |snippet|
+    ["start [--path PATH]", "--no-advance", "--path PATH", "design-brief [--force]", "design-system resolve [--force]", "ingest-design [--id ID]", "--selected", "rollback [--to PHASE] [--failure CODE]", "qa-report [--from PATH]", "repair [--from-qa PATH|latest]", "--max-cycles N", "--duration-minutes N", "--timed-out"].each do |snippet|
       assert_includes stdout, snippet
     end
   end
