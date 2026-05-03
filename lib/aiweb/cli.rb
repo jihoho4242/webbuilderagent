@@ -1467,7 +1467,7 @@ module Aiweb
       return EXIT_ADAPTER_UNAVAILABLE if status == "blocked" && (result["action_taken"].to_s =~ /unavailable/)
       if status == "blocked"
         issues = ((result.dig("agent_run", "blocking_issues") || []) + (result["blocking_issues"] || [])).join(" ")
-        return EXIT_UNSAFE_EXTERNAL_ACTION if issues.match?(/approved|approval|unsafe|guardrail|missing-target|missing target|required/i)
+        return EXIT_UNSAFE_EXTERNAL_ACTION if issues.match?(/\.env|no implementation task|task packet|safe source target|source targets?|source target|available|missing-target|missing target|required|approved|approval|unsafe|guardrail/i)
         return EXIT_PHASE_BLOCKED if issues.match?(/phase/i)
       end
       return EXIT_VALIDATION_FAILED if %w[failed no_changes].include?(status)
