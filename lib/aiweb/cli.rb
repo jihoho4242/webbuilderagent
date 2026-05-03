@@ -711,7 +711,7 @@ module Aiweb
         dry_run: true,
         action_taken: "planned agent run",
         blocking_issues: [],
-        next_action: "rerun the agent run as aiweb agent-run --task #{task} --agent #{agent} --approved to execute locally"
+        next_action: "rerun aiweb agent-run --task #{task} --agent #{agent} --approved to execute the local codex patch run"
       )
     end
 

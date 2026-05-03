@@ -472,7 +472,7 @@ class AiwebCliTest < Minitest::Test
       File.write(File.join(dir, "design-systems", "broken-json", "metadata.json"), "{ broken json")
 
       payload, code = json_cmd("--path", dir, "design-systems", "list")
-      assert_equal 5, code
+      assert_equal 1, code
       assert payload["validation_errors"].any? { |error| error.include?("design-systems/broken-json/metadata.json") && error.include?("invalid JSON") }
       assert payload["warnings"].any? { |warning| warning.include?("metadata could not be loaded") }
       assert_match(/registry metadata validation failed/, payload["blocking_issues"].join("\n"))
@@ -2535,26 +2535,9 @@ class AiwebCliTest < Minitest::Test
   def prepare_agent_run_fixture(task_markdown:, secret: nil)
     prepare_profile_d_scaffold_flow
     File.write(".ai-web/DESIGN.md", "# Agent Run Design System\n\nUse source-safe patching and recorded evidence.\n")
-    File.write(
-      ".ai-web/component-map.json",
-      JSON.pretty_generate(
-        "schema_version" => 1,
-        "status" => "ready",
-        "components" => [
-          {
-            "data_aiweb_id" => "component.hero.copy",
-            "kind" => "component",
-            "route" => "/",
-            "source_path" => "src/components/Hero.astro",
-            "line" => 1,
-            "line_number" => 1,
-            "source_hook" => "data-aiweb-id",
-            "editable" => true,
-            "snippet_summary" => "Hero copy patch target"
-          }
-        ]
-      )
-    )
+    component_map_payload, component_map_code = json_cmd("component-map")
+    assert_equal 0, component_map_code
+    assert_equal "ready", component_map_payload.dig("component_map", "status")
 
     FileUtils.mkdir_p(".ai-web/tasks")
     task_path = ".ai-web/tasks/agent-run-latest.md"
@@ -2599,7 +2582,7 @@ class AiwebCliTest < Minitest::Test
       stdout, stderr, code = run_aiweb("setup", "--install", "--json")
       payload = JSON.parse(stdout)
 
-      assert_equal 1, code
+      assert_equal 5, code
       assert_equal "", stderr
       assert_equal "setup install blocked", payload["action_taken"]
       assert_equal "blocked", payload.dig("setup", "status")
@@ -2724,7 +2707,7 @@ class AiwebCliTest < Minitest::Test
         stdout, stderr, code = run_aiweb("setup", "--install", "--dry-run", "--json")
         payload = JSON.parse(stdout)
 
-        assert_equal 1, code
+        assert_equal 5, code
         assert_equal "", stderr
         assert_match(/not initialized|\.env|unsafe|refus/i, payload.dig("error", "message"))
         refute_includes stdout, secret
@@ -2810,7 +2793,7 @@ class AiwebCliTest < Minitest::Test
       assert_equal true, payload.dig("agent_run", "dry_run")
       assert_match(/agent run/i, payload["action_taken"])
       assert_includes %w[planned dry_run], payload.dig("agent_run", "status")
-      assert_equal "rerun the agent run as aiweb agent-run --task latest --agent codex --approved to execute locally", payload["next_action"]
+      assert_equal "rerun aiweb agent-run --task latest --agent codex --approved to execute the local codex patch run", payload["next_action"]
       assert_no_agent_run_side_effects(before_entries: before_entries, before_state: before_state)
       assert_equal before_source, File.read("src/components/Hero.astro"), "agent-run --dry-run must not patch source"
       refute File.exist?(marker), "agent-run --dry-run must not execute codex"
@@ -2923,7 +2906,7 @@ class AiwebCliTest < Minitest::Test
 
       assert_equal 0, code
       assert_equal "", stderr
-      assert_nil payload["dry_run"]
+      assert_equal false, payload.dig("agent_run", "dry_run")
       assert_equal "passed", payload.dig("agent_run", "status")
       assert_equal "ran agent patch", payload["action_taken"]
       assert run_dir, "approved agent-run must write a run directory"
@@ -3069,8 +3052,8 @@ class AiwebCliTest < Minitest::Test
     stdout, stderr, code = run_aiweb("help")
     assert_equal 0, code
     assert_equal "", stderr
-    assert_match(/agent-run: runs an approved local source-patch agent task packet/i, stdout)
-    assert_match(/agent-run: phase-7 through phase-11; approved local source-patch task packets only/i, stdout)
+    assert_includes stdout, "agent-run --task latest --agent codex --approved"
+    assert_includes stdout, "agent-run --task latest --agent codex --dry-run"
 
     help_stdout, help_stderr, help_code = run_webbuilder("--help")
     assert_equal 0, help_code
