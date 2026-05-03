@@ -4065,6 +4065,26 @@ class AiwebCliTest < Minitest::Test
     end
   end
 
+  def screenshot_entry_for(payload, viewport)
+    screenshots = payload.fetch("screenshots")
+    case screenshots
+    when Hash
+      screenshots.fetch(viewport)
+    when Array
+      screenshots.find { |entry| entry["viewport"] == viewport || entry["name"] == viewport } || flunk("missing #{viewport} screenshot entry")
+    else
+      flunk("unexpected screenshots shape: #{screenshots.class}")
+    end
+  end
+
+  def screenshot_path_for(payload, viewport)
+    screenshot_entry_for(payload, viewport).fetch("path")
+  end
+
+  def screenshot_paths_by_viewport(payload)
+    %w[mobile tablet desktop].to_h { |viewport| [viewport, screenshot_path_for(payload, viewport)] }
+  end
+
   def record_visual_critique_fixture!(task_id:, scores:)
     FileUtils.mkdir_p("evidence")
     screenshot_path = File.join("evidence", "#{task_id}.png")
@@ -4775,10 +4795,10 @@ class AiwebCliTest < Minitest::Test
         assert_equal true, screenshot_qa["dry_run"]
         assert_equal url, screenshot_qa["url"]
         assert_equal "home-shot", screenshot_qa["task_id"]
-        assert_equal ".ai-web/qa/screenshots/metadata.json", screenshot_qa["metadata_path"]
-        assert_equal ".ai-web/qa/screenshots/mobile-home.png", screenshot_qa.dig("screenshots", "mobile", "path")
-        assert_equal ".ai-web/qa/screenshots/tablet-home.png", screenshot_qa.dig("screenshots", "tablet", "path")
-        assert_equal ".ai-web/qa/screenshots/desktop-home.png", screenshot_qa.dig("screenshots", "desktop", "path")
+        assert_equal ".ai-web/qa/screenshots/metadata.json", payload.dig("screenshot_metadata", "metadata_path")
+        assert_equal ".ai-web/qa/screenshots/mobile-home.png", screenshot_path_for(screenshot_qa, "mobile")
+        assert_equal ".ai-web/qa/screenshots/tablet-home.png", screenshot_path_for(screenshot_qa, "tablet")
+        assert_equal ".ai-web/qa/screenshots/desktop-home.png", screenshot_path_for(screenshot_qa, "desktop")
         assert_nil screenshot_qa["exit_code"], "dry-run must not execute Playwright"
         assert_equal before_entries, after_entries, "qa-screenshot --dry-run must not write screenshots, metadata, runs, or results"
         assert_equal env_body, File.read(".env"), "qa-screenshot --dry-run must not mutate .env"
@@ -4886,22 +4906,23 @@ class AiwebCliTest < Minitest::Test
         "desktop" => ".ai-web/qa/screenshots/desktop-home.png"
       }
       expected_paths.each do |viewport, path|
-        assert_equal path, screenshot_qa.dig("screenshots", viewport, "path")
+        assert_equal path, screenshot_path_for(screenshot_qa, viewport)
         assert File.file?(path), "#{viewport} screenshot must be written"
         assert_match(/fake screenshot/, File.read(path))
       end
-      assert_equal ".ai-web/qa/screenshots/metadata.json", screenshot_qa["metadata_path"]
-      assert File.file?(screenshot_qa["metadata_path"])
+      screenshot_metadata_path = payload.dig("screenshot_metadata", "metadata_path")
+      assert_equal ".ai-web/qa/screenshots/metadata.json", screenshot_metadata_path
+      assert File.file?(screenshot_metadata_path)
       assert File.file?(screenshot_qa["result_path"])
 
-      metadata = JSON.parse(File.read(screenshot_qa["metadata_path"]))
+      metadata = JSON.parse(File.read(screenshot_metadata_path))
       assert_equal 1, metadata["schema_version"]
       assert_equal "http://127.0.0.1:4321", metadata["url"]
-      assert_equal expected_paths, metadata.fetch("screenshots").transform_values { |entry| entry.fetch("path") }
+      assert_equal expected_paths, screenshot_paths_by_viewport(metadata)
       refute_match(Regexp.escape(dir), JSON.generate(metadata), "metadata must stay artifact-relative and not leak absolute project paths")
 
       state = load_state
-      assert_equal screenshot_qa["metadata_path"], state.dig("qa", "latest_screenshot_metadata")
+      assert_equal screenshot_metadata_path, state.dig("qa", "latest_screenshot_metadata")
       assert_equal screenshot_qa["result_path"], state.dig("qa", "latest_screenshot_result")
       assert_equal env_body, File.read(".env"), "qa-screenshot must not mutate .env"
       refute Dir.exist?("dist"), "qa-screenshot must not build or deploy"
@@ -4910,7 +4931,7 @@ class AiwebCliTest < Minitest::Test
       critique_payload = JSON.parse(critique_stdout)
       assert_equal 0, critique_code, critique_stdout
       assert_equal "", critique_stderr
-      assert_equal screenshot_qa["metadata_path"], critique_payload.dig("visual_critique", "metadata_path")
+      assert_equal screenshot_metadata_path, critique_payload.dig("visual_critique", "metadata_path")
       assert_equal expected_paths["desktop"], critique_payload.dig("visual_critique", "screenshot_path")
     end
   end
