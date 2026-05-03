@@ -17,7 +17,7 @@ module Aiweb
     EXIT_UNSAFE_EXTERNAL_ACTION = 5
     EXIT_INTERNAL_ERROR = 10
 
-    MUTATION_COMMANDS = %w[start init interview run ingest-design next-task qa-checklist qa-report advance rollback resolve-blocker snapshot design-brief design-system design-prompt design select-design scaffold build preview qa-playwright browser-qa].freeze
+    MUTATION_COMMANDS = %w[start init interview run ingest-design next-task qa-checklist qa-report advance rollback resolve-blocker snapshot design-brief design-system design-prompt design select-design scaffold build preview qa-playwright browser-qa qa-a11y a11y-qa qa-lighthouse lighthouse-qa].freeze
     RUNTIME_PLAN_COMMANDS = %w[runtime-plan scaffold-status].freeze
     REGISTRY_COMMANDS = %w[design-systems skills craft].freeze
 
@@ -174,6 +174,9 @@ module Aiweb
         end
         project.preview(dry_run: @dry_run, stop: opts[:stop])
       when "qa-playwright", "browser-qa"
+        opts = parse_browser_qa_options(command)
+        project.qa_playwright(url: opts[:url], task_id: opts[:task_id], force: opts[:force], dry_run: @dry_run)
+      when "qa-a11y", "a11y-qa"
         opts = parse_options do |o, options|
           o.on("--url URL") { |v| options[:url] = v }
           o.on("--task-id ID") { |v| options[:task_id] = v }
@@ -182,7 +185,17 @@ module Aiweb
         unless @argv.empty?
           raise UserError.new("#{command} does not accept extra positional arguments: #{@argv.join(", ")}", EXIT_VALIDATION_FAILED)
         end
-        project.qa_playwright(url: opts[:url], task_id: opts[:task_id], force: opts[:force], dry_run: @dry_run)
+        project.qa_a11y(url: opts[:url], task_id: opts[:task_id], force: opts[:force], dry_run: @dry_run)
+      when "qa-lighthouse", "lighthouse-qa"
+        opts = parse_options do |o, options|
+          o.on("--url URL") { |v| options[:url] = v }
+          o.on("--task-id ID") { |v| options[:task_id] = v }
+          o.on("--force") { options[:force] = true }
+        end
+        unless @argv.empty?
+          raise UserError.new("#{command} does not accept extra positional arguments: #{@argv.join(", ")}", EXIT_VALIDATION_FAILED)
+        end
+        project.qa_lighthouse(url: opts[:url], task_id: opts[:task_id], force: opts[:force], dry_run: @dry_run)
       when "ingest-design"
         opts = parse_options do |o, options|
           o.on("--id ID") { |v| options[:id] = v }
@@ -308,6 +321,48 @@ module Aiweb
       options
     end
 
+    def parse_browser_qa_options(command)
+      opts = parse_options do |o, options|
+        o.on("--url URL") { |v| options[:url] = v }
+        o.on("--task-id ID") { |v| options[:task_id] = v }
+        o.on("--force") { options[:force] = true }
+      end
+      unless @argv.empty?
+        raise UserError.new("#{command} does not accept extra positional arguments: #{@argv.join(", ")}", EXIT_VALIDATION_FAILED)
+      end
+      opts
+    end
+
+    def browser_adapter_unavailable_payload(command, opts)
+      adapter = command.sub(/^qa-/, "")
+      target = opts[:url].to_s.strip
+      command_line = ["aiweb", command]
+      command_line.concat(["--url", target]) unless target.empty?
+      command_line.concat(["--task-id", opts[:task_id].to_s]) unless opts[:task_id].to_s.empty?
+      command_line << "--force" if opts[:force]
+      command_line << "--dry-run" if @dry_run
+
+      {
+        "schema_version" => 1,
+        "current_phase" => nil,
+        "action_taken" => "#{adapter} QA unavailable",
+        "changed_files" => [],
+        "blocking_issues" => ["#{command} command surface is reserved, but the #{adapter} QA adapter is not implemented yet."],
+        "missing_artifacts" => [],
+        "browser_qa" => {
+          "schema_version" => 1,
+          "adapter" => adapter,
+          "status" => "blocked",
+          "command" => command_line.join(" "),
+          "url" => target.empty? ? nil : target,
+          "task_id" => opts[:task_id],
+          "dry_run" => @dry_run,
+          "blocking_issues" => ["#{command} command surface is reserved, but the #{adapter} QA adapter is not implemented yet."]
+        },
+        "next_action" => "use aiweb qa-playwright for the implemented local browser QA path until #{command} has a project adapter"
+      }
+    end
+
     def help_payload
       base_payload("help", <<~HELP)
         aiweb — AI Web Director CLI
@@ -332,6 +387,8 @@ module Aiweb
           qa-checklist [--force]
           qa-report [--from PATH] [--status passed|failed|blocked] [--duration-minutes N] [--timed-out] [--force]
           qa-playwright [--url URL] [--task-id ID] [--force]
+          qa-a11y [--url URL] [--task-id ID] [--force]
+          qa-lighthouse [--url URL] [--task-id ID] [--force]
           advance
           rollback [--to PHASE] [--failure CODE] [--reason "..."]
           resolve-blocker --reason "..."
@@ -354,6 +411,8 @@ module Aiweb
           build: runs the scaffolded Astro build only after runtime-plan is ready and records .ai-web/runs logs
           preview: starts/stops the local scaffold dev server after runtime-plan is ready; --dry-run does not write files or launch Node
           qa-playwright: runs safe local Playwright QA browser checks against localhost/127.0.0.1 preview; --dry-run does not write files or launch Node
+          qa-a11y: runs safe local axe accessibility QA against localhost/127.0.0.1 preview; --dry-run does not write files or launch Node
+          qa-lighthouse: runs safe local Lighthouse QA against localhost/127.0.0.1 preview; --dry-run does not write files or launch Node
           ingest-design: phase-3.5
           next-task: phase-6 through phase-11
           qa-checklist: phase-7 through phase-11
@@ -481,6 +540,14 @@ module Aiweb
       %w[dry_run passed].include?(result.dig("playwright_qa", "status")) ? EXIT_SUCCESS : EXIT_VALIDATION_FAILED
     end
 
+    def qa_a11y_exit_code(result)
+      %w[dry_run passed].include?(result.dig("a11y_qa", "status")) ? EXIT_SUCCESS : EXIT_VALIDATION_FAILED
+    end
+
+    def qa_lighthouse_exit_code(result)
+      %w[dry_run passed].include?(result.dig("lighthouse_qa", "status")) ? EXIT_SUCCESS : EXIT_VALIDATION_FAILED
+    end
+
     def exit_code_for(command, result)
       return EXIT_VALIDATION_FAILED if result["validation_errors"] && !result["validation_errors"].empty?
       return result.dig("runtime_plan", "readiness") == "ready" ? EXIT_SUCCESS : EXIT_VALIDATION_FAILED if RUNTIME_PLAN_COMMANDS.include?(command)
@@ -488,6 +555,8 @@ module Aiweb
       return build_exit_code(result) if command == "build"
       return preview_exit_code(result) if command == "preview"
       return qa_playwright_exit_code(result) if %w[qa-playwright browser-qa].include?(command)
+      return qa_a11y_exit_code(result) if %w[qa-a11y a11y-qa].include?(command)
+      return qa_lighthouse_exit_code(result) if %w[qa-lighthouse lighthouse-qa].include?(command)
       return EXIT_SUCCESS if %w[help version status start init interview run design-brief design-system design-prompt design select-design scaffold ingest-design next-task qa-checklist qa-report rollback resolve-blocker snapshot].include?(command)
       if command == "advance" && result["action_taken"] == "advance blocked"
         issue = result["blocking_issues"].join(" ")

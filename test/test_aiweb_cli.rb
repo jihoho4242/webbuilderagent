@@ -78,6 +78,49 @@ class AiwebCliTest < Minitest::Test
     bin_dir
   end
 
+  def write_fake_pr12_qa_tooling(root)
+    write_fake_static_qa_tooling(root)
+  end
+
+  def write_fake_static_qa_tooling(root)
+    FileUtils.mkdir_p(File.join(root, "node_modules", ".bin"))
+    %w[axe lighthouse].each do |name|
+      write_fake_executable(
+        File.join(root, "node_modules", ".bin"),
+        name,
+        "echo local #{name} shim >/dev/null"
+      )
+    end
+
+    bin_dir = File.join(root, "fake-static-qa-bin")
+    FileUtils.mkdir_p(bin_dir)
+    write_fake_executable(
+      bin_dir,
+      "pnpm",
+      <<~'SH'
+        [ "$1" = "exec" ] || { echo "expected pnpm exec" >&2; exit 64; }
+        tool="$2"
+        [ "$tool" = "axe" ] || [ "$tool" = "lighthouse" ] || { echo "unexpected qa tool $tool" >&2; exit 64; }
+        status="${AIWEB_STATIC_QA_STATUS:-passed}"
+        [ "$tool" = "axe" ] && status="${A11Y_FAKE_STATUS:-$status}"
+        [ "$tool" = "lighthouse" ] && status="${LIGHTHOUSE_FAKE_STATUS:-$status}"
+        if [ "$status" = "failed" ]; then
+          echo "{\"tool\":\"$tool\",\"status\":\"failed\"}"
+          echo "fake $tool failure" >&2
+          exit 1
+        fi
+        echo "{\"tool\":\"$tool\",\"status\":\"passed\"}"
+        echo "fake $tool pass" >&2
+        exit 0
+      SH
+    )
+    bin_dir
+  end
+
+  def write_fake_pr12_qa_tooling(root)
+    write_fake_static_qa_tooling(root)
+  end
+
   def run_webbuilder(*args, input: nil)
     stdout, stderr, status = Open3.capture3(WEBBUILDER, *args.map(&:to_s), stdin_data: input)
     [stdout, stderr, status.exitstatus]
@@ -2761,6 +2804,156 @@ class AiwebCliTest < Minitest::Test
     end
   end
 
+  PR12_QA_COMMANDS = [
+    ["qa-a11y", "a11y_qa", "axe", "A11Y_FAKE_STATUS"],
+    ["qa-lighthouse", "lighthouse_qa", "lighthouse", "LIGHTHOUSE_FAKE_STATUS"]
+  ].freeze
+
+  def test_pr12_qa_commands_uninitialized_and_unready_are_safe
+    PR12_QA_COMMANDS.each do |command, payload_key, _tool_label, _status_env|
+      in_tmp do
+        env_body = "SECRET=do-not-touch\n"
+        File.write(".env", env_body)
+
+        stdout, stderr, code = run_aiweb(command, "--url", "http://127.0.0.1:4321", "--json")
+        payload = JSON.parse(stdout)
+
+        assert_equal 1, code, command
+        assert_equal "", stderr
+        assert_equal "error", payload["status"]
+        assert_match(/not initialized|initialize/i, payload.dig("error", "message"))
+        refute Dir.exist?(".ai-web/runs"), "uninitialized #{command} must not create run artifacts"
+        assert_equal env_body, File.read(".env"), "uninitialized #{command} must not mutate .env"
+
+        json_cmd("init", "--profile", "D")
+        before_state = File.read(".ai-web/state.yaml")
+        stdout, stderr, code = run_aiweb(command, "--url", "http://127.0.0.1:4321", "--json")
+        payload = JSON.parse(stdout)
+
+        assert_equal 1, code, command
+        assert_equal "", stderr
+        assert_equal "blocked", payload.dig(payload_key, "status"), "#{command} must report under #{payload_key}"
+        assert_equal false, payload.dig(payload_key, "dry_run")
+        assert_match(/Scaffold has not been created|runtime-plan/i, payload["blocking_issues"].join("\n"))
+        assert_empty payload["changed_files"]
+        assert_equal before_state, File.read(".ai-web/state.yaml"), "runtime-plan block must not persist state changes"
+        assert_equal env_body, File.read(".env"), "blocked #{command} must not mutate .env"
+        refute Dir.exist?(".ai-web/runs"), "runtime-plan block must not create run artifacts"
+        refute Dir.exist?("node_modules"), "#{command} must not install dependencies"
+        refute Dir.exist?("dist"), "#{command} must not run build output"
+      end
+    end
+  end
+
+  def test_pr12_qa_commands_dry_run_on_ready_scaffold_plans_without_writes
+    PR12_QA_COMMANDS.each do |command, payload_key, _tool_label, _status_env|
+      in_tmp do
+        prepare_profile_d_design_flow
+        json_cmd("scaffold", "--profile", "D")
+        env_body = "SECRET=do-not-touch\n"
+        File.write(".env", env_body)
+        before_entries = Dir.glob("**/*", File::FNM_DOTMATCH).reject { |path| path == "." || path == ".." }.sort
+
+        stdout, stderr, code = run_aiweb(command, "--url", "http://127.0.0.1:4321", "--task-id", "dry-smoke", "--dry-run", "--json")
+        payload = JSON.parse(stdout)
+        after_entries = Dir.glob("**/*", File::FNM_DOTMATCH).reject { |path| path == "." || path == ".." }.sort
+
+        assert_equal 0, code, command
+        assert_equal "", stderr
+        assert_equal true, payload["dry_run"]
+        assert_equal "dry_run", payload.dig(payload_key, "status"), "#{command} must report under #{payload_key}"
+        assert_equal true, payload.dig(payload_key, "dry_run")
+        assert_equal "http://127.0.0.1:4321", payload.dig(payload_key, "url")
+        assert_equal "dry-smoke", payload.dig(payload_key, "task_id")
+        assert_match(/pnpm exec .*(--reporter=json|--output=json)/, payload.dig(payload_key, "command"))
+        assert_match(%r{\A\.ai-web/runs/#{command.delete_prefix("qa-")}-qa-\d{8}T\d{6}Z/stdout\.log\z}, payload.dig(payload_key, "stdout_log"))
+        assert_match(%r{\A\.ai-web/runs/#{command.delete_prefix("qa-")}-qa-\d{8}T\d{6}Z/stderr\.log\z}, payload.dig(payload_key, "stderr_log"))
+        assert_nil payload.dig(payload_key, "exit_code"), "dry-run must not execute #{command}"
+        assert_equal before_entries, after_entries, "#{command} --dry-run must not write run artifacts"
+        assert_equal env_body, File.read(".env"), "#{command} --dry-run must not mutate .env"
+        refute Dir.exist?("node_modules"), "#{command} --dry-run must not install dependencies"
+        refute Dir.exist?("dist"), "#{command} --dry-run must not run a build"
+      end
+    end
+  end
+
+  def test_pr12_qa_commands_missing_local_tools_block_with_payload_keys
+    PR12_QA_COMMANDS.each do |command, payload_key, tool_label, _status_env|
+      in_tmp do
+        prepare_profile_d_design_flow
+        json_cmd("scaffold", "--profile", "D")
+        env_body = "SECRET=do-not-touch\n"
+        File.write(".env", env_body)
+        FileUtils.mkdir_p("node_modules")
+        bin_dir = File.join(Dir.pwd, "fake-bin")
+        FileUtils.mkdir_p(bin_dir)
+        write_fake_executable(bin_dir, "pnpm", "echo should-not-run >&2; exit 99")
+
+        stdout, stderr, code = run_aiweb_env({ "PATH" => [bin_dir, "/usr/bin", "/bin", "/usr/sbin", "/sbin"].join(File::PATH_SEPARATOR) }, command, "--url", "http://127.0.0.1:4321", "--json")
+        payload = JSON.parse(stdout)
+
+        assert_equal 1, code, command
+        assert_equal "", stderr
+        assert_equal "blocked", payload.dig(payload_key, "status"), "#{command} must report under #{payload_key}"
+        assert_nil payload.dig(payload_key, "exit_code"), "missing local #{tool_label} must not execute pnpm"
+        assert_match(/#{tool_label}|node_modules\/\.bin/i, payload["blocking_issues"].join("\n"))
+        assert_match(%r{\A\.ai-web/runs/#{command.delete_prefix("qa-")}-qa-\d{8}T\d{6}Z/stdout\.log\z}, payload.dig(payload_key, "stdout_log"))
+        assert_match(%r{\A\.ai-web/runs/#{command.delete_prefix("qa-")}-qa-\d{8}T\d{6}Z/stderr\.log\z}, payload.dig(payload_key, "stderr_log"))
+        assert File.file?(payload.dig(payload_key, "stdout_log"))
+        assert File.file?(payload.dig(payload_key, "stderr_log"))
+        assert_equal payload.dig(payload_key, "blocking_issues").join("\n") + "\n", File.read(payload.dig(payload_key, "stderr_log"))
+        assert_equal env_body, File.read(".env"), "missing-local-tool #{command} must not mutate .env"
+        refute Dir.exist?("dist"), "#{command} must not build or deploy"
+      end
+    end
+  end
+
+  def test_pr12_qa_commands_record_fake_pass_and_fail_results
+    PR12_QA_COMMANDS.each do |command, payload_key, tool_label, status_env|
+      in_tmp do |dir|
+        prepare_profile_d_design_flow
+        json_cmd("scaffold", "--profile", "D")
+        env_body = "SECRET=do-not-touch\n"
+        File.write(".env", env_body)
+        bin_dir = write_fake_pr12_qa_tooling(dir)
+        env = { "PATH" => [bin_dir, "/usr/bin", "/bin", "/usr/sbin", "/sbin"].join(File::PATH_SEPARATOR) }
+
+        stdout, stderr, code = run_aiweb_env(env, command, "--url", "http://127.0.0.1:4321", "--task-id", "smoke-pass", "--json")
+        payload = JSON.parse(stdout)
+
+        assert_equal 0, code, command
+        assert_equal "", stderr
+        assert_equal "passed", payload.dig(payload_key, "status"), "#{command} must report under #{payload_key}"
+        assert_equal 0, payload.dig(payload_key, "exit_code")
+        assert_match(/pnpm exec #{tool_label}/, payload.dig(payload_key, "command"))
+        assert File.file?(payload.dig(payload_key, "metadata_path"))
+        assert File.file?(payload.dig(payload_key, "result_path"))
+        pass_result = JSON.parse(File.read(payload.dig(payload_key, "result_path")))
+        assert_equal "passed", pass_result["status"]
+        assert_equal "smoke-pass", pass_result["task_id"]
+        assert_equal "http://127.0.0.1:4321", pass_result.dig("environment", "url")
+        assert_match(/fake .* pass/, File.read(payload.dig(payload_key, "stderr_log")))
+        assert_equal env_body, File.read(".env"), "successful #{command} must not mutate .env"
+        refute Dir.exist?("dist"), "successful #{command} must not run build output"
+
+        fail_env = env.merge(status_env => "failed")
+        fail_stdout, fail_stderr, fail_code = run_aiweb_env(fail_env, command, "--url", "http://127.0.0.1:4321", "--task-id", "smoke-fail", "--json")
+        fail_payload = JSON.parse(fail_stdout)
+
+        assert_equal 1, fail_code, command
+        assert_equal "", fail_stderr
+        assert_equal "failed", fail_payload.dig(payload_key, "status"), "#{command} must report failures under #{payload_key}"
+        assert_equal 1, fail_payload.dig(payload_key, "exit_code")
+        fail_result = JSON.parse(File.read(fail_payload.dig(payload_key, "result_path")))
+        assert_equal "failed", fail_result["status"]
+        assert_equal "smoke-fail", fail_result["task_id"]
+        assert_match(/fake .* failure/, File.read(fail_payload.dig(payload_key, "stderr_log")))
+        assert_equal env_body, File.read(".env"), "failed #{command} must not mutate .env"
+        refute Dir.exist?("dist"), "failed #{command} must not build or deploy"
+      end
+    end
+  end
+
   def test_qa_playwright_help_and_webbuilder_passthrough
     stdout, stderr, code = run_aiweb("help")
     assert_equal 0, code
@@ -2791,6 +2984,91 @@ class AiwebCliTest < Minitest::Test
       assert_equal "web-dry", web_payload.dig("playwright_qa", "task_id")
       assert_equal "SECRET=do-not-touch\n", File.read(File.join(target, ".env"))
       refute Dir.exist?(File.join(target, ".ai-web", "runs")), "webbuilder qa-playwright --dry-run must not write run artifacts"
+    end
+  end
+
+  def test_qa_a11y_and_lighthouse_dry_run_help_and_webbuilder_passthrough
+    stdout, stderr, code = run_aiweb("help")
+    assert_equal 0, code
+    assert_equal "", stderr
+    assert_includes stdout, "qa-a11y"
+    assert_includes stdout, "qa-lighthouse"
+
+    help_stdout, help_stderr, help_code = run_webbuilder("--help")
+    assert_equal 0, help_code
+    assert_equal "", help_stderr
+    assert_match(/qa-a11y/, help_stdout)
+    assert_match(/qa-lighthouse/, help_stdout)
+
+    in_tmp do |dir|
+      target = File.join(dir, "passthrough-static-qa")
+      Dir.mkdir(target)
+      Dir.chdir(target) do
+        prepare_profile_d_design_flow
+        json_cmd("scaffold", "--profile", "D")
+        File.write(".env", "SECRET=do-not-touch\n")
+      end
+
+      a11y_stdout, a11y_stderr, a11y_code = run_webbuilder("--path", target, "qa-a11y", "--url", "http://127.0.0.1:4321", "--task-id", "web-a11y", "--dry-run", "--json")
+      a11y_payload = JSON.parse(a11y_stdout)
+      assert_equal 0, a11y_code
+      assert_equal "", a11y_stderr
+      assert_equal "planned axe accessibility QA", a11y_payload["action_taken"]
+      assert_equal "dry_run", a11y_payload.dig("a11y_qa", "status")
+      assert_equal "web-a11y", a11y_payload.dig("a11y_qa", "task_id")
+      assert_match(/pnpm exec axe http:\/\/127\.0\.0\.1:4321 --reporter=json/, a11y_payload.dig("a11y_qa", "command"))
+
+      lighthouse_stdout, lighthouse_stderr, lighthouse_code = run_webbuilder("--path", target, "qa-lighthouse", "--url", "http://127.0.0.1:4321", "--task-id", "web-lighthouse", "--dry-run", "--json")
+      lighthouse_payload = JSON.parse(lighthouse_stdout)
+      assert_equal 0, lighthouse_code
+      assert_equal "", lighthouse_stderr
+      assert_equal "planned Lighthouse QA", lighthouse_payload["action_taken"]
+      assert_equal "dry_run", lighthouse_payload.dig("lighthouse_qa", "status")
+      assert_equal "web-lighthouse", lighthouse_payload.dig("lighthouse_qa", "task_id")
+      assert_match(/pnpm exec lighthouse http:\/\/127\.0\.0\.1:4321 --output=json/, lighthouse_payload.dig("lighthouse_qa", "command"))
+
+      assert_equal "SECRET=do-not-touch\n", File.read(File.join(target, ".env"))
+      refute Dir.exist?(File.join(target, ".ai-web", "runs")), "static QA --dry-run must not write run artifacts"
+    end
+  end
+
+  def test_qa_a11y_and_lighthouse_record_fake_pass_results
+    in_tmp do |dir|
+      prepare_profile_d_design_flow
+      json_cmd("scaffold", "--profile", "D")
+      env_body = "SECRET=do-not-touch\n"
+      File.write(".env", env_body)
+      bin_dir = write_fake_static_qa_tooling(dir)
+      env = { "PATH" => [bin_dir, "/usr/bin", "/bin", "/usr/sbin", "/sbin"].join(File::PATH_SEPARATOR) }
+
+      a11y_stdout, a11y_stderr, a11y_code = run_aiweb_env(env, "qa-a11y", "--url", "http://127.0.0.1:4321", "--task-id", "a11y-pass", "--json")
+      a11y_payload = JSON.parse(a11y_stdout)
+      assert_equal 0, a11y_code
+      assert_equal "", a11y_stderr
+      assert_equal "ran axe accessibility QA", a11y_payload["action_taken"]
+      assert_equal "passed", a11y_payload.dig("a11y_qa", "status")
+      assert_equal 0, a11y_payload.dig("a11y_qa", "exit_code")
+      assert File.file?(a11y_payload.dig("a11y_qa", "result_path"))
+      a11y_result = JSON.parse(File.read(a11y_payload.dig("a11y_qa", "result_path")))
+      assert_equal "passed", a11y_result["status"]
+      assert_equal "accessibility", a11y_result.dig("checks", 0, "category")
+      assert_equal "axe", a11y_result.dig("environment", "browser")
+
+      lighthouse_stdout, lighthouse_stderr, lighthouse_code = run_aiweb_env(env, "qa-lighthouse", "--url", "http://127.0.0.1:4321", "--task-id", "lighthouse-pass", "--json")
+      lighthouse_payload = JSON.parse(lighthouse_stdout)
+      assert_equal 0, lighthouse_code
+      assert_equal "", lighthouse_stderr
+      assert_equal "ran Lighthouse QA", lighthouse_payload["action_taken"]
+      assert_equal "passed", lighthouse_payload.dig("lighthouse_qa", "status")
+      assert_equal 0, lighthouse_payload.dig("lighthouse_qa", "exit_code")
+      assert File.file?(lighthouse_payload.dig("lighthouse_qa", "result_path"))
+      lighthouse_result = JSON.parse(File.read(lighthouse_payload.dig("lighthouse_qa", "result_path")))
+      assert_equal "passed", lighthouse_result["status"]
+      assert_equal "performance", lighthouse_result.dig("checks", 0, "category")
+      assert_equal "lighthouse", lighthouse_result.dig("environment", "browser")
+
+      assert_equal env_body, File.read(".env"), "static QA commands must not mutate .env"
+      refute Dir.exist?("dist"), "static QA commands must not build or deploy"
     end
   end
 
