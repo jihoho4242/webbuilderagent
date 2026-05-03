@@ -54,7 +54,7 @@ module Aiweb
     ADVANCE_PHASES = (PHASES - ["phase--1", "complete"]).freeze
 
     REQUIRED_TOP_LEVEL_STATE_KEYS = %w[
-      schema_version project phase gates artifacts design_candidates implementation qa deploy budget adapters invalidations decisions snapshots
+      schema_version project phase gates artifacts design_candidates implementation setup qa deploy budget adapters invalidations decisions snapshots
     ].freeze
 
     SCAFFOLD_PROFILE_D_METADATA_PATH = ".ai-web/scaffold-profile-D.json".freeze
@@ -685,6 +685,159 @@ module Aiweb
         },
         "next_action" => readiness == "ready" ? "runtime tools may inspect scripts next; do not install packages or launch Node from this read-only check" : "resolve blockers, then rerun aiweb runtime-plan"
       }
+    end
+
+    def setup(install: false, approved: false, dry_run: false)
+      assert_initialized!
+
+      unless install
+        return setup_blocked_payload(
+          state: load_state,
+          status: "unsupported",
+          command: nil,
+          dry_run: dry_run,
+          blocking_issues: ["setup currently supports --install only"],
+          next_action: "rerun aiweb setup --install with --dry-run or --approved"
+        )
+      end
+
+      state, state_error = runtime_state_snapshot
+      ensure_scaffold_state_defaults!(state) if state
+      ensure_setup_state_defaults!(state) if state
+      scaffold = runtime_scaffold_summary(state)
+      metadata = runtime_metadata_summary(scaffold)
+      design = runtime_design_summary(state, metadata)
+      package_json = runtime_package_json_summary
+      missing_files = SCAFFOLD_PROFILE_D_REQUIRED_FILES.reject { |path| File.exist?(File.join(root, path)) }
+      blockers = runtime_plan_blockers(state, state_error, scaffold, metadata, design, package_json, missing_files)
+      package_manager = setup_package_manager(scaffold, metadata, package_json)
+      command = setup_install_command(package_manager)
+      blockers << "setup install currently supports pnpm only; detected #{package_manager.inspect}" unless package_manager == "pnpm"
+      return setup_blocked_payload(state: state, status: "blocked", command: command, dry_run: dry_run, blocking_issues: blockers, next_action: "resolve runtime-plan blockers, then rerun aiweb setup --install") unless blockers.empty?
+
+      timestamp = Time.now.utc.strftime("%Y%m%dT%H%M%SZ")
+      run_id = "setup-#{timestamp}"
+      run_dir = File.join(aiweb_dir, "runs", run_id)
+      stdout_path = File.join(run_dir, "stdout.log")
+      stderr_path = File.join(run_dir, "stderr.log")
+      metadata_path = File.join(run_dir, "setup.json")
+      planned_changes = [relative(run_dir), relative(stdout_path), relative(stderr_path), relative(metadata_path)]
+      lifecycle_warnings = package_lifecycle_script_warnings
+
+      unless approved || dry_run
+        return setup_payload(
+          state: state,
+          metadata: setup_run_metadata(
+            run_id: run_id,
+            status: "approval_required",
+            command: command,
+            package_manager: package_manager,
+            started_at: nil,
+            finished_at: nil,
+            exit_code: nil,
+            stdout_log: relative(stdout_path),
+            stderr_log: relative(stderr_path),
+            metadata_path: relative(metadata_path),
+            lifecycle_script_warnings: lifecycle_warnings,
+            node_modules_present: File.directory?(File.join(root, "node_modules")),
+            blocking_issues: ["--approved is required for real package install"],
+            dry_run: false,
+            approved: false
+          ),
+          changed_files: [],
+          action_taken: "setup install approval required",
+          blocking_issues: ["--approved is required for real package install"],
+          next_action: "rerun aiweb setup --install --approved to execute locally, or --dry-run to inspect planned artifacts"
+        )
+      end
+
+      if dry_run
+        return setup_payload(
+          state: state,
+          metadata: setup_run_metadata(
+            run_id: run_id,
+            status: "dry_run",
+            command: command,
+            package_manager: package_manager,
+            started_at: nil,
+            finished_at: nil,
+            exit_code: nil,
+            stdout_log: relative(stdout_path),
+            stderr_log: relative(stderr_path),
+            metadata_path: relative(metadata_path),
+            lifecycle_script_warnings: lifecycle_warnings,
+            node_modules_present: File.directory?(File.join(root, "node_modules")),
+            blocking_issues: [],
+            dry_run: true,
+            approved: approved
+          ),
+          changed_files: planned_changes,
+          action_taken: "planned dependency install",
+          blocking_issues: [],
+          next_action: "rerun aiweb setup --install --approved to execute #{command.inspect} locally"
+        )
+      end
+
+      changes = []
+      mutation(dry_run: false) do
+        FileUtils.mkdir_p(run_dir)
+        changes << relative(run_dir)
+        started_at = now
+        stdout = ""
+        stderr = ""
+        status = "blocked"
+        exit_code = nil
+        blocking_issues = []
+
+        if executable_path("pnpm").nil?
+          blocking_issues << "pnpm executable is missing; install pnpm locally, then rerun aiweb setup --install --approved."
+          stderr = blocking_issues.join("\n") + "\n"
+        else
+          stdout, stderr, process_status = Open3.capture3(setup_child_env, *setup_install_argv(package_manager), chdir: root)
+          stdout = redact_setup_output(stdout)
+          stderr = redact_setup_output(stderr)
+          exit_code = process_status.exitstatus
+          status = process_status.success? ? "passed" : "failed"
+          blocking_issues << "#{command} failed with exit code #{exit_code}" unless process_status.success?
+        end
+
+        changes << write_file(stdout_path, stdout, false)
+        changes << write_file(stderr_path, stderr, false)
+        metadata = setup_run_metadata(
+          run_id: run_id,
+          status: status,
+          command: command,
+          package_manager: package_manager,
+          started_at: started_at,
+          finished_at: now,
+          exit_code: exit_code,
+          stdout_log: relative(stdout_path),
+          stderr_log: relative(stderr_path),
+          metadata_path: relative(metadata_path),
+          lifecycle_script_warnings: lifecycle_warnings,
+          node_modules_present: File.directory?(File.join(root, "node_modules")),
+          blocking_issues: blocking_issues,
+          dry_run: false,
+          approved: true
+        )
+        changes << write_json(metadata_path, metadata, false)
+        setup_state = state["setup"] ||= {}
+        setup_state["latest_run"] = relative(metadata_path)
+        setup_state["package_manager"] = package_manager
+        setup_state["node_modules_present"] = metadata["node_modules_present"]
+        setup_state["last_installed_at"] = metadata["finished_at"] if status == "passed"
+        state["project"]["updated_at"] = now if state["project"].is_a?(Hash)
+        changes << write_yaml(state_path, state, false)
+
+        return setup_payload(
+          state: state,
+          metadata: metadata,
+          changed_files: compact_changes(changes),
+          action_taken: status == "passed" ? "installed project dependencies" : "dependency install #{status}",
+          blocking_issues: blocking_issues,
+          next_action: setup_next_action(status)
+        )
+      end
     end
 
 
@@ -1940,6 +2093,7 @@ module Aiweb
       state["design_candidates"] ||= {}
       state["design_candidates"]["candidates"] ||= []
       ensure_pr19_deploy_defaults!(state)
+      ensure_setup_state_defaults!(state)
       ensure_scaffold_state_defaults!(state)
       state["budget"] ||= {}
       state["budget"]["cost_mode"] ||= "subscription_usage"
@@ -2591,6 +2745,127 @@ module Aiweb
         </body>
         </html>
       HTML
+    end
+
+
+    def setup_blocked_payload(state:, status:, command:, dry_run:, blocking_issues:, next_action:)
+      setup_payload(
+        state: state,
+        metadata: {
+          "schema_version" => 1,
+          "status" => status,
+          "command" => command,
+          "dry_run" => dry_run,
+          "blocking_issues" => blocking_issues
+        },
+        changed_files: [],
+        action_taken: "setup install #{status}",
+        blocking_issues: blocking_issues,
+        next_action: next_action
+      )
+    end
+
+    def setup_payload(state:, metadata:, changed_files:, action_taken:, blocking_issues:, next_action:)
+      {
+        "schema_version" => 1,
+        "current_phase" => state&.dig("phase", "current"),
+        "action_taken" => action_taken,
+        "changed_files" => changed_files,
+        "blocking_issues" => blocking_issues,
+        "missing_artifacts" => [],
+        "setup" => metadata,
+        "next_action" => next_action
+      }
+    end
+
+    def setup_run_metadata(run_id:, status:, command:, package_manager:, started_at:, finished_at:, exit_code:, stdout_log:, stderr_log:, metadata_path:, lifecycle_script_warnings:, node_modules_present:, blocking_issues:, dry_run:, approved:)
+      {
+        "schema_version" => 1,
+        "run_id" => run_id,
+        "status" => status,
+        "command" => command,
+        "package_manager" => package_manager,
+        "cwd" => root,
+        "started_at" => started_at,
+        "finished_at" => finished_at,
+        "exit_code" => exit_code,
+        "stdout_log" => stdout_log,
+        "stderr_log" => stderr_log,
+        "metadata_path" => metadata_path,
+        "lifecycle_script_warnings" => lifecycle_script_warnings,
+        "node_modules_present" => node_modules_present,
+        "dry_run" => dry_run,
+        "approved" => approved,
+        "blocking_issues" => blocking_issues
+      }
+    end
+
+    def setup_next_action(status)
+      case status
+      when "passed" then "continue to build/preview/QA only through separately approved roadmap commands"
+      when "blocked" then "resolve the blocked local setup precondition, then rerun aiweb setup --install --approved"
+      else "inspect .ai-web/runs setup logs, fix the package install issue, then rerun aiweb setup --install --approved"
+      end
+    end
+
+    def setup_package_manager(scaffold, metadata, package_json)
+      [
+        scaffold["package_manager"],
+        metadata["package_manager"],
+        package_json_package_manager_name(package_json)
+      ].map { |value| value.to_s.strip }.find { |value| !value.empty? } || "pnpm"
+    end
+
+    def package_json_package_manager_name(package_json)
+      value = package_json["package_manager"] || package_json["packageManager"]
+      value.to_s.split("@").first
+    end
+
+    def setup_install_command(package_manager)
+      setup_install_argv(package_manager).join(" ")
+    end
+
+    def setup_install_argv(package_manager)
+      case package_manager
+      when "pnpm" then ["pnpm", "install"]
+      else [package_manager.to_s, "install"]
+      end
+    end
+
+    def package_lifecycle_script_warnings
+      data = read_package_json_object
+      scripts = data["scripts"].is_a?(Hash) ? data["scripts"] : {}
+      %w[preinstall install postinstall prepare].each_with_object([]) do |name, warnings|
+        next if scripts[name].to_s.strip.empty?
+
+        warnings << {
+          "script" => name,
+          "warning" => "package.json declares #{name}; approved install may execute package lifecycle code"
+        }
+      end
+    end
+
+    def read_package_json_object
+      path = File.join(root, "package.json")
+      return {} unless File.file?(path)
+
+      data = JSON.parse(File.read(path))
+      data.is_a?(Hash) ? data : {}
+    rescue JSON::ParserError, SystemCallError
+      {}
+    end
+
+    def setup_child_env
+      ENV.to_h.reject do |key, _value|
+        key.match?(/SECRET|TOKEN|PASSWORD|PASSWD|PRIVATE|CREDENTIAL|API[_-]?KEY|AUTH/i)
+      end.merge("AIWEB_SETUP_APPROVED" => "1")
+    end
+
+    def redact_setup_output(output)
+      output.to_s
+        .gsub(/(SECRET|TOKEN|PASSWORD|PASSWD|PRIVATE|CREDENTIAL|API[_-]?KEY)([A-Z0-9_ -]*)(=|:)[^\s]+/i, '\1\2\3[REDACTED]')
+        .gsub(/(sk|pk|sb_secret)_[A-Za-z0-9_-]{12,}/, '[REDACTED]')
+        .gsub(/eyJ[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]{20,}/, '[REDACTED]')
     end
 
     def build_blocked_payload(state, blockers, dry_run:)
@@ -3811,6 +4086,7 @@ module Aiweb
         "valid_json" => false,
         "scripts" => runtime_expected_map(PROFILE_D_EXPECTED_SCRIPTS),
         "dependencies" => runtime_expected_map(PROFILE_D_EXPECTED_DEPENDENCIES.to_h { |name| [name, "present"] }),
+        "package_manager" => nil,
         "error" => nil
       }
       return summary unless File.file?(path)
@@ -3824,6 +4100,7 @@ module Aiweb
       scripts = data["scripts"].is_a?(Hash) ? data["scripts"] : {}
       dependencies = data["dependencies"].is_a?(Hash) ? data["dependencies"] : {}
       summary["valid_json"] = true
+      summary["package_manager"] = data["packageManager"].to_s.split("@").first unless data["packageManager"].to_s.strip.empty?
       summary["scripts"] = PROFILE_D_EXPECTED_SCRIPTS.each_with_object({}) do |(name, expected), memo|
         actual = scripts[name]
         memo[name] = {
@@ -3964,6 +4241,16 @@ module Aiweb
         blockers << "package.json dependency #{name.inspect} is missing; restore Profile D scaffold dependencies." unless status["present"]
       end
       blockers
+    end
+
+
+    def ensure_setup_state_defaults!(state)
+      state["setup"] ||= {}
+      state["setup"]["latest_run"] = nil unless state["setup"].key?("latest_run")
+      state["setup"]["package_manager"] = nil unless state["setup"].key?("package_manager")
+      state["setup"]["node_modules_present"] = false if state["setup"]["node_modules_present"].nil?
+      state["setup"]["last_installed_at"] = nil unless state["setup"].key?("last_installed_at")
+      state
     end
 
     def ensure_scaffold_state_defaults!(state)
