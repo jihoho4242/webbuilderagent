@@ -30,6 +30,10 @@ module Aiweb
 
     def run
       parse_global_flags!
+      if unsafe_env_path?(@root)
+        return emit_error("unsafe project path blocked: .env/.env.* paths are not allowed", EXIT_VALIDATION_FAILED)
+      end
+
       command = @argv.shift || "help"
       if @dry_run && !MUTATION_COMMANDS.include?(command)
         return emit_error("--dry-run is only supported for mutation commands", EXIT_VALIDATION_FAILED)
@@ -69,11 +73,11 @@ module Aiweb
         when "--path"
           value = @argv.shift
           raise OptionParser::MissingArgument, "--path" if value.to_s.empty?
-          raise UserError.new("unsafe --path target blocked: .env/.env.* paths are not allowed", EXIT_UNSAFE_EXTERNAL_ACTION) if unsafe_env_path?(value)
+          raise UserError.new("unsafe --path target blocked: .env/.env.* paths are not allowed", EXIT_VALIDATION_FAILED) if unsafe_env_path?(value)
 
           @root = File.expand_path(value)
         when /\A--path=(.+)\z/
-          raise UserError.new("unsafe --path target blocked: .env/.env.* paths are not allowed", EXIT_UNSAFE_EXTERNAL_ACTION) if unsafe_env_path?($1)
+          raise UserError.new("unsafe --path target blocked: .env/.env.* paths are not allowed", EXIT_VALIDATION_FAILED) if unsafe_env_path?($1)
 
           @root = File.expand_path($1)
         else
@@ -519,7 +523,9 @@ module Aiweb
     end
 
     def dispatch_setup(opts)
-      call_project_adapter(:setup, { install: true, approved: !!opts[:approved], dry_run: @dry_run })
+      call_project_adapter(:setup, { install: true, approved: !!opts[:approved], dry_run: @dry_run }).tap do |result|
+        normalize_setup_payload!(result, approved: !!opts[:approved], dry_run: @dry_run)
+      end
     rescue UserError => e
       raise unless setup_approval_error?(e)
 
@@ -575,6 +581,16 @@ module Aiweb
 
     def setup_approval_error?(error)
       error.message.match?(/approved|approval|unsafe|blocked/i)
+    end
+
+    def normalize_setup_payload!(result, approved:, dry_run:)
+      return result unless result.is_a?(Hash) && result["setup"].is_a?(Hash)
+
+      setup = result["setup"]
+      setup["requires_approval"] = !approved && !dry_run && setup["status"].to_s == "blocked"
+      setup["approved"] = approved unless setup.key?("approved")
+      setup["dry_run"] = dry_run unless setup.key?("dry_run")
+      result
     end
 
     def unsafe_deploy_blocked_payload(target, message)
