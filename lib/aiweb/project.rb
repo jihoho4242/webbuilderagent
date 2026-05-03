@@ -1231,7 +1231,7 @@ module Aiweb
       return qa_screenshot_blocked_payload(state, target_blockers, dry_run: dry_run, command: qa_screenshot_command(target && target["url"], nil, nil), target: target) unless target_blockers.empty?
 
       timestamp = Time.now.utc.strftime("%Y%m%dT%H%M%SZ")
-      run_id = "screenshot-qa-#{timestamp}"
+      run_id = "qa-screenshot-#{timestamp}"
       result_task_id = qa_playwright_task_id(task_id, run_id)
       run_dir = File.join(aiweb_dir, "runs", run_id)
       stdout_path = File.join(run_dir, "stdout.log")
