@@ -4,6 +4,7 @@ require "fileutils"
 require "json"
 require "minitest/autorun"
 require "open3"
+require "rbconfig"
 require "tmpdir"
 require "yaml"
 
@@ -26,6 +27,23 @@ class AiwebCliTest < Minitest::Test
     [stdout, stderr, status.exitstatus]
   end
 
+  def run_aiweb_env(env, *args)
+    stdout, stderr, status = Open3.capture3(env, RbConfig.ruby, AIWEB, *args.map(&:to_s))
+    [stdout, stderr, status.exitstatus]
+  end
+
+  def write_fake_executable(dir, name, body)
+    path = File.join(dir, name)
+    File.write(path, "#!/bin/sh\n#{body}\n")
+    FileUtils.chmod("+x", path)
+    path
+  end
+
+  def run_aiweb_with_env(env, *args)
+    stdout, stderr, status = Open3.capture3(env, AIWEB, *args.map(&:to_s))
+    [stdout, stderr, status.exitstatus]
+  end
+
   def run_webbuilder(*args, input: nil)
     stdout, stderr, status = Open3.capture3(WEBBUILDER, *args.map(&:to_s), stdin_data: input)
     [stdout, stderr, status.exitstatus]
@@ -35,6 +53,18 @@ class AiwebCliTest < Minitest::Test
     stdout, stderr, code = run_aiweb(*args, "--json")
     assert_equal "", stderr, "stderr should be empty for JSON command: #{stderr}"
     [JSON.parse(stdout), code]
+  end
+
+  def json_cmd_with_env(env, *args)
+    stdout, stderr, code = run_aiweb_with_env(env, *args, "--json")
+    assert_equal "", stderr, "stderr should be empty for JSON command: #{stderr}"
+    [JSON.parse(stdout), code]
+  end
+
+  def path_without_executable(executable)
+    path_parts = ENV["PATH"].to_s.split(File::PATH_SEPARATOR)
+    filtered = path_parts.select { |part| !File.exist?(File.join(part, executable)) }
+    filtered.empty? ? ENV["PATH"] : filtered.join(File::PATH_SEPARATOR)
   end
 
   def write_registry_fixture(root)
@@ -2153,6 +2183,232 @@ class AiwebCliTest < Minitest::Test
       assert_equal 0, web_code
       assert_equal "", web_stderr
       assert_equal "ready", web_payload.dig("runtime_plan", "readiness")
+    end
+  end
+
+
+  def test_build_uninitialized_project_fails_without_initializing_aiweb_or_touching_env
+    in_tmp do
+      env_body = "SECRET=do-not-touch\n"
+      File.write(".env", env_body)
+
+      stdout, stderr, code = run_aiweb("build", "--json")
+      payload = JSON.parse(stdout)
+
+      assert_equal 1, code
+      assert_equal "", stderr
+      assert_equal "error", payload["status"]
+      assert_match(/not initialized/, payload.dig("error", "message"))
+      refute Dir.exist?(".ai-web"), "uninitialized build must not initialize .ai-web"
+      assert_equal env_body, File.read(".env"), "uninitialized build must not mutate .env"
+      refute Dir.exist?("node_modules"), "uninitialized build must not install dependencies"
+      refute Dir.exist?("dist"), "uninitialized build must not run Astro"
+    end
+  end
+
+  def test_build_blocks_when_runtime_plan_is_not_ready_without_touching_env_or_runs
+    in_tmp do
+      json_cmd("init", "--profile", "D")
+      env_body = "SECRET=do-not-touch\n"
+      File.write(".env", env_body)
+      before_state = File.read(".ai-web/state.yaml")
+
+      stdout, stderr, code = run_aiweb("build", "--json")
+      payload = JSON.parse(stdout)
+
+      assert_equal 1, code
+      assert_equal "", stderr
+      assert_equal "scaffold build blocked", payload["action_taken"]
+      assert_equal "blocked", payload.dig("build", "status")
+      assert_equal "pnpm build", payload.dig("build", "command")
+      assert_equal false, payload.dig("build", "dry_run")
+      assert_match(/Scaffold has not been created/, payload["blocking_issues"].join("\n"))
+      assert_empty payload["changed_files"]
+      assert_equal before_state, File.read(".ai-web/state.yaml")
+      assert_equal env_body, File.read(".env"), "build must not mutate .env"
+      refute Dir.exist?(".ai-web/runs"), "blocked runtime-plan preflight must not create run artifacts"
+      refute Dir.exist?("node_modules"), "build must not install dependencies"
+      refute Dir.exist?("dist"), "blocked build must not run Astro"
+    end
+  end
+
+  def test_build_dry_run_on_ready_scaffold_plans_without_writes_install_or_build
+    in_tmp do
+      prepare_profile_d_design_flow
+      json_cmd("scaffold", "--profile", "D")
+      env_body = "SECRET=do-not-touch\n"
+      File.write(".env", env_body)
+      before_entries = Dir.glob("**/*", File::FNM_DOTMATCH).reject { |path| path == "." || path == ".." }.sort
+
+      stdout, stderr, code = run_aiweb("build", "--dry-run", "--json")
+      payload = JSON.parse(stdout)
+      after_entries = Dir.glob("**/*", File::FNM_DOTMATCH).reject { |path| path == "." || path == ".." }.sort
+
+      assert_equal 0, code
+      assert_equal "", stderr
+      assert_equal true, payload["dry_run"]
+      assert_equal "planned scaffold build", payload["action_taken"]
+      assert_equal "dry_run", payload.dig("build", "status")
+      assert_equal true, payload.dig("build", "dry_run")
+      assert_equal "pnpm build", payload.dig("build", "command")
+      assert_match(%r{\A\.ai-web/runs/build-\d{8}T\d{6}Z/stdout\.log\z}, payload.dig("build", "stdout_log"))
+      assert_match(%r{\A\.ai-web/runs/build-\d{8}T\d{6}Z/stderr\.log\z}, payload.dig("build", "stderr_log"))
+      assert_match(%r{\A\.ai-web/runs/build-\d{8}T\d{6}Z/build\.json\z}, payload.dig("build", "metadata_path"))
+      assert payload["changed_files"].any? { |path| path.match?(%r{\A\.ai-web/runs/build-\d{8}T\d{6}Z\z}) }
+      assert_equal before_entries, after_entries, "build --dry-run must not write run artifacts or generated output"
+      assert_equal env_body, File.read(".env"), "build --dry-run must not mutate .env"
+      refute Dir.exist?("node_modules"), "build --dry-run must not install dependencies"
+      refute Dir.exist?("dist"), "build --dry-run must not run Astro"
+    end
+  end
+
+  def test_build_ready_scaffold_records_blocked_run_artifacts_for_missing_local_tooling
+    in_tmp do
+      prepare_profile_d_design_flow
+      json_cmd("scaffold", "--profile", "D")
+      env_body = "SECRET=do-not-touch\n"
+      File.write(".env", env_body)
+
+      stdout, stderr, code = run_aiweb("build", "--json")
+      payload = JSON.parse(stdout)
+
+      assert_equal 1, code
+      assert_equal "", stderr
+      assert_equal "scaffold build blocked", payload["action_taken"]
+      assert_equal "blocked", payload.dig("build", "status")
+      assert_equal false, payload.dig("build", "dry_run")
+      assert_equal "pnpm build", payload.dig("build", "command")
+      assert_nil payload.dig("build", "exit_code"), "blocked preconditions should not execute the build command"
+      assert_match(/pnpm executable is missing|node_modules is missing/, payload["blocking_issues"].join("\n"))
+      assert_match(%r{\A\.ai-web/runs/build-\d{8}T\d{6}Z/stdout\.log\z}, payload.dig("build", "stdout_log"))
+      assert_match(%r{\A\.ai-web/runs/build-\d{8}T\d{6}Z/stderr\.log\z}, payload.dig("build", "stderr_log"))
+      assert_match(%r{\A\.ai-web/runs/build-\d{8}T\d{6}Z/build\.json\z}, payload.dig("build", "metadata_path"))
+      assert File.file?(payload.dig("build", "stdout_log"))
+      assert File.file?(payload.dig("build", "stderr_log"))
+      assert File.file?(payload.dig("build", "metadata_path"))
+      metadata = JSON.parse(File.read(payload.dig("build", "metadata_path")))
+      assert_equal payload["build"], metadata
+      assert_equal payload.dig("build", "blocking_issues").join("\n") + "\n", File.read(payload.dig("build", "stderr_log"))
+      assert_equal env_body, File.read(".env"), "build must not mutate .env"
+      refute Dir.exist?("node_modules"), "build must not install dependencies"
+      refute Dir.exist?("dist"), "blocked local tooling must not create build output"
+    end
+  end
+
+  def test_build_ready_scaffold_blocks_deterministically_when_pnpm_is_missing
+    in_tmp do
+      prepare_profile_d_design_flow
+      json_cmd("scaffold", "--profile", "D")
+      env_body = "SECRET=do-not-touch\n"
+      File.write(".env", env_body)
+      empty_path = File.join(Dir.pwd, "empty-path")
+      FileUtils.mkdir_p(empty_path)
+
+      stdout, stderr, code = run_aiweb_env({ "PATH" => [empty_path, "/usr/bin", "/bin", "/usr/sbin", "/sbin"].join(File::PATH_SEPARATOR) }, "build", "--json")
+      payload = JSON.parse(stdout)
+
+      assert_equal 1, code
+      assert_equal "", stderr
+      assert_equal "scaffold build blocked", payload["action_taken"]
+      assert_equal "blocked", payload.dig("build", "status")
+      assert_nil payload.dig("build", "exit_code")
+      assert_match(/pnpm executable is missing/, payload["blocking_issues"].join("\n"))
+      assert File.file?(payload.dig("build", "metadata_path"))
+      assert_equal env_body, File.read(".env"), "missing-pnpm build must not mutate .env"
+      refute Dir.exist?("node_modules"), "missing-pnpm build must not install dependencies"
+      refute Dir.exist?("dist"), "missing-pnpm build must not create dist"
+    end
+  end
+
+  def test_build_ready_scaffold_blocks_deterministically_when_node_modules_is_missing
+    in_tmp do
+      prepare_profile_d_design_flow
+      json_cmd("scaffold", "--profile", "D")
+      env_body = "SECRET=do-not-touch\n"
+      File.write(".env", env_body)
+      bin_dir = File.join(Dir.pwd, "fake-bin")
+      FileUtils.mkdir_p(bin_dir)
+      write_fake_executable(bin_dir, "pnpm", "echo should-not-run >&2; exit 99")
+
+      stdout, stderr, code = run_aiweb_env({ "PATH" => [bin_dir, "/usr/bin", "/bin", "/usr/sbin", "/sbin"].join(File::PATH_SEPARATOR) }, "build", "--json")
+      payload = JSON.parse(stdout)
+
+      assert_equal 1, code
+      assert_equal "", stderr
+      assert_equal "scaffold build blocked", payload["action_taken"]
+      assert_equal "blocked", payload.dig("build", "status")
+      assert_nil payload.dig("build", "exit_code")
+      assert_match(/node_modules is missing/, payload["blocking_issues"].join("\n"))
+      assert_equal payload.dig("build", "blocking_issues").join("\n") + "\n", File.read(payload.dig("build", "stderr_log"))
+      assert_equal env_body, File.read(".env"), "missing-node_modules build must not mutate .env"
+      refute Dir.exist?("dist"), "missing-node_modules build must not create dist"
+    end
+  end
+
+  def test_build_ready_scaffold_records_successful_fake_pnpm_build_artifacts
+    in_tmp do
+      prepare_profile_d_design_flow
+      json_cmd("scaffold", "--profile", "D")
+      env_body = "SECRET=do-not-touch\n"
+      File.write(".env", env_body)
+      FileUtils.mkdir_p("node_modules")
+      bin_dir = File.join(Dir.pwd, "fake-bin")
+      FileUtils.mkdir_p(bin_dir)
+      write_fake_executable(
+        bin_dir,
+        "pnpm",
+        "[ \"$1\" = build ] || exit 64\necho fake astro build stdout\necho fake astro build stderr >&2\nmkdir -p dist\nprintf built > dist/index.html"
+      )
+
+      stdout, stderr, code = run_aiweb_env({ "PATH" => [bin_dir, "/usr/bin", "/bin", "/usr/sbin", "/sbin"].join(File::PATH_SEPARATOR) }, "build", "--json")
+      payload = JSON.parse(stdout)
+
+      assert_equal 0, code
+      assert_equal "", stderr
+      assert_equal "ran scaffold build", payload["action_taken"]
+      assert_equal "passed", payload.dig("build", "status")
+      assert_equal 0, payload.dig("build", "exit_code")
+      assert_equal "dist", payload.dig("build", "build_output_path")
+      assert_empty payload["blocking_issues"]
+      assert_equal "fake astro build stdout\n", File.read(payload.dig("build", "stdout_log"))
+      assert_equal "fake astro build stderr\n", File.read(payload.dig("build", "stderr_log"))
+      metadata = JSON.parse(File.read(payload.dig("build", "metadata_path")))
+      assert_equal payload["build"], metadata
+      assert_equal "built", File.read("dist/index.html")
+      assert_equal env_body, File.read(".env"), "successful build must not mutate .env"
+    end
+  end
+
+  def test_build_help_and_webbuilder_passthrough
+    stdout, stderr, code = run_aiweb("help")
+    assert_equal 0, code
+    assert_equal "", stderr
+    assert_includes stdout, "build"
+    assert_match(/build: runs the scaffolded Astro build/, stdout)
+
+    help_stdout, help_stderr, help_code = run_webbuilder("--help")
+    assert_equal 0, help_code
+    assert_equal "", help_stderr
+    assert_match(/build/, help_stdout)
+
+    in_tmp do |dir|
+      target = File.join(dir, "passthrough-build")
+      Dir.mkdir(target)
+      Dir.chdir(target) do
+        prepare_profile_d_design_flow
+        json_cmd("scaffold", "--profile", "D")
+        File.write(".env", "SECRET=do-not-touch\n")
+      end
+
+      web_stdout, web_stderr, web_code = run_webbuilder("--path", target, "build", "--dry-run", "--json")
+      web_payload = JSON.parse(web_stdout)
+      assert_equal 0, web_code
+      assert_equal "", web_stderr
+      assert_equal "planned scaffold build", web_payload["action_taken"]
+      assert_equal "dry_run", web_payload.dig("build", "status")
+      assert_equal true, web_payload.dig("build", "dry_run")
+      assert_equal "SECRET=do-not-touch\n", File.read(File.join(target, ".env"))
+      refute Dir.exist?(File.join(target, ".ai-web", "runs")), "webbuilder build --dry-run must not write run artifacts"
     end
   end
 

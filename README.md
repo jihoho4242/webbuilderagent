@@ -13,6 +13,7 @@ Today the CLI manages the project director workspace: `.ai-web` state, phase gat
 - Record QA checklists/results and gate advancement on blocking failures.
 - Capture snapshots and rollback/blocker recovery evidence.
 - Provide a friendly Korean entry point, `웹빌더`, over the lower-level `aiweb` CLI.
+- Expose the PR9 Astro build contract through `aiweb build` / `웹빌더 build`: it must check runtime-plan readiness before executing, preserve `.env` untouched, support `--dry-run` without writes/install/build, record run evidence under `.ai-web`, and report missing package manager, missing `node_modules`, or build failure as explicit statuses.
 
 ## Upgrade direction
 
@@ -59,6 +60,15 @@ Use `--path` on later commands to keep working against that generated project:
 ./bin/aiweb --path ~/Desktop/aiweb-premium-service-site status
 ./bin/aiweb --path ~/Desktop/aiweb-premium-service-site advance
 ```
+
+After the scaffold runtime plan reports `ready`, PR9 adds the build contract:
+
+```bash
+./bin/aiweb --path ~/Desktop/aiweb-premium-service-site build --dry-run
+웹빌더 --path ~/Desktop/aiweb-premium-service-site build
+```
+
+`build --dry-run` is a no-write preflight: it must not install packages or run the build. A real build records metadata/log evidence under `.ai-web`, never reads or writes `.env`, and returns explicit blocked/failed statuses for missing `pnpm`, missing `node_modules`, runtime-plan not-ready, or build command failures.
 
 Phase-sensitive commands are guarded by the Director state machine:
 

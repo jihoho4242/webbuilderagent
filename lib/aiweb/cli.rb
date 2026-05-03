@@ -17,7 +17,7 @@ module Aiweb
     EXIT_UNSAFE_EXTERNAL_ACTION = 5
     EXIT_INTERNAL_ERROR = 10
 
-    MUTATION_COMMANDS = %w[start init interview run ingest-design next-task qa-checklist qa-report advance rollback resolve-blocker snapshot design-brief design-system design-prompt design select-design scaffold].freeze
+    MUTATION_COMMANDS = %w[start init interview run ingest-design next-task qa-checklist qa-report advance rollback resolve-blocker snapshot design-brief design-system design-prompt design select-design scaffold build].freeze
     RUNTIME_PLAN_COMMANDS = %w[runtime-plan scaffold-status].freeze
     REGISTRY_COMMANDS = %w[design-systems skills craft].freeze
 
@@ -159,6 +159,12 @@ module Aiweb
           raise UserError.new("scaffold does not accept extra positional arguments: #{@argv.join(", ")}", EXIT_VALIDATION_FAILED)
         end
         project.scaffold(profile: opts[:profile] || "D", dry_run: @dry_run, force: opts[:force])
+      when "build"
+        parse_options
+        unless @argv.empty?
+          raise UserError.new("build does not accept extra positional arguments: #{@argv.join(", ")}", EXIT_VALIDATION_FAILED)
+        end
+        project.build(dry_run: @dry_run)
       when "ingest-design"
         opts = parse_options do |o, options|
           o.on("--id ID") { |v| options[:id] = v }
@@ -302,6 +308,7 @@ module Aiweb
           select-design candidate-01|candidate-02|candidate-03
           scaffold --profile D [--force]
           runtime-plan (alias: scaffold-status)
+          build
           ingest-design [--id ID] [--title TITLE] [--source SOURCE] [--notes NOTES] [--selected] [--force]
           next-task [--type TYPE] [--force]
           qa-checklist [--force]
@@ -325,6 +332,7 @@ module Aiweb
           select-design: records selected HTML candidate without overwriting DESIGN.md
           scaffold: creates Profile D Astro-style static app skeleton without installing packages
           runtime-plan/scaffold-status: read-only runtime readiness metadata; does not install or launch Node
+          build: runs the scaffolded Astro build only after runtime-plan is ready and records .ai-web/runs logs
           ingest-design: phase-3.5
           next-task: phase-6 through phase-11
           qa-checklist: phase-7 through phase-11
@@ -440,10 +448,15 @@ module Aiweb
       lines.join("\n")
     end
 
+    def build_exit_code(result)
+      result.dig("build", "status") == "passed" || result.dig("build", "status") == "dry_run" ? EXIT_SUCCESS : EXIT_VALIDATION_FAILED
+    end
+
     def exit_code_for(command, result)
       return EXIT_VALIDATION_FAILED if result["validation_errors"] && !result["validation_errors"].empty?
       return result.dig("runtime_plan", "readiness") == "ready" ? EXIT_SUCCESS : EXIT_VALIDATION_FAILED if RUNTIME_PLAN_COMMANDS.include?(command)
       return EXIT_SUCCESS if REGISTRY_COMMANDS.include?(command) || command == "intent"
+      return build_exit_code(result) if command == "build"
       return EXIT_SUCCESS if %w[help version status start init interview run design-brief design-system design-prompt design select-design scaffold ingest-design next-task qa-checklist qa-report rollback resolve-blocker snapshot].include?(command)
       if command == "advance" && result["action_taken"] == "advance blocked"
         issue = result["blocking_issues"].join(" ")
