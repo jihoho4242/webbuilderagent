@@ -1367,11 +1367,11 @@ class AiwebCliTest < Minitest::Test
     assert_equal 0, code
     assert_equal "", stderr
 
-    %w[start design-brief design-system design-prompt ingest-design next-task qa-checklist qa-report repair rollback snapshot].each do |command|
+    %w[start design-brief design-system design-prompt ingest-design next-task qa-checklist qa-report repair visual-polish rollback snapshot].each do |command|
       assert_includes stdout, command
     end
 
-    ["start [--path PATH]", "--no-advance", "--path PATH", "design-brief [--force]", "design-system resolve [--force]", "ingest-design [--id ID]", "--selected", "rollback [--to PHASE] [--failure CODE]", "qa-report [--from PATH]", "repair [--from-qa PATH|latest]", "--max-cycles N", "--duration-minutes N", "--timed-out"].each do |snippet|
+    ["start [--path PATH]", "--no-advance", "--path PATH", "design-brief [--force]", "design-system resolve [--force]", "ingest-design [--id ID]", "--selected", "rollback [--to PHASE] [--failure CODE]", "qa-report [--from PATH]", "repair [--from-qa PATH|latest]", "visual-polish --repair [--from-critique PATH|latest]", "--max-cycles N", "--duration-minutes N", "--timed-out"].each do |snippet|
       assert_includes stdout, snippet
     end
   end
@@ -3019,6 +3019,23 @@ class AiwebCliTest < Minitest::Test
     end
   end
 
+  def record_visual_critique_fixture!(task_id:, scores:)
+    FileUtils.mkdir_p("evidence")
+    screenshot_path = File.join("evidence", "#{task_id}.png")
+    File.binwrite(screenshot_path, "fake screenshot bytes")
+    metadata_path = write_visual_critique_fixture(
+      File.join("evidence", "#{task_id}-metadata.json"),
+      scores: scores
+    )
+
+    json_cmd(
+      "visual-critique",
+      "--screenshot", screenshot_path,
+      "--metadata", metadata_path,
+      "--task-id", task_id
+    )
+  end
+
   def test_visual_critique_dry_run_plans_from_explicit_local_evidence_without_writes
     in_tmp do
       json_cmd("init", "--profile", "D")
@@ -3213,6 +3230,214 @@ class AiwebCliTest < Minitest::Test
       assert_equal "dry_run", web_payload.dig("visual_critique", "status")
       assert_equal "web-dry", web_payload.dig("visual_critique", "task_id")
       refute Dir.exist?(File.join(target, ".ai-web", "visual")), "webbuilder visual-critique --dry-run must not write artifacts"
+    end
+  end
+
+  def test_visual_polish_dry_run_from_latest_failed_critique_plans_without_writes
+    in_tmp do
+      json_cmd("init", "--profile", "D")
+      set_phase("phase-10")
+      FileUtils.mkdir_p("src")
+      File.write("src/app.js", "console.log('before polish');\n")
+      env_body = "SECRET=do-not-touch\n"
+      File.write(".env", env_body)
+      _critique_payload, critique_code = record_visual_critique_fixture!(
+        task_id: "hero-polish-dry",
+        scores: VISUAL_CRITIQUE_SCORE_KEYS.to_h { |key| [key, 32] }
+      )
+      assert_equal 1, critique_code
+
+      before_state = File.read(".ai-web/state.yaml")
+      before_source = File.read("src/app.js")
+      before_polish_records = Dir.glob(".ai-web/visual/polish-*.json").sort
+      before_snapshots = Dir.glob(".ai-web/snapshots/*").sort
+      before_tasks = Dir.glob(".ai-web/tasks/*").sort
+
+      payload, code = json_cmd("visual-polish", "--repair", "--from-critique", "latest", "--dry-run")
+
+      assert_equal 0, code
+      assert_equal true, payload["dry_run"]
+      polish_loop = payload.fetch("visual_polish")
+      assert_equal true, polish_loop["dry_run"]
+      assert_includes %w[planned ready], polish_loop["status"]
+      assert_match(%r{\.ai-web/visual/visual-critique-}, polish_loop.fetch("source_critique"))
+      assert_match(%r{\.ai-web/snapshots/}, polish_loop.fetch("planned_snapshot_path"))
+      assert_match(%r{\.ai-web/visual/polish-}, polish_loop.fetch("planned_polish_record_path"))
+      assert_match(%r{\.ai-web/tasks/}, polish_loop.fetch("planned_polish_task_path"))
+      assert_equal before_state, File.read(".ai-web/state.yaml")
+      assert_equal before_source, File.read("src/app.js")
+      assert_equal env_body, File.read(".env"), "visual-polish --dry-run must not mutate .env"
+      assert_equal before_polish_records, Dir.glob(".ai-web/visual/polish-*.json").sort
+      assert_equal before_snapshots, Dir.glob(".ai-web/snapshots/*").sort
+      assert_equal before_tasks, Dir.glob(".ai-web/tasks/*").sort
+      refute Dir.exist?("dist"), "visual-polish --dry-run must not build or deploy"
+      refute Dir.exist?(".ai-web/runs"), "visual-polish --dry-run must not launch browser or QA"
+    end
+  end
+
+  def test_visual_polish_from_failed_critique_creates_record_snapshot_task_and_state_without_source_patch
+    in_tmp do
+      json_cmd("init", "--profile", "D")
+      set_phase("phase-10")
+      FileUtils.mkdir_p("src")
+      File.write("src/app.js", "console.log('before polish');\n")
+      env_body = "SECRET=do-not-touch\n"
+      File.write(".env", env_body)
+      _critique_payload, critique_code = record_visual_critique_fixture!(
+        task_id: "hero-polish",
+        scores: VISUAL_CRITIQUE_SCORE_KEYS.to_h { |key| [key, 28] }
+      )
+      assert_equal 1, critique_code
+
+      before_source = File.read("src/app.js")
+      payload, code = json_cmd("visual-polish", "--repair", "--from-critique", "latest")
+
+      assert_equal 0, code
+      polish_loop = payload.fetch("visual_polish")
+      assert_equal "created", polish_loop["status"]
+      assert_match(%r{\.ai-web/visual/visual-critique-}, polish_loop.fetch("source_critique"))
+      assert_match(%r{\.ai-web/snapshots/}, polish_loop.fetch("pre_polish_snapshot"))
+      assert_match(%r{\.ai-web/visual/polish-}, polish_loop.fetch("polish_record"))
+      assert_match(%r{\.ai-web/tasks/}, polish_loop.fetch("polish_task"))
+      assert_includes payload["changed_files"], polish_loop["polish_record"]
+      assert File.exist?(polish_loop["polish_record"])
+      assert File.exist?(File.join(polish_loop["pre_polish_snapshot"], "manifest.json"))
+      assert File.exist?(polish_loop["polish_task"])
+      assert_equal before_source, File.read("src/app.js"), "visual-polish must not patch source files"
+      assert_equal env_body, File.read(".env"), "visual-polish must not mutate .env"
+
+      state = load_state
+      assert_equal polish_loop["polish_record"], state.dig("visual", "latest_polish")
+      assert_equal polish_loop["polish_task"], state.dig("implementation", "current_task")
+      polish_record = JSON.parse(File.read(polish_loop["polish_record"]))
+      assert_equal polish_loop["source_critique"], polish_record["source_critique"]
+      assert_equal polish_loop["polish_task"], polish_record["polish_task"]
+      assert_equal true, polish_record.fetch("guardrails").any? { |guardrail| guardrail =~ /no source auto-patch/i }
+      refute Dir.exist?("dist"), "visual-polish must not build or deploy"
+      refute Dir.exist?(".ai-web/runs"), "visual-polish must not launch browser or QA"
+    end
+  end
+
+  def test_visual_polish_blocks_for_missing_or_passing_latest_critique_without_writes
+    in_tmp do
+      json_cmd("init", "--profile", "D")
+      set_phase("phase-10")
+
+      missing_payload, missing_code = json_cmd("visual-polish", "--repair", "--from-critique", "latest")
+      assert_includes [1, 2, 3], missing_code
+      assert_equal "blocked", missing_payload.fetch("visual_polish").fetch("status")
+      assert_empty Dir.glob(".ai-web/visual/polish-*.json")
+      assert_empty Dir.glob(".ai-web/snapshots/*")
+
+      _critique_payload, critique_code = record_visual_critique_fixture!(
+        task_id: "hero-pass-polish",
+        scores: VISUAL_CRITIQUE_SCORE_KEYS.to_h { |key| [key, 93] }
+      )
+      assert_equal 0, critique_code
+      before_state = File.read(".ai-web/state.yaml")
+      passing_payload, passing_code = json_cmd("visual-polish", "--repair", "--from-critique", "latest")
+
+      assert_includes [1, 2, 3], passing_code
+      assert_equal "blocked", passing_payload.fetch("visual_polish").fetch("status")
+      assert_match(/pass|passed|no visual|no failed|no repair/i, passing_payload["blocking_issues"].join("\n"))
+      assert_equal before_state, File.read(".ai-web/state.yaml")
+      assert_empty Dir.glob(".ai-web/visual/polish-*.json")
+      assert_empty Dir.glob(".ai-web/snapshots/*")
+    end
+  end
+
+  def test_visual_polish_cycle_cap_blocks_before_new_snapshot_record_or_task
+    in_tmp do
+      json_cmd("init", "--profile", "D")
+      set_phase("phase-10")
+      _critique_payload, critique_code = record_visual_critique_fixture!(
+        task_id: "hero-cap-polish",
+        scores: VISUAL_CRITIQUE_SCORE_KEYS.to_h { |key| [key, 35] }
+      )
+      assert_equal 1, critique_code
+      first_payload, first_code = json_cmd("visual-polish", "--repair", "--from-critique", "latest", "--max-cycles", "1")
+      assert_equal 0, first_code
+
+      before_state = File.read(".ai-web/state.yaml")
+      before_records = Dir.glob(".ai-web/visual/polish-*.json").sort
+      before_snapshots = Dir.glob(".ai-web/snapshots/*").sort
+      before_tasks = Dir.glob(".ai-web/tasks/*").sort
+      blocked_payload, blocked_code = json_cmd("visual-polish", "--repair", "--from-critique", "latest", "--max-cycles", "1")
+
+      assert_includes [1, 2, 3], blocked_code
+      assert_equal "blocked", blocked_payload.fetch("visual_polish").fetch("status")
+      assert_match(/cycle|cap|max/i, blocked_payload["blocking_issues"].join("\n"))
+      assert_equal before_state, File.read(".ai-web/state.yaml")
+      assert_equal before_records, Dir.glob(".ai-web/visual/polish-*.json").sort
+      assert_equal before_snapshots, Dir.glob(".ai-web/snapshots/*").sort
+      assert_equal before_tasks, Dir.glob(".ai-web/tasks/*").sort
+      assert_equal "created", first_payload.fetch("visual_polish").fetch("status")
+    end
+  end
+
+  def test_visual_polish_rejects_env_path_without_reading_or_printing_secret
+    in_tmp do
+      json_cmd("init", "--profile", "D")
+      set_phase("phase-10")
+      env_body = "SECRET=do-not-print\n"
+      File.write(".env", env_body)
+      File.write(".env.local", "LOCAL_SECRET=do-not-print\n")
+
+      [".env", ".env.local"].each do |forbidden_path|
+        stdout, stderr, code = run_aiweb("visual-polish", "--repair", "--from-critique", forbidden_path, "--json")
+        payload = JSON.parse(stdout)
+
+        assert_equal 1, code
+        assert_equal "", stderr
+        assert_equal "error", payload["status"]
+        assert_match(/\.env|unsafe|refus/i, payload.dig("error", "message"))
+        refute_includes stdout, "do-not-print"
+        assert_equal env_body, File.read(".env")
+        assert_empty Dir.glob(".ai-web/visual/polish-*.json")
+        assert_empty Dir.glob(".ai-web/snapshots/*")
+      end
+    end
+  end
+
+  def test_visual_polish_help_and_webbuilder_passthrough
+    stdout, stderr, code = run_aiweb("help")
+    assert_equal 0, code
+    assert_equal "", stderr
+    assert_includes stdout, "visual-polish"
+    assert_match(/visual-polish --repair: records safe local visual polish repair loop/i, stdout)
+
+    help_stdout, help_stderr, help_code = run_webbuilder("--help")
+    assert_equal 0, help_code
+    assert_equal "", help_stderr
+    assert_match(/visual-polish/, help_stdout)
+
+    in_tmp do |dir|
+      target = File.join(dir, "passthrough-visual-polish")
+      Dir.mkdir(target)
+      Dir.chdir(target) do
+        json_cmd("init", "--profile", "D")
+        set_phase("phase-10")
+        _critique_payload, critique_code = record_visual_critique_fixture!(
+          task_id: "web-polish",
+          scores: VISUAL_CRITIQUE_SCORE_KEYS.to_h { |key| [key, 30] }
+        )
+        assert_equal 1, critique_code
+      end
+
+      web_stdout, web_stderr, web_code = run_webbuilder(
+        "--path", target,
+        "visual-polish",
+        "--repair",
+        "--from-critique", "latest",
+        "--dry-run",
+        "--json"
+      )
+      web_payload = JSON.parse(web_stdout)
+      assert_equal 0, web_code
+      assert_equal "", web_stderr
+      assert_includes %w[planned ready], web_payload.fetch("visual_polish").fetch("status")
+      assert_equal true, web_payload.fetch("visual_polish").fetch("dry_run")
+      assert_empty Dir.glob(File.join(target, ".ai-web", "visual", "polish-*.json")), "webbuilder visual-polish --dry-run must not write polish records"
     end
   end
 

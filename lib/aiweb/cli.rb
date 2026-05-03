@@ -17,7 +17,7 @@ module Aiweb
     EXIT_UNSAFE_EXTERNAL_ACTION = 5
     EXIT_INTERNAL_ERROR = 10
 
-    MUTATION_COMMANDS = %w[start init interview run ingest-design next-task qa-checklist qa-report repair advance rollback resolve-blocker snapshot design-brief design-system design-prompt design select-design scaffold build preview qa-playwright browser-qa qa-a11y a11y-qa qa-lighthouse lighthouse-qa visual-critique].freeze
+    MUTATION_COMMANDS = %w[start init interview run ingest-design next-task qa-checklist qa-report repair advance rollback resolve-blocker snapshot design-brief design-system design-prompt design select-design scaffold build preview qa-playwright browser-qa qa-a11y a11y-qa qa-lighthouse lighthouse-qa visual-critique visual-polish].freeze
     RUNTIME_PLAN_COMMANDS = %w[runtime-plan scaffold-status].freeze
     REGISTRY_COMMANDS = %w[design-systems skills craft].freeze
 
@@ -211,6 +211,24 @@ module Aiweb
         end
 
         project.visual_critique(screenshot: opts[:screenshot], metadata: opts[:metadata], task_id: opts[:task_id], force: opts[:force], dry_run: @dry_run)
+      when "visual-polish"
+        opts = parse_options do |o, options|
+          o.on("--repair") { options[:repair] = true }
+          o.on("--from-critique PATH_OR_LATEST") { |v| options[:from_critique] = v }
+          o.on("--max-cycles N") { |v| options[:max_cycles] = parse_positive_integer(v, "--max-cycles") }
+          o.on("--force") { options[:force] = true }
+        end
+        unless @argv.empty?
+          raise UserError.new("visual-polish does not accept extra positional arguments: #{@argv.join(", ")}", EXIT_VALIDATION_FAILED)
+        end
+        unless opts[:repair]
+          raise UserError.new("visual-polish requires --repair for the bounded local repair loop", EXIT_VALIDATION_FAILED)
+        end
+        unless project.respond_to?(:visual_polish)
+          return visual_polish_adapter_unavailable_payload(opts)
+        end
+
+        project.visual_polish(from_critique: opts[:from_critique] || "latest", max_cycles: opts[:max_cycles], force: opts[:force], dry_run: @dry_run)
       when "ingest-design"
         opts = parse_options do |o, options|
           o.on("--id ID") { |v| options[:id] = v }
@@ -397,6 +415,34 @@ module Aiweb
       }
     end
 
+    def visual_polish_adapter_unavailable_payload(opts)
+      command_line = ["aiweb", "visual-polish", "--repair"]
+      command_line.concat(["--from-critique", (opts[:from_critique] || "latest").to_s])
+      command_line.concat(["--max-cycles", opts[:max_cycles].to_s]) if opts[:max_cycles]
+      command_line << "--force" if opts[:force]
+      command_line << "--dry-run" if @dry_run
+
+      {
+        "schema_version" => 1,
+        "current_phase" => nil,
+        "action_taken" => "visual polish unavailable",
+        "changed_files" => [],
+        "blocking_issues" => ["visual-polish command surface is reserved, but the project adapter is not implemented yet."],
+        "missing_artifacts" => [],
+        "visual_polish" => {
+          "schema_version" => 1,
+          "status" => "blocked",
+          "mode" => "repair",
+          "command" => command_line.join(" "),
+          "from_critique" => opts[:from_critique] || "latest",
+          "max_cycles" => opts[:max_cycles],
+          "dry_run" => @dry_run,
+          "blocking_issues" => ["visual-polish command surface is reserved, but the project adapter is not implemented yet."]
+        },
+        "next_action" => "implement the local visual polish project adapter, then rerun aiweb visual-polish --repair"
+      }
+    end
+
     def browser_adapter_unavailable_payload(command, opts)
       adapter = command.sub(/^qa-/, "")
       target = opts[:url].to_s.strip
@@ -455,6 +501,7 @@ module Aiweb
           qa-a11y [--url URL] [--task-id ID] [--force]
           qa-lighthouse [--url URL] [--task-id ID] [--force]
           visual-critique [--screenshot PATH] [--metadata PATH] [--task-id ID] [--force]
+          visual-polish --repair [--from-critique PATH|latest] [--max-cycles N] [--force]
           advance
           rollback [--to PHASE] [--failure CODE] [--reason "..."]
           resolve-blocker --reason "..."
@@ -486,6 +533,7 @@ module Aiweb
           qa-report: phase-7 through phase-11
           repair: phase-7 through phase-11; records a bounded local repair-loop task from failed/blocked QA without running build, QA, preview, deploy, package install, or source auto-patches
           visual-critique: phase-7 through phase-11; records deterministic local visual critique evidence from explicit input paths only
+          visual-polish --repair: records safe local visual polish repair loop from failed/repair/redesign critique evidence in phase-7 through phase-11 without source edits, build, QA, preview, browser capture, deploy, package install, network, or AI calls
         Use --force only for manual repair/override.
       HELP
     end
@@ -533,6 +581,7 @@ module Aiweb
       return human_runtime_plan_result(result) if result["runtime_plan"]
       return human_repair_result(result) if result["repair_loop"]
       return human_visual_critique_result(result) if result["visual_critique"]
+      return human_visual_polish_result(result) if result["visual_polish"]
 
       changed = result["changed_files"] || result["artifacts_changed"] || []
       blockers = result["blocking_issues"] || []
@@ -586,6 +635,26 @@ module Aiweb
         "Issues: #{issues.empty? ? "none" : issues.join("; ")}",
         "Patch plan: #{plan.empty? ? "none" : plan.join("; ")}",
         "Blocking issues: #{(result["blocking_issues"] || critique["blocking_issues"] || []).empty? ? "none" : (result["blocking_issues"] || critique["blocking_issues"]).join("; ")}",
+        "Next command: #{result["next_action"] || "n/a"}"
+      ].join("\n")
+    end
+
+    def human_visual_polish_result(result)
+      polish = result.fetch("visual_polish")
+      changed = result["changed_files"] || result["artifacts_changed"] || []
+      blockers = polish["blocking_issues"] || result["blocking_issues"] || []
+      paths = []
+      %w[polish_record_path visual_polish_record_path record_path snapshot_path pre_polish_snapshot polish_task_path task_path planned_polish_record_path planned_visual_polish_record_path planned_record_path planned_snapshot_path planned_polish_task_path planned_task_path].each do |key|
+        value = polish[key]
+        paths << "#{key}=#{value}" unless value.to_s.empty?
+      end
+      [
+        "Visual polish: #{polish["status"] || "n/a"}",
+        "Mode: #{polish["mode"] || (polish["repair"] ? "repair" : "n/a")}",
+        "Critique source: #{polish["critique_source"] || polish["from_critique"] || "n/a"}",
+        "Artifacts changed: #{changed.empty? ? "none" : changed.join(", ")}",
+        "Polish paths: #{paths.empty? ? "none" : paths.join(", ")}",
+        "Blocking issues: #{blockers.empty? ? "none" : blockers.join("; ")}",
         "Next command: #{result["next_action"] || "n/a"}"
       ].join("\n")
     end
@@ -688,6 +757,19 @@ module Aiweb
       EXIT_VALIDATION_FAILED
     end
 
+    def visual_polish_exit_code(result)
+      status = result.dig("visual_polish", "status")
+      return EXIT_SUCCESS if %w[planned dry_run created reused].include?(status)
+      return EXIT_ADAPTER_UNAVAILABLE if status == "blocked" && (result["action_taken"].to_s =~ /unavailable/)
+      return EXIT_VALIDATION_FAILED unless status == "blocked"
+
+      issues = ((result.dig("visual_polish", "blocking_issues") || []) + (result["blocking_issues"] || [])).join(" ")
+      return EXIT_BUDGET_BLOCKED if issues.match?(/budget|cycle|cap|max-cycles|max cycles/i)
+      return EXIT_PHASE_BLOCKED if issues.match?(/phase/i)
+
+      EXIT_VALIDATION_FAILED
+    end
+
     def exit_code_for(command, result)
       return EXIT_VALIDATION_FAILED if result["validation_errors"] && !result["validation_errors"].empty?
       return result.dig("runtime_plan", "readiness") == "ready" ? EXIT_SUCCESS : EXIT_VALIDATION_FAILED if RUNTIME_PLAN_COMMANDS.include?(command)
@@ -699,7 +781,8 @@ module Aiweb
       return qa_lighthouse_exit_code(result) if %w[qa-lighthouse lighthouse-qa].include?(command)
       return visual_critique_exit_code(result) if command == "visual-critique"
       return repair_exit_code(result) if command == "repair"
-      return EXIT_SUCCESS if %w[help version status start init interview run design-brief design-system design-prompt design select-design scaffold ingest-design next-task qa-checklist qa-report rollback resolve-blocker snapshot visual-critique].include?(command)
+      return visual_polish_exit_code(result) if command == "visual-polish"
+      return EXIT_SUCCESS if %w[help version status start init interview run design-brief design-system design-prompt design select-design scaffold ingest-design next-task qa-checklist qa-report rollback resolve-blocker snapshot visual-critique visual-polish].include?(command)
       if command == "advance" && result["action_taken"] == "advance blocked"
         issue = result["blocking_issues"].join(" ")
         return EXIT_BUDGET_BLOCKED if issue =~ /budget|candidate cap|design generation cap/i

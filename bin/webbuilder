@@ -10,7 +10,7 @@ class WebbuilderLauncher
   KNOWN_COMMANDS = %w[
     help --help -h version --version
     start init status runtime-plan scaffold-status build preview interview run design-brief design-system design-prompt design select-design scaffold ingest-design next-task
-    qa-checklist qa-report repair qa-playwright qa-a11y qa-lighthouse visual-critique advance rollback resolve-blocker snapshot
+    qa-checklist qa-report repair qa-playwright qa-a11y qa-lighthouse visual-critique visual-polish advance rollback resolve-blocker snapshot
     design-systems skills craft intent
   ].freeze
 
@@ -67,6 +67,7 @@ class WebbuilderLauncher
         웹빌더 --path ~/Desktop/my-site qa-lighthouse --url http://127.0.0.1:4321 --dry-run
         웹빌더 --path ~/Desktop/my-site visual-critique --screenshot ./evidence/home.png --metadata ./evidence/home.json --dry-run
         웹빌더 --path ~/Desktop/my-site repair --from-qa latest --dry-run
+        웹빌더 --path ~/Desktop/my-site visual-polish --repair --from-critique latest --dry-run
 
       웹빌더가 숙지한 시작 순서:
         Phase 0: 웹 유형 / 난이도 / 릴리즈 범위 결정
@@ -94,6 +95,10 @@ class WebbuilderLauncher
       repair는 실패/blocked QA 결과를 bounded repair_loop, pre-repair snapshot, fix task 기록으로 연결하되 source auto-patch, build/QA 실행, install/preview/deploy/external hosting은 수행하지 않는다.
       repair는 .env/.env.* QA 경로를 거부하고 --max-cycles로 같은 QA source 반복 repair loop를 제한한다.
       repair --dry-run은 쓰기/스냅샷 복사/프로세스 실행 없이 예정 repair record, snapshot, fix task 경로만 확인한다.
+      visual-polish --repair는 failed/repair/redesign visual critique 결과를 bounded local visual polish loop, pre-polish snapshot, polish task 기록으로 연결한다.
+      visual-polish는 source auto-patch나 source file edit, build/QA 실행, preview/browser/capture, install, deploy, external hosting, network/AI 호출, .env 접근을 수행하지 않는다.
+      visual-polish는 .env/.env.* critique 경로를 거부하고 --max-cycles로 같은 critique source 반복 polish loop를 제한한다.
+      visual-polish --dry-run은 쓰기/스냅샷 복사/프로세스 실행 없이 예정 polish record, snapshot, task 경로만 확인한다.
       --dry-run은 설치/쓰기/빌드/프로세스 실행을 수행하지 않는 사전 점검 경로로 사용한다.
 
       고급 명령은 기존 aiweb 명령과 동일하게 사용할 수 있다.

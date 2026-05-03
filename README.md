@@ -19,6 +19,7 @@ Today the CLI manages the project director workspace: `.ai-web` state, phase gat
 - Expose safe accessibility and Lighthouse QA contracts through `aiweb qa-a11y` / `웹빌더 qa-a11y` and `aiweb qa-lighthouse` / `웹빌더 qa-lighthouse`: they follow the same local-preview, no-install, no-repair, no-deploy safety model while requiring already-installed project-local `axe` or `lighthouse` executables.
 - Expose the PR13 safe local repair-loop contract through `aiweb repair` / `웹빌더 repair`: it consumes failed/blocked QA evidence into a bounded `repair_loop` record, pre-repair snapshot, and fix task without installing packages, starting preview, running build/QA, auto-patching source, touching `.env`, deploying, or contacting external hosting.
 - Expose the PR14 safe local visual critique contract through `aiweb visual-critique` / `웹빌더 visual-critique`: it evaluates explicit local screenshot/metadata evidence only, produces deterministic score/approval artifacts under `.ai-web/visual`, supports no-write `--dry-run`, rejects `.env` / `.env.*` paths without reading them, and never launches browsers, captures screenshots, installs packages, auto-repairs source, deploys, contacts external hosting, or calls network/AI services.
+- Expose the PR15 safe local visual polish contract through `aiweb visual-polish --repair` / `웹빌더 visual-polish --repair`: it consumes failed, `repair`, or `redesign` visual critique evidence into a bounded `visual_polish` record, pre-polish snapshot, and polish task without editing source, installing packages, starting preview, running build/QA, capturing screenshots, touching `.env`, deploying, contacting external hosting, or calling network/AI services.
 
 ## Upgrade direction
 
@@ -30,9 +31,10 @@ The intended product direction is a design-first, natural-language webbuilder: t
 4. Run automated browser QA against visual, content, accessibility, and interaction expectations.
 5. Convert failed/blocked QA evidence into bounded local repair tasks and records.
 6. Review deterministic visual critique scores/patch plans from local evidence before repair decisions.
-7. Repair implementation manually or through later approved automation, then deploy later once gates pass and evidence is recorded.
+7. Convert failed visual critique evidence into bounded local visual polish tasks and records.
+8. Repair implementation manually or through later approved automation, then deploy later once gates pass and evidence is recorded.
 
-The current Director CLI is the foundation for that loop: state, gates, QA contracts, snapshots, local preview evidence, and bounded repair-loop records are in place before the system grows into end-to-end generation, source repair automation, and deploy. It is not yet a full app generator.
+The current Director CLI is the foundation for that loop: state, gates, QA contracts, snapshots, local preview evidence, bounded repair-loop records, and visual polish records/tasks/snapshots are in place before the system grows into end-to-end generation, source repair automation, and deploy. It is not yet a full app generator.
 
 ## Quick start
 
@@ -110,6 +112,16 @@ PR14 adds the safe local visual critique command as a local-evidence review step
 
 `visual-critique` accepts only explicit local evidence paths; this PR does not launch a browser, take screenshots, call AI/network services, install packages, start/stop preview, deploy, auto-repair, or touch `.env`. `visual-critique --dry-run` writes nothing and reports the planned `.ai-web/visual/` artifact path. A real run records a schema-versioned `visual_critique` payload with numeric scores for hierarchy, typography, spacing, color, originality, mobile polish, brand fit, and intent fit, plus issues, a patch plan, and an approval of `pass`, `repair`, or `redesign`. Low-score `repair` or `redesign` approvals intentionally return a non-success exit code so shell automation cannot treat visual quality failures as passing.
 
+PR15 adds the safe local visual polish repair-loop command as a follow-up to failed, `repair`, or `redesign` visual critique evidence:
+
+```bash
+./bin/aiweb --path ~/Desktop/aiweb-premium-service-site visual-polish --repair --from-critique latest --dry-run --json
+./bin/aiweb --path ~/Desktop/aiweb-premium-service-site visual-polish --repair --from-critique .ai-web/visual/visual-critique-example.json --max-cycles 2 --json
+웹빌더 --path ~/Desktop/aiweb-premium-service-site visual-polish --repair --from-critique latest --dry-run
+```
+
+`visual-polish --repair --from-critique latest` reads the latest visual critique recorded in `state.visual.latest_critique` or `state.qa.latest_visual_critique`; an explicit `--from-critique` must point to a visual critique JSON and rejects `.env` / `.env.*` paths without reading them. The command is phase-guarded for phase-7 through phase-11 unless `--force` is supplied. If the visual critique already passed, or if the same critique source has exceeded `--max-cycles`, it returns a deterministic `visual_polish.status: blocked` and writes nothing. `visual-polish --repair --dry-run` writes nothing, copies no snapshot, starts no process, and reports the planned snapshot, polish record, and polish-task paths. A real visual polish loop creates a pre-polish snapshot under `.ai-web/snapshots/`, creates or reuses a polish task under `.ai-web/tasks/`, writes `.ai-web/visual/polish-*.json`, updates `visual.latest_polish` and `implementation.current_task`, and records a decision. PR15 visual polish intentionally does not edit source files, auto-patch, install packages, start/stop preview, run build, run Playwright/axe/Lighthouse, capture screenshots, deploy, push, contact external hosting, call network/AI services, or touch `.env`.
+
 PR13 adds the safe local repair-loop command as a follow-up to failed or blocked QA:
 
 ```bash
@@ -136,6 +148,7 @@ Phase-sensitive commands are guarded by the Director state machine:
 ./bin/aiweb qa-checklist
 ./bin/aiweb qa-report --status failed --task-id golden-page --duration-minutes 61
 ./bin/aiweb repair --from-qa latest --dry-run
+./bin/aiweb visual-polish --repair --from-critique latest --dry-run
 ```
 
 Quality is an explicit contract. After entering phase-0.25, review `.ai-web/quality.yaml` and set `quality.approved: true` before advancing again.
@@ -155,6 +168,7 @@ Manual repair/override for guarded commands:
 ./bin/aiweb qa-report --force --status failed --task-id golden-page
 ./bin/aiweb repair --force --from-qa latest --dry-run
 ./bin/aiweb visual-critique --force --screenshot ./evidence/home.png --dry-run
+./bin/aiweb visual-polish --repair --force --from-critique latest --dry-run
 ```
 
 Rollback leaves the phase blocked until recovery evidence is recorded:
