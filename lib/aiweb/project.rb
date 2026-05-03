@@ -3632,25 +3632,26 @@ module Aiweb
           "metadata_path" => relative(metadata_path),
           "command" => "aiweb visual-critique --metadata #{relative(metadata_path)}"
         },
-        "screenshots" => qa_screenshot_viewports.map do |viewport|
-          path = screenshots.fetch(viewport.fetch("name"))
+        "screenshots" => qa_screenshot_viewports.each_with_object({}) do |viewport, memo|
+          name = viewport.fetch("name")
+          path = screenshots.fetch(name)
           expanded = File.expand_path(path)
           item = {
-            "name" => viewport.fetch("name"),
+            "name" => name,
             "route" => "/",
             "route_name" => "home",
             "path" => relative(path),
             "viewport" => {
               "width" => viewport.fetch("width"),
               "height" => viewport.fetch("height"),
-              "name" => viewport.fetch("name")
+              "name" => name
             }
           }
           if File.file?(expanded)
             item["bytes"] = File.size(expanded)
             item["sha256"] = Digest::SHA256.file(expanded).hexdigest
           end
-          item
+          memo[name] = item
         end,
         "blocking_issues" => blocking_issues
       }
@@ -6829,7 +6830,9 @@ module Aiweb
       return [latest] unless File.file?(metadata_path)
 
       metadata = JSON.parse(File.read(metadata_path))
-      paths = Array(metadata["screenshots"]).map { |item| item["path"].to_s.strip }.reject(&:empty?)
+      screenshots = metadata["screenshots"]
+      items = screenshots.is_a?(Hash) ? screenshots.values : Array(screenshots)
+      paths = items.map { |item| item.is_a?(Hash) ? item["path"].to_s.strip : "" }.reject(&:empty?)
       paths << relative(metadata_path)
       paths
     rescue JSON::ParserError
