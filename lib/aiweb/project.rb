@@ -729,7 +729,7 @@ module Aiweb
           state: state,
           metadata: setup_run_metadata(
             run_id: run_id,
-            status: "approval_required",
+            status: "blocked",
             command: command,
             package_manager: package_manager,
             started_at: nil,
@@ -745,7 +745,7 @@ module Aiweb
             approved: false
           ),
           changed_files: [],
-          action_taken: "setup install approval required",
+          action_taken: "setup install blocked",
           blocking_issues: ["--approved is required for real package install"],
           next_action: "rerun aiweb setup --install --approved to execute locally, or --dry-run to inspect planned artifacts"
         )
@@ -772,7 +772,7 @@ module Aiweb
             approved: approved
           ),
           changed_files: planned_changes,
-          action_taken: "planned dependency install",
+          action_taken: "planned setup install",
           blocking_issues: [],
           next_action: "rerun aiweb setup --install --approved to execute #{command.inspect} locally"
         )
@@ -833,7 +833,7 @@ module Aiweb
           state: state,
           metadata: metadata,
           changed_files: compact_changes(changes),
-          action_taken: status == "passed" ? "installed project dependencies" : "dependency install #{status}",
+          action_taken: status == "passed" ? "ran setup install" : "setup install failed",
           blocking_issues: blocking_issues,
           next_action: setup_next_action(status)
         )
