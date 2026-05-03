@@ -472,7 +472,7 @@ class AiwebCliTest < Minitest::Test
       File.write(File.join(dir, "design-systems", "broken-json", "metadata.json"), "{ broken json")
 
       payload, code = json_cmd("--path", dir, "design-systems", "list")
-      assert_equal 1, code
+      assert_equal 5, code
       assert payload["validation_errors"].any? { |error| error.include?("design-systems/broken-json/metadata.json") && error.include?("invalid JSON") }
       assert payload["warnings"].any? { |warning| warning.include?("metadata could not be loaded") }
       assert_match(/registry metadata validation failed/, payload["blocking_issues"].join("\n"))
@@ -2599,7 +2599,7 @@ class AiwebCliTest < Minitest::Test
       stdout, stderr, code = run_aiweb("setup", "--install", "--json")
       payload = JSON.parse(stdout)
 
-      assert_equal 5, code
+      assert_equal 1, code
       assert_equal "", stderr
       assert_equal "setup install blocked", payload["action_taken"]
       assert_equal "blocked", payload.dig("setup", "status")
@@ -2807,7 +2807,7 @@ class AiwebCliTest < Minitest::Test
       assert_equal 0, code
       assert_equal "", stderr
       assert_equal true, payload["dry_run"]
-      assert_nil payload.dig("agent_run", "dry_run")
+      assert_equal true, payload.dig("agent_run", "dry_run")
       assert_match(/agent run/i, payload["action_taken"])
       assert_includes %w[planned dry_run], payload.dig("agent_run", "status")
       assert_equal "rerun the agent run as aiweb agent-run --task latest --agent codex --approved to execute locally", payload["next_action"]
@@ -2858,7 +2858,7 @@ class AiwebCliTest < Minitest::Test
       )
       payload = JSON.parse(stdout)
 
-      assert_equal 5, code
+      assert_equal 1, code
       assert_equal "", stderr
       assert_equal "blocked", payload.dig("agent_run", "status")
       assert_match(/approved|approval/i, [payload.dig("error", "message"), payload["blocking_issues"], payload.dig("agent_run", "blocking_issues")].flatten.compact.join("\n"))
@@ -2925,14 +2925,14 @@ class AiwebCliTest < Minitest::Test
       assert_equal "", stderr
       assert_nil payload["dry_run"]
       assert_equal "passed", payload.dig("agent_run", "status")
-      assert_match(/agent run/i, payload["action_taken"])
+      assert_equal "ran agent patch", payload["action_taken"]
       assert run_dir, "approved agent-run must write a run directory"
       assert diff_path, "approved agent-run must write a diff patch"
       assert File.exist?(File.join(run_dir, "agent-run.json")), "approved agent-run must write metadata JSON"
       assert_equal "fake codex approved stdout\n", File.read(File.join(run_dir, "stdout.log"))
       assert_equal "fake codex approved stderr\n", File.read(File.join(run_dir, "stderr.log"))
       assert_match(/patched by fake codex/, File.read("src/components/Hero.astro"))
-      assert_not_equal before_source, File.read("src/components/Hero.astro"), "approved agent-run must patch source"
+      refute_equal before_source, File.read("src/components/Hero.astro"), "approved agent-run must patch source"
       after_entries = project_entries
       assert_operator after_entries.size, :>, before_entries.size, "approved agent-run must write artifacts"
       assert after_entries.any? { |path| path.start_with?(".ai-web/runs/agent-run-") }, "approved agent-run must write run artifacts"
@@ -2943,7 +2943,7 @@ class AiwebCliTest < Minitest::Test
       assert_agent_run_artifacts_do_not_leak_secret(secret, File.join(run_dir, "agent-run.json"), File.join(run_dir, "stdout.log"), File.join(run_dir, "stderr.log"), diff_path)
       refute_nil state.dig("implementation", "latest_agent_run")
       assert_match(%r{\A\.ai-web/runs/agent-run-.+/agent-run\.json\z}, state.dig("implementation", "latest_agent_run"))
-      assert_not_nil state.dig("implementation", "last_diff")
+      refute_nil state.dig("implementation", "last_diff")
       assert_match(%r{\A\.ai-web/diffs/agent-run-.+\.patch\z}, state.dig("implementation", "last_diff"))
       assert File.exist?(marker), "approved agent-run must execute the fake codex command"
     end
@@ -2992,7 +2992,7 @@ class AiwebCliTest < Minitest::Test
       assert run_dir, "failed agent-run must still write a run directory"
       assert_equal "fake codex failure stdout\n", File.read(File.join(run_dir, "stdout.log"))
       assert_equal "fake codex failure stderr\n", File.read(File.join(run_dir, "stderr.log"))
-      assert_not_nil state.dig("implementation", "latest_agent_run")
+      refute_nil state.dig("implementation", "latest_agent_run")
       assert File.exist?(marker), "failed agent-run must still execute the fake codex command"
     end
   end
@@ -3034,7 +3034,7 @@ class AiwebCliTest < Minitest::Test
       stdout, stderr, code = run_aiweb("agent-run", "--task", "latest", "--agent", "codex", "--approved", "--json")
       payload = JSON.parse(stdout)
 
-      assert_equal 1, code
+      assert_equal 5, code
       assert_equal "", stderr
       assert_equal "blocked", payload.dig("agent_run", "status")
       assert_match(/\.env|unsafe|refus/i, [payload.dig("error", "message"), payload["blocking_issues"], payload.dig("agent_run", "blocking_issues")].flatten.compact.join("\n"))
@@ -3057,7 +3057,7 @@ class AiwebCliTest < Minitest::Test
       stdout, stderr, code = run_aiweb("agent-run", "--task", "latest", "--agent", "codex", "--approved", "--json")
       payload = JSON.parse(stdout)
 
-      assert_equal 1, code
+      assert_equal 5, code
       assert_equal "", stderr
       assert_equal "blocked", payload.dig("agent_run", "status")
       assert_match(/task|target|latest|source/i, [payload.dig("error", "message"), payload["blocking_issues"], payload.dig("agent_run", "blocking_issues")].flatten.compact.join("\n"))
