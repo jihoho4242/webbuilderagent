@@ -69,9 +69,12 @@ module Aiweb
         when "--path"
           value = @argv.shift
           raise OptionParser::MissingArgument, "--path" if value.to_s.empty?
+          raise UserError.new("unsafe --path target blocked: .env/.env.* paths are not allowed", EXIT_UNSAFE_EXTERNAL_ACTION) if unsafe_env_path?(value)
 
           @root = File.expand_path(value)
         when /\A--path=(.+)\z/
+          raise UserError.new("unsafe --path target blocked: .env/.env.* paths are not allowed", EXIT_UNSAFE_EXTERNAL_ACTION) if unsafe_env_path?($1)
+
           @root = File.expand_path($1)
         else
           kept << arg
@@ -862,7 +865,8 @@ module Aiweb
           select-design candidate-01|candidate-02|candidate-03
           scaffold --profile D [--force]
           scaffold --profile S [--force]
-          setup --install [--approved]
+          setup --install --dry-run
+          setup --install --approved
           supabase-secret-qa [--force]
           runtime-plan (alias: scaffold-status)
           build
