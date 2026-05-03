@@ -742,7 +742,8 @@ module Aiweb
             node_modules_present: File.directory?(File.join(root, "node_modules")),
             blocking_issues: ["--approved is required for real package install"],
             dry_run: false,
-            approved: false
+            approved: false,
+            requires_approval: true
           ),
           changed_files: [],
           action_taken: "setup install blocked",
@@ -769,7 +770,8 @@ module Aiweb
             node_modules_present: File.directory?(File.join(root, "node_modules")),
             blocking_issues: [],
             dry_run: true,
-            approved: approved
+            approved: approved,
+            requires_approval: false
           ),
           changed_files: planned_changes,
           action_taken: "planned setup install",
@@ -818,7 +820,8 @@ module Aiweb
           node_modules_present: File.directory?(File.join(root, "node_modules")),
           blocking_issues: blocking_issues,
           dry_run: false,
-          approved: true
+          approved: true,
+          requires_approval: false
         )
         changes << write_json(metadata_path, metadata, false)
         setup_state = state["setup"] ||= {}
@@ -2778,7 +2781,7 @@ module Aiweb
       }
     end
 
-    def setup_run_metadata(run_id:, status:, command:, package_manager:, started_at:, finished_at:, exit_code:, stdout_log:, stderr_log:, metadata_path:, lifecycle_script_warnings:, node_modules_present:, blocking_issues:, dry_run:, approved:)
+    def setup_run_metadata(run_id:, status:, command:, package_manager:, started_at:, finished_at:, exit_code:, stdout_log:, stderr_log:, metadata_path:, lifecycle_script_warnings:, node_modules_present:, blocking_issues:, dry_run:, approved:, requires_approval:)
       {
         "schema_version" => 1,
         "run_id" => run_id,
@@ -2796,6 +2799,7 @@ module Aiweb
         "node_modules_present" => node_modules_present,
         "dry_run" => dry_run,
         "approved" => approved,
+        "requires_approval" => requires_approval,
         "blocking_issues" => blocking_issues
       }
     end
