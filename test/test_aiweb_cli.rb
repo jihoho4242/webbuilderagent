@@ -15,6 +15,7 @@ require "aiweb/project"
 class AiwebCliTest < Minitest::Test
   AIWEB = File.expand_path("../bin/aiweb", __dir__)
   WEBBUILDER = File.expand_path("../bin/webbuilder", __dir__)
+  KOREAN_WEBBUILDER = File.expand_path("../bin/웹빌더", __dir__)
   REPO_ROOT = File.expand_path("..", __dir__)
 
   def in_tmp
@@ -124,6 +125,11 @@ class AiwebCliTest < Minitest::Test
 
   def run_webbuilder(*args, input: nil)
     stdout, stderr, status = Open3.capture3(WEBBUILDER, *args.map(&:to_s), stdin_data: input)
+    [stdout, stderr, status.exitstatus]
+  end
+
+  def run_korean_webbuilder_env(env, *args)
+    stdout, stderr, status = Open3.capture3(env, RbConfig.ruby, KOREAN_WEBBUILDER, *args.map(&:to_s))
     [stdout, stderr, status.exitstatus]
   end
 
