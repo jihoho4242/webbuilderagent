@@ -1565,6 +1565,156 @@ module Aiweb
       payload
     end
 
+    def agent_run(task: "latest", agent: "codex", approved: false, dry_run: false)
+      assert_initialized!
+
+      agent_name = agent.to_s.strip.empty? ? "codex" : agent.to_s.strip
+      raise UserError.new("agent-run currently supports only --agent codex", 1) unless agent_name == "codex"
+
+      state = load_state
+      ensure_implementation_state_defaults!(state)
+
+      timestamp = Time.now.utc.strftime("%Y%m%dT%H%M%SZ")
+      run_id = "agent-run-#{timestamp}"
+      run_dir = File.join(aiweb_dir, "runs", run_id)
+      stdout_path = File.join(run_dir, "stdout.log")
+      stderr_path = File.join(run_dir, "stderr.log")
+      metadata_path = File.join(run_dir, "agent-run.json")
+      diff_path = File.join(aiweb_dir, "diffs", "#{run_id}.patch")
+
+      task_source = resolve_agent_run_task_source(task, state)
+      component_map = load_agent_run_component_map
+      task_text = task_source["path"] ? File.read(task_source["path"]) : nil
+      design_path = File.join(aiweb_dir, "DESIGN.md")
+      design_text = File.file?(design_path) ? File.read(design_path) : nil
+      component_map_text = component_map ? File.read(File.join(aiweb_dir, "component-map.json")) : nil
+      source_paths = agent_run_source_paths(task_text, component_map)
+      context = agent_run_context_manifest(
+        task_source: task_source,
+        design_text: design_text,
+        component_map_text: component_map_text,
+        source_paths: source_paths
+      )
+      blockers = []
+      blockers << task_source["reason"] if task_source["path"].nil?
+      blockers << "agent-run task packet does not identify any safe source targets" if source_paths.empty?
+      blockers << "agent-run component map is malformed" if component_map_text && component_map.nil?
+      blockers << "agent-run requires --approved for real command execution" if !dry_run && !approved
+      blockers << "codex executable is missing from PATH" if !dry_run && approved && executable_path(agent_name).nil?
+      blockers.concat(agent_run_forbidden_path_blockers(task_text, component_map_text))
+
+      planned_changes = [
+        relative(run_dir),
+        relative(stdout_path),
+        relative(stderr_path),
+        relative(metadata_path),
+        relative(diff_path)
+      ]
+
+      metadata = agent_run_run_metadata(
+        run_id: run_id,
+        agent: agent_name,
+        task_source: task_source,
+        context: context,
+        command: agent_name,
+        started_at: nil,
+        finished_at: nil,
+        exit_code: nil,
+        stdout_log: relative(stdout_path),
+        stderr_log: relative(stderr_path),
+        metadata_path: relative(metadata_path),
+        diff_path: relative(diff_path),
+        source_paths: source_paths,
+        dry_run: dry_run,
+        approved: approved,
+        blocking_issues: blockers.uniq,
+        status: blockers.empty? ? "planned" : "blocked"
+      )
+
+      if dry_run || !blockers.empty?
+        return agent_run_payload(
+          state: state,
+          metadata: metadata,
+          changed_files: [],
+          planned_changes: blockers.empty? ? planned_changes : [],
+          action_taken: blockers.empty? ? "planned agent run" : "agent run blocked",
+          blocking_issues: blockers.uniq,
+          next_action: blockers.empty? ? "rerun aiweb agent-run --task latest --agent codex --approved to execute the local codex patch run" : "add a safe source target to the task packet or component map, then rerun aiweb agent-run --task latest --agent codex --approved"
+        )
+      end
+
+      changes = []
+      payload = nil
+      mutation(dry_run: false) do
+        FileUtils.mkdir_p(run_dir)
+        changes << relative(run_dir)
+        started_at = now
+        prompt = agent_run_prompt(context: context)
+        stdout = ""
+        stderr = ""
+        exit_code = nil
+        status = "blocked"
+
+        stdout, stderr, process_status = Open3.capture3(
+          { "AIWEB_AGENT_RUN_CONTEXT_JSON" => JSON.pretty_generate(context), "AIWEB_AGENT_RUN_TASK_PATH" => task_source["relative"].to_s, "AIWEB_AGENT_RUN_APPROVED" => "1", "AIWEB_AGENT_RUN_DRY_RUN" => "0", "AIWEB_AGENT_RUN_RUN_ID" => run_id, "AIWEB_AGENT_RUN_DIFF_PATH" => relative(diff_path), "AIWEB_AGENT_RUN_METADATA_PATH" => relative(metadata_path) },
+          agent_name,
+          stdin_data: prompt,
+          chdir: root
+        )
+        exit_code = process_status.exitstatus
+        status = process_status.success? ? "passed" : "failed"
+        blocking_issues = process_status.success? ? [] : ["#{agent_name} exited with status #{exit_code}"]
+
+        changes << write_file(stdout_path, stdout, false)
+        changes << write_file(stderr_path, stderr, false)
+        diff_patch, changed_source_files = agent_run_source_diff(source_paths)
+        changes << write_file(diff_path, diff_patch, false)
+
+        metadata = agent_run_run_metadata(
+          run_id: run_id,
+          agent: agent_name,
+          task_source: task_source,
+          context: context,
+          command: agent_name,
+          started_at: started_at,
+          finished_at: now,
+          exit_code: exit_code,
+          stdout_log: relative(stdout_path),
+          stderr_log: relative(stderr_path),
+          metadata_path: relative(metadata_path),
+          diff_path: relative(diff_path),
+          source_paths: source_paths,
+          dry_run: false,
+          approved: true,
+          blocking_issues: blocking_issues,
+          status: if status == "failed"
+                    "failed"
+                  elsif changed_source_files.empty? || diff_patch.to_s.strip.empty?
+                    "no_changes"
+                  else
+                    "passed"
+                  end,
+          changed_source_files: changed_source_files
+        )
+        changes << write_json(metadata_path, metadata, false)
+        state["implementation"]["latest_agent_run"] = relative(metadata_path)
+        state["implementation"]["last_diff"] = relative(diff_path)
+        state["project"]["updated_at"] = now if state["project"].is_a?(Hash)
+        changes << write_yaml(state_path, state, false)
+
+        payload = agent_run_payload(
+          state: state,
+          metadata: metadata,
+          changed_files: compact_changes(changes),
+          planned_changes: [],
+          action_taken: metadata["status"] == "passed" ? "ran agent patch" : (metadata["status"] == "no_changes" ? "agent run produced no source diff" : "agent run failed"),
+          blocking_issues: metadata["blocking_issues"],
+          next_action: agent_run_next_action(metadata)
+        )
+      end
+      payload
+    end
+
     def next_task(type: nil, dry_run: false, force: false)
       assert_initialized!
       changes = []
@@ -5811,6 +5961,270 @@ module Aiweb
         - Run local build/test/lint if available.
         - Run browser QA checklist for user-facing changes.
       MD
+    end
+
+    def resolve_agent_run_task_source(task, state)
+      requested = task.to_s.strip
+      requested = "latest" if requested.empty?
+
+      if requested == "latest"
+        latest = state.dig("implementation", "current_task").to_s.strip
+        latest = latest_agent_run_task_artifact if latest.empty?
+        return { "relative" => nil, "path" => nil, "reason" => "no implementation task artifact is available" } if latest.empty?
+
+        reject_env_file_segment!(latest, "agent-run refuses to read .env or .env.* task paths")
+        path = File.expand_path(latest, root)
+        return { "relative" => latest, "path" => nil, "reason" => "task packet #{latest} is missing" } unless File.file?(path)
+
+        return { "relative" => relative(path), "path" => path, "reason" => nil }
+      end
+
+      reject_env_file_segment!(requested, "agent-run refuses to read .env or .env.* task paths")
+      path = File.expand_path(requested, root)
+      unless File.file?(path)
+        return { "relative" => requested, "path" => nil, "reason" => "task packet #{requested} is missing" }
+      end
+
+      { "relative" => relative(path), "path" => path, "reason" => nil }
+    end
+
+    def latest_agent_run_task_artifact
+      Dir.glob(File.join(aiweb_dir, "tasks", "*.md")).max_by { |path| File.mtime(path) }
+    rescue SystemCallError
+      nil
+    end
+
+    def load_agent_run_component_map
+      path = File.join(aiweb_dir, "component-map.json")
+      return nil unless File.file?(path)
+
+      load_component_map_for_visual_edit(path)
+    end
+
+    def agent_run_source_paths(task_text, component_map)
+      paths = []
+      paths.concat(agent_run_paths_from_text(task_text))
+      paths.concat(agent_run_component_map_source_paths(component_map)) if component_map
+      paths.uniq.select { |path| agent_run_source_path_allowed?(path) }.first(10)
+    end
+
+    def agent_run_paths_from_text(text)
+      return [] if text.to_s.strip.empty?
+
+      text.scan(%r{(?<![\w.-])(?:\.{1,2}/)?(?:[\w.-]+/)*[\w.-]+\.[A-Za-z0-9]+}).flatten.map do |path|
+        path.sub(/[),.;:]+$/, "")
+      end.uniq.select { |path| File.exist?(File.join(root, path)) }
+    end
+
+    def agent_run_component_map_source_paths(component_map)
+      Array(component_map.fetch("components", [])).each_with_object([]) do |component, memo|
+        next unless component.is_a?(Hash)
+
+        path = component["source_path"].to_s.strip
+        next if path.empty?
+        next unless File.exist?(File.join(root, path))
+
+        memo << path
+      end.uniq
+    rescue KeyError
+      []
+    end
+
+    def agent_run_source_path_allowed?(path)
+      normalized = path.to_s.tr("\\", "/").sub(%r{\A(?:\./)+}, "")
+      parts = normalized.split("/")
+      return false if normalized.empty? || normalized.start_with?("/") || parts.any? { |part| part == ".." }
+      return false if parts.any? { |part| part.start_with?(".env") }
+      return false if normalized.start_with?(".ai-web/")
+
+      File.exist?(File.join(root, normalized))
+    end
+
+    def agent_run_forbidden_path_blockers(task_text, component_map_text)
+      blockers = []
+      blockers.concat(agent_run_forbidden_paths_from_text(task_text))
+      blockers.concat(agent_run_forbidden_paths_from_text(component_map_text))
+      blockers.uniq
+    end
+
+    def agent_run_forbidden_paths_from_text(text)
+      return [] if text.to_s.strip.empty?
+
+      text.scan(%r{(?<![\w.-])(?:\.{1,2}/)?(?:[\w.-]+/)*\.env(?:\.[\w.-]+)?(?:/[^\s`"'<>]*)?}).flatten.map do |path|
+        path.sub(/[),.;:]+$/, "")
+      end.reject(&:empty?).uniq
+    end
+
+    def agent_run_context_manifest(task_source:, design_text:, component_map_text:, source_paths:)
+      context_files = []
+
+      if task_source["path"]
+        context_files << agent_run_context_file(task_source["path"], "task")
+      end
+
+      design_path = File.join(aiweb_dir, "DESIGN.md")
+      if File.file?(design_path)
+        context_files << agent_run_context_file(design_path, "design")
+      end
+
+      component_map_path = File.join(aiweb_dir, "component-map.json")
+      if File.file?(component_map_path)
+        context_files << agent_run_context_file(component_map_path, "component_map")
+      end
+
+      source_files = source_paths.map { |path| agent_run_context_file(path, "source") }
+      {
+        "task" => task_source["path"] ? agent_run_context_file(task_source["path"], "task") : nil,
+        "design" => design_text ? agent_run_context_file(design_path, "design") : nil,
+        "component_map" => component_map_text ? agent_run_context_file(component_map_path, "component_map") : nil,
+        "source_files" => source_files,
+        "context_files" => context_files.compact,
+        "source_paths" => source_paths,
+        "safe_context_only" => true
+      }
+    end
+
+    def agent_run_context_file(path, kind)
+      expanded = File.expand_path(path, root)
+      {
+        "kind" => kind,
+        "path" => relative(expanded),
+        "bytes" => File.size(expanded),
+        "sha256" => Digest::SHA256.file(expanded).hexdigest,
+        "content" => File.read(expanded)
+      }
+    rescue SystemCallError
+      {
+        "kind" => kind,
+        "path" => relative(path),
+        "bytes" => nil,
+        "sha256" => nil,
+        "content" => nil
+      }
+    end
+
+    def agent_run_prompt(context:)
+      lines = []
+      lines << "You are the local source-patch agent for aiweb."
+      lines << "Follow AGENTS.md and patch only the approved source files listed below."
+      lines << "Do not read or print .env or .env.* files."
+      lines << "Do not run build, preview, QA, deploy, or package install commands."
+      lines << ""
+      lines << "## Task packet"
+      lines << context["task"].to_h.fetch("content", "").to_s
+      if context["design"] && context["design"]["content"]
+        lines << ""
+        lines << "## DESIGN.md"
+        lines << context["design"]["content"].to_s
+      end
+      if context["component_map"] && context["component_map"]["content"]
+        lines << ""
+        lines << "## component-map.json"
+        lines << context["component_map"]["content"].to_s
+      end
+      Array(context["source_files"]).each do |file|
+        lines << ""
+        lines << "## #{file["path"]}"
+        lines << file["content"].to_s
+      end
+      lines << ""
+      lines << "## Instructions"
+      lines << "- Make the minimal safe source patch needed for the task."
+      lines << "- Leave .ai-web run artifacts, logs, and diff evidence to the wrapper."
+      lines << "- Return by exiting after the patch is complete."
+      lines.join("\n")
+    end
+
+    def agent_run_source_diff(source_paths)
+      changed_files = agent_run_changed_files(source_paths)
+      return ["", []] if changed_files.empty?
+
+      patch = changed_files.flat_map do |entry|
+        path = entry["path"]
+        if entry["untracked"]
+          stdout, stderr, status = Open3.capture3("git", "diff", "--no-color", "--binary", "--no-index", "--", "/dev/null", path, chdir: root)
+          next stdout if status.success? && !stdout.empty?
+          next [stdout, stderr].join
+        else
+          stdout, stderr, status = Open3.capture3("git", "diff", "--no-color", "--binary", "--", path, chdir: root)
+          next stdout if status.success? && !stdout.empty?
+          next [stdout, stderr].join
+        end
+      end.join
+
+      [patch, changed_files.map { |entry| entry["path"] }]
+    end
+
+    def agent_run_changed_files(source_paths)
+      stdout, _stderr, status = Open3.capture3("git", "status", "--porcelain=v1", "-uall", chdir: root)
+      return source_paths.map { |path| { "path" => path, "untracked" => false } } if !status.success?
+
+      changed = stdout.lines.filter_map do |line|
+        code = line[0, 2]
+        path = line[3..].to_s.strip
+        path = path.split(" -> ").last.to_s.strip if line.start_with?("R", "C")
+        path = line[3..].to_s.strip if code == "??"
+        next if path.empty?
+        next unless source_paths.include?(path)
+        next unless agent_run_source_path_allowed?(path)
+
+        { "path" => path, "untracked" => code == "??" }
+      end
+      changed.uniq { |entry| entry["path"] }
+    end
+
+    def agent_run_run_metadata(run_id:, agent:, task_source:, context:, command:, started_at:, finished_at:, exit_code:, stdout_log:, stderr_log:, metadata_path:, diff_path:, source_paths:, dry_run:, approved:, blocking_issues:, status:, changed_source_files: [])
+      {
+        "schema_version" => 1,
+        "run_id" => run_id,
+        "status" => status,
+        "agent" => agent,
+        "command" => command,
+        "cwd" => root,
+        "task_path" => task_source["relative"],
+        "task_sha256" => task_source["path"] ? Digest::SHA256.file(task_source["path"]).hexdigest : nil,
+        "context" => {
+          "safe_context_only" => context["safe_context_only"] == true,
+          "context_files" => context["context_files"],
+          "source_paths" => source_paths
+        },
+        "source_paths" => source_paths,
+        "changed_source_files" => changed_source_files,
+        "started_at" => started_at,
+        "finished_at" => finished_at,
+        "exit_code" => exit_code,
+        "stdout_log" => stdout_log,
+        "stderr_log" => stderr_log,
+        "metadata_path" => metadata_path,
+        "diff_path" => diff_path,
+        "dry_run" => dry_run,
+        "approved" => approved,
+        "requires_approval" => !approved && !dry_run,
+        "blocking_issues" => blocking_issues
+      }
+    end
+
+    def agent_run_payload(state:, metadata:, changed_files:, planned_changes:, action_taken:, blocking_issues:, next_action:)
+      payload = status_hash(state: state, changed_files: changed_files)
+      payload["action_taken"] = action_taken
+      payload["blocking_issues"] = blocking_issues
+      payload["planned_changes"] = planned_changes unless planned_changes.empty?
+      payload["agent_run"] = metadata
+      payload["next_action"] = next_action
+      payload
+    end
+
+    def agent_run_next_action(metadata)
+      case metadata["status"]
+      when "passed"
+        "review #{metadata["metadata_path"]} and #{metadata["diff_path"]} before accepting the patch"
+      when "no_changes"
+        "inspect #{metadata["stdout_log"]} and #{metadata["stderr_log"]}; rerun with better source hints if the patch should have changed files"
+      when "failed"
+        "inspect #{metadata["stdout_log"]} and #{metadata["stderr_log"]}, then repair the source task and rerun aiweb agent-run --task latest --agent codex --approved"
+      else
+        "add a safe source target to the task packet or component map, then rerun aiweb agent-run --task latest --agent codex --approved"
+      end
     end
 
     def qa_checklist_markdown(state)
