@@ -9,7 +9,7 @@ require "time"
 class WebbuilderLauncher
   KNOWN_COMMANDS = %w[
     help --help -h version --version
-    start init status runtime-plan scaffold-status build preview interview run design-brief design-system design-prompt design select-design scaffold supabase-secret-qa ingest-design next-task
+    start init status runtime-plan scaffold-status setup build preview interview run design-brief design-system design-prompt design select-design scaffold supabase-secret-qa ingest-design next-task
     qa-checklist qa-report repair qa-playwright qa-a11y qa-lighthouse visual-critique visual-polish advance rollback resolve-blocker snapshot
     workbench component-map visual-edit github-sync deploy-plan deploy design-systems skills craft intent
   ].freeze

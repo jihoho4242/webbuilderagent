@@ -17,7 +17,7 @@ module Aiweb
     EXIT_UNSAFE_EXTERNAL_ACTION = 5
     EXIT_INTERNAL_ERROR = 10
 
-    MUTATION_COMMANDS = %w[start init interview run ingest-design next-task qa-checklist qa-report repair advance rollback resolve-blocker snapshot design-brief design-system design-prompt design select-design scaffold build preview qa-playwright browser-qa qa-a11y a11y-qa qa-lighthouse lighthouse-qa visual-critique visual-polish workbench component-map visual-edit supabase-secret-qa github-sync deploy-plan deploy].freeze
+    MUTATION_COMMANDS = %w[start init interview run ingest-design next-task qa-checklist qa-report repair advance rollback resolve-blocker snapshot design-brief design-system design-prompt design select-design scaffold setup build preview qa-playwright browser-qa qa-a11y a11y-qa qa-lighthouse lighthouse-qa visual-critique visual-polish workbench component-map visual-edit supabase-secret-qa github-sync deploy-plan deploy].freeze
     RUNTIME_PLAN_COMMANDS = %w[runtime-plan scaffold-status].freeze
     REGISTRY_COMMANDS = %w[design-systems skills craft].freeze
 
@@ -159,6 +159,19 @@ module Aiweb
           raise UserError.new("scaffold does not accept extra positional arguments: #{@argv.join(", ")}", EXIT_VALIDATION_FAILED)
         end
         project.scaffold(profile: opts[:profile] || "D", dry_run: @dry_run, force: opts[:force])
+      when "setup"
+        opts = parse_options do |o, options|
+          o.on("--install") { options[:install] = true }
+          o.on("--approved") { options[:approved] = true }
+        end
+        unless @argv.empty?
+          raise UserError.new("setup does not accept extra positional arguments: #{@argv.join(", ")}", EXIT_VALIDATION_FAILED)
+        end
+        unless opts[:install]
+          raise UserError.new("setup requires --install", EXIT_VALIDATION_FAILED)
+        end
+
+        dispatch_setup(opts)
       when "supabase-secret-qa"
         opts = parse_options do |o, options|
           o.on("--force") { options[:force] = true }
@@ -502,6 +515,14 @@ module Aiweb
       unsafe_deploy_blocked_payload(target, e.message)
     end
 
+    def dispatch_setup(opts)
+      call_project_adapter(:setup, { install: true, approved: !!opts[:approved], dry_run: @dry_run })
+    rescue UserError => e
+      raise unless setup_approval_error?(e)
+
+      setup_approval_blocked_payload(e.message)
+    end
+
     def call_project_adapter(method_name, kwargs)
       unless project.respond_to?(method_name)
         raise UserError.new("#{method_name.to_s.tr("_", "-")} is not available for this project adapter", EXIT_ADAPTER_UNAVAILABLE)
@@ -549,6 +570,10 @@ module Aiweb
       error.message.match?(/unsafe external action|unsafe deploy|blocked/i)
     end
 
+    def setup_approval_error?(error)
+      error.message.match?(/approved|approval|unsafe|blocked/i)
+    end
+
     def unsafe_deploy_blocked_payload(target, message)
       {
         "schema_version" => 1,
@@ -567,6 +592,31 @@ module Aiweb
           "blocking_issues" => ["unsafe deploy blocked: #{message}"]
         },
         "next_action" => "rerun as aiweb deploy --target cloudflare-pages|vercel --dry-run"
+      }
+    end
+
+    def setup_approval_blocked_payload(message)
+      {
+        "schema_version" => 1,
+        "current_phase" => nil,
+        "action_taken" => "setup blocked",
+        "changed_files" => [],
+        "blocking_issues" => ["setup install approval required: #{message}"],
+        "missing_artifacts" => [],
+        "setup" => {
+          "schema_version" => 1,
+          "status" => "blocked",
+          "dry_run" => false,
+          "install" => true,
+          "approved" => false,
+          "planned_command" => "pnpm install",
+          "planned_stdout_path" => ".ai-web/runs/setup-<timestamp>/stdout.log",
+          "planned_stderr_path" => ".ai-web/runs/setup-<timestamp>/stderr.log",
+          "planned_metadata_path" => ".ai-web/runs/setup-<timestamp>/setup.json",
+          "guardrails" => ["--approved required for real install", "--dry-run writes nothing", "no build/preview/QA/deploy", "no .env/.env.* reads or output"],
+          "blocking_issues" => ["setup install approval required: #{message}"]
+        },
+        "next_action" => "rerun as aiweb setup --install --dry-run or aiweb setup --install --approved"
       }
     end
 
@@ -923,7 +973,7 @@ module Aiweb
       return human_workbench_result(result) if result["workbench"]
       return human_component_map_result(result) if result["component_map"]
       return human_visual_edit_result(result) if result["visual_edit"]
-      return human_supabase_secret_qa_result(result) if result["supabase_secret_qa"]
+      return human_supabase_secret_qa_result(result) if result["supabase_secret_qa"]\n      return human_setup_result(result) if result["setup"]
 
       changed = result["changed_files"] || result["artifacts_changed"] || []
       blockers = result["blocking_issues"] || []
@@ -967,6 +1017,29 @@ module Aiweb
         "Read .env: #{qa.key?("read_dot_env") ? qa["read_dot_env"] : false}",
         "Scanned paths: #{Array(qa["scanned_paths"]).empty? ? "none" : Array(qa["scanned_paths"]).join(", ")}",
         "Artifacts: #{paths.empty? ? "none" : paths.join(", ")}",
+        "Blocking issues: #{blockers.empty? ? "none" : blockers.join("; ")}",
+        "Next command: #{result["next_action"] || "n/a"}"
+      ].join("\n")
+    end
+
+    def human_setup_result(result)
+      setup = result.fetch("setup")
+      changed = result["changed_files"] || result["artifacts_changed"] || []
+      blockers = setup["blocking_issues"] || result["blocking_issues"] || []
+      paths = []
+      %w[run_dir stdout_path stderr_path metadata_path setup_json_path planned_run_dir planned_stdout_path planned_stderr_path planned_metadata_path planned_setup_json_path].each do |key|
+        value = setup[key]
+        paths << "#{key}=#{value}" unless value.to_s.empty?
+      end
+      [
+        "Setup install: #{setup["status"] || "n/a"}",
+        "Package manager: #{setup["package_manager"] || "n/a"}",
+        "Dry run: #{setup.key?("dry_run") ? setup["dry_run"] : "n/a"}",
+        "Approved: #{setup.key?("approved") ? setup["approved"] : "n/a"}",
+        "Command: #{setup["command"] || setup["planned_command"] || "n/a"}",
+        "Lifecycle scripts: #{Array(setup["lifecycle_scripts"] || setup["lifecycle_script_warnings"]).empty? ? "none" : Array(setup["lifecycle_scripts"] || setup["lifecycle_script_warnings"]).join(", ")}",
+        "Artifacts changed: #{changed.empty? ? "none" : changed.join(", ")}",
+        "Setup paths: #{paths.empty? ? "none" : paths.join(", ")}",
         "Blocking issues: #{blockers.empty? ? "none" : blockers.join("; ")}",
         "Next command: #{result["next_action"] || "n/a"}"
       ].join("\n")
@@ -1136,6 +1209,15 @@ module Aiweb
       lines.join("\n")
     end
 
+    def setup_exit_code(result)
+      status = result.dig("setup", "status").to_s
+      return EXIT_SUCCESS if %w[planned dry_run passed completed].include?(status)
+      return EXIT_PHASE_BLOCKED if status == "blocked" && ((result.dig("setup", "blocking_issues") || []) + (result["blocking_issues"] || [])).join(" ").match?(/phase|runtime-plan|readiness|initialized/i)
+      return EXIT_UNSAFE_EXTERNAL_ACTION if status == "blocked" && ((result.dig("setup", "blocking_issues") || []) + (result["blocking_issues"] || [])).join(" ").match?(/approved|approval|unsafe/i)
+
+      EXIT_VALIDATION_FAILED
+    end
+
     def build_exit_code(result)
       result.dig("build", "status") == "passed" || result.dig("build", "status") == "dry_run" ? EXIT_SUCCESS : EXIT_VALIDATION_FAILED
     end
@@ -1247,7 +1329,7 @@ module Aiweb
       return EXIT_VALIDATION_FAILED if result["validation_errors"] && !result["validation_errors"].empty?
       return result.dig("runtime_plan", "readiness") == "ready" ? EXIT_SUCCESS : EXIT_VALIDATION_FAILED if RUNTIME_PLAN_COMMANDS.include?(command)
       return EXIT_SUCCESS if REGISTRY_COMMANDS.include?(command) || command == "intent"
-      return build_exit_code(result) if command == "build"
+      return setup_exit_code(result) if command == "setup"\n      return build_exit_code(result) if command == "build"
       return preview_exit_code(result) if command == "preview"
       return qa_playwright_exit_code(result) if %w[qa-playwright browser-qa].include?(command)
       return qa_a11y_exit_code(result) if %w[qa-a11y a11y-qa].include?(command)
