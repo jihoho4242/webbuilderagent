@@ -11,7 +11,7 @@ class WebbuilderLauncher
     help --help -h version --version
     start init status runtime-plan scaffold-status build preview interview run design-brief design-system design-prompt design select-design scaffold supabase-secret-qa ingest-design next-task
     qa-checklist qa-report repair qa-playwright qa-a11y qa-lighthouse visual-critique visual-polish advance rollback resolve-blocker snapshot
-    workbench component-map visual-edit design-systems skills craft intent
+    workbench component-map visual-edit github-sync deploy-plan deploy design-systems skills craft intent
   ].freeze
 
   def initialize(argv, stdin: STDIN, stdout: STDOUT, stderr: STDERR, root: Dir.pwd)
@@ -74,6 +74,10 @@ class WebbuilderLauncher
         웹빌더 --path ~/Desktop/my-site workbench --export
         웹빌더 --path ~/Desktop/my-site component-map --dry-run
         웹빌더 --path ~/Desktop/my-site visual-edit --target component.hero.copy --prompt "이 섹션 더 고급스럽게" --dry-run
+        웹빌더 --path ~/Desktop/my-site github-sync
+        웹빌더 --path ~/Desktop/my-site deploy-plan --target cloudflare-pages
+        웹빌더 --path ~/Desktop/my-site deploy --target cloudflare-pages --dry-run
+        웹빌더 --path ~/Desktop/my-site deploy --target vercel --dry-run
 
       웹빌더가 숙지한 시작 순서:
         Phase 0: 웹 유형 / 난이도 / 릴리즈 범위 결정
@@ -116,6 +120,9 @@ class WebbuilderLauncher
       component-map은 scaffold/source의 안정적인 data-aiweb-id 영역을 .ai-web/component-map.json으로 매핑한다. --dry-run은 쓰기 없이 예정 경로와 차단 여부만 확인한다.
       visual-edit은 --target DATA_AIWEB_ID와 --prompt TEXT로 선택 영역 편집 handoff만 만든다. source auto-patch, build/QA/browser/preview 실행, deploy, network/AI 호출, .env 접근은 수행하지 않는다.
       visual-edit --dry-run은 .ai-web/tasks/visual-edit-*.md 및 .ai-web/visual/visual-edit-*.json 예정 경로만 보고하고 파일을 쓰지 않는다.
+      github-sync는 GitHub 동기화 계획만 보여주는 로컬 전용 명령이며 git push, network, provider CLI, build/preview/install, .env/.env.* 접근을 수행하지 않는다.
+      deploy-plan은 Cloudflare Pages 또는 Vercel 배포 체크리스트만 보여주는 로컬 전용 명령이며 provider CLI, network, build/preview/install, .env/.env.* 접근을 수행하지 않는다.
+      deploy는 --target cloudflare-pages|vercel --dry-run만 허용하며 실제 배포 시도는 unsafe deploy blocked로 차단한다.
       --dry-run은 설치/쓰기/빌드/프로세스 실행을 수행하지 않는 사전 점검 경로로 사용한다.
 
       고급 명령은 기존 aiweb 명령과 동일하게 사용할 수 있다.

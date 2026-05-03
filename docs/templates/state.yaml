@@ -72,6 +72,10 @@ artifacts:
   selected_design_candidate: { path: ".ai-web/design-candidates/selected.md", status: "missing" }
   design_system: { path: ".ai-web/DESIGN.md", status: "stub" }
   deploy: { path: ".ai-web/deploy.md", status: "stub" }
+  github_sync: { path: ".ai-web/github-sync.json", status: "missing" }
+  deploy_plan: { path: ".ai-web/deploy-plan.json", status: "missing" }
+  deploy_cloudflare_pages: { path: ".ai-web/deploy/cloudflare-pages.json", status: "missing" }
+  deploy_vercel: { path: ".ai-web/deploy/vercel.json", status: "missing" }
   final_qa_report: { path: ".ai-web/qa/final-report.md", status: "stub" }
   post_launch_backlog: { path: ".ai-web/post-launch-backlog.md", status: "stub" }
 design_candidates:
@@ -106,6 +110,19 @@ deploy:
   post_launch_backlog: ".ai-web/post-launch-backlog.md"
   rollback_defined: false
   rollback_dry_run_result: null
+  github_sync_plan: ".ai-web/github-sync.json"
+  deploy_plan: ".ai-web/deploy-plan.json"
+  latest_plan: null
+  provider_config_paths:
+    cloudflare-pages: ".ai-web/deploy/cloudflare-pages.json"
+    vercel: ".ai-web/deploy/vercel.json"
+  github_last_known_url: null
+  preview_url: null
+  production_url: null
+  cloudflare_preview_url: null
+  vercel_preview_url: null
+  github_sync_last_planned_at: null
+  deploy_plan_last_planned_at: null
 budget:
   cost_mode: "subscription_usage"
   meter_model_cost: false

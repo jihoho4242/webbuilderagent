@@ -848,6 +848,28 @@ class AiwebCliTest < Minitest::Test
     end
   end
 
+  def test_qa_report_rejects_env_from_paths_without_reading_or_printing_secret
+    [".env", ".env/qa.json", "nested/.env.local/qa.json"].each do |forbidden_path|
+      in_tmp do
+        json_cmd("init")
+        set_phase("phase-10")
+        File.write(".env", "SECRET=do-not-print\n")
+        FileUtils.mkdir_p(File.dirname(forbidden_path)) unless File.dirname(forbidden_path) == "." || File.exist?(File.dirname(forbidden_path))
+        File.write(forbidden_path, JSON.pretty_generate(valid_qa_result.merge("notes" => "SECRET=do-not-print"))) if forbidden_path.include?("/") && File.dirname(forbidden_path) != ".env"
+
+        stdout, stderr, code = run_aiweb("qa-report", "--from", forbidden_path, "--json")
+        payload = JSON.parse(stdout)
+
+        assert_equal 1, code, forbidden_path
+        assert_equal "", stderr, forbidden_path
+        assert_match(/\.env|unsafe|refus/i, payload.dig("error", "message"), forbidden_path)
+        refute_includes stdout, "do-not-print", forbidden_path
+        assert_equal "SECRET=do-not-print\n", File.read(".env"), forbidden_path
+        assert_empty Dir.glob(".ai-web/qa/results/*.json"), forbidden_path
+      end
+    end
+  end
+
   def test_qa_report_rejects_invalid_nested_schema
     in_tmp do
       json_cmd("init")
@@ -1046,16 +1068,21 @@ class AiwebCliTest < Minitest::Test
       set_phase("phase-10")
       File.write(".env", "SECRET=do-not-print\n")
 
-      stdout, stderr, code = run_aiweb("repair", "--from-qa", ".env", "--json")
-      payload = JSON.parse(stdout)
+      [".env", ".env/qa.json", "nested/.env.local/qa.json"].each do |forbidden_path|
+        FileUtils.mkdir_p(File.dirname(forbidden_path)) unless File.dirname(forbidden_path) == "." || File.exist?(File.dirname(forbidden_path))
+        File.write(forbidden_path, JSON.pretty_generate(valid_qa_result.merge("notes" => "SECRET=do-not-print"))) if forbidden_path.include?("/") && File.dirname(forbidden_path) != ".env"
 
-      assert_equal 1, code
-      assert_equal "", stderr
-      assert_match(/\.env|unsafe|refus/i, payload.dig("error", "message"))
-      refute_includes stdout, "do-not-print"
-      assert_equal "SECRET=do-not-print\n", File.read(".env")
-      assert_empty Dir.glob(".ai-web/repairs/*.json")
-      assert_empty Dir.glob(".ai-web/snapshots/*")
+        stdout, stderr, code = run_aiweb("repair", "--from-qa", forbidden_path, "--json")
+        payload = JSON.parse(stdout)
+
+        assert_equal 1, code, forbidden_path
+        assert_equal "", stderr, forbidden_path
+        assert_match(/\.env|unsafe|refus/i, payload.dig("error", "message"), forbidden_path)
+        refute_includes stdout, "do-not-print", forbidden_path
+        assert_equal "SECRET=do-not-print\n", File.read(".env"), forbidden_path
+        assert_empty Dir.glob(".ai-web/repairs/*.json"), forbidden_path
+        assert_empty Dir.glob(".ai-web/snapshots/*"), forbidden_path
+      end
     end
   end
 
@@ -2489,7 +2516,9 @@ class AiwebCliTest < Minitest::Test
     unsafe_paths = {
       "absolute" => File.join(Dir.tmpdir, "aiweb-unsafe-scaffold-profile-D.json"),
       "traversal" => "../outside-scaffold-profile-D.json",
-      "env_like" => ".ai-web/.env.local"
+      "env_like" => ".ai-web/.env.local",
+      "env_segmented" => ".env/foo.json",
+      "nested_env_segmented" => "nested/.env.local/foo.json"
     }
 
     unsafe_paths.each do |label, unsafe_path|
@@ -2740,6 +2769,202 @@ class AiwebCliTest < Minitest::Test
     Array(component_map["components"]).map { |component| component.fetch("data_aiweb_id") }
   end
 
+  def test_github_sync_dry_run_plans_local_artifact_without_writes_or_external_actions
+    in_tmp do
+      prepare_profile_d_scaffold_flow
+      env_body = "SECRET=do-not-touch\n"
+      File.write(".env", env_body)
+      before_entries = project_entries
+      before_state = File.read(".ai-web/state.yaml")
+
+      stdout, stderr, code = run_aiweb("github-sync", "--dry-run", "--json")
+      payload = JSON.parse(stdout)
+
+      assert_equal 0, code
+      assert_equal "", stderr
+      sync = payload.fetch("github_sync")
+      assert_equal ".ai-web/github-sync.json", sync.fetch("planned_config_path")
+      assert_equal false, sync.fetch("external_push_performed")
+      assert_equal false, sync.fetch("external_deploy_performed")
+      assert_equal true, sync.fetch("requires_approval")
+      assert_equal [".ai-web/github-sync.json"], payload.fetch("planned_changes")
+      assert_equal false, payload.fetch("external_push_performed")
+      assert_equal false, payload.fetch("external_deploy_performed")
+      assert_equal before_entries, project_entries, "github-sync --dry-run must not write files"
+      assert_equal before_state, File.read(".ai-web/state.yaml"), "github-sync --dry-run must not mutate state"
+      assert_equal env_body, File.read(".env"), "github-sync --dry-run must not mutate .env"
+      refute_includes stdout, "do-not-touch"
+      refute Dir.exist?("dist"), "github-sync --dry-run must not build"
+    end
+  end
+
+  def test_github_sync_real_run_writes_only_local_artifact_without_push
+    in_tmp do
+      prepare_profile_d_scaffold_flow
+      env_body = "SECRET=do-not-touch\n"
+      File.write(".env", env_body)
+      before_state = File.read(".ai-web/state.yaml")
+      before_entries = project_entries
+
+      stdout, stderr, code = run_aiweb("github-sync", "--json")
+      payload = JSON.parse(stdout)
+
+      assert_equal 0, code
+      assert_equal "", stderr
+      sync = payload.fetch("github_sync")
+      assert_equal ".ai-web/github-sync.json", sync.fetch("planned_config_path")
+      assert_equal false, sync.fetch("external_push_performed")
+      assert_equal false, sync.fetch("external_deploy_performed")
+      assert_equal true, sync.fetch("requires_approval")
+      artifact_path = ".ai-web/github-sync.json"
+      assert File.file?(artifact_path), "github-sync must write local artifact"
+      artifact = JSON.parse(File.read(artifact_path))
+      assert_equal false, artifact.fetch("external_push_performed")
+      assert_equal false, artifact.fetch("external_deploy_performed")
+      added_entries = project_entries - before_entries
+      assert_includes added_entries, artifact_path
+      assert added_entries.all? { |path| path.start_with?(".ai-web/") }, "github-sync must only write local .ai-web artifacts/state"
+      refute_equal before_state, File.read(".ai-web/state.yaml"), "github-sync must update state safely"
+      state = load_state
+      assert_equal ".ai-web/github-sync.json", state.dig("artifacts", "github_sync", "path")
+      assert_equal ".ai-web/github-sync.json", state.dig("deploy", "github_sync_plan")
+      assert_equal env_body, File.read(".env"), "github-sync must not mutate .env"
+      refute_includes stdout, "do-not-touch"
+      refute Dir.exist?("dist"), "github-sync must not build"
+    end
+  end
+
+  def test_deploy_plan_dry_run_and_real_run_are_local_only_and_stateful
+    in_tmp do
+      prepare_profile_d_scaffold_flow
+      set_phase("phase-11")
+      env_body = "SECRET=do-not-touch\n"
+      File.write(".env", env_body)
+      before_entries = project_entries
+      before_state = File.read(".ai-web/state.yaml")
+
+      dry_stdout, dry_stderr, dry_code = run_aiweb("deploy-plan", "--dry-run", "--json")
+      dry_payload = JSON.parse(dry_stdout)
+
+      assert_equal 0, dry_code
+      assert_equal "", dry_stderr
+      dry_plan = dry_payload.fetch("deploy_plan")
+      assert_equal ".ai-web/deploy-plan.json", dry_plan.fetch("planned_config_path")
+      assert_equal({ "cloudflare-pages" => ".ai-web/deploy/cloudflare-pages.json", "vercel" => ".ai-web/deploy/vercel.json" }, dry_plan.fetch("provider_config_paths"))
+      assert_equal false, dry_plan.fetch("external_deploy_performed")
+      assert_equal true, dry_plan.fetch("requires_approval")
+      assert_equal [".ai-web/deploy-plan.json", ".ai-web/deploy/cloudflare-pages.json", ".ai-web/deploy/vercel.json"], dry_payload.fetch("planned_changes")
+      assert_equal before_entries, project_entries, "deploy-plan --dry-run must not write files"
+      assert_equal before_state, File.read(".ai-web/state.yaml"), "deploy-plan --dry-run must not mutate state"
+
+      real_stdout, real_stderr, real_code = run_aiweb("deploy-plan", "--json")
+      real_payload = JSON.parse(real_stdout)
+
+      assert_equal 0, real_code
+      assert_equal "", real_stderr
+      real_plan = real_payload.fetch("deploy_plan")
+      assert_equal ".ai-web/deploy-plan.json", real_plan.fetch("planned_config_path")
+      assert_equal false, real_plan.fetch("external_deploy_performed")
+      assert_equal true, real_plan.fetch("requires_approval")
+      [".ai-web/deploy-plan.json", ".ai-web/deploy/cloudflare-pages.json", ".ai-web/deploy/vercel.json"].each do |artifact_path|
+        assert File.file?(artifact_path), "deploy-plan must write #{artifact_path}"
+      end
+      state = load_state
+      assert_equal ".ai-web/deploy-plan.json", state.dig("artifacts", "deploy_plan", "path")
+      assert_equal ".ai-web/deploy-plan.json", state.dig("deploy", "deploy_plan")
+      assert_equal({ "cloudflare-pages" => ".ai-web/deploy/cloudflare-pages.json", "vercel" => ".ai-web/deploy/vercel.json" }, state.dig("deploy", "provider_config_paths"))
+      added_entries = project_entries - before_entries
+      assert added_entries.all? { |path| path.start_with?(".ai-web/") }, "deploy-plan must only write local .ai-web artifacts/state"
+      assert_equal env_body, File.read(".env"), "deploy-plan must not mutate .env"
+      refute_includes dry_stdout + real_stdout, "do-not-touch"
+      refute Dir.exist?("dist"), "deploy-plan must not build"
+    end
+  end
+
+  def test_deploy_target_dry_runs_are_local_only_for_supported_providers
+    ["cloudflare-pages", "vercel"].each do |target|
+      in_tmp do
+        prepare_profile_d_scaffold_flow
+        set_phase("phase-11")
+        env_body = "SECRET=do-not-touch\n"
+        File.write(".env", env_body)
+        before_entries = project_entries
+        before_state = File.read(".ai-web/state.yaml")
+
+        stdout, stderr, code = run_aiweb("deploy", "--target", target, "--dry-run", "--json")
+        payload = JSON.parse(stdout)
+
+        assert_equal 0, code, target
+        assert_equal "", stderr, target
+        deploy = payload.fetch("deploy")
+        assert_equal target, deploy.fetch("target")
+        assert_equal true, deploy.fetch("dry_run")
+        assert_equal "planned", deploy.fetch("status")
+        assert_equal false, deploy.fetch("external_push_performed")
+        assert_equal false, deploy.fetch("external_deploy_performed")
+        assert_equal true, deploy.fetch("requires_approval")
+        assert_equal false, deploy.fetch("writes_performed")
+        assert_equal false, deploy.fetch("provider_cli_invoked")
+        assert_equal false, deploy.fetch("network_calls_performed")
+        assert_includes deploy.fetch("planned_changes"), ".ai-web/deploy-plan.json"
+        assert_includes deploy.fetch("planned_changes"), ".ai-web/deploy/#{target}.json"
+        assert_equal before_entries, project_entries, "deploy --dry-run must not write files (#{target})"
+        assert_equal before_state, File.read(".ai-web/state.yaml"), "deploy --dry-run must not mutate state (#{target})"
+        assert_equal env_body, File.read(".env"), "deploy --dry-run must not mutate .env (#{target})"
+        refute_includes stdout, "do-not-touch", target
+        refute Dir.exist?("dist"), "deploy --dry-run must not build (#{target})"
+      end
+    end
+  end
+
+  def test_deploy_blocks_unsafe_real_external_actions_and_invalid_targets
+    in_tmp do
+      prepare_profile_d_scaffold_flow
+      set_phase("phase-11")
+      env_body = "SECRET=do-not-touch\n"
+      File.write(".env", env_body)
+      before_entries = project_entries
+      before_state = File.read(".ai-web/state.yaml")
+
+      stdout, stderr, code = run_aiweb("deploy", "--target", "vercel", "--json")
+      payload = JSON.parse(stdout)
+
+      assert_equal 5, code
+      assert_equal "", stderr
+      message = [payload.dig("error", "message"), payload["blocking_issues"], payload.dig("deploy", "blocking_issues")].flatten.compact.join("\n")
+      assert_match(/external|unsafe|dry-run|approval|blocked/i, message)
+      assert_equal before_entries, project_entries, "blocked deploy must not write files"
+      assert_equal before_state, File.read(".ai-web/state.yaml"), "blocked deploy must not mutate state"
+      assert_equal env_body, File.read(".env"), "blocked deploy must not mutate .env"
+      refute_includes stdout, "do-not-touch"
+      refute Dir.exist?("dist"), "blocked deploy must not build"
+
+      invalid_stdout, invalid_stderr, invalid_code = run_aiweb("deploy", "--target", "ftp", "--dry-run", "--json")
+      invalid_payload = JSON.parse(invalid_stdout)
+
+      assert_equal 1, invalid_code
+      assert_equal "", invalid_stderr
+      assert_match(/target|cloudflare-pages|vercel|invalid/i, invalid_payload.dig("error", "message"))
+      assert_equal before_entries, project_entries, "invalid target must not write files"
+    end
+  end
+
+  def test_github_deploy_help_and_webbuilder_passthrough_surface
+    aiweb_stdout, aiweb_stderr, aiweb_code = run_aiweb("help")
+    assert_equal 0, aiweb_code
+    assert_equal "", aiweb_stderr
+    ["github-sync", "deploy-plan", "deploy --target", "cloudflare-pages", "vercel"].each do |snippet|
+      assert_includes aiweb_stdout, snippet
+    end
+
+    web_stdout, web_stderr, web_code = run_webbuilder("help")
+    assert_equal 0, web_code
+    assert_equal "", web_stderr
+    ["github-sync", "deploy-plan", "deploy", "cloudflare-pages", "vercel"].each do |snippet|
+      assert_includes web_stdout, snippet
+    end
+  end
+
   def test_component_map_dry_run_discovers_profile_d_regions_without_writes
     in_tmp do
       prepare_profile_d_scaffold_flow
@@ -2912,18 +3137,20 @@ class AiwebCliTest < Minitest::Test
       before_state = File.read(".ai-web/state.yaml")
       before_entries = project_entries
 
-      stdout, stderr, code = run_aiweb("visual-edit", "--target", "component.hero.copy", "--prompt", "수정", "--from-map", ".env", "--json")
-      payload = JSON.parse(stdout)
+      [".env", ".env/map.json", "nested/.env.local/map.json"].each do |forbidden_path|
+        stdout, stderr, code = run_aiweb("visual-edit", "--target", "component.hero.copy", "--prompt", "수정", "--from-map", forbidden_path, "--json")
+        payload = JSON.parse(stdout)
 
-      assert_equal 1, code
-      assert_equal "", stderr
-      assert_equal "blocked", payload.dig("visual_edit", "status")
-      assert_match(/unsafe|\.env|map path/i, [payload.dig("error", "message"), payload["blocking_issues"], payload.dig("visual_edit", "blocking_issues")].flatten.compact.join("\n"))
-      assert_equal before_entries, project_entries, "unsafe .env map path must not create visual-edit artifacts"
-      assert_equal before_state, File.read(".ai-web/state.yaml"), "unsafe .env map path must not mutate state"
-      assert_equal env_body, File.read(".env"), "unsafe .env map path must not mutate .env"
-      refute_includes stdout, "do-not-touch"
-      refute_includes stdout, "do-not-touch-too"
+        assert_equal 1, code, forbidden_path
+        assert_equal "", stderr, forbidden_path
+        assert_equal "blocked", payload.dig("visual_edit", "status"), forbidden_path
+        assert_match(/unsafe|\.env|map path/i, [payload.dig("error", "message"), payload["blocking_issues"], payload.dig("visual_edit", "blocking_issues")].flatten.compact.join("\n"), forbidden_path)
+        assert_equal before_entries, project_entries, "unsafe .env map path must not create visual-edit artifacts (#{forbidden_path})"
+        assert_equal before_state, File.read(".ai-web/state.yaml"), "unsafe .env map path must not mutate state (#{forbidden_path})"
+        assert_equal env_body, File.read(".env"), "unsafe .env map path must not mutate .env (#{forbidden_path})"
+        refute_includes stdout, "do-not-touch", forbidden_path
+        refute_includes stdout, "do-not-touch-too", forbidden_path
+      end
     end
   end
 
@@ -3729,7 +3956,9 @@ class AiwebCliTest < Minitest::Test
 
       [
         ["--screenshot", ".env"],
-        ["--metadata", ".env.local"]
+        ["--metadata", ".env.local"],
+        ["--screenshot", ".env/homepage.png"],
+        ["--metadata", "nested/.env.local/visual-metadata.json"]
       ].each do |option, forbidden_path|
         args = ["visual-critique", "--screenshot", safe_screenshot, "--metadata", safe_metadata]
         index = args.index(option)
@@ -3937,7 +4166,7 @@ class AiwebCliTest < Minitest::Test
       File.write(".env", env_body)
       File.write(".env.local", "LOCAL_SECRET=do-not-print\n")
 
-      [".env", ".env.local"].each do |forbidden_path|
+      [".env", ".env.local", ".env/visual-critique.json", "nested/.env.local/visual-critique.json"].each do |forbidden_path|
         stdout, stderr, code = run_aiweb("visual-polish", "--repair", "--from-critique", forbidden_path, "--json")
         payload = JSON.parse(stdout)
 

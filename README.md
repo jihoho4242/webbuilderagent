@@ -23,6 +23,7 @@ Today the CLI manages the project director workspace: `.ai-web` state, phase gat
 - Expose the PR16 local Workbench UI foundation through `aiweb workbench` / `웹빌더 workbench`: it plans or exports `.ai-web/workbench/index.html` and `.ai-web/workbench/workbench.json` from existing Director state/artifacts, represents controls as declarative CLI command descriptors, supports no-write `--dry-run`, excludes `.env` / `.env.*` from surfaced artifacts, and never directly mutates `.ai-web/state.yaml`.
 - Expose the PR17 Component Map + Visual Edit planning foundation through `aiweb component-map` / `웹빌더 component-map` and `aiweb visual-edit` / `웹빌더 visual-edit`: it maps stable `data-aiweb-id` DOM regions to source files in `.ai-web/component-map.json`, creates selected-region visual edit handoff artifacts under `.ai-web/tasks/` and `.ai-web/visual/`, supports no-write `--dry-run`, rejects `.env` / `.env.*` map paths without reading them, and never auto-patches source, runs build/QA/browser/preview, deploys, installs packages, or calls network/AI services.
 - Expose the PR18 Profile S local scaffold and Supabase secret QA surface through `aiweb scaffold --profile S` / `웹빌더 scaffold --profile S` and `aiweb supabase-secret-qa` / `웹빌더 supabase-secret-qa`: Profile S is a local-only Next.js + Supabase SSR placeholder scaffold, uses `supabase/env.example.template` instead of `.env.example`, includes only `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` placeholders, and intentionally performs no external Supabase project creation, network calls, deploy, install, build, or preview.
+- Expose the PR19 GitHub sync and deploy planning surfaces through `aiweb github-sync`, `aiweb deploy-plan`, and `aiweb deploy --target cloudflare-pages|vercel --dry-run` / matching `웹빌더` commands: they are local-only planning commands that never run `git push`, provider CLIs, external deploys, network calls, build/preview/install, or read `.env` / `.env.*`; unsafe real deploy attempts are blocked.
 
 ## Upgrade direction
 
@@ -38,7 +39,8 @@ The intended product direction is a design-first, natural-language webbuilder: t
 8. Review the local Workbench UI panels for chat, artifacts, design, preview, file tree, QA, critique, and run timeline status.
 9. Select a mapped `data-aiweb-id` region and create a bounded visual edit handoff instead of regenerating the full page.
 10. For Supabase-backed work, scaffold Profile S locally with safe SSR placeholders and rerun `supabase-secret-qa` before copying values into a private local env file outside the generator guardrail.
-11. Repair implementation manually or through later approved automation, then deploy later once gates pass and evidence is recorded.
+11. Review local-only GitHub sync and Cloudflare Pages/Vercel deploy dry-run plans before any separately approved external release work.
+12. Repair implementation manually or through later approved automation, then deploy later once gates pass and evidence is recorded.
 
 The current Director CLI is the foundation for that loop: state, gates, QA contracts, snapshots, local preview evidence, bounded repair-loop records, visual polish records/tasks/snapshots, component maps, targeted visual edit handoff records, and local-only Profile S Supabase scaffold/secret-QA records are in place before the system grows into end-to-end generation, source repair automation, and deploy. It is not yet a full app generator.
 
@@ -177,6 +179,20 @@ PR17 adds the local Component Map + Visual Edit planning foundation:
 
 `visual-edit` requires `--target DATA_AIWEB_ID` and `--prompt TEXT`; `--from-map` defaults to `latest`. The command validates that the selected target exists in the component map and creates only local handoff records such as `.ai-web/tasks/visual-edit-*.md` and `.ai-web/visual/visual-edit-*.json`. It intentionally does not patch source files, run build/QA/browser/preview, install packages, deploy, contact external hosting, call network/AI services, or mutate `.ai-web/state.yaml`. Explicit `.env` / `.env.*` map paths are rejected without reading. `visual-edit --dry-run` writes nothing and reports planned task/record paths so a user request like “이 섹션 더 고급스럽게” stays scoped to the selected region instead of triggering full-page regeneration.
 
+PR19 adds local-only GitHub sync and deploy planning commands:
+
+```bash
+./bin/aiweb --path ~/Desktop/aiweb-premium-service-site github-sync --json
+./bin/aiweb --path ~/Desktop/aiweb-premium-service-site deploy-plan --target cloudflare-pages --json
+./bin/aiweb --path ~/Desktop/aiweb-premium-service-site deploy --target cloudflare-pages --dry-run --json
+./bin/aiweb --path ~/Desktop/aiweb-premium-service-site deploy --target vercel --dry-run --json
+웹빌더 --path ~/Desktop/aiweb-premium-service-site github-sync
+웹빌더 --path ~/Desktop/aiweb-premium-service-site deploy-plan --target vercel
+웹빌더 --path ~/Desktop/aiweb-premium-service-site deploy --target vercel --dry-run
+```
+
+`github-sync` only reports the intended GitHub sync command shape; it does not run `git push`, contact GitHub, invoke provider CLIs, build, preview, install packages, or read `.env` / `.env.*`. `deploy-plan` only reports the target-specific deploy checklist for `cloudflare-pages` or `vercel`; it performs no provider CLI, network, build, preview, install, or `.env` access. `deploy` intentionally supports only `--target cloudflare-pages|vercel --dry-run`; omitting `--dry-run` returns an unsafe-deploy-blocked result so shell automation cannot accidentally treat a real deploy request as successful.
+
 Phase-sensitive commands are guarded by the Director state machine:
 
 ```bash
@@ -197,6 +213,9 @@ Phase-sensitive commands are guarded by the Director state machine:
 ./bin/aiweb workbench --dry-run
 ./bin/aiweb component-map --dry-run
 ./bin/aiweb visual-edit --target component.hero.copy --prompt "이 섹션 더 고급스럽게" --dry-run
+./bin/aiweb github-sync --json
+./bin/aiweb deploy-plan --target cloudflare-pages --json
+./bin/aiweb deploy --target cloudflare-pages --dry-run --json
 ./bin/aiweb scaffold --profile S --dry-run
 ./bin/aiweb supabase-secret-qa --dry-run
 ```

@@ -125,6 +125,10 @@
         "selected_design_candidate",
         "design_system",
         "deploy",
+        "github_sync",
+        "deploy_plan",
+        "deploy_cloudflare_pages",
+        "deploy_vercel",
         "final_qa_report",
         "post_launch_backlog"
       ],
@@ -208,6 +212,18 @@
           "$ref": "#/$defs/artifact"
         },
         "post_launch_backlog": {
+          "$ref": "#/$defs/artifact"
+        },
+        "github_sync": {
+          "$ref": "#/$defs/artifact"
+        },
+        "deploy_plan": {
+          "$ref": "#/$defs/artifact"
+        },
+        "deploy_cloudflare_pages": {
+          "$ref": "#/$defs/artifact"
+        },
+        "deploy_vercel": {
           "$ref": "#/$defs/artifact"
         }
       }
@@ -308,23 +324,44 @@
           "type": "boolean"
         },
         "scaffold_profile": {
-          "type": ["string", "null"],
-          "enum": ["D", null]
+          "type": [
+            "string",
+            "null"
+          ],
+          "enum": [
+            "D",
+            null
+          ]
         },
         "scaffold_framework": {
-          "type": ["string", "null"]
+          "type": [
+            "string",
+            "null"
+          ]
         },
         "scaffold_package_manager": {
-          "type": ["string", "null"]
+          "type": [
+            "string",
+            "null"
+          ]
         },
         "scaffold_dev_command": {
-          "type": ["string", "null"]
+          "type": [
+            "string",
+            "null"
+          ]
         },
         "scaffold_build_command": {
-          "type": ["string", "null"]
+          "type": [
+            "string",
+            "null"
+          ]
         },
         "scaffold_metadata_path": {
-          "type": ["string", "null"]
+          "type": [
+            "string",
+            "null"
+          ]
         },
         "current_task": {
           "type": [
@@ -381,7 +418,18 @@
         "plan",
         "post_launch_backlog",
         "rollback_defined",
-        "rollback_dry_run_result"
+        "rollback_dry_run_result",
+        "github_sync_plan",
+        "deploy_plan",
+        "latest_plan",
+        "provider_config_paths",
+        "github_last_known_url",
+        "preview_url",
+        "production_url",
+        "cloudflare_preview_url",
+        "vercel_preview_url",
+        "github_sync_last_planned_at",
+        "deploy_plan_last_planned_at"
       ],
       "properties": {
         "plan": {
@@ -396,6 +444,80 @@
           "type": "boolean"
         },
         "rollback_dry_run_result": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "github_sync_plan": {
+          "type": "string",
+          "const": ".ai-web/github-sync.json"
+        },
+        "deploy_plan": {
+          "type": "string",
+          "const": ".ai-web/deploy-plan.json"
+        },
+        "provider_config_paths": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "cloudflare-pages",
+            "vercel"
+          ],
+          "properties": {
+            "cloudflare-pages": {
+              "type": "string",
+              "const": ".ai-web/deploy/cloudflare-pages.json"
+            },
+            "vercel": {
+              "type": "string",
+              "const": ".ai-web/deploy/vercel.json"
+            }
+          }
+        },
+        "github_last_known_url": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "preview_url": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "production_url": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "cloudflare_preview_url": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "vercel_preview_url": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "github_sync_last_planned_at": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "deploy_plan_last_planned_at": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "latest_plan": {
           "type": [
             "string",
             "null"

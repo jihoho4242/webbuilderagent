@@ -17,7 +17,7 @@ module Aiweb
     EXIT_UNSAFE_EXTERNAL_ACTION = 5
     EXIT_INTERNAL_ERROR = 10
 
-    MUTATION_COMMANDS = %w[start init interview run ingest-design next-task qa-checklist qa-report repair advance rollback resolve-blocker snapshot design-brief design-system design-prompt design select-design scaffold build preview qa-playwright browser-qa qa-a11y a11y-qa qa-lighthouse lighthouse-qa visual-critique visual-polish workbench component-map visual-edit supabase-secret-qa].freeze
+    MUTATION_COMMANDS = %w[start init interview run ingest-design next-task qa-checklist qa-report repair advance rollback resolve-blocker snapshot design-brief design-system design-prompt design select-design scaffold build preview qa-playwright browser-qa qa-a11y a11y-qa qa-lighthouse lighthouse-qa visual-critique visual-polish workbench component-map visual-edit supabase-secret-qa github-sync deploy-plan deploy].freeze
     RUNTIME_PLAN_COMMANDS = %w[runtime-plan scaffold-status].freeze
     REGISTRY_COMMANDS = %w[design-systems skills craft].freeze
 
@@ -287,6 +287,34 @@ module Aiweb
         end
 
         project.visual_edit(target: opts[:target], prompt: opts[:prompt], from_map: opts[:from_map] || "latest", force: opts[:force], dry_run: @dry_run)
+      when "github-sync"
+        opts = parse_options do |o, options|
+          o.on("--remote NAME") { |v| options[:remote] = v }
+          o.on("--branch NAME") { |v| options[:branch] = v }
+        end
+        unless @argv.empty?
+          raise UserError.new("github-sync does not accept extra positional arguments: #{@argv.join(", ")}", EXIT_VALIDATION_FAILED)
+        end
+
+        dispatch_github_sync(opts)
+      when "deploy-plan"
+        opts = parse_options do |o, options|
+          o.on("--target TARGET") { |v| options[:target] = v }
+        end
+        unless @argv.empty?
+          raise UserError.new("deploy-plan does not accept extra positional arguments: #{@argv.join(", ")}", EXIT_VALIDATION_FAILED)
+        end
+
+        dispatch_deploy_plan(opts)
+      when "deploy"
+        opts = parse_options do |o, options|
+          o.on("--target TARGET") { |v| options[:target] = v }
+        end
+        unless @argv.empty?
+          raise UserError.new("deploy does not accept extra positional arguments: #{@argv.join(", ")}", EXIT_VALIDATION_FAILED)
+        end
+
+        dispatch_deploy(opts)
       when "ingest-design"
         opts = parse_options do |o, options|
           o.on("--id ID") { |v| options[:id] = v }
@@ -448,6 +476,98 @@ module Aiweb
         raise UserError.new("#{command} does not accept extra positional arguments: #{@argv.join(", ")}", EXIT_VALIDATION_FAILED)
       end
       opts
+    end
+
+    def dispatch_github_sync(opts)
+      remote = opts[:remote].to_s.strip.empty? ? nil : opts[:remote].to_s.strip
+      branch = opts[:branch].to_s.strip.empty? ? nil : opts[:branch].to_s.strip
+      kwargs = { dry_run: @dry_run, remote: remote, branch: branch }.compact
+      call_project_adapter(:github_sync, kwargs)
+    end
+
+    def dispatch_deploy_plan(opts)
+      target = normalized_deploy_target_option(opts[:target], required: false, command: "deploy-plan")
+      kwargs = { dry_run: @dry_run, target: target }.compact
+      call_project_adapter(:deploy_plan, kwargs)
+    end
+
+    def dispatch_deploy(opts)
+      target = normalized_deploy_target_option(opts[:target], required: true, command: "deploy")
+      call_project_adapter(:deploy, { target: target, dry_run: @dry_run }).tap do |result|
+        normalize_deploy_adapter_payload!(result, target)
+      end
+    rescue UserError => e
+      raise unless unsafe_deploy_error?(e)
+
+      unsafe_deploy_blocked_payload(target, e.message)
+    end
+
+    def call_project_adapter(method_name, kwargs)
+      unless project.respond_to?(method_name)
+        raise UserError.new("#{method_name.to_s.tr("_", "-")} is not available for this project adapter", EXIT_ADAPTER_UNAVAILABLE)
+      end
+
+      project.public_send(method_name, **adapter_supported_kwargs(project.method(method_name), kwargs))
+    end
+
+    def adapter_supported_kwargs(method, kwargs)
+      keyword_params = method.parameters.select { |kind, _| %i[key keyreq].include?(kind) }.map(&:last)
+      return kwargs if keyword_params.empty?
+
+      kwargs.select { |key, _| keyword_params.include?(key) }
+    end
+
+    def normalized_deploy_target_option(value, required:, command:)
+      text = value.to_s.strip
+      if text.empty?
+        raise UserError.new("#{command} requires --target cloudflare-pages or --target vercel", EXIT_VALIDATION_FAILED) if required
+        return nil
+      end
+      unless %w[cloudflare-pages vercel].include?(text)
+        raise UserError.new("#{command} target must be cloudflare-pages or vercel", EXIT_VALIDATION_FAILED)
+      end
+
+      text
+    end
+
+    def normalize_deploy_adapter_payload!(result, target)
+      return result unless result.is_a?(Hash)
+      return result if result["deploy"].is_a?(Hash)
+
+      dry_run_payload = result["deploy_dry_run"]
+      return result unless dry_run_payload.is_a?(Hash)
+
+      result["deploy"] = dry_run_payload.merge(
+        "status" => dry_run_payload["status"] || "planned",
+        "dry_run" => dry_run_payload.key?("dry_run") ? dry_run_payload["dry_run"] : true,
+        "target" => dry_run_payload["target"] || target
+      )
+      result
+    end
+
+    def unsafe_deploy_error?(error)
+      error.message.match?(/unsafe external action|unsafe deploy|blocked/i)
+    end
+
+    def unsafe_deploy_blocked_payload(target, message)
+      {
+        "schema_version" => 1,
+        "current_phase" => nil,
+        "action_taken" => "deploy blocked",
+        "changed_files" => [],
+        "blocking_issues" => ["unsafe deploy blocked: #{message}"],
+        "missing_artifacts" => [],
+        "deploy" => {
+          "schema_version" => 1,
+          "status" => "blocked",
+          "dry_run" => false,
+          "target" => target,
+          "supported_targets" => %w[cloudflare-pages vercel],
+          "guardrails" => ["no external deploy", "no provider CLI", "no network", "no build/preview/install", "no .env/.env.* access"],
+          "blocking_issues" => ["unsafe deploy blocked: #{message}"]
+        },
+        "next_action" => "rerun as aiweb deploy --target cloudflare-pages|vercel --dry-run"
+      }
     end
 
     def supabase_secret_qa_adapter_unavailable_payload(opts)
@@ -708,6 +828,9 @@ module Aiweb
           workbench [--export] [--force]
           component-map [--force]
           visual-edit --target DATA_AIWEB_ID --prompt TEXT [--from-map PATH|latest] [--force]
+          github-sync [--remote NAME] [--branch NAME]
+          deploy-plan [--target cloudflare-pages|vercel]
+          deploy --target cloudflare-pages|vercel --dry-run
           advance
           rollback [--to PHASE] [--failure CODE] [--reason "..."]
           resolve-blocker --reason "..."
@@ -737,6 +860,9 @@ module Aiweb
           workbench: plans or exports a static local UI manifest under .ai-web/workbench using declarative CLI controls only; requires initialized .ai-web/state.yaml, --dry-run writes nothing, export writes only workbench artifacts, executes no controls, and never mutates state.yaml
           component-map: scans stable data-aiweb-id regions into .ai-web/component-map.json; --dry-run writes nothing and never reads .env/.env.*
           visual-edit: validates a selected data-aiweb-id target and writes only local handoff artifacts; --dry-run writes nothing and never patches source, runs QA/browser/build, deploys, or calls network/AI
+          github-sync: local-only GitHub sync planning surface; never runs git push, provider CLIs, network, build/preview/install, or reads .env/.env.*
+          deploy-plan: local-only deploy checklist for Cloudflare Pages or Vercel; never runs provider CLIs, network, build/preview/install, or reads .env/.env.*
+          deploy --target cloudflare-pages|vercel --dry-run: reports the deploy plan only; unsafe real deploy attempts are blocked with exit code #{EXIT_UNSAFE_EXTERNAL_ACTION}
           ingest-design: phase-3.5
           next-task: phase-6 through phase-11
           qa-checklist: phase-7 through phase-11
@@ -1083,6 +1209,22 @@ module Aiweb
       EXIT_VALIDATION_FAILED
     end
 
+    def github_sync_exit_code(result)
+      result.dig("github_sync", "status") == "planned" ? EXIT_SUCCESS : EXIT_VALIDATION_FAILED
+    end
+
+    def deploy_plan_exit_code(result)
+      result.dig("deploy_plan", "status") == "planned" ? EXIT_SUCCESS : EXIT_VALIDATION_FAILED
+    end
+
+    def deploy_exit_code(result)
+      status = result.dig("deploy", "status").to_s
+      return EXIT_SUCCESS if status == "planned"
+      return EXIT_UNSAFE_EXTERNAL_ACTION if ((result.dig("deploy", "blocking_issues") || []) + (result["blocking_issues"] || [])).join(" ").match?(/unsafe.*deploy.*blocked/i)
+
+      EXIT_VALIDATION_FAILED
+    end
+
     def supabase_secret_qa_exit_code(result)
       status = result.dig("supabase_secret_qa", "status").to_s
       return EXIT_ADAPTER_UNAVAILABLE if status == "blocked" && (result["action_taken"].to_s =~ /unavailable/)
@@ -1116,6 +1258,9 @@ module Aiweb
       return workbench_exit_code(result) if command == "workbench"
       return component_map_exit_code(result) if command == "component-map"
       return visual_edit_exit_code(result) if command == "visual-edit"
+      return github_sync_exit_code(result) if command == "github-sync"
+      return deploy_plan_exit_code(result) if command == "deploy-plan"
+      return deploy_exit_code(result) if command == "deploy"
       return supabase_secret_qa_exit_code(result) if command == "supabase-secret-qa"
       return EXIT_SUCCESS if %w[help version status start init interview run design-brief design-system design-prompt design select-design scaffold ingest-design next-task qa-checklist qa-report rollback resolve-blocker snapshot visual-critique visual-polish component-map visual-edit].include?(command)
       if command == "advance" && result["action_taken"] == "advance blocked"

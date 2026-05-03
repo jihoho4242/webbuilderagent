@@ -60,7 +60,12 @@ module Aiweb
     SCAFFOLD_PROFILE_D_METADATA_PATH = ".ai-web/scaffold-profile-D.json".freeze
     SCAFFOLD_PROFILE_S_METADATA_PATH = ".ai-web/scaffold-profile-S.json".freeze
     SCAFFOLD_PROFILE_S_SECRET_QA_PATH = ".ai-web/qa/supabase-secret-qa.json".freeze
-
+    GITHUB_SYNC_PLAN_PATH = ".ai-web/github-sync.json".freeze
+    DEPLOY_PLAN_PATH = ".ai-web/deploy-plan.json".freeze
+    DEPLOY_PROVIDER_CONFIG_PATHS = {
+      "cloudflare-pages" => ".ai-web/deploy/cloudflare-pages.json",
+      "vercel" => ".ai-web/deploy/vercel.json"
+    }.freeze
 
     WORKBENCH_PANELS = %w[
       chat
@@ -1396,6 +1401,98 @@ module Aiweb
       payload
     end
 
+    def github_sync(remote: nil, branch: nil, dry_run: false)
+      assert_initialized!
+      changes = []
+      payload = nil
+      mutation(dry_run: dry_run) do
+        state = load_state
+        ensure_pr19_deploy_defaults!(state)
+        plan = github_sync_plan_payload(state, remote: remote, branch: branch, dry_run: dry_run)
+        planned_changes = [GITHUB_SYNC_PLAN_PATH]
+
+        unless dry_run
+          changes << write_json(File.join(root, GITHUB_SYNC_PLAN_PATH), plan, false)
+          mark_artifacts_from_files!(state)
+          state["deploy"]["github_sync_last_planned_at"] = plan["created_at"]
+          add_decision!(state, "github_sync_plan", "Recorded local-only GitHub sync plan; no remotes were mutated")
+          state["project"]["updated_at"] = now if state["project"].is_a?(Hash)
+          changes << write_yaml(state_path, state, false)
+        end
+
+        payload = status_hash(state: state, changed_files: compact_changes(changes))
+        payload["action_taken"] = dry_run ? "planned local-only GitHub sync" : "recorded local-only GitHub sync plan"
+        payload["github_sync"] = plan
+        payload.merge!(pr19_safety_payload(planned_changes))
+        payload["planned_changes"] = planned_changes
+        payload["next_action"] = "review #{GITHUB_SYNC_PLAN_PATH}; external GitHub push/PR actions require explicit approval outside this command"
+      end
+      payload
+    end
+
+    def deploy_plan(target: nil, dry_run: false)
+      assert_initialized!
+      changes = []
+      payload = nil
+      mutation(dry_run: dry_run) do
+        state = load_state
+        ensure_pr19_deploy_defaults!(state)
+        plan = deploy_plan_payload(state, target: target, dry_run: dry_run)
+        selected_target = plan["target"]
+        descriptor_targets = selected_target ? [selected_target] : DEPLOY_PROVIDER_CONFIG_PATHS.keys
+        provider_descriptors = descriptor_targets.each_with_object({}) do |descriptor_target, memo|
+          path = DEPLOY_PROVIDER_CONFIG_PATHS.fetch(descriptor_target)
+          memo[path] = deploy_provider_descriptor(descriptor_target, state)
+        end
+        planned_changes = [DEPLOY_PLAN_PATH, *provider_descriptors.keys]
+
+        unless dry_run
+          changes << write_json(File.join(root, DEPLOY_PLAN_PATH), plan, false)
+          provider_descriptors.each do |relative_path, descriptor|
+            changes << write_json(File.join(root, relative_path), descriptor, false)
+          end
+          mark_artifacts_from_files!(state)
+          state["deploy"]["latest_plan"] = DEPLOY_PLAN_PATH
+          state["deploy"]["deploy_plan_last_planned_at"] = plan["created_at"]
+          add_decision!(state, "deploy_plan", "Recorded local-only Cloudflare Pages/Vercel dry-run descriptors; no provider deploy was run")
+          state["project"]["updated_at"] = now if state["project"].is_a?(Hash)
+          changes << write_yaml(state_path, state, false)
+        end
+
+        payload = status_hash(state: state, changed_files: compact_changes(changes))
+        payload["action_taken"] = dry_run ? "planned local-only deploy plan" : "recorded local-only deploy plan"
+        payload["deploy_plan"] = plan
+        payload["provider_config_descriptors"] = provider_descriptors
+        payload.merge!(pr19_safety_payload(planned_changes))
+        payload["planned_changes"] = planned_changes
+        payload["next_action"] = "review #{DEPLOY_PLAN_PATH}; run aiweb deploy --target cloudflare-pages --dry-run or --target vercel --dry-run for a non-writing deployment preview"
+      end
+      payload
+    end
+
+    def deploy(target:, dry_run: false, force: false)
+      assert_initialized!
+      normalized_target = normalize_deploy_target(target)
+      state = load_state
+      ensure_pr19_deploy_defaults!(state)
+      descriptor_path = DEPLOY_PROVIDER_CONFIG_PATHS.fetch(normalized_target)
+      planned_changes = [DEPLOY_PLAN_PATH, descriptor_path]
+      deploy_payload = deploy_local_payload(normalized_target, state, dry_run: dry_run, force: force)
+      payload = status_hash(state: state, changed_files: [])
+      payload["action_taken"] = dry_run ? "deploy dry-run planned" : "deploy blocked"
+      payload["deploy"] = deploy_payload
+      payload["deploy_dry_run"] = deploy_payload if dry_run
+      payload.merge!(pr19_safety_payload(planned_changes))
+      payload["planned_changes"] = planned_changes
+      if dry_run
+        payload["next_action"] = "obtain explicit approval before any external deployment; this dry-run wrote nothing and ran no provider CLI"
+      else
+        payload["blocking_issues"] = (payload["blocking_issues"] + deploy_payload["blocking_issues"]).uniq
+        payload["next_action"] = "rerun as aiweb deploy --target #{normalized_target} --dry-run; external deployment remains blocked until explicit approval exists"
+      end
+      payload
+    end
+
     def rollback(to: nil, failure: nil, reason: nil, dry_run: false)
       assert_initialized!
       changes = []
@@ -1842,6 +1939,7 @@ module Aiweb
       state["qa"]["open_failures"] ||= []
       state["design_candidates"] ||= {}
       state["design_candidates"]["candidates"] ||= []
+      ensure_pr19_deploy_defaults!(state)
       ensure_scaffold_state_defaults!(state)
       state["budget"] ||= {}
       state["budget"]["cost_mode"] ||= "subscription_usage"
@@ -3254,6 +3352,170 @@ module Aiweb
           blocking_issues: [],
           next_action: preview_next_action("stopped")
         )
+      end
+    end
+
+    def ensure_pr19_deploy_defaults!(state)
+      state["artifacts"] ||= {}
+      {
+        "github_sync" => GITHUB_SYNC_PLAN_PATH,
+        "deploy_plan" => DEPLOY_PLAN_PATH,
+        "deploy_cloudflare_pages" => DEPLOY_PROVIDER_CONFIG_PATHS.fetch("cloudflare-pages"),
+        "deploy_vercel" => DEPLOY_PROVIDER_CONFIG_PATHS.fetch("vercel")
+      }.each do |key, path|
+        state["artifacts"][key] ||= { "path" => path, "status" => "missing" }
+      end
+
+      state["deploy"] ||= {}
+      state["deploy"]["github_sync_plan"] ||= GITHUB_SYNC_PLAN_PATH
+      state["deploy"]["deploy_plan"] ||= DEPLOY_PLAN_PATH
+      state["deploy"]["latest_plan"] = nil unless state["deploy"].key?("latest_plan")
+      state["deploy"]["provider_config_paths"] ||= DEPLOY_PROVIDER_CONFIG_PATHS.dup
+      state["deploy"]["github_last_known_url"] = nil unless state["deploy"].key?("github_last_known_url")
+      state["deploy"]["preview_url"] = nil unless state["deploy"].key?("preview_url")
+      state["deploy"]["production_url"] = nil unless state["deploy"].key?("production_url")
+      state["deploy"]["cloudflare_preview_url"] = nil unless state["deploy"].key?("cloudflare_preview_url")
+      state["deploy"]["vercel_preview_url"] = nil unless state["deploy"].key?("vercel_preview_url")
+      state["deploy"]["github_sync_last_planned_at"] = nil unless state["deploy"].key?("github_sync_last_planned_at")
+      state["deploy"]["deploy_plan_last_planned_at"] = nil unless state["deploy"].key?("deploy_plan_last_planned_at")
+      state
+    end
+
+    def github_sync_plan_payload(state, remote:, branch:, dry_run:)
+      selected_remote = remote.to_s.strip.empty? ? "origin" : remote.to_s.strip
+      selected_branch = branch.to_s.strip.empty? ? "current" : branch.to_s.strip
+      command_line = ["git", "push", selected_remote]
+      command_line << selected_branch unless selected_branch == "current"
+      {
+        "schema_version" => 1,
+        "status" => "planned",
+        "dry_run" => dry_run,
+        "created_at" => now,
+        "project_id" => state.dig("project", "id"),
+        "project_name" => state.dig("project", "name"),
+        "mode" => "local_plan_only",
+        "remote" => selected_remote,
+        "branch" => selected_branch,
+        "planned_command" => command_line.join(" "),
+        "planned_artifact_path" => ".ai-web/github/github-sync.json",
+        "planned_config_path" => GITHUB_SYNC_PLAN_PATH,
+        "artifact_path" => dry_run ? nil : GITHUB_SYNC_PLAN_PATH,
+        "planned_steps" => [
+          "inspect local git status manually",
+          "review remote and branch policy manually",
+          "prepare commit/PR only after explicit human approval"
+        ],
+        "external_actions_allowed" => false,
+        "external_push_performed" => false,
+        "external_deploy_performed" => false,
+        "pushed" => false,
+        "requires_approval" => true,
+        "guardrails" => ["no external push", "no network", "no provider CLI", "no build/preview/install", "no .env/.env.* access"],
+        "blocked_external_actions" => ["git push", "GitHub API calls", "pull request creation", "remote mutation"]
+      }
+    end
+
+    def deploy_plan_payload(state, target:, dry_run:)
+      normalized_target = target.to_s.strip.empty? ? nil : normalize_deploy_target(target)
+      {
+        "schema_version" => 1,
+        "status" => "planned",
+        "dry_run" => dry_run,
+        "created_at" => now,
+        "project_id" => state.dig("project", "id"),
+        "project_name" => state.dig("project", "name"),
+        "mode" => "local_plan_only",
+        "planned_artifact_path" => ".ai-web/deploy/deploy-plan.json",
+        "planned_config_path" => DEPLOY_PLAN_PATH,
+        "artifact_path" => dry_run ? nil : DEPLOY_PLAN_PATH,
+        "provider_config_paths" => DEPLOY_PROVIDER_CONFIG_PATHS.dup,
+        "target" => normalized_target,
+        "supported_targets" => DEPLOY_PROVIDER_CONFIG_PATHS.keys,
+        "targets" => normalized_target ? [normalized_target] : DEPLOY_PROVIDER_CONFIG_PATHS.keys,
+        "preview_url" => state.dig("deploy", "preview_url"),
+        "production_url" => state.dig("deploy", "production_url"),
+        "external_actions_allowed" => false,
+        "external_push_performed" => false,
+        "external_deploy_performed" => false,
+        "requires_approval" => true,
+        "guardrails" => ["no external deploy", "no provider CLI", "no network", "no build/preview/install", "no .env/.env.* access"],
+        "blocked_external_actions" => ["provider CLI execution", "build command execution", "preview command execution", "network deployment"]
+      }
+    end
+
+    def deploy_provider_descriptor(target, state)
+      {
+        "schema_version" => 1,
+        "target" => target,
+        "created_at" => now,
+        "project_id" => state.dig("project", "id"),
+        "mode" => "dry_run_descriptor_only",
+        "planned_config_path" => DEPLOY_PROVIDER_CONFIG_PATHS.fetch(target),
+        "build_command" => state.dig("implementation", "scaffold_build_command"),
+        "output_directory" => deploy_output_directory(state),
+        "preview_url_slot" => target == "cloudflare-pages" ? "cloudflare_preview_url" : "vercel_preview_url",
+        "external_push_performed" => false,
+        "external_deploy_performed" => false,
+        "requires_approval" => true,
+        "provider_cli_invoked" => false,
+        "network_calls_performed" => false
+      }
+    end
+
+    def deploy_local_payload(target, state, dry_run:, force:)
+      descriptor = deploy_provider_descriptor(target, state)
+      blocked = !dry_run
+      {
+        "schema_version" => 1,
+        "status" => blocked ? "blocked" : "planned",
+        "target" => target,
+        "dry_run" => dry_run,
+        "force" => force,
+        "planned_artifact_path" => descriptor.fetch("planned_config_path"),
+        "planned_config_path" => descriptor.fetch("planned_config_path"),
+        "planned_changes" => [DEPLOY_PLAN_PATH, descriptor.fetch("planned_config_path")],
+        "descriptor" => descriptor,
+        "blocking_issues" => blocked ? ["unsafe external deploy blocked"] : [],
+        "external_actions_allowed" => false,
+        "external_push_performed" => false,
+        "external_deploy_performed" => false,
+        "provider_executed" => false,
+        "requires_approval" => true,
+        "writes_performed" => false,
+        "provider_cli_invoked" => false,
+        "network_calls_performed" => false
+      }
+    end
+
+    def pr19_safety_payload(planned_changes)
+      {
+        "external_push_performed" => false,
+        "external_deploy_performed" => false,
+        "requires_approval" => true,
+        "planned_config_paths" => planned_changes
+      }
+    end
+
+    def normalize_deploy_target(target)
+      normalized = target.to_s.strip.downcase.tr("_", "-")
+      aliases = {
+        "cloudflare" => "cloudflare-pages",
+        "cloudflare-pages" => "cloudflare-pages",
+        "pages" => "cloudflare-pages",
+        "vercel" => "vercel"
+      }
+      normalized = aliases[normalized] || normalized
+      return normalized if DEPLOY_PROVIDER_CONFIG_PATHS.key?(normalized)
+
+      raise UserError.new("deploy target must be one of #{DEPLOY_PROVIDER_CONFIG_PATHS.keys.join(', ')}", 1)
+    end
+
+    def deploy_output_directory(state)
+      profile = state.dig("implementation", "scaffold_profile") || state.dig("implementation", "stack_profile")
+      case profile
+      when "D" then "dist"
+      when "S" then ".next"
+      else nil
       end
     end
 
@@ -4943,6 +5205,8 @@ module Aiweb
         .ai-web/security.md
       ]
       (artifact_paths + default_paths).uniq.map do |relative_path|
+        next if env_file_segment?(relative_path)
+
         path = File.expand_path(relative_path.to_s, root)
         next unless path.start_with?(File.expand_path(root))
         next unless File.file?(path)
@@ -5166,10 +5430,7 @@ module Aiweb
     end
 
     def reject_visual_polish_env_path!(path)
-      parts = path.to_s.split(/[\\\/]+/)
-      if parts.any? { |part| part == ".env" || part.start_with?(".env.") }
-        raise UserError.new("visual-polish refuses to read .env or .env.* critique paths", 1)
-      end
+      reject_env_file_segment!(path, "visual-polish refuses to read .env or .env.* critique paths")
     end
 
     def load_visual_polish_critique(path)
@@ -5362,10 +5623,16 @@ module Aiweb
     end
 
     def reject_env_path!(path)
-      parts = path.to_s.split(/[\\\/]+/)
-      if parts.any? { |part| part == ".env" || part.start_with?(".env.") }
-        raise UserError.new("refusing to read .env path for repair input", 1)
-      end
+      reject_env_file_segment!(path, "refusing to read .env path for repair input")
+    end
+
+
+    def reject_env_file_segment!(path, message)
+      raise UserError.new(message, 1) if env_file_segment?(path)
+    end
+
+    def env_file_segment?(path)
+      path.to_s.split(/[\\\/]+/).any? { |part| part == ".env" || part.start_with?(".env.") }
     end
 
     def load_repair_qa_result(path)
@@ -5590,6 +5857,8 @@ module Aiweb
     end
 
     def load_json_file(path)
+      reject_env_file_segment!(path, "refusing to read .env or .env.* JSON path")
+
       JSON.parse(File.read(File.expand_path(path, root)))
     rescue JSON::ParserError => e
       raise UserError.new("cannot parse JSON #{path}: #{e.message}", 1)
@@ -5838,12 +6107,9 @@ module Aiweb
 
     def validate_visual_critique_input_path!(path)
       raise UserError.new("visual-critique evidence path must be local: #{path}", 1) if path.match?(/\A[a-z][a-z0-9+.-]*:\/\//i)
+      reject_env_file_segment!(path, "visual-critique refuses to read .env or .env.* evidence paths")
 
       expanded = File.expand_path(path, root)
-      basename = File.basename(expanded)
-      if basename == ".env" || basename.start_with?(".env.")
-        raise UserError.new("visual-critique refuses to read .env or .env.* evidence paths", 1)
-      end
       unless File.file?(expanded)
         raise UserError.new("visual-critique evidence path does not exist or is not a file: #{path}", 1)
       end
