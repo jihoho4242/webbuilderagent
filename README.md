@@ -14,6 +14,7 @@ Today the CLI manages the project director workspace: `.ai-web` state, phase gat
 - Capture snapshots and rollback/blocker recovery evidence.
 - Provide a friendly Korean entry point, `웹빌더`, over the lower-level `aiweb` CLI.
 - Expose the PR9 Astro build contract through `aiweb build` / `웹빌더 build`: it must check runtime-plan readiness before executing, preserve `.env` untouched, support `--dry-run` without writes/install/build, record run evidence under `.ai-web`, and report missing package manager, missing `node_modules`, or build failure as explicit statuses.
+- Expose the PR10 local preview contract through `aiweb preview` / `웹빌더 preview`: it must gate on runtime-plan readiness, preserve `.env` untouched, avoid dependency installation, start only the scaffold dev server locally, record run evidence under `.ai-web`, support a no-write/no-process `--dry-run`, support `--stop` for the recorded preview PID, and explicitly avoid Playwright, axe/Lighthouse, repair, deploy, or external hosting.
 
 ## Upgrade direction
 
@@ -26,7 +27,7 @@ The intended product direction is a design-first, natural-language webbuilder: t
 5. Repair failures automatically where possible.
 6. Deploy later, once gates pass and evidence is recorded.
 
-The current Director CLI is the foundation for that loop: state, gates, QA contracts, snapshots, and recovery are in place before the system grows into end-to-end generation, browser preview, repair, and deploy. It is not yet a full app generator.
+The current Director CLI is the foundation for that loop: state, gates, QA contracts, snapshots, local preview evidence, and recovery are in place before the system grows into end-to-end generation, browser QA, repair, and deploy. It is not yet a full app generator.
 
 ## Quick start
 
@@ -69,6 +70,16 @@ After the scaffold runtime plan reports `ready`, PR9 adds the build contract:
 ```
 
 `build --dry-run` is a no-write preflight: it must not install packages or run the build. A real build records metadata/log evidence under `.ai-web`, never reads or writes `.env`, and returns explicit blocked/failed statuses for missing `pnpm`, missing `node_modules`, runtime-plan not-ready, or build command failures.
+
+PR10 adds the local preview contract on the same readiness boundary:
+
+```bash
+./bin/aiweb --path ~/Desktop/aiweb-premium-service-site preview --dry-run
+웹빌더 --path ~/Desktop/aiweb-premium-service-site preview
+웹빌더 --path ~/Desktop/aiweb-premium-service-site preview --stop
+```
+
+`preview --dry-run` is no-write and no-process: it reports the planned scaffold dev command, preview URL, and `.ai-web/runs/<run>/` metadata/log paths without installing dependencies or starting a server. A real preview starts only the local scaffold dev server, records PID/port/URL/cwd/command/status plus stdout/stderr logs under `.ai-web`, never reads or writes `.env`, never installs dependencies, and reports explicit blocked statuses for runtime-plan not-ready, missing `pnpm`, missing `node_modules`, or an already-running recorded preview. `preview --stop` may stop only the recorded preview PID. PR10 preview intentionally does not run Playwright, axe/Lighthouse, repair, deploy, or external hosting.
 
 Phase-sensitive commands are guarded by the Director state machine:
 

@@ -17,7 +17,7 @@ module Aiweb
     EXIT_UNSAFE_EXTERNAL_ACTION = 5
     EXIT_INTERNAL_ERROR = 10
 
-    MUTATION_COMMANDS = %w[start init interview run ingest-design next-task qa-checklist qa-report advance rollback resolve-blocker snapshot design-brief design-system design-prompt design select-design scaffold build].freeze
+    MUTATION_COMMANDS = %w[start init interview run ingest-design next-task qa-checklist qa-report advance rollback resolve-blocker snapshot design-brief design-system design-prompt design select-design scaffold build preview].freeze
     RUNTIME_PLAN_COMMANDS = %w[runtime-plan scaffold-status].freeze
     REGISTRY_COMMANDS = %w[design-systems skills craft].freeze
 
@@ -165,6 +165,14 @@ module Aiweb
           raise UserError.new("build does not accept extra positional arguments: #{@argv.join(", ")}", EXIT_VALIDATION_FAILED)
         end
         project.build(dry_run: @dry_run)
+      when "preview"
+        opts = parse_options do |o, options|
+          o.on("--stop") { options[:stop] = true }
+        end
+        unless @argv.empty?
+          raise UserError.new("preview does not accept extra positional arguments: #{@argv.join(", ")}", EXIT_VALIDATION_FAILED)
+        end
+        project.preview(dry_run: @dry_run, stop: opts[:stop])
       when "ingest-design"
         opts = parse_options do |o, options|
           o.on("--id ID") { |v| options[:id] = v }
@@ -333,6 +341,7 @@ module Aiweb
           scaffold: creates Profile D Astro-style static app skeleton without installing packages
           runtime-plan/scaffold-status: read-only runtime readiness metadata; does not install or launch Node
           build: runs the scaffolded Astro build only after runtime-plan is ready and records .ai-web/runs logs
+          preview: starts/stops the local scaffold dev server after runtime-plan is ready; --dry-run does not write files or launch Node
           ingest-design: phase-3.5
           next-task: phase-6 through phase-11
           qa-checklist: phase-7 through phase-11
@@ -452,11 +461,16 @@ module Aiweb
       result.dig("build", "status") == "passed" || result.dig("build", "status") == "dry_run" ? EXIT_SUCCESS : EXIT_VALIDATION_FAILED
     end
 
+    def preview_exit_code(result)
+      %w[dry_run running already_running stopped not_running].include?(result.dig("preview", "status")) ? EXIT_SUCCESS : EXIT_VALIDATION_FAILED
+    end
+
     def exit_code_for(command, result)
       return EXIT_VALIDATION_FAILED if result["validation_errors"] && !result["validation_errors"].empty?
       return result.dig("runtime_plan", "readiness") == "ready" ? EXIT_SUCCESS : EXIT_VALIDATION_FAILED if RUNTIME_PLAN_COMMANDS.include?(command)
       return EXIT_SUCCESS if REGISTRY_COMMANDS.include?(command) || command == "intent"
       return build_exit_code(result) if command == "build"
+      return preview_exit_code(result) if command == "preview"
       return EXIT_SUCCESS if %w[help version status start init interview run design-brief design-system design-prompt design select-design scaffold ingest-design next-task qa-checklist qa-report rollback resolve-blocker snapshot].include?(command)
       if command == "advance" && result["action_taken"] == "advance blocked"
         issue = result["blocking_issues"].join(" ")

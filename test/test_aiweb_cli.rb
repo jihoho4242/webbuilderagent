@@ -49,6 +49,11 @@ class AiwebCliTest < Minitest::Test
     [stdout, stderr, status.exitstatus]
   end
 
+  def run_webbuilder_env(env, *args)
+    stdout, stderr, status = Open3.capture3(env, RbConfig.ruby, WEBBUILDER, *args.map(&:to_s))
+    [stdout, stderr, status.exitstatus]
+  end
+
   def json_cmd(*args)
     stdout, stderr, code = run_aiweb(*args, "--json")
     assert_equal "", stderr, "stderr should be empty for JSON command: #{stderr}"
@@ -2186,6 +2191,195 @@ class AiwebCliTest < Minitest::Test
     end
   end
 
+
+  def test_preview_blocks_uninitialized_and_unready_without_touching_env_or_runs
+    in_tmp do
+      env_body = "SECRET=do-not-touch\n"
+      File.write(".env", env_body)
+
+      stdout, stderr, code = run_aiweb("preview", "--json")
+      payload = JSON.parse(stdout)
+
+      assert_equal 1, code
+      assert_equal "", stderr
+      assert_equal "error", payload["status"]
+      assert_match(/not initialized|initialize/i, payload.dig("error", "message"))
+      assert_match(/not initialized|initialize/i, payload["blocking_issues"].join("\n"))
+      refute Dir.exist?(".ai-web/runs"), "uninitialized preview must not create run artifacts"
+      assert_equal env_body, File.read(".env"), "uninitialized preview must not mutate .env"
+
+      json_cmd("init", "--profile", "D")
+      before_state = File.read(".ai-web/state.yaml")
+      stdout, stderr, code = run_aiweb("preview", "--json")
+      payload = JSON.parse(stdout)
+
+      assert_equal 1, code
+      assert_equal "", stderr
+      assert_equal "scaffold preview blocked", payload["action_taken"]
+      assert_equal "blocked", payload.dig("preview", "status")
+      assert_match(/Scaffold has not been created|runtime-plan/i, payload["blocking_issues"].join("\n"))
+      assert_equal before_state, File.read(".ai-web/state.yaml"), "blocked preview preflight must not persist state changes"
+      assert_equal env_body, File.read(".env"), "blocked preview must not mutate .env"
+      refute Dir.exist?(".ai-web/runs"), "blocked preview preflight must not create run artifacts"
+      refute Dir.exist?("node_modules"), "preview must not install dependencies"
+      refute Dir.exist?("dist"), "blocked preview must not run Astro"
+    end
+  end
+
+  def test_preview_dry_run_on_ready_scaffold_plans_without_files_or_process
+    in_tmp do
+      prepare_profile_d_design_flow
+      json_cmd("scaffold", "--profile", "D")
+      env_body = "SECRET=do-not-touch\n"
+      File.write(".env", env_body)
+      before_entries = Dir.glob("**/*", File::FNM_DOTMATCH).reject { |path| path == "." || path == ".." }.sort
+
+      stdout, stderr, code = run_aiweb("preview", "--dry-run", "--json")
+      payload = JSON.parse(stdout)
+      after_entries = Dir.glob("**/*", File::FNM_DOTMATCH).reject { |path| path == "." || path == ".." }.sort
+
+      assert_equal 0, code
+      assert_equal "", stderr
+      assert_equal true, payload["dry_run"]
+      assert_equal "planned scaffold preview", payload["action_taken"]
+      assert_equal "dry_run", payload.dig("preview", "status")
+      assert_equal true, payload.dig("preview", "dry_run")
+      assert_equal "pnpm dev --host 127.0.0.1", payload.dig("preview", "command")
+      assert_match(%r{http://(localhost|127\.0\.0\.1):4321/?}, payload.dig("preview", "preview_url"))
+      assert_nil payload.dig("preview", "pid"), "dry-run preview must not record a live process"
+      assert_match(%r{\A\.ai-web/runs/preview-\d{8}T\d{6}Z/stdout\.log\z}, payload.dig("preview", "stdout_log"))
+      assert_match(%r{\A\.ai-web/runs/preview-\d{8}T\d{6}Z/stderr\.log\z}, payload.dig("preview", "stderr_log"))
+      assert_match(%r{\A\.ai-web/runs/preview-\d{8}T\d{6}Z/preview\.json\z}, payload.dig("preview", "metadata_path"))
+      assert payload["changed_files"].any? { |path| path.match?(%r{\A\.ai-web/runs/preview-\d{8}T\d{6}Z\z}) }
+      assert_equal before_entries, after_entries, "preview --dry-run must not write run artifacts or generated output"
+      assert_equal env_body, File.read(".env"), "preview --dry-run must not mutate .env"
+      refute Dir.exist?("node_modules"), "preview --dry-run must not install dependencies"
+      refute Dir.exist?("dist"), "preview --dry-run must not run Astro"
+    end
+  end
+
+  def test_preview_ready_scaffold_blocks_deterministically_when_pnpm_is_missing
+    in_tmp do
+      prepare_profile_d_design_flow
+      json_cmd("scaffold", "--profile", "D")
+      env_body = "SECRET=do-not-touch\n"
+      File.write(".env", env_body)
+      empty_path = File.join(Dir.pwd, "empty-path")
+      FileUtils.mkdir_p(empty_path)
+
+      stdout, stderr, code = run_aiweb_env({ "PATH" => [empty_path, "/usr/bin", "/bin", "/usr/sbin", "/sbin"].join(File::PATH_SEPARATOR) }, "preview", "--json")
+      payload = JSON.parse(stdout)
+
+      assert_equal 1, code
+      assert_equal "", stderr
+      assert_equal "scaffold preview blocked", payload["action_taken"]
+      assert_equal "blocked", payload.dig("preview", "status")
+      assert_nil payload.dig("preview", "pid")
+      assert_nil payload.dig("preview", "exit_code")
+      assert_match(/pnpm executable is missing/, payload["blocking_issues"].join("\n"))
+      assert File.file?(payload.dig("preview", "metadata_path"))
+      assert_equal env_body, File.read(".env"), "missing-pnpm preview must not mutate .env"
+      refute Dir.exist?("node_modules"), "missing-pnpm preview must not install dependencies"
+      refute Dir.exist?("dist"), "missing-pnpm preview must not create dist"
+    end
+  end
+
+  def test_preview_ready_scaffold_blocks_deterministically_when_node_modules_is_missing
+    in_tmp do
+      prepare_profile_d_design_flow
+      json_cmd("scaffold", "--profile", "D")
+      env_body = "SECRET=do-not-touch\n"
+      File.write(".env", env_body)
+      bin_dir = File.join(Dir.pwd, "fake-bin")
+      FileUtils.mkdir_p(bin_dir)
+      write_fake_executable(bin_dir, "pnpm", "echo should-not-run >&2; exit 99")
+
+      stdout, stderr, code = run_aiweb_env({ "PATH" => [bin_dir, "/usr/bin", "/bin", "/usr/sbin", "/sbin"].join(File::PATH_SEPARATOR) }, "preview", "--json")
+      payload = JSON.parse(stdout)
+
+      assert_equal 1, code
+      assert_equal "", stderr
+      assert_equal "scaffold preview blocked", payload["action_taken"]
+      assert_equal "blocked", payload.dig("preview", "status")
+      assert_nil payload.dig("preview", "pid")
+      assert_nil payload.dig("preview", "exit_code")
+      assert_match(/node_modules is missing/, payload["blocking_issues"].join("\n"))
+      assert_equal payload.dig("preview", "blocking_issues").join("\n") + "\n", File.read(payload.dig("preview", "stderr_log"))
+      assert_equal env_body, File.read(".env"), "missing-node_modules preview must not mutate .env"
+      refute Dir.exist?("dist"), "missing-node_modules preview must not create dist"
+    end
+  end
+
+  def test_preview_records_running_fake_dev_server_duplicate_and_stop
+    in_tmp do |dir|
+      prepare_profile_d_design_flow
+      json_cmd("scaffold", "--profile", "D")
+      env_body = "SECRET=do-not-touch\n"
+      File.write(".env", env_body)
+      FileUtils.mkdir_p("node_modules")
+      bin_dir = File.join(dir, "fake-bin")
+      FileUtils.mkdir_p(bin_dir)
+      write_fake_executable(
+        bin_dir,
+        "pnpm",
+        "[ \"$1\" = dev ] || exit 64\necho fake astro dev stdout\necho fake astro dev stderr >&2\ntrap 'exit 0' TERM INT\nwhile :; do sleep 1; done"
+      )
+      env = { "PATH" => [bin_dir, "/usr/bin", "/bin", "/usr/sbin", "/sbin"].join(File::PATH_SEPARATOR) }
+      pid = nil
+
+      begin
+        stdout, stderr, code = run_webbuilder_env(env, "--path", Dir.pwd, "preview", "--json")
+        payload = JSON.parse(stdout)
+
+        assert_equal 0, code
+        assert_equal "", stderr
+        assert_equal "started scaffold preview", payload["action_taken"]
+        assert_equal "running", payload.dig("preview", "status")
+        assert_equal "pnpm dev --host 127.0.0.1", payload.dig("preview", "command")
+        assert_match(%r{http://(localhost|127\.0\.0\.1):4321/?}, payload.dig("preview", "preview_url"))
+        pid = payload.dig("preview", "pid")
+        assert_kind_of Integer, pid
+        assert_operator pid, :>, 0
+        assert_empty payload["blocking_issues"]
+        assert File.file?(payload.dig("preview", "stdout_log"))
+        assert File.file?(payload.dig("preview", "stderr_log"))
+        assert File.file?(payload.dig("preview", "metadata_path"))
+        assert_equal payload["preview"], JSON.parse(File.read(payload.dig("preview", "metadata_path")))
+        Process.kill(0, pid)
+        assert_equal env_body, File.read(".env"), "successful preview must not mutate .env"
+        refute Dir.exist?("dist"), "preview must not run a build"
+
+        duplicate_stdout, duplicate_stderr, duplicate_code = run_aiweb_env(env, "preview", "--json")
+        duplicate_payload = JSON.parse(duplicate_stdout)
+        assert_equal 0, duplicate_code
+        assert_equal "", duplicate_stderr
+        assert_equal "scaffold preview already running", duplicate_payload["action_taken"]
+        assert_equal "already_running", duplicate_payload.dig("preview", "status")
+        assert_equal pid, duplicate_payload.dig("preview", "pid")
+        assert_equal payload.dig("preview", "metadata_path"), duplicate_payload.dig("preview", "metadata_path")
+
+        stop_stdout, stop_stderr, stop_code = run_aiweb_env(env, "preview", "--stop", "--json")
+        stop_payload = JSON.parse(stop_stdout)
+        assert_equal 0, stop_code
+        assert_equal "", stop_stderr
+        assert_equal "stopped scaffold preview", stop_payload["action_taken"]
+        assert_equal "stopped", stop_payload.dig("preview", "status")
+        assert_equal pid, stop_payload.dig("preview", "stopped_pid")
+        assert File.file?(stop_payload.dig("preview", "metadata_path"))
+        assert_equal stop_payload["preview"], JSON.parse(File.read(stop_payload.dig("preview", "metadata_path")))
+        assert_raises(Errno::ESRCH) { Process.kill(0, pid) }
+        pid = nil
+      ensure
+        if pid
+          begin
+            Process.kill("TERM", pid)
+          rescue Errno::ESRCH
+            nil
+          end
+        end
+      end
+    end
+  end
 
   def test_build_uninitialized_project_fails_without_initializing_aiweb_or_touching_env
     in_tmp do
