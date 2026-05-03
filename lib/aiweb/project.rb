@@ -4846,8 +4846,15 @@ module Aiweb
       state
     end
 
-    def ensure_scaffold_state_defaults!(state)
+    def ensure_implementation_state_defaults!(state)
       state["implementation"] ||= {}
+      state["implementation"]["latest_agent_run"] = nil unless state["implementation"].key?("latest_agent_run")
+      state["implementation"]["last_diff"] = nil unless state["implementation"].key?("last_diff")
+      state
+    end
+
+    def ensure_scaffold_state_defaults!(state)
+      ensure_implementation_state_defaults!(state)
       state["implementation"]["scaffold_created"] = false if state["implementation"]["scaffold_created"].nil?
       state["implementation"]["scaffold_profile"] ||= nil
       state["implementation"]["scaffold_framework"] ||= nil
@@ -6181,7 +6188,7 @@ module Aiweb
       stdout, _stderr, status = Open3.capture3("git", "status", "--porcelain=v1", "-uall", chdir: root)
       return source_paths.map { |path| { "path" => path, "untracked" => false } } if !status.success?
 
-      changed = stdout.lines.filter_map do |line|
+      changed = stdout.lines.each_with_object([]) do |line, memo|
         code = line[0, 2]
         path = line[3..].to_s.strip
         path = path.split(" -> ").last.to_s.strip if line.start_with?("R", "C")
@@ -6190,7 +6197,7 @@ module Aiweb
         next unless source_paths.include?(path)
         next unless agent_run_source_path_allowed?(path)
 
-        { "path" => path, "untracked" => code == "??" }
+        memo << { "path" => path, "untracked" => code == "??" }
       end
       changed.uniq { |entry| entry["path"] }
     end
