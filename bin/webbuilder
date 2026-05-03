@@ -61,6 +61,8 @@ class WebbuilderLauncher
         웹빌더 --path ~/Desktop/my-site scaffold --profile S --dry-run
         웹빌더 --path ~/Desktop/my-site supabase-secret-qa --dry-run
         웹빌더 --path ~/Desktop/my-site runtime-plan
+        웹빌더 --path ~/Desktop/my-site setup --install --dry-run
+        웹빌더 --path ~/Desktop/my-site setup --install --approved
         웹빌더 --path ~/Desktop/my-site build --dry-run
         웹빌더 --path ~/Desktop/my-site preview --dry-run
         웹빌더 --path ~/Desktop/my-site preview
@@ -95,6 +97,9 @@ class WebbuilderLauncher
       Profile S의 안전 템플릿은 supabase/env.example.template이며 NEXT_PUBLIC_SUPABASE_URL, NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY placeholder만 포함한다.
       활성 no-.env guardrail 때문에 .env.example은 의도적으로 생성하지 않으며, supabase-secret-qa는 .env/.env.*를 읽지 않고 안전 경로만 점검해 .ai-web/qa/supabase-secret-qa.json에 기록한다.
       런타임 준비 확인은 runtime-plan 또는 scaffold-status로 패키지 설치/Node 실행 없이 읽기 전용으로 점검한다.
+      setup --install --dry-run은 쓰기/프로세스 실행 없이 예정 pnpm install 명령과 setup 로그/메타데이터 경로만 보여준다.
+      setup --install의 실제 패키지 설치는 --approved가 있을 때만 로컬에서 실행하고 .ai-web/runs/setup-<timestamp>/stdout.log, stderr.log, setup.json 증거를 기록한다.
+      setup은 build, preview, QA, repair, deploy, provider CLI, .env/.env.* 읽기/출력을 수행하지 않는다.
       빌드와 로컬 프리뷰는 runtime-plan 준비 상태가 ready일 때만 웹빌더 build/preview 또는 aiweb build/preview로 실행한다.
       preview는 scaffold dev 명령을 로컬에서 띄우는 PR10 경로이며 설치, .env 접근, Playwright/axe/repair/deploy를 수행하지 않는다.
       preview --dry-run은 설치/쓰기/프로세스 실행 없이 예정 URL, 명령, 로그/메타데이터 경로만 확인한다.

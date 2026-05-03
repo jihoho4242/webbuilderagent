@@ -862,6 +862,7 @@ module Aiweb
           select-design candidate-01|candidate-02|candidate-03
           scaffold --profile D [--force]
           scaffold --profile S [--force]
+          setup --install [--approved]
           supabase-secret-qa [--force]
           runtime-plan (alias: scaffold-status)
           build
@@ -899,6 +900,7 @@ module Aiweb
           design: creates deterministic HTML design candidates without app scaffold
           select-design: records selected HTML candidate without overwriting DESIGN.md
           scaffold: creates Profile D Astro-style static app skeleton or Profile S local Next.js + Supabase SSR scaffold without installing packages, creating .env.example, contacting Supabase, deploying, or running build/preview
+          setup --install: PR20 dependency install surface; --dry-run writes nothing and reports planned pnpm install/log paths, while a real install requires --approved, records stdout/stderr/setup metadata under .ai-web/runs/setup-<timestamp>/, warns on lifecycle scripts, updates safe setup state, and never builds/previews/runs QA/deploys or reads .env/.env.*
           supabase-secret-qa: reruns local-only Profile S secret guard QA against safe scaffold/template paths, including supabase/env.example.template, and records .ai-web/qa/supabase-secret-qa.json; --dry-run writes nothing and never reads .env/.env.*
           runtime-plan/scaffold-status: read-only runtime readiness metadata; does not install or launch Node
           build: runs the scaffolded Astro build only after runtime-plan is ready and records .ai-web/runs logs
@@ -973,7 +975,8 @@ module Aiweb
       return human_workbench_result(result) if result["workbench"]
       return human_component_map_result(result) if result["component_map"]
       return human_visual_edit_result(result) if result["visual_edit"]
-      return human_supabase_secret_qa_result(result) if result["supabase_secret_qa"]\n      return human_setup_result(result) if result["setup"]
+      return human_supabase_secret_qa_result(result) if result["supabase_secret_qa"]
+      return human_setup_result(result) if result["setup"]
 
       changed = result["changed_files"] || result["artifacts_changed"] || []
       blockers = result["blocking_issues"] || []
@@ -1329,7 +1332,8 @@ module Aiweb
       return EXIT_VALIDATION_FAILED if result["validation_errors"] && !result["validation_errors"].empty?
       return result.dig("runtime_plan", "readiness") == "ready" ? EXIT_SUCCESS : EXIT_VALIDATION_FAILED if RUNTIME_PLAN_COMMANDS.include?(command)
       return EXIT_SUCCESS if REGISTRY_COMMANDS.include?(command) || command == "intent"
-      return setup_exit_code(result) if command == "setup"\n      return build_exit_code(result) if command == "build"
+      return setup_exit_code(result) if command == "setup"
+      return build_exit_code(result) if command == "build"
       return preview_exit_code(result) if command == "preview"
       return qa_playwright_exit_code(result) if %w[qa-playwright browser-qa].include?(command)
       return qa_a11y_exit_code(result) if %w[qa-a11y a11y-qa].include?(command)
