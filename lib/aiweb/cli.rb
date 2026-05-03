@@ -17,7 +17,7 @@ module Aiweb
     EXIT_UNSAFE_EXTERNAL_ACTION = 5
     EXIT_INTERNAL_ERROR = 10
 
-    MUTATION_COMMANDS = %w[start init interview run ingest-design next-task qa-checklist qa-report repair advance rollback resolve-blocker snapshot design-brief design-system design-prompt design select-design scaffold setup build preview qa-playwright browser-qa qa-screenshot screenshot-qa qa-a11y a11y-qa qa-lighthouse lighthouse-qa visual-critique visual-polish workbench component-map visual-edit supabase-secret-qa github-sync deploy-plan deploy].freeze
+    MUTATION_COMMANDS = %w[start init interview run agent-run ingest-design next-task qa-checklist qa-report repair advance rollback resolve-blocker snapshot design-brief design-system design-prompt design select-design scaffold setup build preview qa-playwright browser-qa qa-screenshot screenshot-qa qa-a11y a11y-qa qa-lighthouse lighthouse-qa visual-critique visual-polish workbench component-map visual-edit supabase-secret-qa github-sync deploy-plan deploy].freeze
     RUNTIME_PLAN_COMMANDS = %w[runtime-plan scaffold-status].freeze
     REGISTRY_COMMANDS = %w[design-systems skills craft].freeze
 
@@ -128,6 +128,8 @@ module Aiweb
         project.interview(idea: opts[:idea], dry_run: @dry_run)
       when "run"
         project.run(dry_run: @dry_run)
+      when "agent-run"
+        dispatch_agent_run
       when "design-brief"
         opts = parse_options do |o, options|
           o.on("--force") { options[:force] = true }
@@ -966,6 +968,7 @@ module Aiweb
           runtime-plan/scaffold-status: read-only runtime readiness metadata; does not install or launch Node
           build: runs the scaffolded Astro build only after runtime-plan is ready and records .ai-web/runs logs
           preview: starts/stops the local scaffold dev server after runtime-plan is ready; --dry-run does not write files or launch Node
+          agent-run: runs an approved local source-patch agent task packet for repair / visual-polish / visual-edit evidence with logs and diff artifacts; --dry-run does not write files or launch a process
           qa-playwright: runs safe local Playwright QA browser checks against localhost/127.0.0.1 preview; --dry-run does not write files or launch Node
           qa-screenshot: captures safe local screenshot evidence for mobile/tablet/desktop from localhost/127.0.0.1 preview; --dry-run does not write files, launch browsers, install packages, or start preview
           qa-a11y: runs safe local axe accessibility QA against localhost/127.0.0.1 preview; --dry-run does not write files or launch Node
@@ -982,6 +985,7 @@ module Aiweb
           qa-checklist: phase-7 through phase-11
           qa-report: phase-7 through phase-11
           repair: phase-7 through phase-11; records a bounded local repair-loop task from failed/blocked QA without running build, QA, preview, deploy, package install, or source auto-patches
+          agent-run: phase-7 through phase-11; approved local source-patch task packets only, with logs, diff evidence, and no .env/.env.* access
           qa-screenshot: phase-7 through phase-11; captures safe local screenshot evidence for critique/human QA without starting preview or installing packages
           visual-critique: phase-7 through phase-11; records deterministic local visual critique evidence from explicit input paths or latest screenshot metadata only
           visual-polish --repair: records safe local visual polish repair loop from failed/repair/redesign critique evidence in phase-7 through phase-11 without source edits, build, QA, preview, browser capture, deploy, package install, network, or AI calls
@@ -1032,6 +1036,7 @@ module Aiweb
       return human_registry_result(result) if result["registry"]
       return human_intent_result(result) if result["intent"]
       return human_runtime_plan_result(result) if result["runtime_plan"]
+      return human_agent_run_result(result) if result["agent_run"]
       return human_repair_result(result) if result["repair_loop"]
       return human_qa_screenshot_result(result) if result["screenshot_qa"]
       return human_visual_critique_result(result) if result["visual_critique"]
@@ -1271,6 +1276,29 @@ module Aiweb
         "Next command: #{result["next_action"] || "n/a"}"
       ]
       lines.join("\n")
+    end
+
+    def human_agent_run_result(result)
+      agent_run = result.fetch("agent_run")
+      changed = result["changed_files"] || result["artifacts_changed"] || []
+      blockers = agent_run["blocking_issues"] || result["blocking_issues"] || []
+      paths = []
+      %w[run_dir stdout_path stderr_path metadata_path diff_path planned_run_dir planned_stdout_path planned_stderr_path planned_metadata_path planned_diff_path].each do |key|
+        value = agent_run[key]
+        paths << "#{key}=#{value}" unless value.to_s.empty?
+      end
+      [
+        "Agent run: #{agent_run["status"] || "n/a"}",
+        "Task: #{agent_run["task"] || "n/a"}",
+        "Agent: #{agent_run["agent"] || "n/a"}",
+        "Dry run: #{agent_run.key?("dry_run") ? agent_run["dry_run"] : "n/a"}",
+        "Approved: #{agent_run.key?("approved") ? agent_run["approved"] : "n/a"}",
+        "Command: #{agent_run["command"] || "n/a"}",
+        "Artifacts changed: #{changed.empty? ? "none" : changed.join(", ")}",
+        "Agent run paths: #{paths.empty? ? "none" : paths.join(", ")}",
+        "Blocking issues: #{blockers.empty? ? "none" : blockers.join("; ")}",
+        "Next command: #{result["next_action"] || "n/a"}"
+      ].join("\n")
     end
 
     def human_registry_result(result)
