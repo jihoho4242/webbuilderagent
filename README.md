@@ -18,6 +18,7 @@ Today the CLI manages the project director workspace: `.ai-web` state, phase gat
 - Expose the PR11 safe Playwright browser QA contract through `aiweb qa-playwright` / `웹빌더 qa-playwright`: it must use a running local preview or explicit localhost/127.0.0.1 `--url`, preserve `.env` untouched, never install packages or start preview, require an already-present project-local Playwright executable, record run/QA evidence under `.ai-web`, support no-write/no-process `--dry-run`, and explicitly avoid axe/Lighthouse, automatic repair, deploy, or external hosting.
 - Expose safe accessibility and Lighthouse QA contracts through `aiweb qa-a11y` / `웹빌더 qa-a11y` and `aiweb qa-lighthouse` / `웹빌더 qa-lighthouse`: they follow the same local-preview, no-install, no-repair, no-deploy safety model while requiring already-installed project-local `axe` or `lighthouse` executables.
 - Expose the PR13 safe local repair-loop contract through `aiweb repair` / `웹빌더 repair`: it consumes failed/blocked QA evidence into a bounded `repair_loop` record, pre-repair snapshot, and fix task without installing packages, starting preview, running build/QA, auto-patching source, touching `.env`, deploying, or contacting external hosting.
+- Expose the PR14 safe local visual critique contract through `aiweb visual-critique` / `웹빌더 visual-critique`: it evaluates explicit local screenshot/metadata evidence only, produces deterministic score/approval artifacts under `.ai-web/visual`, supports no-write `--dry-run`, rejects `.env` / `.env.*` paths without reading them, and never launches browsers, captures screenshots, installs packages, auto-repairs source, deploys, contacts external hosting, or calls network/AI services.
 
 ## Upgrade direction
 
@@ -28,7 +29,8 @@ The intended product direction is a design-first, natural-language webbuilder: t
 3. Preview the selected direction in a browser.
 4. Run automated browser QA against visual, content, accessibility, and interaction expectations.
 5. Convert failed/blocked QA evidence into bounded local repair tasks and records.
-6. Repair implementation manually or through later approved automation, then deploy later once gates pass and evidence is recorded.
+6. Review deterministic visual critique scores/patch plans from local evidence before repair decisions.
+7. Repair implementation manually or through later approved automation, then deploy later once gates pass and evidence is recorded.
 
 The current Director CLI is the foundation for that loop: state, gates, QA contracts, snapshots, local preview evidence, and bounded repair-loop records are in place before the system grows into end-to-end generation, source repair automation, and deploy. It is not yet a full app generator.
 
@@ -98,6 +100,16 @@ PR11 adds the safe local Playwright QA contract as a separate step:
 
 `qa-playwright --dry-run`, `qa-a11y --dry-run`, and `qa-lighthouse --dry-run` are planning paths only: they must not create run artifacts, start processes, install packages, touch `.env`, or invoke local QA tools. A real QA run uses the explicit localhost/127.0.0.1 `--url` when provided, otherwise the recorded running preview URL. Playwright runs only after `node_modules/.bin/playwright` exists; accessibility QA requires `node_modules/.bin/axe`; Lighthouse QA requires `node_modules/.bin/lighthouse`. Each command records stdout/stderr/tool metadata under `.ai-web/runs/<tool>-qa-*`, writes a schema-compatible QA result under `.ai-web/qa/results/`, and returns deterministic `blocked`, `failed`, or `passed` status in its JSON payload (`playwright_qa`, `a11y_qa`, or `lighthouse_qa`). Missing runtime readiness, missing preview/URL, missing `pnpm`, or missing local tooling is reported as blocked; these QA commands do not install dependencies, start/stop preview, auto-repair, deploy, or contact external hosting beyond the local preview URL.
 
+PR14 adds the safe local visual critique command as a local-evidence review step:
+
+```bash
+./bin/aiweb --path ~/Desktop/aiweb-premium-service-site visual-critique --screenshot ./evidence/home.png --dry-run --json
+./bin/aiweb --path ~/Desktop/aiweb-premium-service-site visual-critique --screenshot ./evidence/home.png --metadata ./evidence/home.json --task-id golden-page --json
+웹빌더 --path ~/Desktop/aiweb-premium-service-site visual-critique --screenshot ./evidence/home.png --metadata ./evidence/home.json
+```
+
+`visual-critique` accepts only explicit local evidence paths; this PR does not launch a browser, take screenshots, call AI/network services, install packages, start/stop preview, deploy, auto-repair, or touch `.env`. `visual-critique --dry-run` writes nothing and reports the planned `.ai-web/visual/` artifact path. A real run records a schema-versioned `visual_critique` payload with numeric scores for hierarchy, typography, spacing, color, originality, mobile polish, brand fit, and intent fit, plus issues, a patch plan, and an approval of `pass`, `repair`, or `redesign`. Low-score `repair` or `redesign` approvals intentionally return a non-success exit code so shell automation cannot treat visual quality failures as passing.
+
 PR13 adds the safe local repair-loop command as a follow-up to failed or blocked QA:
 
 ```bash
@@ -142,6 +154,7 @@ Manual repair/override for guarded commands:
 ./bin/aiweb ingest-design --force --title "Candidate 1"
 ./bin/aiweb qa-report --force --status failed --task-id golden-page
 ./bin/aiweb repair --force --from-qa latest --dry-run
+./bin/aiweb visual-critique --force --screenshot ./evidence/home.png --dry-run
 ```
 
 Rollback leaves the phase blocked until recovery evidence is recorded:

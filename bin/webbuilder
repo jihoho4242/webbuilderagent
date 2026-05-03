@@ -10,7 +10,7 @@ class WebbuilderLauncher
   KNOWN_COMMANDS = %w[
     help --help -h version --version
     start init status runtime-plan scaffold-status build preview interview run design-brief design-system design-prompt design select-design scaffold ingest-design next-task
-    qa-checklist qa-report repair qa-playwright qa-a11y qa-lighthouse advance rollback resolve-blocker snapshot
+    qa-checklist qa-report repair qa-playwright qa-a11y qa-lighthouse visual-critique advance rollback resolve-blocker snapshot
     design-systems skills craft intent
   ].freeze
 
@@ -65,6 +65,7 @@ class WebbuilderLauncher
         웹빌더 --path ~/Desktop/my-site preview --stop
         웹빌더 --path ~/Desktop/my-site qa-a11y --url http://127.0.0.1:4321 --dry-run
         웹빌더 --path ~/Desktop/my-site qa-lighthouse --url http://127.0.0.1:4321 --dry-run
+        웹빌더 --path ~/Desktop/my-site visual-critique --screenshot ./evidence/home.png --metadata ./evidence/home.json --dry-run
         웹빌더 --path ~/Desktop/my-site repair --from-qa latest --dry-run
 
       웹빌더가 숙지한 시작 순서:
@@ -88,6 +89,8 @@ class WebbuilderLauncher
       qa-lighthouse는 이미 설치된 로컬 Lighthouse 실행 파일로 성능/SEO QA를 수행한다.
       qa-playwright/qa-a11y/qa-lighthouse는 패키지 설치, .env 접근, preview 시작, 자동 repair, deploy를 수행하지 않는다.
       각 QA 명령의 --dry-run은 파일 쓰기/프로세스 실행 없이 예정 URL, 명령, 로그/메타데이터/QA 결과 경로만 확인한다.
+      visual-critique는 명시적으로 전달한 로컬 screenshot/metadata 증거만 평가해 .ai-web/visual에 결정론적 critique artifact를 기록한다. 브라우저 실행, 캡처, 설치, 네트워크/AI 호출, repair, deploy, .env 접근은 수행하지 않는다.
+      visual-critique --dry-run은 쓰기/브라우저/프로세스 실행 없이 예정 artifact 경로와 입력 검증 결과만 확인한다.
       repair는 실패/blocked QA 결과를 bounded repair_loop, pre-repair snapshot, fix task 기록으로 연결하되 source auto-patch, build/QA 실행, install/preview/deploy/external hosting은 수행하지 않는다.
       repair는 .env/.env.* QA 경로를 거부하고 --max-cycles로 같은 QA source 반복 repair loop를 제한한다.
       repair --dry-run은 쓰기/스냅샷 복사/프로세스 실행 없이 예정 repair record, snapshot, fix task 경로만 확인한다.

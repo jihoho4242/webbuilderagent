@@ -17,7 +17,7 @@ module Aiweb
     EXIT_UNSAFE_EXTERNAL_ACTION = 5
     EXIT_INTERNAL_ERROR = 10
 
-    MUTATION_COMMANDS = %w[start init interview run ingest-design next-task qa-checklist qa-report repair advance rollback resolve-blocker snapshot design-brief design-system design-prompt design select-design scaffold build preview qa-playwright browser-qa qa-a11y a11y-qa qa-lighthouse lighthouse-qa].freeze
+    MUTATION_COMMANDS = %w[start init interview run ingest-design next-task qa-checklist qa-report repair advance rollback resolve-blocker snapshot design-brief design-system design-prompt design select-design scaffold build preview qa-playwright browser-qa qa-a11y a11y-qa qa-lighthouse lighthouse-qa visual-critique].freeze
     RUNTIME_PLAN_COMMANDS = %w[runtime-plan scaffold-status].freeze
     REGISTRY_COMMANDS = %w[design-systems skills craft].freeze
 
@@ -196,6 +196,21 @@ module Aiweb
           raise UserError.new("#{command} does not accept extra positional arguments: #{@argv.join(", ")}", EXIT_VALIDATION_FAILED)
         end
         project.qa_lighthouse(url: opts[:url], task_id: opts[:task_id], force: opts[:force], dry_run: @dry_run)
+      when "visual-critique"
+        opts = parse_options do |o, options|
+          o.on("--screenshot PATH") { |v| options[:screenshot] = v }
+          o.on("--metadata PATH") { |v| options[:metadata] = v }
+          o.on("--task-id ID") { |v| options[:task_id] = v }
+          o.on("--force") { options[:force] = true }
+        end
+        unless @argv.empty?
+          raise UserError.new("visual-critique does not accept extra positional arguments: #{@argv.join(", ")}", EXIT_VALIDATION_FAILED)
+        end
+        unless project.respond_to?(:visual_critique)
+          return visual_critique_adapter_unavailable_payload(opts)
+        end
+
+        project.visual_critique(screenshot: opts[:screenshot], metadata: opts[:metadata], task_id: opts[:task_id], force: opts[:force], dry_run: @dry_run)
       when "ingest-design"
         opts = parse_options do |o, options|
           o.on("--id ID") { |v| options[:id] = v }
@@ -352,6 +367,36 @@ module Aiweb
       opts
     end
 
+    def visual_critique_adapter_unavailable_payload(opts)
+      command_line = ["aiweb", "visual-critique"]
+      command_line.concat(["--screenshot", opts[:screenshot].to_s]) unless opts[:screenshot].to_s.empty?
+      command_line.concat(["--metadata", opts[:metadata].to_s]) unless opts[:metadata].to_s.empty?
+      command_line.concat(["--task-id", opts[:task_id].to_s]) unless opts[:task_id].to_s.empty?
+      command_line << "--force" if opts[:force]
+      command_line << "--dry-run" if @dry_run
+
+      {
+        "schema_version" => 1,
+        "current_phase" => nil,
+        "action_taken" => "visual critique unavailable",
+        "changed_files" => [],
+        "blocking_issues" => ["visual-critique command surface is reserved, but the project adapter is not implemented yet."],
+        "missing_artifacts" => [],
+        "visual_critique" => {
+          "schema_version" => 1,
+          "status" => "blocked",
+          "approval" => "repair",
+          "command" => command_line.join(" "),
+          "screenshot" => opts[:screenshot],
+          "metadata" => opts[:metadata],
+          "task_id" => opts[:task_id],
+          "dry_run" => @dry_run,
+          "blocking_issues" => ["visual-critique command surface is reserved, but the project adapter is not implemented yet."]
+        },
+        "next_action" => "implement the local visual critique project adapter, then rerun aiweb visual-critique"
+      }
+    end
+
     def browser_adapter_unavailable_payload(command, opts)
       adapter = command.sub(/^qa-/, "")
       target = opts[:url].to_s.strip
@@ -409,6 +454,7 @@ module Aiweb
           qa-playwright [--url URL] [--task-id ID] [--force]
           qa-a11y [--url URL] [--task-id ID] [--force]
           qa-lighthouse [--url URL] [--task-id ID] [--force]
+          visual-critique [--screenshot PATH] [--metadata PATH] [--task-id ID] [--force]
           advance
           rollback [--to PHASE] [--failure CODE] [--reason "..."]
           resolve-blocker --reason "..."
@@ -433,11 +479,13 @@ module Aiweb
           qa-playwright: runs safe local Playwright QA browser checks against localhost/127.0.0.1 preview; --dry-run does not write files or launch Node
           qa-a11y: runs safe local axe accessibility QA against localhost/127.0.0.1 preview; --dry-run does not write files or launch Node
           qa-lighthouse: runs safe local Lighthouse QA against localhost/127.0.0.1 preview; --dry-run does not write files or launch Node
+          visual-critique: records safe local visual critique from explicit screenshot/metadata evidence only; --dry-run plans .ai-web/visual artifacts without writes, browser launch, installs, repair, deploy, network, or .env access
           ingest-design: phase-3.5
           next-task: phase-6 through phase-11
           qa-checklist: phase-7 through phase-11
           qa-report: phase-7 through phase-11
           repair: phase-7 through phase-11; records a bounded local repair-loop task from failed/blocked QA without running build, QA, preview, deploy, package install, or source auto-patches
+          visual-critique: phase-7 through phase-11; records deterministic local visual critique evidence from explicit input paths only
         Use --force only for manual repair/override.
       HELP
     end
@@ -484,6 +532,7 @@ module Aiweb
       return human_intent_result(result) if result["intent"]
       return human_runtime_plan_result(result) if result["runtime_plan"]
       return human_repair_result(result) if result["repair_loop"]
+      return human_visual_critique_result(result) if result["visual_critique"]
 
       changed = result["changed_files"] || result["artifacts_changed"] || []
       blockers = result["blocking_issues"] || []
@@ -511,6 +560,34 @@ module Aiweb
         "- Forbidden design patterns: #{intent.fetch("forbidden_design_patterns").join("; ")}"
       ]
       lines.join("\n")
+    end
+
+    def human_visual_critique_result(result)
+      critique = result.fetch("visual_critique")
+      scores = critique["scores"] || {}
+      score_line = if scores.empty?
+        "Scores: n/a"
+      else
+        ordered = %w[hierarchy typography spacing color originality mobile_polish brand_fit intent_fit]
+        "Scores: " + ordered.select { |key| scores.key?(key) }.map { |key| "#{key}=#{scores[key]}" }.join(", ")
+      end
+      issues = critique["issues"] || []
+      plan = critique["patch_plan"] || []
+      paths = []
+      %w[artifact_path planned_artifact_path screenshot metadata].each do |key|
+        value = critique[key]
+        paths << "#{key}=#{value}" unless value.to_s.empty?
+      end
+      [
+        "Visual critique: #{critique["status"] || "n/a"}",
+        "Approval: #{critique["approval"] || "n/a"}",
+        score_line,
+        "Evidence: #{paths.empty? ? "none" : paths.join(", ")}",
+        "Issues: #{issues.empty? ? "none" : issues.join("; ")}",
+        "Patch plan: #{plan.empty? ? "none" : plan.join("; ")}",
+        "Blocking issues: #{(result["blocking_issues"] || critique["blocking_issues"] || []).empty? ? "none" : (result["blocking_issues"] || critique["blocking_issues"]).join("; ")}",
+        "Next command: #{result["next_action"] || "n/a"}"
+      ].join("\n")
     end
 
     def human_repair_result(result)
@@ -589,6 +666,16 @@ module Aiweb
       %w[dry_run passed].include?(result.dig("lighthouse_qa", "status")) ? EXIT_SUCCESS : EXIT_VALIDATION_FAILED
     end
 
+    def visual_critique_exit_code(result)
+      critique = result["visual_critique"] || {}
+      status = critique["status"].to_s
+      return EXIT_SUCCESS if %w[dry_run planned].include?(status)
+      return EXIT_ADAPTER_UNAVAILABLE if status == "blocked" && (result["action_taken"].to_s =~ /unavailable/)
+      return EXIT_VALIDATION_FAILED if status == "blocked"
+
+      critique["approval"].to_s == "pass" ? EXIT_SUCCESS : EXIT_VALIDATION_FAILED
+    end
+
     def repair_exit_code(result)
       status = result.dig("repair_loop", "status")
       return EXIT_SUCCESS if %w[planned dry_run created reused].include?(status)
@@ -610,8 +697,9 @@ module Aiweb
       return qa_playwright_exit_code(result) if %w[qa-playwright browser-qa].include?(command)
       return qa_a11y_exit_code(result) if %w[qa-a11y a11y-qa].include?(command)
       return qa_lighthouse_exit_code(result) if %w[qa-lighthouse lighthouse-qa].include?(command)
+      return visual_critique_exit_code(result) if command == "visual-critique"
       return repair_exit_code(result) if command == "repair"
-      return EXIT_SUCCESS if %w[help version status start init interview run design-brief design-system design-prompt design select-design scaffold ingest-design next-task qa-checklist qa-report rollback resolve-blocker snapshot].include?(command)
+      return EXIT_SUCCESS if %w[help version status start init interview run design-brief design-system design-prompt design select-design scaffold ingest-design next-task qa-checklist qa-report rollback resolve-blocker snapshot visual-critique].include?(command)
       if command == "advance" && result["action_taken"] == "advance blocked"
         issue = result["blocking_issues"].join(" ")
         return EXIT_BUDGET_BLOCKED if issue =~ /budget|candidate cap|design generation cap/i

@@ -1254,6 +1254,70 @@ module Aiweb
       raise UserError.new("cannot parse state.yaml: #{e.message}", 1)
     end
 
+
+    def visual_critique(paths: nil, evidence_paths: nil, screenshot: nil, screenshots: nil, metadata: nil, task_id: nil, dry_run: false, **_options)
+      assert_initialized!
+      evidence = visual_critique_evidence_paths(paths, evidence_paths, screenshot, screenshots, metadata)
+      raise UserError.new("visual-critique requires at least one local evidence path", 1) if evidence.empty?
+
+      evidence.each { |path| validate_visual_critique_input_path!(path) }
+
+      timestamp = Time.now.utc.strftime("%Y%m%dT%H%M%SZ")
+      critique_slug = slug(task_id)
+      critique_id = ["visual-critique", timestamp, critique_slug].reject { |part| part.to_s.empty? }.join("-")
+      artifact_path = File.join(aiweb_dir, "visual", "#{critique_id}.json")
+      planned_changes = [relative(File.dirname(artifact_path)), relative(artifact_path), relative(state_path)]
+
+      if dry_run
+        state = load_state
+        payload = visual_critique_payload(
+          state: state,
+          critique: visual_critique_record(
+            critique_id: critique_id,
+            task_id: task_id,
+            evidence_paths: evidence,
+            artifact_path: artifact_path,
+            dry_run: true
+          ),
+          changed_files: [],
+          planned_changes: planned_changes,
+          action_taken: "planned visual critique",
+          next_action: "rerun aiweb visual-critique without --dry-run to write #{relative(artifact_path)} and update project state"
+        )
+        return payload
+      end
+
+      changes = []
+      payload = nil
+      mutation(dry_run: false) do
+        state = load_state
+        critique = visual_critique_record(
+          critique_id: critique_id,
+          task_id: task_id,
+          evidence_paths: evidence,
+          artifact_path: artifact_path,
+          dry_run: false
+        )
+        changes << write_json(artifact_path, critique, false)
+        state["qa"] ||= {}
+        state["qa"]["latest_visual_critique"] = relative(artifact_path)
+        state["visual"] ||= {}
+        state["visual"]["latest_critique"] = relative(artifact_path)
+        add_decision!(state, "visual_critique", "Recorded visual critique #{critique["approval"]} at #{relative(artifact_path)}")
+        state["project"]["updated_at"] = now if state["project"].is_a?(Hash)
+        changes << write_yaml(state_path, state, false)
+        payload = visual_critique_payload(
+          state: state,
+          critique: critique,
+          changed_files: compact_changes(changes),
+          planned_changes: [],
+          action_taken: "recorded visual critique",
+          next_action: visual_critique_next_action(critique)
+        )
+      end
+      payload
+    end
+
     private
 
     class BlockedAdvance < StandardError
@@ -4294,6 +4358,215 @@ module Aiweb
     rescue JSON::ParserError => e
       raise UserError.new("cannot parse JSON #{path}: #{e.message}", 1)
     end
+
+
+    def visual_critique_evidence_paths(paths, evidence_paths, screenshot, screenshots, metadata)
+      [paths, evidence_paths, screenshot, screenshots, metadata].flatten.compact.map(&:to_s).map(&:strip).reject(&:empty?).uniq
+    end
+
+    def validate_visual_critique_input_path!(path)
+      raise UserError.new("visual-critique evidence path must be local: #{path}", 1) if path.match?(/\A[a-z][a-z0-9+.-]*:\/\//i)
+
+      expanded = File.expand_path(path, root)
+      basename = File.basename(expanded)
+      if basename == ".env" || basename.start_with?(".env.")
+        raise UserError.new("visual-critique refuses to read .env or .env.* evidence paths", 1)
+      end
+      unless File.file?(expanded)
+        raise UserError.new("visual-critique evidence path does not exist or is not a file: #{path}", 1)
+      end
+    end
+
+    def visual_critique_record(critique_id:, task_id:, evidence_paths:, artifact_path:, dry_run:)
+      evidence = evidence_paths.map { |path| visual_critique_evidence(path) }
+      fixture = visual_critique_fixture(evidence)
+      scores = visual_critique_scores(evidence, fixture)
+      issues = visual_critique_issues(scores, fixture)
+      patch_plan = visual_critique_patch_plan(scores, issues)
+      approval = visual_critique_approval(scores, issues)
+      screenshot_evidence = evidence.find { |item| item["kind"] == "screenshot" }
+      metadata_evidence = evidence.find { |item| item["kind"] == "metadata" }
+      status = if dry_run
+        "dry_run"
+      elsif approval == "pass"
+        "passed"
+      else
+        "failed"
+      end
+      artifact_relative = relative(artifact_path)
+      {
+        "schema_version" => 1,
+        "type" => "visual_critique",
+        "id" => critique_id,
+        "task_id" => task_id.to_s.empty? ? critique_id : task_id.to_s,
+        "status" => status,
+        "dry_run" => dry_run,
+        "created_at" => now,
+        "artifact" => artifact_relative,
+        "artifact_path" => artifact_relative,
+        "screenshot_path" => screenshot_evidence && screenshot_evidence["path"],
+        "metadata_path" => metadata_evidence && metadata_evidence["path"],
+        "evidence" => evidence,
+        "scores" => scores,
+        "hierarchy" => scores.fetch("hierarchy"),
+        "typography" => scores.fetch("typography"),
+        "spacing" => scores.fetch("spacing"),
+        "color" => scores.fetch("color"),
+        "originality" => scores.fetch("originality"),
+        "mobile_polish" => scores.fetch("mobile_polish"),
+        "brand_fit" => scores.fetch("brand_fit"),
+        "intent_fit" => scores.fetch("intent_fit"),
+        "issues" => issues,
+        "patch_plan" => patch_plan,
+        "approval" => approval
+      }
+    end
+
+    def visual_critique_evidence(path)
+      expanded = File.expand_path(path, root)
+      stat = File.stat(expanded)
+      {
+        "path" => relative(expanded),
+        "bytes" => stat.size,
+        "sha256" => Digest::SHA256.file(expanded).hexdigest,
+        "kind" => visual_critique_evidence_kind(expanded)
+      }
+    end
+
+    def visual_critique_evidence_kind(path)
+      case File.extname(path).downcase
+      when ".png", ".jpg", ".jpeg", ".webp", ".gif", ".avif", ".svg" then "screenshot"
+      when ".json", ".yml", ".yaml", ".txt", ".md" then "metadata"
+      else "file"
+      end
+    end
+
+    def visual_critique_fixture(evidence)
+      evidence.each do |item|
+        path = File.join(root, item.fetch("path"))
+        next unless item["kind"] == "metadata"
+
+        parsed = parse_visual_critique_fixture(path)
+        return parsed if parsed.is_a?(Hash)
+      end
+      {}
+    end
+
+    def parse_visual_critique_fixture(path)
+      content = File.read(path, 64 * 1024)
+      case File.extname(path).downcase
+      when ".json"
+        JSON.parse(content)
+      when ".yml", ".yaml"
+        YAML.safe_load(content, permitted_classes: [Time], aliases: false) || {}
+      else
+        { "notes" => content }
+      end
+    rescue JSON::ParserError, Psych::Exception
+      { "notes" => content.to_s }
+    end
+
+    def visual_critique_scores(evidence, fixture)
+      categories = visual_critique_score_categories
+      explicit = fixture["visual_critique"] || fixture["scores"] || fixture
+      scores = categories.each_with_object({}) do |category, memo|
+        value = explicit[category] if explicit.is_a?(Hash)
+        memo[category] = clamp_score(value || visual_critique_default_score(category, evidence, fixture))
+      end
+      scores
+    end
+
+    def visual_critique_score_categories
+      %w[hierarchy typography spacing color originality mobile_polish brand_fit intent_fit]
+    end
+
+    def visual_critique_default_score(category, evidence, fixture)
+      notes = fixture["notes"].to_s.downcase
+      score = 72
+      score += 5 if evidence.any? { |item| item["kind"] == "screenshot" }
+      score += 3 if evidence.any? { |item| item["kind"] == "metadata" }
+      score -= 25 if notes.match?(/broken|fail|poor|low|clutter|illegible|generic|misaligned|overflow/)
+      score -= 10 if category == "mobile_polish" && notes.match?(/mobile|responsive|viewport/)
+      score -= 8 if category == "originality" && notes.match?(/generic|template|stock/)
+      score -= 8 if category == "brand_fit" && notes.match?(/brand|tone|voice/)
+      score -= 8 if category == "intent_fit" && notes.match?(/intent|goal|audience/)
+      score
+    end
+
+    def clamp_score(value)
+      numeric = value.is_a?(String) ? value.to_f : value.to_f
+      [[numeric.round, 0].max, 100].min
+    end
+
+    def visual_critique_issues(scores, fixture)
+      explicit = fixture["issues"]
+      return explicit.map(&:to_s) if explicit.is_a?(Array) && !explicit.empty?
+
+      low = scores.select { |_category, score| score < 75 }
+      return [] if low.empty?
+
+      low.map { |category, score| "#{category.tr("_", " ")} score #{score} is below the visual quality target 75" }
+    end
+
+    def visual_critique_patch_plan(scores, issues)
+      return [] if issues.empty?
+
+      scores.select { |_category, score| score < 75 }.map do |category, score|
+        {
+          "area" => category,
+          "priority" => score < 50 ? "high" : "medium",
+          "action" => visual_critique_patch_action(category)
+        }
+      end
+    end
+
+    def visual_critique_patch_action(category)
+      case category
+      when "hierarchy" then "clarify primary headline, CTA emphasis, and section order"
+      when "typography" then "tighten type scale, line height, and readable contrast"
+      when "spacing" then "normalize section rhythm, gutters, and component padding"
+      when "color" then "reduce palette noise and improve semantic color contrast"
+      when "originality" then "add distinctive composition, imagery, or interaction motif"
+      when "mobile_polish" then "verify responsive spacing, tap targets, and above-the-fold composition"
+      when "brand_fit" then "align tone, visual motifs, and UI details with brand attributes"
+      when "intent_fit" then "make the page goal and user journey more explicit"
+      else "improve visual quality for #{category.tr("_", " ")}"
+      end
+    end
+
+    def visual_critique_approval(scores, issues)
+      minimum = scores.values.min || 0
+      average = scores.values.sum.to_f / scores.length
+      return "redesign" if minimum < 50 || average < 60
+      return "repair" if minimum < 75 || !issues.empty?
+
+      "pass"
+    end
+
+    def visual_critique_payload(state:, critique:, changed_files:, planned_changes:, action_taken:, next_action:)
+      blockers = critique["approval"] == "pass" ? [] : ["visual critique approval=#{critique["approval"]}"]
+      {
+        "schema_version" => 1,
+        "current_phase" => state&.dig("phase", "current"),
+        "action_taken" => action_taken,
+        "dry_run" => critique["dry_run"],
+        "changed_files" => changed_files,
+        "planned_changes" => planned_changes,
+        "blocking_issues" => blockers,
+        "missing_artifacts" => [],
+        "visual_critique" => critique,
+        "next_action" => next_action
+      }
+    end
+
+    def visual_critique_next_action(critique)
+      case critique["approval"]
+      when "pass" then "use #{critique["artifact"]} as local visual critique evidence"
+      when "repair" then "review patch_plan in #{critique["artifact"]}, make targeted visual edits, then rerun aiweb visual-critique"
+      else "review issues in #{critique["artifact"]}, redesign the weak areas, then rerun aiweb visual-critique"
+      end
+    end
+
 
     def copy_snapshot_contents(snapshot_dir)
       Dir.children(aiweb_dir).each do |entry|

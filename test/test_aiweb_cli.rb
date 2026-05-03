@@ -2984,6 +2984,238 @@ class AiwebCliTest < Minitest::Test
     ["qa-lighthouse", "lighthouse_qa", "lighthouse", "LIGHTHOUSE_FAKE_STATUS"]
   ].freeze
 
+  VISUAL_CRITIQUE_SCORE_KEYS = %w[
+    hierarchy
+    typography
+    spacing
+    color
+    originality
+    mobile_polish
+    brand_fit
+    intent_fit
+  ].freeze
+
+  def write_visual_critique_fixture(path, scores:)
+    FileUtils.mkdir_p(File.dirname(path))
+    File.write(
+      path,
+      JSON.pretty_generate(
+        "viewport" => { "width" => 1440, "height" => 900, "name" => "desktop" },
+        "scores" => scores,
+        "observations" => ["fixture observation"]
+      )
+    )
+    path
+  end
+
+  def assert_visual_critique_scores(payload)
+    scores = payload.dig("visual_critique", "scores")
+    assert_kind_of Hash, scores
+    VISUAL_CRITIQUE_SCORE_KEYS.each do |key|
+      assert_includes scores, key
+      assert_kind_of Numeric, scores[key], "#{key} score must be numeric"
+      assert_operator scores[key], :>=, 0
+      assert_operator scores[key], :<=, 100
+    end
+  end
+
+  def test_visual_critique_dry_run_plans_from_explicit_local_evidence_without_writes
+    in_tmp do
+      json_cmd("init", "--profile", "D")
+      env_body = "SECRET=do-not-touch\n"
+      File.write(".env", env_body)
+      FileUtils.mkdir_p("evidence")
+      screenshot_path = File.join("evidence", "homepage.png")
+      File.binwrite(screenshot_path, "fake screenshot bytes")
+      metadata_path = write_visual_critique_fixture(
+        File.join("evidence", "visual-metadata.json"),
+        scores: VISUAL_CRITIQUE_SCORE_KEYS.to_h { |key| [key, 88] }
+      )
+      before_entries = Dir.glob("**/*", File::FNM_DOTMATCH).reject { |path| path == "." || path == ".." }.sort
+
+      stdout, stderr, code = run_aiweb(
+        "visual-critique",
+        "--screenshot", screenshot_path,
+        "--metadata", metadata_path,
+        "--task-id", "hero-dry",
+        "--dry-run",
+        "--json"
+      )
+      payload = JSON.parse(stdout)
+      after_entries = Dir.glob("**/*", File::FNM_DOTMATCH).reject { |path| path == "." || path == ".." }.sort
+
+      assert_equal 0, code
+      assert_equal "", stderr
+      assert_equal true, payload["dry_run"]
+      assert_equal "planned visual critique", payload["action_taken"]
+      assert_equal "dry_run", payload.dig("visual_critique", "status")
+      assert_equal true, payload.dig("visual_critique", "dry_run")
+      assert_equal "hero-dry", payload.dig("visual_critique", "task_id")
+      assert_equal screenshot_path, payload.dig("visual_critique", "screenshot_path")
+      assert_equal metadata_path, payload.dig("visual_critique", "metadata_path")
+      assert_match(%r{\A\.ai-web/visual/visual-critique-\d{8}T\d{6}Z-hero-dry\.json\z}, payload.dig("visual_critique", "artifact_path"))
+      assert_equal "pass", payload.dig("visual_critique", "approval")
+      assert_visual_critique_scores(payload)
+      assert_kind_of Array, payload.dig("visual_critique", "issues")
+      assert_kind_of Array, payload.dig("visual_critique", "patch_plan")
+      assert_equal before_entries, after_entries, "visual-critique --dry-run must not write artifacts or state"
+      assert_equal env_body, File.read(".env"), "visual-critique --dry-run must not mutate .env"
+    end
+  end
+
+  def test_visual_critique_records_artifact_and_latest_state_for_passing_fixture
+    in_tmp do
+      json_cmd("init", "--profile", "D")
+      env_body = "SECRET=do-not-touch\n"
+      File.write(".env", env_body)
+      FileUtils.mkdir_p("evidence")
+      screenshot_path = File.join("evidence", "homepage.png")
+      File.binwrite(screenshot_path, "fake screenshot bytes")
+      metadata_path = write_visual_critique_fixture(
+        File.join("evidence", "visual-metadata.json"),
+        scores: VISUAL_CRITIQUE_SCORE_KEYS.to_h { |key| [key, 91] }
+      )
+
+      stdout, stderr, code = run_aiweb(
+        "visual-critique",
+        "--screenshot", screenshot_path,
+        "--metadata", metadata_path,
+        "--task-id", "hero-pass",
+        "--json"
+      )
+      payload = JSON.parse(stdout)
+
+      assert_equal 0, code
+      assert_equal "", stderr
+      assert_equal "recorded visual critique", payload["action_taken"]
+      assert_equal "passed", payload.dig("visual_critique", "status")
+      assert_equal false, payload.dig("visual_critique", "dry_run")
+      assert_equal "hero-pass", payload.dig("visual_critique", "task_id")
+      assert_equal "pass", payload.dig("visual_critique", "approval")
+      assert_visual_critique_scores(payload)
+      artifact_path = payload.dig("visual_critique", "artifact_path")
+      assert_match(%r{\A\.ai-web/visual/visual-critique-\d{8}T\d{6}Z-hero-pass\.json\z}, artifact_path)
+      assert File.file?(artifact_path)
+      artifact = JSON.parse(File.read(artifact_path))
+      assert_equal payload["visual_critique"], artifact
+      assert_equal artifact_path, load_state.dig("qa", "latest_visual_critique")
+      assert_equal env_body, File.read(".env"), "visual-critique must not mutate .env"
+      refute Dir.exist?("dist"), "visual-critique must not build or deploy"
+      refute Dir.exist?(".ai-web/runs"), "visual-critique must not launch browser or runtime QA"
+    end
+  end
+
+  def test_visual_critique_low_scores_return_non_success_without_source_repair
+    in_tmp do
+      json_cmd("init", "--profile", "D")
+      env_body = "SECRET=do-not-touch\n"
+      File.write(".env", env_body)
+      FileUtils.mkdir_p("evidence")
+      screenshot_path = File.join("evidence", "homepage.png")
+      File.binwrite(screenshot_path, "fake screenshot bytes")
+      metadata_path = write_visual_critique_fixture(
+        File.join("evidence", "visual-metadata.json"),
+        scores: VISUAL_CRITIQUE_SCORE_KEYS.to_h { |key| [key, 24] }
+      )
+
+      stdout, stderr, code = run_aiweb(
+        "visual-critique",
+        "--screenshot", screenshot_path,
+        "--metadata", metadata_path,
+        "--task-id", "hero-redesign",
+        "--json"
+      )
+      payload = JSON.parse(stdout)
+
+      assert_equal 1, code
+      assert_equal "", stderr
+      assert_equal "recorded visual critique", payload["action_taken"]
+      assert_equal "failed", payload.dig("visual_critique", "status")
+      assert_equal "redesign", payload.dig("visual_critique", "approval")
+      assert_visual_critique_scores(payload)
+      assert File.file?(payload.dig("visual_critique", "artifact_path"))
+      assert_equal payload.dig("visual_critique", "artifact_path"), load_state.dig("qa", "latest_visual_critique")
+      assert payload.dig("visual_critique", "patch_plan").any?, "low-score critique should describe a manual patch plan"
+      assert_equal env_body, File.read(".env"), "low-score visual critique must not mutate .env"
+      refute Dir.exist?(".ai-web/repair"), "visual-critique must not create repair records"
+      refute Dir.exist?("dist"), "visual-critique must not build or deploy"
+    end
+  end
+
+  def test_visual_critique_rejects_env_paths_without_reading_or_echoing_secret
+    in_tmp do
+      json_cmd("init", "--profile", "D")
+      env_body = "SECRET=do-not-touch\n"
+      File.write(".env", env_body)
+      File.write(".env.local", "LOCAL_SECRET=do-not-touch\n")
+      FileUtils.mkdir_p("evidence")
+      safe_screenshot = File.join("evidence", "homepage.png")
+      File.binwrite(safe_screenshot, "fake screenshot bytes")
+      safe_metadata = write_visual_critique_fixture(
+        File.join("evidence", "visual-metadata.json"),
+        scores: VISUAL_CRITIQUE_SCORE_KEYS.to_h { |key| [key, 90] }
+      )
+
+      [
+        ["--screenshot", ".env"],
+        ["--metadata", ".env.local"]
+      ].each do |option, forbidden_path|
+        args = ["visual-critique", "--screenshot", safe_screenshot, "--metadata", safe_metadata]
+        index = args.index(option)
+        args[index + 1] = forbidden_path if index
+        stdout, stderr, code = run_aiweb(*args, "--json")
+        payload = JSON.parse(stdout)
+
+        assert_equal 1, code
+        assert_equal "", stderr
+        assert_equal "error", payload["status"]
+        assert_match(/\.env/, payload.dig("error", "message"))
+        refute_includes stdout, "do-not-touch"
+        refute Dir.exist?(".ai-web/visual"), "rejected .env evidence path must not create visual artifacts"
+        assert_equal env_body, File.read(".env"), "rejected visual-critique path must not mutate .env"
+      end
+    end
+  end
+
+  def test_visual_critique_help_and_webbuilder_passthrough
+    stdout, stderr, code = run_aiweb("help")
+    assert_equal 0, code
+    assert_equal "", stderr
+    assert_includes stdout, "visual-critique"
+    assert_match(/visual-critique: records safe local visual critique/i, stdout)
+
+    help_stdout, help_stderr, help_code = run_webbuilder("--help")
+    assert_equal 0, help_code
+    assert_equal "", help_stderr
+    assert_match(/visual-critique/, help_stdout)
+
+    in_tmp do |dir|
+      target = File.join(dir, "passthrough-visual-critique")
+      Dir.mkdir(target)
+      Dir.chdir(target) do
+        json_cmd("init", "--profile", "D")
+        FileUtils.mkdir_p("evidence")
+        File.binwrite(File.join("evidence", "homepage.png"), "fake screenshot bytes")
+      end
+
+      web_stdout, web_stderr, web_code = run_webbuilder(
+        "--path", target,
+        "visual-critique",
+        "--screenshot", File.join(target, "evidence", "homepage.png"),
+        "--task-id", "web-dry",
+        "--dry-run",
+        "--json"
+      )
+      web_payload = JSON.parse(web_stdout)
+      assert_equal 0, web_code
+      assert_equal "", web_stderr
+      assert_equal "planned visual critique", web_payload["action_taken"]
+      assert_equal "dry_run", web_payload.dig("visual_critique", "status")
+      assert_equal "web-dry", web_payload.dig("visual_critique", "task_id")
+      refute Dir.exist?(File.join(target, ".ai-web", "visual")), "webbuilder visual-critique --dry-run must not write artifacts"
+    end
+  end
+
   def test_pr12_qa_commands_uninitialized_and_unready_are_safe
     PR12_QA_COMMANDS.each do |command, payload_key, _tool_label, _status_env|
       in_tmp do
