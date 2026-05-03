@@ -967,7 +967,7 @@ module Aiweb
           build: runs the scaffolded Astro build only after runtime-plan is ready and records .ai-web/runs logs
           preview: starts/stops the local scaffold dev server after runtime-plan is ready; --dry-run does not write files or launch Node
           qa-playwright: runs safe local Playwright QA browser checks against localhost/127.0.0.1 preview; --dry-run does not write files or launch Node
-          qa-screenshot: captures deterministic local mobile/tablet/desktop screenshot evidence from localhost/127.0.0.1 preview; --dry-run does not write files, launch browsers, install packages, or start preview
+          qa-screenshot: captures safe local screenshot evidence for mobile/tablet/desktop from localhost/127.0.0.1 preview; --dry-run does not write files, launch browsers, install packages, or start preview
           qa-a11y: runs safe local axe accessibility QA against localhost/127.0.0.1 preview; --dry-run does not write files or launch Node
           qa-lighthouse: runs safe local Lighthouse QA against localhost/127.0.0.1 preview; --dry-run does not write files or launch Node
           visual-critique: records safe local visual critique from explicit screenshot/metadata evidence or --from-screenshots latest only; --dry-run plans .ai-web/visual artifacts without writes, browser launch, installs, repair, deploy, network, or .env access
@@ -982,7 +982,7 @@ module Aiweb
           qa-checklist: phase-7 through phase-11
           qa-report: phase-7 through phase-11
           repair: phase-7 through phase-11; records a bounded local repair-loop task from failed/blocked QA without running build, QA, preview, deploy, package install, or source auto-patches
-          qa-screenshot: phase-7 through phase-11; captures deterministic local screenshot evidence for critique/human QA without starting preview or installing packages
+          qa-screenshot: phase-7 through phase-11; captures safe local screenshot evidence for critique/human QA without starting preview or installing packages
           visual-critique: phase-7 through phase-11; records deterministic local visual critique evidence from explicit input paths or latest screenshot metadata only
           visual-polish --repair: records safe local visual polish repair loop from failed/repair/redesign critique evidence in phase-7 through phase-11 without source edits, build, QA, preview, browser capture, deploy, package install, network, or AI calls
           component-map / visual-edit: phase-7 through phase-11; map stable DOM regions and create selected-region visual edit handoff records without source auto-patches or external execution
