@@ -2471,6 +2471,184 @@ class AiwebCliTest < Minitest::Test
     [setup.fetch("stdout_log"), setup.fetch("stderr_log"), setup.fetch("metadata_path")]
   end
 
+
+  def test_setup_install_without_approval_blocks_without_writes_or_env_access
+    in_tmp do
+      prepare_profile_d_scaffold_flow
+      secret = "SECRET=pr20-no-approval-do-not-leak"
+      File.write(".env", "#{secret}\n")
+      before_entries = project_entries
+      before_state = File.read(".ai-web/state.yaml")
+      env_size = File.size(".env")
+      env_mtime = File.mtime(".env")
+
+      stdout, stderr, code = run_aiweb("setup", "--install", "--json")
+      payload = JSON.parse(stdout)
+
+      assert_equal 5, code
+      assert_equal "", stderr
+      assert_equal "setup install blocked", payload["action_taken"]
+      assert_equal "blocked", payload.dig("setup", "status")
+      assert_equal false, payload.dig("setup", "dry_run")
+      assert_equal true, payload.dig("setup", "requires_approval")
+      assert_match(/approved|approval/i, [payload.dig("error", "message"), payload["blocking_issues"], payload.dig("setup", "blocking_issues")].flatten.compact.join("\n"))
+      assert_no_setup_side_effects(before_entries: before_entries, before_state: before_state, env_size: env_size, env_mtime: env_mtime)
+      refute_includes stdout, secret
+    end
+  end
+
+  def test_setup_install_dry_run_plans_pnpm_install_without_writes_or_process_execution
+    in_tmp do |dir|
+      prepare_profile_d_scaffold_flow
+      secret = "SECRET=pr20-dry-run-do-not-leak"
+      File.write(".env", "#{secret}\n")
+      bin_dir = File.join(dir, "fake-setup-bin")
+      FileUtils.mkdir_p(bin_dir)
+      marker = File.join(dir, "pnpm-was-run")
+      write_fake_executable(bin_dir, "pnpm", "touch #{marker.shellescape}; echo should-not-run >&2; exit 99")
+      before_entries = project_entries
+      before_state = File.read(".ai-web/state.yaml")
+      env_size = File.size(".env")
+      env_mtime = File.mtime(".env")
+
+      stdout, stderr, code = run_aiweb_env({ "PATH" => [bin_dir, "/usr/bin", "/bin", "/usr/sbin", "/sbin"].join(File::PATH_SEPARATOR) }, "setup", "--install", "--dry-run", "--json")
+      payload = JSON.parse(stdout)
+
+      assert_equal 0, code
+      assert_equal "", stderr
+      assert_equal true, payload["dry_run"]
+      assert_equal "planned setup install", payload["action_taken"]
+      assert_equal "dry_run", payload.dig("setup", "status")
+      assert_equal true, payload.dig("setup", "dry_run")
+      assert_equal false, payload.dig("setup", "requires_approval")
+      assert_equal "pnpm", payload.dig("setup", "package_manager")
+      assert_equal "pnpm install", payload.dig("setup", "command")
+      setup_payload_paths(payload).each do |path|
+        assert_match(%r{\A\.ai-web/runs/setup-\d{8}T\d{6}Z/(stdout\.log|stderr\.log|setup\.json)\z}, path)
+      end
+      assert_no_setup_side_effects(before_entries: before_entries, before_state: before_state, env_size: env_size, env_mtime: env_mtime)
+      refute File.exist?(marker), "setup --dry-run must not execute pnpm"
+      refute_includes stdout, secret
+    end
+  end
+
+  def test_setup_install_approved_records_successful_fake_pnpm_artifacts_and_safe_state
+    in_tmp do |dir|
+      prepare_profile_d_scaffold_flow
+      secret = "SECRET=pr20-approved-do-not-leak"
+      File.write(".env", "#{secret}\n")
+      bin_dir = write_fake_pnpm_install_tooling(dir, stdout: "fake install complete", stderr: "fake lifecycle warning")
+      env_size = File.size(".env")
+      env_mtime = File.mtime(".env")
+
+      stdout, stderr, code = run_aiweb_env({ "PATH" => [bin_dir, "/usr/bin", "/bin", "/usr/sbin", "/sbin"].join(File::PATH_SEPARATOR) }, "setup", "--install", "--approved", "--json")
+      payload = JSON.parse(stdout)
+
+      assert_equal 0, code
+      assert_equal "", stderr
+      assert_equal "ran setup install", payload["action_taken"]
+      assert_equal "passed", payload.dig("setup", "status")
+      assert_equal false, payload.dig("setup", "dry_run")
+      assert_equal true, payload.dig("setup", "approved")
+      assert_equal "pnpm", payload.dig("setup", "package_manager")
+      assert_equal "pnpm install", payload.dig("setup", "command")
+      assert_equal 0, payload.dig("setup", "exit_code")
+      stdout_log, stderr_log, metadata_path = setup_payload_paths(payload)
+      assert_equal "fake install complete\n", File.read(stdout_log)
+      assert_equal "fake lifecycle warning\n", File.read(stderr_log)
+      assert_equal payload.fetch("setup"), JSON.parse(File.read(metadata_path))
+      state = load_state
+      assert_equal metadata_path, state.dig("setup", "latest_run")
+      assert_equal "pnpm", state.dig("setup", "package_manager")
+      assert_includes [true, false], state.dig("setup", "node_modules_present")
+      refute_nil state.dig("setup", "last_installed_at")
+      assert_equal env_size, File.size(".env")
+      assert_equal env_mtime, File.mtime(".env")
+      refute Dir.exist?("dist"), "setup install must not build"
+      refute Dir.glob(".ai-web/runs/{build,preview,playwright-qa,a11y-qa,lighthouse-qa}-*").any?, "setup install must not run build/preview/QA"
+      assert_setup_artifacts_do_not_leak_secret(payload, secret)
+    end
+  end
+
+  def test_setup_install_approved_records_failed_fake_pnpm_artifact_without_build_preview_qa_or_deploy
+    in_tmp do |dir|
+      prepare_profile_d_scaffold_flow
+      secret = "SECRET=pr20-failed-do-not-leak"
+      File.write(".env", "#{secret}\n")
+      bin_dir = write_fake_pnpm_install_tooling(dir, exit_status: 42, stdout: "fake install stdout before failure", stderr: "fake install failed")
+      env_size = File.size(".env")
+      env_mtime = File.mtime(".env")
+
+      stdout, stderr, code = run_aiweb_env({ "PATH" => [bin_dir, "/usr/bin", "/bin", "/usr/sbin", "/sbin"].join(File::PATH_SEPARATOR) }, "setup", "--install", "--approved", "--json")
+      payload = JSON.parse(stdout)
+
+      assert_equal 1, code
+      assert_equal "", stderr
+      assert_equal "setup install failed", payload["action_taken"]
+      assert_equal "failed", payload.dig("setup", "status")
+      assert_equal 42, payload.dig("setup", "exit_code")
+      assert_match(/failed|exit code 42/i, payload.fetch("blocking_issues").join("\n"))
+      stdout_log, stderr_log, metadata_path = setup_payload_paths(payload)
+      assert_equal "fake install stdout before failure\n", File.read(stdout_log)
+      assert_equal "fake install failed\n", File.read(stderr_log)
+      assert_equal payload.fetch("setup"), JSON.parse(File.read(metadata_path))
+      assert_equal env_size, File.size(".env")
+      assert_equal env_mtime, File.mtime(".env")
+      refute Dir.exist?("dist"), "failed setup must not build"
+      refute Dir.glob(".ai-web/runs/{build,preview,playwright-qa,a11y-qa,lighthouse-qa}-*").any?, "failed setup must not run build/preview/QA"
+      refute Dir.exist?(".ai-web/deploy"), "setup install must not create deploy provider artifacts"
+      assert_setup_artifacts_do_not_leak_secret(payload, secret)
+    end
+  end
+
+  def test_setup_install_rejects_env_path_project_without_reading_or_printing_secret
+    in_tmp do |dir|
+      target = File.join(dir, ".env.local")
+      Dir.mkdir(target)
+      Dir.chdir(target) do
+        secret = "SECRET=pr20-env-path-do-not-leak"
+        File.write(".env", "#{secret}\n")
+
+        stdout, stderr, code = run_aiweb("setup", "--install", "--dry-run", "--json")
+        payload = JSON.parse(stdout)
+
+        assert_equal 1, code
+        assert_equal "", stderr
+        assert_match(/\.env|unsafe|refus/i, payload.dig("error", "message"))
+        refute_includes stdout, secret
+        refute Dir.exist?(".ai-web/runs"), "unsafe .env-like project paths must not create setup artifacts"
+        refute Dir.exist?("node_modules"), "unsafe .env-like project paths must not install"
+      end
+    end
+  end
+
+  def test_setup_help_and_korean_webbuilder_passthrough_surface
+    stdout, stderr, code = run_aiweb("help")
+    assert_equal 0, code
+    assert_equal "", stderr
+    assert_includes stdout, "setup --install --approved"
+    assert_includes stdout, "setup --install --dry-run"
+
+    in_tmp do |dir|
+      target = File.join(dir, "passthrough-setup")
+      Dir.mkdir(target)
+      Dir.chdir(target) { prepare_profile_d_scaffold_flow }
+      bin_dir = write_fake_pnpm_install_tooling(dir, stdout: "fake Korean wrapper install")
+
+      web_stdout, web_stderr, web_code = run_korean_webbuilder_env(
+        { "PATH" => [bin_dir, "/usr/bin", "/bin", "/usr/sbin", "/sbin"].join(File::PATH_SEPARATOR) },
+        "--path", target, "setup", "--install", "--approved", "--json"
+      )
+      web_payload = JSON.parse(web_stdout)
+
+      assert_equal 0, web_code
+      assert_equal "", web_stderr
+      assert_equal "passed", web_payload.dig("setup", "status")
+      assert_equal "pnpm install", web_payload.dig("setup", "command")
+      assert_equal "fake Korean wrapper install\n", File.read(File.join(target, web_payload.dig("setup", "stdout_log")))
+    end
+  end
+
   def test_runtime_plan_blocks_uninitialized_and_unscaffolded_without_writes
     in_tmp do
       payload, code = json_cmd("runtime-plan")
