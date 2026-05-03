@@ -968,6 +968,115 @@ module Aiweb
       )
     end
 
+
+    def component_map(force: false, dry_run: false)
+      assert_initialized!
+
+      state = load_state
+      artifact_path = File.join(aiweb_dir, "component-map.json")
+      components = discover_component_map_components
+      blockers = component_map_blockers(components, force: force)
+      status = blockers.empty? ? (dry_run ? "planned" : "ready") : "blocked"
+      component_map = component_map_record(
+        status: status,
+        artifact_path: artifact_path,
+        components: components,
+        blockers: blockers,
+        dry_run: dry_run
+      )
+      planned_changes = [relative(artifact_path)]
+
+      if dry_run || !blockers.empty?
+        return component_map_payload(
+          state: state,
+          component_map: component_map,
+          changed_files: [],
+          planned_changes: blockers.empty? ? planned_changes : [],
+          action_taken: blockers.empty? ? "planned component map" : "component map blocked",
+          blocking_issues: blockers,
+          next_action: blockers.empty? ? "rerun aiweb component-map without --dry-run to write #{relative(artifact_path)}" : "run aiweb scaffold --profile D or restore source files with stable data-aiweb-id hooks, then rerun aiweb component-map"
+        )
+      end
+
+      changes = []
+      payload = nil
+      mutation(dry_run: false) do
+        changes << write_json(artifact_path, component_map, false)
+        payload = component_map_payload(
+          state: state,
+          component_map: component_map,
+          changed_files: compact_changes(changes),
+          planned_changes: [],
+          action_taken: "created component map",
+          blocking_issues: [],
+          next_action: "select a data-aiweb-id target, then run aiweb visual-edit --target DATA_AIWEB_ID --prompt TEXT"
+        )
+      end
+      payload
+    end
+
+    def visual_edit(target:, prompt:, from_map: "latest", force: false, dry_run: false)
+      assert_initialized!
+
+      target = target.to_s.strip
+      prompt = prompt.to_s.strip
+      raise UserError.new("visual-edit requires --target DATA_AIWEB_ID", 1) if target.empty?
+      raise UserError.new("visual-edit requires --prompt TEXT", 1) if prompt.empty?
+
+      state = load_state
+      source = resolve_component_map_source(from_map)
+      component_map = source["path"] ? load_component_map_for_visual_edit(source["path"]) : nil
+      component = component_map ? component_map_component(component_map, target) : nil
+      blockers = visual_edit_blockers(source, component_map, component, target, force: force)
+
+      timestamp = Time.now.utc.strftime("%Y%m%dT%H%M%SZ")
+      edit_id = "visual-edit-#{timestamp}-#{slug(target)}"
+      task_path = File.join(aiweb_dir, "tasks", "#{edit_id}.md")
+      record_path = File.join(aiweb_dir, "visual", "#{edit_id}.json")
+      record = visual_edit_record(
+        edit_id: edit_id,
+        target: target,
+        prompt: prompt,
+        source_map: source["relative"],
+        component: component,
+        task_path: task_path,
+        record_path: record_path,
+        status: blockers.empty? ? (dry_run ? "planned" : "created") : "blocked",
+        blockers: blockers,
+        dry_run: dry_run
+      )
+      planned_changes = [relative(task_path), relative(record_path)]
+
+      if dry_run || !blockers.empty?
+        return visual_edit_payload(
+          state: state,
+          record: record,
+          changed_files: [],
+          planned_changes: blockers.empty? ? planned_changes : [],
+          action_taken: blockers.empty? ? "planned visual edit" : "visual edit blocked",
+          blocking_issues: blockers,
+          next_action: blockers.empty? ? "rerun aiweb visual-edit without --dry-run to create the local handoff artifacts" : "create a component map and choose an editable data-aiweb-id target, then rerun aiweb visual-edit"
+        )
+      end
+
+      changes = []
+      payload = nil
+      mutation(dry_run: false) do
+        changes << write_file(task_path, visual_edit_task_markdown(record), false)
+        changes << write_json(record_path, record, false)
+        payload = visual_edit_payload(
+          state: state,
+          record: record,
+          changed_files: compact_changes(changes),
+          planned_changes: [],
+          action_taken: "created visual edit handoff",
+          blocking_issues: [],
+          next_action: "review #{relative(task_path)}; source patching and smoke QA are intentionally outside this command"
+        )
+      end
+      payload
+    end
+
     def next_task(type: nil, dry_run: false, force: false)
       assert_initialized!
       changes = []
@@ -5026,6 +5135,242 @@ module Aiweb
       raise UserError.new("cannot parse JSON #{path}: #{e.message}", 1)
     end
 
+    def component_map_source_paths
+      candidates = SCAFFOLD_PROFILE_D_REQUIRED_FILES.grep(%r{\Asrc/})
+      candidates.select do |relative_path|
+        path = File.join(root, relative_path)
+        File.file?(path) && safe_component_map_scan_path?(relative_path)
+      end
+    end
+
+    def safe_component_map_scan_path?(relative_path)
+      normalized = relative_path.to_s.tr("\\", "/").sub(%r{\A(?:\./)+}, "")
+      parts = normalized.split("/")
+
+      return false if normalized.empty? || normalized.start_with?("/")
+      return false if parts.any? { |part| part == ".." || part.start_with?(".env") }
+      return false if parts.any? { |part| %w[node_modules dist build coverage tmp vendor .git].include?(part) }
+
+      normalized.start_with?("src/")
+    end
+
+    def discover_component_map_components
+      component_map_source_paths.flat_map do |relative_path|
+        path = File.join(root, relative_path)
+        discover_component_map_components_in_file(path, relative_path)
+      end.sort_by { |component| [component["source_path"].to_s, component["line"].to_i, component["data_aiweb_id"].to_s] }
+    end
+
+    def discover_component_map_components_in_file(path, relative_path)
+      body = File.read(path)
+      components = []
+      body.lines.each_with_index do |line, index|
+        line.scan(/data-aiweb-id\s*=\s*["']([^"']+)["']/) do |match|
+          components << component_map_component_record(match.first, relative_path, line, index + 1, "data-aiweb-id")
+        end
+        line.scan(/\baiwebId\s*=\s*["']([^"']+)["']/) do |match|
+          components << component_map_component_record(match.first, relative_path, line, index + 1, "aiwebId-prop")
+        end
+      end
+      components.uniq { |component| [component["data_aiweb_id"], component["source_path"], component["line"]] }
+    rescue SystemCallError
+      []
+    end
+
+    def component_map_component_record(data_aiweb_id, relative_path, line, line_number, source_hook)
+      {
+        "data_aiweb_id" => data_aiweb_id.to_s,
+        "source_path" => relative_path,
+        "kind" => component_map_kind(relative_path, data_aiweb_id),
+        "route" => component_map_route(relative_path, data_aiweb_id),
+        "editable" => true,
+        "line" => line_number,
+        "source_hook" => source_hook,
+        "snippet_summary" => component_map_snippet_summary(line)
+      }
+    end
+
+    def component_map_kind(relative_path, data_aiweb_id)
+      return "page" if relative_path.start_with?("src/pages/") || data_aiweb_id.to_s.start_with?("page.", "document.")
+      return "component" if relative_path.start_with?("src/components/") || data_aiweb_id.to_s.start_with?("component.")
+
+      "region"
+    end
+
+    def component_map_route(relative_path, data_aiweb_id)
+      return "/" if relative_path == "src/pages/index.astro" || data_aiweb_id.to_s.include?(".home")
+      if relative_path.start_with?("src/pages/")
+        page = relative_path.sub(%r{\Asrc/pages/}, "").sub(/\.astro\z/, "")
+        return "/" if page == "index"
+
+        return "/#{page.sub(%r{/index\z}, "")}"
+      end
+
+      nil
+    end
+
+    def component_map_snippet_summary(line)
+      tag = line.to_s[/<\s*([A-Za-z][A-Za-z0-9:-]*)/, 1]
+      classes = line.to_s[/class\s*=\s*"([^"]{0,80})"/, 1] || line.to_s[/class\s*=\s*'([^']{0,80})'/, 1]
+      [tag ? "tag=#{tag}" : nil, classes ? "class=#{classes}" : nil].compact.join("; ")
+    end
+
+    def component_map_blockers(components, force:)
+      missing = SCAFFOLD_PROFILE_D_REQUIRED_FILES.grep(%r{\Asrc/}).reject { |path| File.file?(File.join(root, path)) }
+      blockers = []
+      blockers << "scaffold/source files are missing: #{missing.join(", ")}" unless missing.empty?
+      blockers << "no stable data-aiweb-id hooks found in scaffold/source files" if components.empty?
+      blockers
+    end
+
+    def component_map_record(status:, artifact_path:, components:, blockers:, dry_run:)
+      {
+        "schema_version" => 1,
+        "status" => status,
+        "artifact_path" => relative(artifact_path),
+        "generated_at" => dry_run ? nil : now,
+        "dry_run" => dry_run,
+        "source_root" => ".",
+        "scan" => {
+          "included_paths" => component_map_source_paths,
+          "excluded_patterns" => [".env", ".env.*", "node_modules", "dist", "build", "coverage", "tmp", "vendor/bundle"],
+          "source_contents_embedded" => false
+        },
+        "components" => components,
+        "blocking_issues" => blockers
+      }
+    end
+
+    def component_map_payload(state:, component_map:, changed_files:, planned_changes:, action_taken:, blocking_issues:, next_action:)
+      payload = status_hash(state: state, changed_files: changed_files)
+      payload["action_taken"] = action_taken
+      payload["blocking_issues"] = blocking_issues
+      payload["planned_changes"] = planned_changes unless planned_changes.empty?
+      payload["component_map"] = component_map
+      payload["next_action"] = next_action
+      payload
+    end
+
+    def resolve_component_map_source(from_map)
+      raw = from_map.to_s.strip
+      raw = "latest" if raw.empty?
+      return { "path" => File.join(aiweb_dir, "component-map.json"), "relative" => ".ai-web/component-map.json", "error" => nil } if raw == "latest"
+
+      normalized = raw.tr("\\", "/").sub(%r{\A(?:\./)+}, "")
+      parts = normalized.split("/")
+      error = if raw.match?(/\A[a-z][a-z0-9+.-]*:\/\//i) || raw.start_with?("/") || raw.match?(%r{\A[A-Za-z]:[\\/]})
+                "component map path must be a local project-relative path"
+              elsif parts.any? { |part| part == ".." }
+                "component map path must not contain traversal"
+              elsif parts.any? { |part| part.start_with?(".env") }
+                "component map path must not reference .env files"
+              elsif !normalized.start_with?(".ai-web/")
+                "component map path must stay under .ai-web"
+              end
+      return { "path" => nil, "relative" => normalized, "error" => error } if error
+
+      { "path" => File.join(root, normalized), "relative" => normalized, "error" => nil }
+    end
+
+    def load_component_map_for_visual_edit(path)
+      data = JSON.parse(File.read(path))
+      raise UserError.new("component map must be a JSON object", 1) unless data.is_a?(Hash)
+
+      data
+    rescue Errno::ENOENT
+      nil
+    rescue JSON::ParserError => e
+      raise UserError.new("cannot parse component map: #{e.message}", 1)
+    end
+
+    def component_map_component(component_map, target)
+      Array(component_map["components"]).find { |component| component.is_a?(Hash) && component["data_aiweb_id"].to_s == target }
+    end
+
+    def visual_edit_blockers(source, component_map, component, target, force:)
+      blockers = []
+      blockers << source["error"] if source["error"]
+      return blockers unless source["error"].nil?
+
+      blockers << "component map not found: #{source["relative"]}" unless component_map
+      blockers << "target data-aiweb-id not found in component map: #{target}" if component_map && component.nil?
+      blockers << "target data-aiweb-id is not editable: #{target}" if component && component["editable"] == false
+      blockers
+    end
+
+    def visual_edit_record(edit_id:, target:, prompt:, source_map:, component:, task_path:, record_path:, status:, blockers:, dry_run:)
+      record = {
+        "schema_version" => 1,
+        "id" => edit_id,
+        "status" => status,
+        "created_at" => dry_run ? nil : now,
+        "dry_run" => dry_run,
+        "source_map" => source_map,
+        "target" => {
+          "data_aiweb_id" => target,
+          "source_path" => component && component["source_path"],
+          "line" => component && component["line"],
+          "kind" => component && component["kind"],
+          "route" => component && component["route"],
+          "editable" => component ? component["editable"] : nil
+        },
+        "prompt_summary" => visual_edit_prompt_summary(prompt),
+        "prompt_sha256" => Digest::SHA256.hexdigest(prompt),
+        "guardrails" => [
+          "Target only the selected region identified by data-aiweb-id.",
+          "No source auto-patch from this visual-edit command.",
+          "Run smoke QA before any later source edit is accepted.",
+          "Do not read or include .env or .env.* contents."
+        ],
+        "task_path" => relative(task_path),
+        "record_path" => relative(record_path),
+        "blocking_issues" => blockers
+      }
+      if dry_run
+        record["planned_task_path"] = record["task_path"]
+        record["planned_record_path"] = record["record_path"]
+      end
+      record
+    end
+
+    def visual_edit_prompt_summary(prompt)
+      normalized = prompt.gsub(/\s+/, " ").strip
+      normalized.length > 160 ? "#{normalized[0, 157]}..." : normalized
+    end
+
+    def visual_edit_payload(state:, record:, changed_files:, planned_changes:, action_taken:, blocking_issues:, next_action:)
+      payload = status_hash(state: state, changed_files: changed_files)
+      payload["action_taken"] = action_taken
+      payload["blocking_issues"] = blocking_issues
+      payload["planned_changes"] = planned_changes unless planned_changes.empty?
+      payload["visual_edit"] = record
+      payload["next_action"] = next_action
+      payload
+    end
+
+    def visual_edit_task_markdown(record)
+      target = record.fetch("target")
+      <<~MD
+        # Visual Edit Handoff — #{record.fetch("id")}
+
+        Status: planned
+
+        ## Target
+        - data-aiweb-id: `#{target["data_aiweb_id"]}`
+        - source: `#{target["source_path"]}`#{target["line"] ? ":#{target["line"]}" : ""}
+        - route: `#{target["route"] || "unknown"}`
+        - component map: `#{record["source_map"]}`
+
+        ## Requested change
+        #{record["prompt_summary"]}
+
+        ## Guardrails
+        #{record.fetch("guardrails").map { |guardrail| "- #{guardrail}" }.join("\n")}
+
+        ## Next step
+        A later implementation pass may patch only this mapped source region after smoke QA evidence is available. This command intentionally created a handoff record only.
+      MD
+    end
 
     def visual_critique_evidence_paths(paths, evidence_paths, screenshot, screenshots, metadata)
       [paths, evidence_paths, screenshot, screenshots, metadata].flatten.compact.map(&:to_s).map(&:strip).reject(&:empty?).uniq

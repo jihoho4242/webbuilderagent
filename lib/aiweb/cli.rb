@@ -17,7 +17,7 @@ module Aiweb
     EXIT_UNSAFE_EXTERNAL_ACTION = 5
     EXIT_INTERNAL_ERROR = 10
 
-    MUTATION_COMMANDS = %w[start init interview run ingest-design next-task qa-checklist qa-report repair advance rollback resolve-blocker snapshot design-brief design-system design-prompt design select-design scaffold build preview qa-playwright browser-qa qa-a11y a11y-qa qa-lighthouse lighthouse-qa visual-critique visual-polish workbench].freeze
+    MUTATION_COMMANDS = %w[start init interview run ingest-design next-task qa-checklist qa-report repair advance rollback resolve-blocker snapshot design-brief design-system design-prompt design select-design scaffold build preview qa-playwright browser-qa qa-a11y a11y-qa qa-lighthouse lighthouse-qa visual-critique visual-polish workbench component-map visual-edit].freeze
     RUNTIME_PLAN_COMMANDS = %w[runtime-plan scaffold-status].freeze
     REGISTRY_COMMANDS = %w[design-systems skills craft].freeze
 
@@ -242,6 +242,39 @@ module Aiweb
         end
 
         project.workbench(export: opts[:export], force: opts[:force], dry_run: @dry_run)
+      when "component-map"
+        opts = parse_options do |o, options|
+          o.on("--force") { options[:force] = true }
+        end
+        unless @argv.empty?
+          raise UserError.new("component-map does not accept extra positional arguments: #{@argv.join(", ")}", EXIT_VALIDATION_FAILED)
+        end
+        unless project.respond_to?(:component_map)
+          return component_map_adapter_unavailable_payload(opts)
+        end
+
+        project.component_map(force: opts[:force], dry_run: @dry_run)
+      when "visual-edit"
+        opts = parse_options do |o, options|
+          o.on("--target DATA_AIWEB_ID") { |v| options[:target] = v }
+          o.on("--prompt TEXT") { |v| options[:prompt] = v }
+          o.on("--from-map PATH_OR_LATEST") { |v| options[:from_map] = v }
+          o.on("--force") { options[:force] = true }
+        end
+        unless @argv.empty?
+          raise UserError.new("visual-edit does not accept extra positional arguments: #{@argv.join(", ")}", EXIT_VALIDATION_FAILED)
+        end
+        if opts[:target].to_s.strip.empty?
+          raise UserError.new("visual-edit requires --target DATA_AIWEB_ID", EXIT_VALIDATION_FAILED)
+        end
+        if opts[:prompt].to_s.strip.empty?
+          raise UserError.new("visual-edit requires --prompt TEXT", EXIT_VALIDATION_FAILED)
+        end
+        unless project.respond_to?(:visual_edit)
+          return visual_edit_adapter_unavailable_payload(opts)
+        end
+
+        project.visual_edit(target: opts[:target], prompt: opts[:prompt], from_map: opts[:from_map] || "latest", force: opts[:force], dry_run: @dry_run)
       when "ingest-design"
         opts = parse_options do |o, options|
           o.on("--id ID") { |v| options[:id] = v }
@@ -386,6 +419,13 @@ module Aiweb
       text.to_i
     end
 
+    def unsafe_env_path?(path)
+      value = path.to_s.strip
+      return false if value.empty? || value == "latest"
+
+      File.basename(value).match?(/\A\.env(?:\.|\z)/)
+    end
+
     def parse_browser_qa_options(command)
       opts = parse_options do |o, options|
         o.on("--url URL") { |v| options[:url] = v }
@@ -495,7 +535,9 @@ module Aiweb
         "aiweb qa-playwright",
         "aiweb visual-critique",
         "aiweb repair",
-        "aiweb visual-polish"
+        "aiweb visual-polish",
+        "aiweb component-map",
+        "aiweb visual-edit --target DATA_AIWEB_ID --prompt TEXT"
       ].map do |command|
         {
           "command" => command,
@@ -503,6 +545,63 @@ module Aiweb
           "writes_state_directly" => false
         }
       end
+    end
+
+    def component_map_adapter_unavailable_payload(opts)
+      command_line = ["aiweb", "component-map"]
+      command_line << "--force" if opts[:force]
+      command_line << "--dry-run" if @dry_run
+
+      {
+        "schema_version" => 1,
+        "current_phase" => nil,
+        "action_taken" => "component map unavailable",
+        "changed_files" => [],
+        "blocking_issues" => ["component-map command surface is reserved, but the project adapter is not implemented yet."],
+        "missing_artifacts" => [],
+        "component_map" => {
+          "schema_version" => 1,
+          "status" => "blocked",
+          "dry_run" => @dry_run,
+          "force" => !!opts[:force],
+          "command" => command_line.join(" "),
+          "planned_artifact_path" => ".ai-web/component-map.json",
+          "components" => [],
+          "blocking_issues" => ["component-map project adapter is not available in this build."]
+        },
+        "next_action" => "integrate the local component-map project adapter, then rerun aiweb component-map --dry-run"
+      }
+    end
+
+    def visual_edit_adapter_unavailable_payload(opts)
+      command_line = ["aiweb", "visual-edit", "--target", opts[:target].to_s, "--prompt", "TEXT"]
+      command_line.concat(["--from-map", (opts[:from_map] || "latest").to_s])
+      command_line << "--force" if opts[:force]
+      command_line << "--dry-run" if @dry_run
+
+      {
+        "schema_version" => 1,
+        "current_phase" => nil,
+        "action_taken" => "visual edit unavailable",
+        "changed_files" => [],
+        "blocking_issues" => ["visual-edit command surface is reserved, but the project adapter is not implemented yet."],
+        "missing_artifacts" => [],
+        "visual_edit" => {
+          "schema_version" => 1,
+          "status" => "blocked",
+          "dry_run" => @dry_run,
+          "force" => !!opts[:force],
+          "target" => opts[:target],
+          "prompt_summary" => opts[:prompt].to_s.strip[0, 120],
+          "from_map" => opts[:from_map] || "latest",
+          "command" => command_line.join(" "),
+          "planned_task_path" => ".ai-web/tasks/visual-edit-<timestamp>.md",
+          "planned_record_path" => ".ai-web/visual/visual-edit-<timestamp>.json",
+          "guardrails" => ["selected data-aiweb-id region only", "no source auto-patch", "no build/QA/browser/deploy/network/AI execution", "reject .env/.env.* map paths without reading"],
+          "blocking_issues" => ["visual-edit project adapter is not available in this build."]
+        },
+        "next_action" => "integrate the local visual-edit project adapter, then rerun aiweb visual-edit --target DATA_AIWEB_ID --prompt TEXT --dry-run"
+      }
     end
 
     def browser_adapter_unavailable_payload(command, opts)
@@ -565,6 +664,8 @@ module Aiweb
           visual-critique [--screenshot PATH] [--metadata PATH] [--task-id ID] [--force]
           visual-polish --repair [--from-critique PATH|latest] [--max-cycles N] [--force]
           workbench [--export] [--force]
+          component-map [--force]
+          visual-edit --target DATA_AIWEB_ID --prompt TEXT [--from-map PATH|latest] [--force]
           advance
           rollback [--to PHASE] [--failure CODE] [--reason "..."]
           resolve-blocker --reason "..."
@@ -591,6 +692,8 @@ module Aiweb
           qa-lighthouse: runs safe local Lighthouse QA against localhost/127.0.0.1 preview; --dry-run does not write files or launch Node
           visual-critique: records safe local visual critique from explicit screenshot/metadata evidence only; --dry-run plans .ai-web/visual artifacts without writes, browser launch, installs, repair, deploy, network, or .env access
           workbench: plans or exports a static local UI manifest under .ai-web/workbench using declarative CLI controls only; requires initialized .ai-web/state.yaml, --dry-run writes nothing, export writes only workbench artifacts, executes no controls, and never mutates state.yaml
+          component-map: scans stable data-aiweb-id regions into .ai-web/component-map.json; --dry-run writes nothing and never reads .env/.env.*
+          visual-edit: validates a selected data-aiweb-id target and writes only local handoff artifacts; --dry-run writes nothing and never patches source, runs QA/browser/build, deploys, or calls network/AI
           ingest-design: phase-3.5
           next-task: phase-6 through phase-11
           qa-checklist: phase-7 through phase-11
@@ -598,6 +701,7 @@ module Aiweb
           repair: phase-7 through phase-11; records a bounded local repair-loop task from failed/blocked QA without running build, QA, preview, deploy, package install, or source auto-patches
           visual-critique: phase-7 through phase-11; records deterministic local visual critique evidence from explicit input paths only
           visual-polish --repair: records safe local visual polish repair loop from failed/repair/redesign critique evidence in phase-7 through phase-11 without source edits, build, QA, preview, browser capture, deploy, package install, network, or AI calls
+          component-map / visual-edit: phase-7 through phase-11; map stable DOM regions and create selected-region visual edit handoff records without source auto-patches or external execution
         Use --force only for manual repair/override.
       HELP
     end
@@ -647,6 +751,8 @@ module Aiweb
       return human_visual_critique_result(result) if result["visual_critique"]
       return human_visual_polish_result(result) if result["visual_polish"]
       return human_workbench_result(result) if result["workbench"]
+      return human_component_map_result(result) if result["component_map"]
+      return human_visual_edit_result(result) if result["visual_edit"]
 
       changed = result["changed_files"] || result["artifacts_changed"] || []
       blockers = result["blocking_issues"] || []
@@ -742,6 +848,43 @@ module Aiweb
         "Workbench paths: #{paths.empty? ? "none" : paths.join(", ")}",
         "Panels: #{panels.empty? ? "none" : panels.join(", ")}",
         "Controls: #{controls.empty? ? "none" : controls.map { |control| control.is_a?(Hash) ? control["command"] || control["id"] : control }.join(", ")}",
+        "Blocking issues: #{blockers.empty? ? "none" : blockers.join("; ")}",
+        "Next command: #{result["next_action"] || "n/a"}"
+      ].join("\n")
+    end
+
+    def human_component_map_result(result)
+      map = result.fetch("component_map")
+      changed = result["changed_files"] || result["artifacts_changed"] || []
+      blockers = map["blocking_issues"] || result["blocking_issues"] || []
+      path = map["artifact_path"] || map["planned_artifact_path"] || result["artifact_path"]
+      components = Array(map["components"])
+      [
+        "Component map: #{map["status"] || "n/a"}",
+        "Dry run: #{map.key?("dry_run") ? map["dry_run"] : "n/a"}",
+        "Artifact: #{path || "n/a"}",
+        "Components: #{components.length}",
+        "Artifacts changed: #{changed.empty? ? "none" : changed.join(", ")}",
+        "Blocking issues: #{blockers.empty? ? "none" : blockers.join("; ")}",
+        "Next command: #{result["next_action"] || "n/a"}"
+      ].join("\n")
+    end
+
+    def human_visual_edit_result(result)
+      edit = result.fetch("visual_edit")
+      changed = result["changed_files"] || result["artifacts_changed"] || []
+      blockers = edit["blocking_issues"] || result["blocking_issues"] || []
+      paths = []
+      %w[task_path record_path planned_task_path planned_record_path visual_edit_record_path planned_visual_edit_record_path].each do |key|
+        value = edit[key]
+        paths << "#{key}=#{value}" unless value.to_s.empty?
+      end
+      [
+        "Visual edit: #{edit["status"] || "n/a"}",
+        "Target: #{edit["target"] || edit.dig("target_mapping", "data_aiweb_id") || "n/a"}",
+        "Map source: #{edit["map_source"] || edit["from_map"] || "latest"}",
+        "Artifacts changed: #{changed.empty? ? "none" : changed.join(", ")}",
+        "Visual edit paths: #{paths.empty? ? "none" : paths.join(", ")}",
         "Blocking issues: #{blockers.empty? ? "none" : blockers.join("; ")}",
         "Next command: #{result["next_action"] || "n/a"}"
       ].join("\n")
@@ -858,6 +1001,24 @@ module Aiweb
       EXIT_VALIDATION_FAILED
     end
 
+    def component_map_exit_code(result)
+      status = result.dig("component_map", "status").to_s
+      return EXIT_ADAPTER_UNAVAILABLE if status == "blocked" && (result["action_taken"].to_s =~ /unavailable/)
+      return EXIT_SUCCESS if %w[planned discovered created ready].include?(status)
+      return EXIT_PHASE_BLOCKED if status == "blocked" && ((result.dig("component_map", "blocking_issues") || []) + (result["blocking_issues"] || [])).join(" ").match?(/phase/i)
+
+      EXIT_VALIDATION_FAILED
+    end
+
+    def visual_edit_exit_code(result)
+      status = result.dig("visual_edit", "status").to_s
+      return EXIT_ADAPTER_UNAVAILABLE if status == "blocked" && (result["action_taken"].to_s =~ /unavailable/)
+      return EXIT_SUCCESS if %w[planned created].include?(status)
+      return EXIT_PHASE_BLOCKED if status == "blocked" && ((result.dig("visual_edit", "blocking_issues") || []) + (result["blocking_issues"] || [])).join(" ").match?(/phase/i)
+
+      EXIT_VALIDATION_FAILED
+    end
+
     def workbench_exit_code(result)
       status = result.dig("workbench", "status").to_s
       return EXIT_ADAPTER_UNAVAILABLE if status == "blocked" && (result["action_taken"].to_s =~ /unavailable/)
@@ -880,7 +1041,9 @@ module Aiweb
       return repair_exit_code(result) if command == "repair"
       return visual_polish_exit_code(result) if command == "visual-polish"
       return workbench_exit_code(result) if command == "workbench"
-      return EXIT_SUCCESS if %w[help version status start init interview run design-brief design-system design-prompt design select-design scaffold ingest-design next-task qa-checklist qa-report rollback resolve-blocker snapshot visual-critique visual-polish].include?(command)
+      return component_map_exit_code(result) if command == "component-map"
+      return visual_edit_exit_code(result) if command == "visual-edit"
+      return EXIT_SUCCESS if %w[help version status start init interview run design-brief design-system design-prompt design select-design scaffold ingest-design next-task qa-checklist qa-report rollback resolve-blocker snapshot visual-critique visual-polish component-map visual-edit].include?(command)
       if command == "advance" && result["action_taken"] == "advance blocked"
         issue = result["blocking_issues"].join(" ")
         return EXIT_BUDGET_BLOCKED if issue =~ /budget|candidate cap|design generation cap/i

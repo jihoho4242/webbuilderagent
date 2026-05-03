@@ -2585,6 +2585,245 @@ class AiwebCliTest < Minitest::Test
     end
   end
 
+  def project_entries
+    Dir.glob("**/*", File::FNM_DOTMATCH).reject { |path| path == "." || path == ".." || path.end_with?("/.") }.sort
+  end
+
+  def prepare_profile_d_scaffold_flow
+    prepare_profile_d_design_flow
+    json_cmd("scaffold", "--profile", "D")
+  end
+
+  def component_map_ids(component_map)
+    Array(component_map["components"]).map { |component| component.fetch("data_aiweb_id") }
+  end
+
+  def test_component_map_dry_run_discovers_profile_d_regions_without_writes
+    in_tmp do
+      prepare_profile_d_scaffold_flow
+      env_body = "SECRET=do-not-touch\n"
+      File.write(".env", env_body)
+      before_state = File.read(".ai-web/state.yaml")
+      before_entries = project_entries
+
+      stdout, stderr, code = run_aiweb("component-map", "--dry-run", "--json")
+      payload = JSON.parse(stdout)
+      after_entries = project_entries
+
+      assert_equal 0, code
+      assert_equal "", stderr
+      assert_equal true, payload["dry_run"]
+      assert_includes %w[planned discovered ready], payload.dig("component_map", "status")
+      assert_equal ".ai-web/component-map.json", payload.dig("component_map", "artifact_path") || payload.dig("component_map", "planned_path")
+      assert_includes component_map_ids(payload.fetch("component_map")), "page.home"
+      assert_includes component_map_ids(payload.fetch("component_map")), "component.hero.copy"
+      assert_equal before_entries, after_entries, "component-map --dry-run must not write artifacts"
+      assert_equal before_state, File.read(".ai-web/state.yaml"), "component-map --dry-run must not mutate state"
+      assert_equal env_body, File.read(".env"), "component-map --dry-run must not mutate .env"
+      refute_includes stdout, "do-not-touch"
+    end
+  end
+
+  def test_component_map_writes_only_local_artifact_from_profile_d_scaffold_ids
+    in_tmp do
+      prepare_profile_d_scaffold_flow
+      before_state = File.read(".ai-web/state.yaml")
+      before_entries = project_entries
+
+      payload, code = json_cmd("component-map")
+      after_entries = project_entries
+
+      assert_equal 0, code
+      assert_equal "created component map", payload["action_taken"]
+      assert_equal "ready", payload.dig("component_map", "status")
+      assert_equal [".ai-web/component-map.json"], payload["changed_files"]
+      assert File.exist?(".ai-web/component-map.json")
+      added_entries = after_entries - before_entries
+      assert_equal [".ai-web/component-map.json"], added_entries
+      assert_equal before_state, File.read(".ai-web/state.yaml"), "component-map must not mutate state"
+
+      artifact = JSON.parse(File.read(".ai-web/component-map.json"))
+      assert_equal payload.fetch("component_map"), artifact
+      ids = component_map_ids(artifact)
+      assert_includes ids, "page.home"
+      assert_includes ids, "component.hero.copy"
+      hero_mapping = artifact.fetch("components").find { |component| component["data_aiweb_id"] == "component.hero.copy" }
+      assert_equal "src/components/Hero.astro", hero_mapping.fetch("source_path")
+      assert hero_mapping.key?("kind"), "component mappings should classify source regions"
+      assert hero_mapping.key?("route"), "component mappings should retain route context"
+      assert_equal true, hero_mapping.fetch("editable")
+      refute_includes JSON.generate(artifact), "do-not-touch"
+    end
+  end
+
+  def test_component_map_blocks_missing_scaffold_without_creating_artifact
+    in_tmp do
+      json_cmd("init", "--profile", "D")
+      env_body = "SECRET=do-not-touch\n"
+      File.write(".env", env_body)
+      before_state = File.read(".ai-web/state.yaml")
+      before_entries = project_entries
+
+      stdout, stderr, code = run_aiweb("component-map", "--json")
+      payload = JSON.parse(stdout)
+
+      assert_equal 1, code
+      assert_equal "", stderr
+      assert_equal "blocked", payload.dig("component_map", "status")
+      assert_match(/scaffold|src\/pages\/index\.astro|data-aiweb-id/i, [payload.dig("error", "message"), payload["blocking_issues"], payload.dig("component_map", "blocking_issues")].flatten.compact.join("\n"))
+      refute File.exist?(".ai-web/component-map.json")
+      assert_equal before_entries, project_entries, "blocked component-map must not write artifacts"
+      assert_equal before_state, File.read(".ai-web/state.yaml"), "blocked component-map must not mutate state"
+      assert_equal env_body, File.read(".env"), "blocked component-map must not mutate .env"
+      refute_includes stdout, "do-not-touch"
+    end
+  end
+
+  def test_visual_edit_dry_run_validates_target_without_writes
+    in_tmp do
+      prepare_profile_d_scaffold_flow
+      json_cmd("component-map")
+      env_body = "SECRET=do-not-touch\n"
+      File.write(".env", env_body)
+      before_state = File.read(".ai-web/state.yaml")
+      before_entries = project_entries
+      before_source = File.read("src/components/Hero.astro")
+
+      stdout, stderr, code = run_aiweb("visual-edit", "--target", "component.hero.copy", "--prompt", "이 섹션 더 고급스럽게", "--dry-run", "--json")
+      payload = JSON.parse(stdout)
+
+      assert_equal 0, code
+      assert_equal "", stderr
+      assert_equal true, payload["dry_run"]
+      assert_equal "planned", payload.dig("visual_edit", "status")
+      assert_equal "component.hero.copy", payload.dig("visual_edit", "target", "data_aiweb_id")
+      assert_equal "src/components/Hero.astro", payload.dig("visual_edit", "target", "source_path")
+      assert_match(%r{\.ai-web/tasks/visual-edit-}, payload.dig("visual_edit", "planned_task_path"))
+      assert_match(%r{\.ai-web/visual/visual-edit-}, payload.dig("visual_edit", "planned_record_path"))
+      assert_equal before_entries, project_entries, "visual-edit --dry-run must not write task artifacts"
+      assert_equal before_source, File.read("src/components/Hero.astro"), "visual-edit --dry-run must not edit source"
+      assert_equal before_state, File.read(".ai-web/state.yaml"), "visual-edit --dry-run must not mutate state"
+      assert_equal env_body, File.read(".env"), "visual-edit --dry-run must not mutate .env"
+      refute_includes stdout, "do-not-touch"
+
+      missing_stdout, missing_stderr, missing_code = run_aiweb("visual-edit", "--target", "missing.region", "--prompt", "수정", "--dry-run", "--json")
+      missing_payload = JSON.parse(missing_stdout)
+      assert_equal 1, missing_code
+      assert_equal "", missing_stderr
+      assert_equal "blocked", missing_payload.dig("visual_edit", "status")
+      assert_match(/missing\.region|target/i, [missing_payload.dig("error", "message"), missing_payload["blocking_issues"], missing_payload.dig("visual_edit", "blocking_issues")].flatten.compact.join("\n"))
+      assert_equal before_entries, project_entries, "blocked visual-edit --dry-run must not write artifacts"
+      refute_includes missing_stdout, "do-not-touch"
+    end
+  end
+
+  def test_visual_edit_creates_handoff_artifacts_without_source_or_state_mutation
+    in_tmp do
+      prepare_profile_d_scaffold_flow
+      json_cmd("component-map")
+      env_body = "SECRET=do-not-touch\n"
+      File.write(".env", env_body)
+      before_state = File.read(".ai-web/state.yaml")
+      before_index = File.read("src/pages/index.astro")
+      before_hero = File.read("src/components/Hero.astro")
+      before_entries = project_entries
+
+      payload, code = json_cmd("visual-edit", "--target", "component.hero.copy", "--prompt", "이 섹션 더 고급스럽게")
+      after_entries = project_entries
+
+      assert_equal 0, code
+      assert_equal "created visual edit handoff", payload["action_taken"]
+      assert_equal "created", payload.dig("visual_edit", "status")
+      changed_files = payload.fetch("changed_files")
+      assert_equal 2, changed_files.length
+      task_path = changed_files.find { |path| path.match?(%r{\A\.ai-web/tasks/visual-edit-.*\.md\z}) }
+      record_path = changed_files.find { |path| path.match?(%r{\A\.ai-web/visual/visual-edit-.*\.json\z}) }
+      assert task_path, "visual-edit should write a markdown task handoff"
+      assert record_path, "visual-edit should write a JSON audit record"
+      assert File.exist?(task_path)
+      assert File.exist?(record_path)
+      added_entries = after_entries - before_entries
+      assert_includes added_entries, task_path
+      assert_includes added_entries, record_path
+      assert_equal [], added_entries - [".ai-web/tasks", task_path, ".ai-web/visual", record_path]
+      assert_equal before_index, File.read("src/pages/index.astro"), "visual-edit must not patch page source"
+      assert_equal before_hero, File.read("src/components/Hero.astro"), "visual-edit must not patch component source"
+      assert_equal before_state, File.read(".ai-web/state.yaml"), "visual-edit must not mutate state"
+      assert_equal env_body, File.read(".env"), "visual-edit must not mutate .env"
+
+      record = JSON.parse(File.read(record_path))
+      assert_equal "component.hero.copy", record.dig("target", "data_aiweb_id")
+      assert_equal "src/components/Hero.astro", record.dig("target", "source_path")
+      assert_match(/selected region|source auto-patch|no source/i, JSON.generate(record.fetch("guardrails")))
+      refute_includes File.read(task_path), "do-not-touch"
+      refute_includes JSON.generate(record), "do-not-touch"
+    end
+  end
+
+  def test_visual_edit_rejects_env_map_paths_without_leaking_or_writing
+    in_tmp do
+      prepare_profile_d_scaffold_flow
+      json_cmd("component-map")
+      env_body = "SECRET=do-not-touch\n"
+      File.write(".env", env_body)
+      File.write(".env.local", "LOCAL_SECRET=do-not-touch-too\n")
+      before_state = File.read(".ai-web/state.yaml")
+      before_entries = project_entries
+
+      stdout, stderr, code = run_aiweb("visual-edit", "--target", "component.hero.copy", "--prompt", "수정", "--from-map", ".env", "--json")
+      payload = JSON.parse(stdout)
+
+      assert_equal 1, code
+      assert_equal "", stderr
+      assert_equal "blocked", payload.dig("visual_edit", "status")
+      assert_match(/unsafe|\.env|map path/i, [payload.dig("error", "message"), payload["blocking_issues"], payload.dig("visual_edit", "blocking_issues")].flatten.compact.join("\n"))
+      assert_equal before_entries, project_entries, "unsafe .env map path must not create visual-edit artifacts"
+      assert_equal before_state, File.read(".ai-web/state.yaml"), "unsafe .env map path must not mutate state"
+      assert_equal env_body, File.read(".env"), "unsafe .env map path must not mutate .env"
+      refute_includes stdout, "do-not-touch"
+      refute_includes stdout, "do-not-touch-too"
+    end
+  end
+
+  def test_component_map_and_visual_edit_help_and_webbuilder_passthrough
+    stdout, stderr, code = run_aiweb("help")
+    assert_equal 0, code
+    assert_equal "", stderr
+    assert_includes stdout, "component-map [--force]"
+    assert_includes stdout, "visual-edit --target DATA_AIWEB_ID --prompt TEXT"
+
+    help_stdout, help_stderr, help_code = run_webbuilder("--help")
+    assert_equal 0, help_code
+    assert_equal "", help_stderr
+    assert_match(/component-map/, help_stdout)
+    assert_match(/visual-edit/, help_stdout)
+
+    in_tmp do |dir|
+      target = File.join(dir, "passthrough-visual-edit")
+      Dir.mkdir(target)
+      Dir.chdir(target) { prepare_profile_d_scaffold_flow }
+
+      map_stdout, map_stderr, map_code = run_webbuilder("--path", target, "component-map", "--dry-run", "--json")
+      map_payload = JSON.parse(map_stdout)
+      assert_equal 0, map_code
+      assert_equal "", map_stderr
+      assert_includes %w[planned discovered ready], map_payload.dig("component_map", "status")
+      refute File.exist?(File.join(target, ".ai-web", "component-map.json")), "webbuilder component-map --dry-run must not write artifact"
+
+      _created_map, created_map_code = json_cmd("--path", target, "component-map")
+      assert_equal 0, created_map_code
+      before_task_artifacts = Dir.glob(File.join(target, ".ai-web", "tasks", "visual-edit-*"))
+      before_visual_artifacts = Dir.glob(File.join(target, ".ai-web", "visual", "visual-edit-*"))
+      edit_stdout, edit_stderr, edit_code = run_webbuilder("--path", target, "visual-edit", "--target", "component.hero.copy", "--prompt", "고급스럽게", "--dry-run", "--json")
+      edit_payload = JSON.parse(edit_stdout)
+      assert_equal 0, edit_code
+      assert_equal "", edit_stderr
+      assert_equal "planned", edit_payload.dig("visual_edit", "status")
+      assert_equal before_task_artifacts, Dir.glob(File.join(target, ".ai-web", "tasks", "visual-edit-*")), "webbuilder visual-edit --dry-run must not write task artifacts"
+      assert_equal before_visual_artifacts, Dir.glob(File.join(target, ".ai-web", "visual", "visual-edit-*")), "webbuilder visual-edit --dry-run must not write record artifacts"
+    end
+  end
+
   def test_workbench_help_and_webbuilder_passthrough
     stdout, stderr, code = run_aiweb("help")
     assert_equal 0, code
