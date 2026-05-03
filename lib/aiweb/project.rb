@@ -1,7 +1,9 @@
 # frozen_string_literal: true
 
+require "cgi"
 require "digest"
 require "fileutils"
+require "find"
 require "json"
 require "open3"
 require "timeout"
@@ -56,6 +58,43 @@ module Aiweb
     ].freeze
 
     SCAFFOLD_PROFILE_D_METADATA_PATH = ".ai-web/scaffold-profile-D.json".freeze
+
+
+    WORKBENCH_PANELS = %w[
+      chat
+      plan_artifacts
+      design_candidates
+      selected_design
+      preview
+      file_tree
+      qa_results
+      visual_critique
+      run_timeline
+    ].freeze
+
+    WORKBENCH_CONTROLS = [
+      ["run", "Run director", "aiweb run"],
+      ["design", "Generate design candidates", "aiweb design"],
+      ["build", "Plan or run scaffold build", "aiweb build"],
+      ["preview", "Start local preview", "aiweb preview"],
+      ["qa_playwright", "Run Playwright QA", "aiweb qa-playwright"],
+      ["visual_critique", "Record visual critique", "aiweb visual-critique"],
+      ["repair", "Create repair packet", "aiweb repair"],
+      ["visual_polish", "Plan visual polish loop", "aiweb visual-polish"]
+    ].freeze
+
+    WORKBENCH_FILE_TREE_EXCLUDES = %w[
+      .git
+      .ai-web/workbench
+      .ai-web/snapshots
+      .ai-web/runs
+      node_modules
+      dist
+      build
+      coverage
+      tmp
+      vendor/bundle
+    ].freeze
 
     SCAFFOLD_PROFILE_D_REQUIRED_FILES = %w[
       package.json
@@ -460,6 +499,40 @@ module Aiweb
         payload["next_action"] = "review generated Astro-style files; do not run package install until implementation approval"
       end
       payload
+    end
+
+    def workbench(export: false, dry_run: false, force: false)
+      state, state_error = workbench_state_snapshot
+      paths = workbench_paths
+      should_export = !!export && !dry_run
+      status = state_error ? "blocked" : (should_export ? "exported" : "planned")
+      blockers = state_error ? [state_error] : []
+      planned_changes = [paths["index_html"], paths["manifest_json"]]
+      manifest = workbench_manifest(state: state, status: status, export: should_export, dry_run: dry_run, blocking_issues: blockers, paths: paths)
+
+      if blockers.empty? && should_export
+        existing_conflicts = workbench_existing_conflicts(paths, manifest)
+        unless existing_conflicts.empty? || force
+          blockers = existing_conflicts.map { |path| "workbench artifact already exists and differs: #{path}" }
+          manifest = workbench_manifest(state: state, status: "blocked", export: true, dry_run: false, blocking_issues: blockers, paths: paths)
+          return workbench_payload(state: state, workbench: manifest, changed_files: [], blocking_issues: blockers, next_action: "review existing workbench artifacts or rerun aiweb workbench --export --force")
+        end
+
+        changes = []
+        mutation(dry_run: false) do
+          changes << write_file(File.join(root, paths["index_html"]), workbench_html(manifest), false)
+          changes << write_json(File.join(root, paths["manifest_json"]), manifest, false)
+        end
+        return workbench_payload(state: state, workbench: manifest, changed_files: compact_changes(changes), blocking_issues: [], next_action: "open .ai-web/workbench/index.html locally or inspect .ai-web/workbench/workbench.json")
+      end
+
+      workbench_payload(
+        state: state,
+        workbench: manifest,
+        changed_files: blockers.empty? ? planned_changes : [],
+        blocking_issues: blockers,
+        next_action: blockers.empty? ? "rerun aiweb workbench --export to write the local workbench artifacts" : "run aiweb init or aiweb start before exporting the workbench"
+      )
     end
 
     def runtime_plan
@@ -1919,6 +1992,284 @@ module Aiweb
       write_file(path, YAML.dump(data), dry_run)
     end
 
+
+    def workbench_state_snapshot
+      return [nil, "Project is not initialized; run aiweb init or aiweb start before exporting the workbench."] unless File.file?(state_path)
+
+      state = YAML.load_file(state_path)
+      return [refresh_state!(state), nil] if state.is_a?(Hash)
+
+      [nil, ".ai-web/state.yaml must be a YAML mapping; repair state before exporting the workbench."]
+    rescue Psych::Exception => e
+      [nil, "Cannot parse .ai-web/state.yaml: #{e.message}"]
+    end
+
+    def workbench_paths
+      {
+        "index_html" => ".ai-web/workbench/index.html",
+        "manifest_json" => ".ai-web/workbench/workbench.json"
+      }
+    end
+
+    def workbench_manifest(state:, status:, export:, dry_run:, blocking_issues:, paths:)
+      {
+        "schema_version" => 1,
+        "status" => status,
+        "export" => export,
+        "dry_run" => dry_run,
+        "generated_at" => now,
+        "root" => root,
+        "paths" => paths,
+        "panels" => workbench_panels(state),
+        "controls" => workbench_controls,
+        "guardrails" => [
+          "declarative CLI command descriptors only",
+          "does not directly write .ai-web/state.yaml",
+          "excludes local environment secret files from file-tree and artifact summaries",
+          "local artifact only; no install, build, preview, QA, deploy, network, or AI calls"
+        ],
+        "blocking_issues" => blocking_issues
+      }
+    end
+
+    def workbench_payload(state:, workbench:, changed_files:, blocking_issues:, next_action:)
+      {
+        "schema_version" => 1,
+        "current_phase" => state&.dig("phase", "current"),
+        "action_taken" => workbench["status"] == "exported" ? "exported workbench UI" : "planned workbench UI",
+        "changed_files" => changed_files,
+        "blocking_issues" => blocking_issues,
+        "missing_artifacts" => state ? [] : [".ai-web/state.yaml"],
+        "workbench" => workbench,
+        "next_action" => next_action
+      }
+    end
+
+    def workbench_controls
+      WORKBENCH_CONTROLS.map do |id, label, command|
+        {
+          "id" => id,
+          "label" => label,
+          "command" => command,
+          "mode" => "cli_descriptor",
+          "mutates_state" => false,
+          "notes" => "UI may invoke this CLI command through an approved shell/daemon adapter; it must not edit state files directly."
+        }
+      end
+    end
+
+    def workbench_panels(state)
+      WORKBENCH_PANELS.map do |panel|
+        { "id" => panel }.merge(workbench_panel(panel, state))
+      end
+    end
+
+    def workbench_panel(panel, state)
+      case panel
+      when "chat"
+        { "status" => "planned", "summary" => "Local chat/command log placeholder; no network or AI calls are made by this static export." }
+      when "plan_artifacts"
+        { "status" => state ? "ready" : "blocked", "artifacts" => workbench_artifact_summaries(state) }
+      when "design_candidates"
+        { "status" => workbench_design_candidates(state).empty? ? "empty" : "ready", "candidates" => workbench_design_candidates(state) }
+      when "selected_design"
+        workbench_selected_design(state)
+      when "preview"
+        { "status" => latest_preview_metadata ? "ready" : "empty", "latest" => workbench_safe_metadata(latest_preview_metadata) }
+      when "file_tree"
+        { "status" => "ready", "entries" => workbench_file_tree }
+      when "qa_results"
+        { "status" => workbench_latest_json(".ai-web/qa/results/*.json") ? "ready" : "empty", "latest" => workbench_latest_json(".ai-web/qa/results/*.json") }
+      when "visual_critique"
+        path = state&.dig("qa", "latest_visual_critique") || latest_visual_critique_artifact
+        { "status" => path ? "ready" : "empty", "latest" => path ? workbench_json_summary(path) : nil }
+      when "run_timeline"
+        { "status" => "ready", "runs" => workbench_run_timeline }
+      else
+        { "status" => "planned" }
+      end
+    end
+
+    def workbench_artifact_summaries(state)
+      return [] unless state
+
+      (state["artifacts"] || {}).sort.map do |name, meta|
+        meta = {} unless meta.is_a?(Hash)
+        path = meta["path"].to_s
+        next if workbench_excluded_path?(path)
+
+        full = File.join(root, path)
+        {
+          "id" => name,
+          "path" => path,
+          "status" => meta["status"],
+          "exists" => File.exist?(full),
+          "directory" => File.directory?(full),
+          "size_bytes" => File.file?(full) ? File.size(full) : nil
+        }
+      end.compact
+    end
+
+    def workbench_design_candidates(state)
+      refs = Array(state&.dig("design_candidates", "candidates"))
+      refs.map do |candidate|
+        next unless candidate.is_a?(Hash)
+        path = candidate["path"].to_s
+        next if workbench_excluded_path?(path)
+        full = File.join(root, path)
+        candidate.slice("id", "path", "status").merge(
+          "exists" => File.exist?(full),
+          "size_bytes" => File.file?(full) ? File.size(full) : nil
+        )
+      end.compact
+    end
+
+    def workbench_selected_design(state)
+      selected = state&.dig("design_candidates", "selected_candidate")
+      design_md = File.join(aiweb_dir, "DESIGN.md")
+      selected_md = File.join(aiweb_dir, "design-candidates", "selected.md")
+      {
+        "status" => selected.to_s.empty? ? "empty" : "ready",
+        "selected_candidate" => selected,
+        "design_md" => { "path" => ".ai-web/DESIGN.md", "exists" => File.file?(design_md), "substantive" => File.file?(design_md) && !stub_file?(design_md) },
+        "selected_notes" => { "path" => ".ai-web/design-candidates/selected.md", "exists" => File.file?(selected_md) }
+      }
+    end
+
+    def workbench_file_tree
+      entries = []
+      return entries unless File.directory?(root)
+
+      Find.find(root) do |path|
+        rel = relative(path)
+        next if rel.empty?
+        if workbench_excluded_path?(rel)
+          Find.prune if File.directory?(path)
+          next
+        end
+        entries << {
+          "path" => rel,
+          "type" => File.directory?(path) ? "directory" : "file",
+          "size_bytes" => File.file?(path) ? File.size(path) : nil
+        }
+        Find.prune if entries.length >= 200
+      end
+      entries
+    end
+
+    def workbench_run_timeline
+      Dir.glob(File.join(aiweb_dir, "runs", "*", "*.json")).sort.last(20).map do |path|
+        workbench_json_summary(relative(path))
+      end.compact
+    end
+
+    def workbench_latest_json(pattern)
+      path = Dir.glob(File.join(root, pattern)).sort.last
+      path ? workbench_json_summary(relative(path)) : nil
+    end
+
+    def workbench_json_summary(path)
+      return nil if workbench_excluded_path?(path)
+
+      full = File.expand_path(path, root)
+      data = JSON.parse(File.read(full))
+      summary = workbench_safe_metadata(data)
+      summary["path"] = relative(full)
+      summary["size_bytes"] = File.size(full) if File.file?(full)
+      summary
+    rescue JSON::ParserError, SystemCallError
+      { "path" => path, "status" => "unreadable" }
+    end
+
+    def workbench_safe_metadata(value)
+      case value
+      when Hash
+        value.each_with_object({}) do |(key, item), memo|
+          key = key.to_s
+          next if key.match?(/secret|token|password|api[_-]?key|credential/i)
+          next if workbench_excluded_path?(item.to_s)
+
+          memo[key] = workbench_safe_metadata(item)
+        end
+      when Array
+        value.first(20).map { |item| workbench_safe_metadata(item) }
+      when String
+        workbench_excluded_path?(value) ? "[excluded]" : value[0, 300]
+      else
+        value
+      end
+    end
+
+    def workbench_excluded_path?(path)
+      value = path.to_s
+      return true if value.empty? && path
+      parts = value.split(/[\\\/]+/)
+      return true if parts.any? { |part| part == ".env" || part.start_with?(".env.") }
+
+      normalized = value.sub(%r{\A\./}, "")
+      WORKBENCH_FILE_TREE_EXCLUDES.any? do |excluded|
+        normalized == excluded || normalized.start_with?(excluded + "/")
+      end
+    end
+
+    def workbench_existing_conflicts(paths, manifest)
+      index_path = File.join(root, paths["index_html"])
+      manifest_path = File.join(root, paths["manifest_json"])
+      conflicts = []
+      conflicts << paths["index_html"] if File.file?(index_path) && File.read(index_path) != workbench_html(manifest)
+      conflicts << paths["manifest_json"] if File.file?(manifest_path) && File.read(manifest_path) != JSON.pretty_generate(manifest) + "\n"
+      conflicts
+    end
+
+    def workbench_html(manifest)
+      panels = manifest.fetch("panels").map do |panel|
+        name = panel["id"].to_s
+        "<section class=\"panel\"><h2>#{CGI.escapeHTML(name.tr("_", " ").split.map(&:capitalize).join(" "))}</h2><pre>#{CGI.escapeHTML(JSON.pretty_generate(panel))}</pre></section>"
+      end.join("\n")
+      controls = manifest.fetch("controls").map do |control|
+        "<li><code>#{CGI.escapeHTML(control["command"])}</code><span>#{CGI.escapeHTML(control["label"])}</span></li>"
+      end.join("\n")
+      <<~HTML
+        <!doctype html>
+        <html lang="en">
+        <head>
+          <meta charset="utf-8">
+          <meta name="viewport" content="width=device-width, initial-scale=1">
+          <title>AI Web Director Workbench</title>
+          <style>
+            :root { color-scheme: light dark; font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+            body { margin: 0; background: #0f172a; color: #e2e8f0; }
+            header { padding: 32px; border-bottom: 1px solid #334155; background: linear-gradient(135deg, #111827, #1e293b); }
+            main { display: grid; grid-template-columns: minmax(220px, 320px) 1fr; gap: 20px; padding: 24px; }
+            aside, .panel { border: 1px solid #334155; border-radius: 16px; background: #111827; box-shadow: 0 18px 50px rgba(0, 0, 0, 0.25); }
+            aside { padding: 20px; align-self: start; position: sticky; top: 16px; }
+            .grid { display: grid; gap: 20px; }
+            .panel { padding: 20px; overflow: hidden; }
+            h1, h2 { margin: 0 0 12px; }
+            p { color: #94a3b8; }
+            ul { list-style: none; padding: 0; display: grid; gap: 12px; }
+            li { display: grid; gap: 4px; padding: 12px; border: 1px solid #334155; border-radius: 12px; background: #0f172a; }
+            code, pre { white-space: pre-wrap; word-break: break-word; color: #bfdbfe; }
+            pre { max-height: 360px; overflow: auto; padding: 12px; border-radius: 12px; background: #020617; }
+          </style>
+        </head>
+        <body>
+          <header>
+            <h1>AI Web Director Workbench</h1>
+            <p>Status: #{CGI.escapeHTML(manifest["status"])} · Manifest: #{CGI.escapeHTML(manifest.dig("paths", "manifest_json"))}</p>
+          </header>
+          <main>
+            <aside>
+              <h2>Declarative controls</h2>
+              <ul>#{controls}</ul>
+              <p>Controls describe approved CLI commands only. This static UI does not directly mutate .ai-web/state.yaml.</p>
+            </aside>
+            <div class="grid">#{panels}</div>
+          </main>
+        </body>
+        </html>
+      HTML
+    end
 
     def build_blocked_payload(state, blockers, dry_run:)
       build_payload(

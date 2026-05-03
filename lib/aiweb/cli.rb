@@ -17,7 +17,7 @@ module Aiweb
     EXIT_UNSAFE_EXTERNAL_ACTION = 5
     EXIT_INTERNAL_ERROR = 10
 
-    MUTATION_COMMANDS = %w[start init interview run ingest-design next-task qa-checklist qa-report repair advance rollback resolve-blocker snapshot design-brief design-system design-prompt design select-design scaffold build preview qa-playwright browser-qa qa-a11y a11y-qa qa-lighthouse lighthouse-qa visual-critique visual-polish].freeze
+    MUTATION_COMMANDS = %w[start init interview run ingest-design next-task qa-checklist qa-report repair advance rollback resolve-blocker snapshot design-brief design-system design-prompt design select-design scaffold build preview qa-playwright browser-qa qa-a11y a11y-qa qa-lighthouse lighthouse-qa visual-critique visual-polish workbench].freeze
     RUNTIME_PLAN_COMMANDS = %w[runtime-plan scaffold-status].freeze
     REGISTRY_COMMANDS = %w[design-systems skills craft].freeze
 
@@ -229,6 +229,19 @@ module Aiweb
         end
 
         project.visual_polish(from_critique: opts[:from_critique] || "latest", max_cycles: opts[:max_cycles], force: opts[:force], dry_run: @dry_run)
+      when "workbench"
+        opts = parse_options do |o, options|
+          o.on("--export") { options[:export] = true }
+          o.on("--force") { options[:force] = true }
+        end
+        unless @argv.empty?
+          raise UserError.new("workbench does not accept extra positional arguments: #{@argv.join(", ")}", EXIT_VALIDATION_FAILED)
+        end
+        unless project.respond_to?(:workbench)
+          return workbench_adapter_unavailable_payload(opts)
+        end
+
+        project.workbench(export: opts[:export], force: opts[:force], dry_run: @dry_run)
       when "ingest-design"
         opts = parse_options do |o, options|
           o.on("--id ID") { |v| options[:id] = v }
@@ -443,6 +456,55 @@ module Aiweb
       }
     end
 
+    def workbench_adapter_unavailable_payload(opts)
+      command_line = ["aiweb", "workbench"]
+      command_line << "--export" if opts[:export]
+      command_line << "--force" if opts[:force]
+      command_line << "--dry-run" if @dry_run
+
+      {
+        "schema_version" => 1,
+        "current_phase" => nil,
+        "action_taken" => "workbench unavailable",
+        "changed_files" => [],
+        "blocking_issues" => ["workbench command surface is reserved, but the project adapter is not implemented yet."],
+        "missing_artifacts" => [],
+        "workbench" => {
+          "schema_version" => 1,
+          "status" => "blocked",
+          "dry_run" => @dry_run,
+          "export" => !!opts[:export],
+          "force" => !!opts[:force],
+          "command" => command_line.join(" "),
+          "panels" => %w[chat plan_artifacts design_candidates selected_design preview file_tree qa_results visual_critique run_timeline],
+          "controls" => declarative_workbench_controls,
+          "planned_index_path" => ".ai-web/workbench/index.html",
+          "planned_manifest_path" => ".ai-web/workbench/workbench.json",
+          "blocking_issues" => ["workbench project adapter is not available in this build."]
+        },
+        "next_action" => "integrate the local workbench project adapter, then rerun aiweb workbench --dry-run"
+      }
+    end
+
+    def declarative_workbench_controls
+      [
+        "aiweb run",
+        "aiweb design",
+        "aiweb build",
+        "aiweb preview",
+        "aiweb qa-playwright",
+        "aiweb visual-critique",
+        "aiweb repair",
+        "aiweb visual-polish"
+      ].map do |command|
+        {
+          "command" => command,
+          "mode" => "descriptor",
+          "writes_state_directly" => false
+        }
+      end
+    end
+
     def browser_adapter_unavailable_payload(command, opts)
       adapter = command.sub(/^qa-/, "")
       target = opts[:url].to_s.strip
@@ -502,6 +564,7 @@ module Aiweb
           qa-lighthouse [--url URL] [--task-id ID] [--force]
           visual-critique [--screenshot PATH] [--metadata PATH] [--task-id ID] [--force]
           visual-polish --repair [--from-critique PATH|latest] [--max-cycles N] [--force]
+          workbench [--export] [--force]
           advance
           rollback [--to PHASE] [--failure CODE] [--reason "..."]
           resolve-blocker --reason "..."
@@ -527,6 +590,7 @@ module Aiweb
           qa-a11y: runs safe local axe accessibility QA against localhost/127.0.0.1 preview; --dry-run does not write files or launch Node
           qa-lighthouse: runs safe local Lighthouse QA against localhost/127.0.0.1 preview; --dry-run does not write files or launch Node
           visual-critique: records safe local visual critique from explicit screenshot/metadata evidence only; --dry-run plans .ai-web/visual artifacts without writes, browser launch, installs, repair, deploy, network, or .env access
+          workbench: plans or exports a static local UI manifest under .ai-web/workbench using declarative CLI controls only; requires initialized .ai-web/state.yaml, --dry-run writes nothing, export writes only workbench artifacts, executes no controls, and never mutates state.yaml
           ingest-design: phase-3.5
           next-task: phase-6 through phase-11
           qa-checklist: phase-7 through phase-11
@@ -582,6 +646,7 @@ module Aiweb
       return human_repair_result(result) if result["repair_loop"]
       return human_visual_critique_result(result) if result["visual_critique"]
       return human_visual_polish_result(result) if result["visual_polish"]
+      return human_workbench_result(result) if result["workbench"]
 
       changed = result["changed_files"] || result["artifacts_changed"] || []
       blockers = result["blocking_issues"] || []
@@ -654,6 +719,29 @@ module Aiweb
         "Critique source: #{polish["critique_source"] || polish["from_critique"] || "n/a"}",
         "Artifacts changed: #{changed.empty? ? "none" : changed.join(", ")}",
         "Polish paths: #{paths.empty? ? "none" : paths.join(", ")}",
+        "Blocking issues: #{blockers.empty? ? "none" : blockers.join("; ")}",
+        "Next command: #{result["next_action"] || "n/a"}"
+      ].join("\n")
+    end
+
+    def human_workbench_result(result)
+      workbench = result.fetch("workbench")
+      changed = result["changed_files"] || result["artifacts_changed"] || []
+      blockers = workbench["blocking_issues"] || result["blocking_issues"] || []
+      panels = Array(workbench["panels"])
+      controls = Array(workbench["controls"])
+      paths = []
+      %w[index_path manifest_path planned_index_path planned_manifest_path].each do |key|
+        value = workbench[key]
+        paths << "#{key}=#{value}" unless value.to_s.empty?
+      end
+      [
+        "Workbench status: #{workbench["status"] || "n/a"}",
+        "Dry run: #{workbench.key?("dry_run") ? workbench["dry_run"] : "n/a"}",
+        "Artifacts changed: #{changed.empty? ? "none" : changed.join(", ")}",
+        "Workbench paths: #{paths.empty? ? "none" : paths.join(", ")}",
+        "Panels: #{panels.empty? ? "none" : panels.join(", ")}",
+        "Controls: #{controls.empty? ? "none" : controls.map { |control| control.is_a?(Hash) ? control["command"] || control["id"] : control }.join(", ")}",
         "Blocking issues: #{blockers.empty? ? "none" : blockers.join("; ")}",
         "Next command: #{result["next_action"] || "n/a"}"
       ].join("\n")
@@ -770,6 +858,15 @@ module Aiweb
       EXIT_VALIDATION_FAILED
     end
 
+    def workbench_exit_code(result)
+      status = result.dig("workbench", "status").to_s
+      return EXIT_ADAPTER_UNAVAILABLE if status == "blocked" && (result["action_taken"].to_s =~ /unavailable/)
+      return EXIT_SUCCESS if %w[planned exported ready].include?(status)
+      return EXIT_PHASE_BLOCKED if status == "blocked" && ((result.dig("workbench", "blocking_issues") || []) + (result["blocking_issues"] || [])).join(" ").match?(/phase/i)
+
+      EXIT_VALIDATION_FAILED
+    end
+
     def exit_code_for(command, result)
       return EXIT_VALIDATION_FAILED if result["validation_errors"] && !result["validation_errors"].empty?
       return result.dig("runtime_plan", "readiness") == "ready" ? EXIT_SUCCESS : EXIT_VALIDATION_FAILED if RUNTIME_PLAN_COMMANDS.include?(command)
@@ -782,6 +879,7 @@ module Aiweb
       return visual_critique_exit_code(result) if command == "visual-critique"
       return repair_exit_code(result) if command == "repair"
       return visual_polish_exit_code(result) if command == "visual-polish"
+      return workbench_exit_code(result) if command == "workbench"
       return EXIT_SUCCESS if %w[help version status start init interview run design-brief design-system design-prompt design select-design scaffold ingest-design next-task qa-checklist qa-report rollback resolve-blocker snapshot visual-critique visual-polish].include?(command)
       if command == "advance" && result["action_taken"] == "advance blocked"
         issue = result["blocking_issues"].join(" ")

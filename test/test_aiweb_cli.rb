@@ -2443,6 +2443,179 @@ class AiwebCliTest < Minitest::Test
     end
   end
 
+  def test_workbench_dry_run_plans_ui_contract_without_writes_or_state_mutation
+    in_tmp do
+      prepare_profile_d_design_flow
+      env_body = "SECRET=do-not-touch\n"
+      File.write(".env", env_body)
+      before_state = File.read(".ai-web/state.yaml")
+      before_entries = Dir.glob("**/*", File::FNM_DOTMATCH).reject { |path| path == "." || path == ".." || path.end_with?("/.") }.sort
+
+      stdout, stderr, code = run_aiweb("workbench", "--dry-run", "--json")
+      payload = JSON.parse(stdout)
+      after_entries = Dir.glob("**/*", File::FNM_DOTMATCH).reject { |path| path == "." || path == ".." || path.end_with?("/.") }.sort
+
+      assert_equal 0, code
+      assert_equal "", stderr
+      assert_equal true, payload["dry_run"]
+      assert_equal "planned", payload.dig("workbench", "status")
+      assert_equal true, payload.dig("workbench", "dry_run")
+      paths = payload.dig("workbench", "paths")
+      assert_equal ".ai-web/workbench/index.html", paths["html"] || paths["index_html"]
+      assert_equal ".ai-web/workbench/workbench.json", paths["manifest"] || paths["manifest_json"]
+      assert_equal before_entries, after_entries, "workbench --dry-run must not write UI artifacts"
+      assert_equal before_state, File.read(".ai-web/state.yaml"), "workbench --dry-run must not mutate state"
+      assert_equal env_body, File.read(".env"), "workbench --dry-run must not mutate .env"
+
+      expected_panels = %w[
+        chat
+        plan_artifacts
+        design_candidates
+        selected_design
+        preview
+        file_tree
+        qa_results
+        visual_critique
+        run_timeline
+      ]
+      panels = payload.dig("workbench", "panels")
+      panel_ids = panels.is_a?(Hash) ? panels.keys : panels.map { |panel| panel.fetch("id") }
+      assert_equal expected_panels, panel_ids
+
+      controls = payload.dig("workbench", "controls")
+      expected_controls = [
+        "aiweb run",
+        "aiweb design",
+        "aiweb build",
+        "aiweb preview",
+        "aiweb qa-playwright",
+        "aiweb visual-critique",
+        "aiweb repair",
+        "aiweb visual-polish"
+      ]
+      assert_equal expected_controls, controls.map { |control| control.fetch("command") }
+      controls.each do |control|
+        assert_includes ["cli", "cli_descriptor"], control["kind"] || control["mode"]
+        assert_equal false, control["mutates_state"] if control.key?("mutates_state")
+        refute_match(/state\.yaml/, control.fetch("command"), "workbench controls must be declarative CLI commands, not direct state writes")
+      end
+      refute_includes stdout, "do-not-touch"
+    end
+  end
+
+  def test_workbench_export_writes_only_workbench_artifacts_and_not_state
+    in_tmp do
+      prepare_profile_d_design_flow
+      env_body = "SECRET=do-not-touch\n"
+      File.write(".env", env_body)
+      before_state = File.read(".ai-web/state.yaml")
+      before_entries = Dir.glob("**/*", File::FNM_DOTMATCH).reject { |path| path == "." || path == ".." || path.end_with?("/.") }.sort
+
+      stdout, stderr, code = run_aiweb("workbench", "--export", "--json")
+      payload = JSON.parse(stdout)
+      after_entries = Dir.glob("**/*", File::FNM_DOTMATCH).reject { |path| path == "." || path == ".." || path.end_with?("/.") }.sort
+
+      assert_equal 0, code
+      assert_equal "", stderr
+      assert_includes %w[exported ready], payload.dig("workbench", "status")
+      assert_equal false, payload.dig("workbench", "dry_run")
+      assert_equal before_state, File.read(".ai-web/state.yaml"), "workbench export must not mutate state"
+      assert_equal env_body, File.read(".env"), "workbench export must not mutate .env"
+
+      added_entries = after_entries - before_entries
+      assert_equal [".ai-web/workbench", ".ai-web/workbench/index.html", ".ai-web/workbench/workbench.json"], added_entries
+      assert_equal [".ai-web/workbench/index.html", ".ai-web/workbench/workbench.json"], payload["changed_files"]
+
+      html = File.read(".ai-web/workbench/index.html")
+      manifest = JSON.parse(File.read(".ai-web/workbench/workbench.json"))
+      assert_equal payload["workbench"], manifest
+      assert_match(/Workbench/i, html)
+      assert_match(/plan_artifacts/, html)
+      refute_includes stdout, "do-not-touch"
+      refute_includes html, "do-not-touch"
+      refute_includes JSON.generate(manifest), "do-not-touch"
+    end
+  end
+
+  def test_workbench_file_tree_excludes_env_and_generated_bulk_directories
+    in_tmp do
+      prepare_profile_d_design_flow
+      File.write(".env", "SECRET=do-not-touch\n")
+      File.write(".env.local", "LOCAL_SECRET=do-not-touch\n")
+      FileUtils.mkdir_p("node_modules/package")
+      FileUtils.mkdir_p(".git")
+      FileUtils.mkdir_p("dist")
+      File.write("node_modules/package/index.js", "module.exports = true\n")
+      File.write(".git/config", "[core]\n")
+      File.write("dist/index.html", "<p>generated</p>\n")
+
+      stdout, stderr, code = run_aiweb("workbench", "--export", "--json")
+      payload = JSON.parse(stdout)
+
+      assert_equal 0, code
+      assert_equal "", stderr
+      manifest_text = File.read(".ai-web/workbench/workbench.json")
+      html = File.read(".ai-web/workbench/index.html")
+      assert_equal "file_tree", payload.dig("workbench", "panels").find { |panel| panel["id"] == "file_tree" }.fetch("id")
+      refute_match(%r{(^|[/"])\.env(\.local)?($|["])}, stdout)
+      refute_match(%r{(^|[/"])\.env(\.local)?($|["])}, manifest_text)
+      refute_match(%r{(^|[/"])\.env(\.local)?($|["])}, html)
+      refute_includes stdout, "do-not-touch"
+      refute_includes manifest_text, "do-not-touch"
+      refute_includes html, "do-not-touch"
+      refute_match(%r{node_modules/}, manifest_text)
+      refute_match(%r{\.git/}, manifest_text)
+      refute_match(%r{dist/}, manifest_text)
+    end
+  end
+
+  def test_workbench_blocks_uninitialized_without_creating_workspace
+    in_tmp do
+      File.write(".env", "SECRET=do-not-touch\n")
+
+      stdout, stderr, code = run_aiweb("workbench", "--json")
+      payload = JSON.parse(stdout)
+
+      assert_equal 1, code
+      assert_equal "", stderr
+      message = [payload.dig("error", "message"), payload["blocking_issues"], payload.dig("workbench", "blocking_issues")].flatten.compact.join("\n")
+      assert_match(/not initialized|initialize/i, message)
+      refute Dir.exist?(".ai-web"), "uninitialized workbench must not create .ai-web"
+      refute_includes stdout, "do-not-touch"
+    end
+  end
+
+  def test_workbench_help_and_webbuilder_passthrough
+    stdout, stderr, code = run_aiweb("help")
+    assert_equal 0, code
+    assert_equal "", stderr
+    assert_includes stdout, "workbench [--export] [--force]"
+    assert_match(/workbench: .*local .*UI|workbench: .*local UI manifest/i, stdout)
+
+    help_stdout, help_stderr, help_code = run_webbuilder("--help")
+    assert_equal 0, help_code
+    assert_equal "", help_stderr
+    assert_match(/workbench/, help_stdout)
+
+    in_tmp do |dir|
+      target = File.join(dir, "passthrough-workbench")
+      Dir.mkdir(target)
+      Dir.chdir(target) do
+        prepare_profile_d_design_flow
+        File.write(".env", "SECRET=do-not-touch\n")
+      end
+
+      web_stdout, web_stderr, web_code = run_webbuilder("--path", target, "workbench", "--dry-run", "--json")
+      web_payload = JSON.parse(web_stdout)
+      assert_equal 0, web_code
+      assert_equal "", web_stderr
+      assert_equal "planned", web_payload.dig("workbench", "status")
+      assert_equal true, web_payload.dig("workbench", "dry_run")
+      refute Dir.exist?(File.join(target, ".ai-web", "workbench")), "webbuilder workbench --dry-run must not write artifacts"
+      refute_includes web_stdout, "do-not-touch"
+    end
+  end
+
 
   def test_preview_blocks_uninitialized_and_unready_without_touching_env_or_runs
     in_tmp do

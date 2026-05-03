@@ -20,6 +20,7 @@ Today the CLI manages the project director workspace: `.ai-web` state, phase gat
 - Expose the PR13 safe local repair-loop contract through `aiweb repair` / `웹빌더 repair`: it consumes failed/blocked QA evidence into a bounded `repair_loop` record, pre-repair snapshot, and fix task without installing packages, starting preview, running build/QA, auto-patching source, touching `.env`, deploying, or contacting external hosting.
 - Expose the PR14 safe local visual critique contract through `aiweb visual-critique` / `웹빌더 visual-critique`: it evaluates explicit local screenshot/metadata evidence only, produces deterministic score/approval artifacts under `.ai-web/visual`, supports no-write `--dry-run`, rejects `.env` / `.env.*` paths without reading them, and never launches browsers, captures screenshots, installs packages, auto-repairs source, deploys, contacts external hosting, or calls network/AI services.
 - Expose the PR15 safe local visual polish contract through `aiweb visual-polish --repair` / `웹빌더 visual-polish --repair`: it consumes failed, `repair`, or `redesign` visual critique evidence into a bounded `visual_polish` record, pre-polish snapshot, and polish task without editing source, installing packages, starting preview, running build/QA, capturing screenshots, touching `.env`, deploying, contacting external hosting, or calling network/AI services.
+- Expose the PR16 local Workbench UI foundation through `aiweb workbench` / `웹빌더 workbench`: it plans or exports `.ai-web/workbench/index.html` and `.ai-web/workbench/workbench.json` from existing Director state/artifacts, represents controls as declarative CLI command descriptors, supports no-write `--dry-run`, excludes `.env` / `.env.*` from surfaced artifacts, and never directly mutates `.ai-web/state.yaml`.
 
 ## Upgrade direction
 
@@ -32,7 +33,8 @@ The intended product direction is a design-first, natural-language webbuilder: t
 5. Convert failed/blocked QA evidence into bounded local repair tasks and records.
 6. Review deterministic visual critique scores/patch plans from local evidence before repair decisions.
 7. Convert failed visual critique evidence into bounded local visual polish tasks and records.
-8. Repair implementation manually or through later approved automation, then deploy later once gates pass and evidence is recorded.
+8. Review the local Workbench UI panels for chat, artifacts, design, preview, file tree, QA, critique, and run timeline status.
+9. Repair implementation manually or through later approved automation, then deploy later once gates pass and evidence is recorded.
 
 The current Director CLI is the foundation for that loop: state, gates, QA contracts, snapshots, local preview evidence, bounded repair-loop records, and visual polish records/tasks/snapshots are in place before the system grows into end-to-end generation, source repair automation, and deploy. It is not yet a full app generator.
 
@@ -102,6 +104,16 @@ PR11 adds the safe local Playwright QA contract as a separate step:
 
 `qa-playwright --dry-run`, `qa-a11y --dry-run`, and `qa-lighthouse --dry-run` are planning paths only: they must not create run artifacts, start processes, install packages, touch `.env`, or invoke local QA tools. A real QA run uses the explicit localhost/127.0.0.1 `--url` when provided, otherwise the recorded running preview URL. Playwright runs only after `node_modules/.bin/playwright` exists; accessibility QA requires `node_modules/.bin/axe`; Lighthouse QA requires `node_modules/.bin/lighthouse`. Each command records stdout/stderr/tool metadata under `.ai-web/runs/<tool>-qa-*`, writes a schema-compatible QA result under `.ai-web/qa/results/`, and returns deterministic `blocked`, `failed`, or `passed` status in its JSON payload (`playwright_qa`, `a11y_qa`, or `lighthouse_qa`). Missing runtime readiness, missing preview/URL, missing `pnpm`, or missing local tooling is reported as blocked; these QA commands do not install dependencies, start/stop preview, auto-repair, deploy, or contact external hosting beyond the local preview URL.
 
+PR13 adds the safe local repair-loop command as a follow-up to failed or blocked QA:
+
+```bash
+./bin/aiweb --path ~/Desktop/aiweb-premium-service-site repair --from-qa latest --dry-run --json
+./bin/aiweb --path ~/Desktop/aiweb-premium-service-site repair --from-qa .ai-web/qa/results/qa-example.json --max-cycles 2 --json
+웹빌더 --path ~/Desktop/aiweb-premium-service-site repair --from-qa latest --dry-run
+```
+
+`repair --from-qa latest` reads `state.qa.last_result`; an explicit `--from-qa` must point to a QA result JSON and rejects `.env` / `.env.*` paths without reading them. The command is phase-guarded for phase-7 through phase-11 unless `--force` is supplied. If the QA result is not failed, blocked, or timed out, or if the same QA task/source has exceeded `--max-cycles`, it returns a deterministic `repair_loop.status: blocked` and writes nothing. `repair --dry-run` writes nothing, copies no snapshot, starts no process, and reports the planned snapshot, repair record, and fix-task paths. A real repair loop creates a pre-repair snapshot under `.ai-web/snapshots/`, creates or reuses a fix task under `.ai-web/tasks/`, writes `.ai-web/repairs/*.json`, updates `implementation.current_task`, and records a decision. PR13 repair intentionally does not install packages, start/stop preview, run build, run Playwright/axe/Lighthouse, edit source files, auto-patch, deploy, push, or contact external hosting.
+
 PR14 adds the safe local visual critique command as a local-evidence review step:
 
 ```bash
@@ -122,15 +134,16 @@ PR15 adds the safe local visual polish repair-loop command as a follow-up to fai
 
 `visual-polish --repair --from-critique latest` reads the latest visual critique recorded in `state.visual.latest_critique` or `state.qa.latest_visual_critique`; an explicit `--from-critique` must point to a visual critique JSON and rejects `.env` / `.env.*` paths without reading them. The command is phase-guarded for phase-7 through phase-11 unless `--force` is supplied. If the visual critique already passed, or if the same critique source has exceeded `--max-cycles`, it returns a deterministic `visual_polish.status: blocked` and writes nothing. `visual-polish --repair --dry-run` writes nothing, copies no snapshot, starts no process, and reports the planned snapshot, polish record, and polish-task paths. A real visual polish loop creates a pre-polish snapshot under `.ai-web/snapshots/`, creates or reuses a polish task under `.ai-web/tasks/`, writes `.ai-web/visual/polish-*.json`, updates `visual.latest_polish` and `implementation.current_task`, and records a decision. PR15 visual polish intentionally does not edit source files, auto-patch, install packages, start/stop preview, run build, run Playwright/axe/Lighthouse, capture screenshots, deploy, push, contact external hosting, call network/AI services, or touch `.env`.
 
-PR13 adds the safe local repair-loop command as a follow-up to failed or blocked QA:
+PR16 adds the local Workbench UI foundation as a static artifact export:
 
 ```bash
-./bin/aiweb --path ~/Desktop/aiweb-premium-service-site repair --from-qa latest --dry-run --json
-./bin/aiweb --path ~/Desktop/aiweb-premium-service-site repair --from-qa .ai-web/qa/results/qa-example.json --max-cycles 2 --json
-웹빌더 --path ~/Desktop/aiweb-premium-service-site repair --from-qa latest --dry-run
+./bin/aiweb --path ~/Desktop/aiweb-premium-service-site workbench --dry-run
+./bin/aiweb --path ~/Desktop/aiweb-premium-service-site workbench --export --json
+웹빌더 --path ~/Desktop/aiweb-premium-service-site workbench --dry-run
+웹빌더 --path ~/Desktop/aiweb-premium-service-site workbench --export
 ```
 
-`repair --from-qa latest` reads `state.qa.last_result`; an explicit `--from-qa` must point to a QA result JSON and rejects `.env` / `.env.*` paths without reading them. The command is phase-guarded for phase-7 through phase-11 unless `--force` is supplied. If the QA result is not failed, blocked, or timed out, or if the same QA task/source has exceeded `--max-cycles`, it returns a deterministic `repair_loop.status: blocked` and writes nothing. `repair --dry-run` writes nothing, copies no snapshot, starts no process, and reports the planned snapshot, repair record, and fix-task paths. A real repair loop creates a pre-repair snapshot under `.ai-web/snapshots/`, creates or reuses a fix task under `.ai-web/tasks/`, writes `.ai-web/repairs/*.json`, updates `implementation.current_task`, and records a decision. PR13 repair intentionally does not install packages, start/stop preview, run build, run Playwright/axe/Lighthouse, edit source files, auto-patch, deploy, push, or contact external hosting.
+`workbench --dry-run` is a no-write planning path: it reports `workbench.status: planned`, the panel list, declarative control descriptors, and planned `.ai-web/workbench/index.html` / `.ai-web/workbench/workbench.json` paths without creating files or changing `.ai-web/state.yaml`. A real `workbench --export` may write only the Workbench HTML and JSON manifest under `.ai-web/workbench/`; it summarizes existing Director artifacts for panels such as chat, plan/artifacts, design candidates, selected `DESIGN.md`, preview, file tree, QA results, visual critique, and run timeline. Workbench controls are descriptors for existing CLI/daemon commands (`aiweb run`, `aiweb design`, `aiweb build`, `aiweb preview`, `aiweb qa-playwright`, `aiweb visual-critique`, `aiweb repair`, `aiweb visual-polish`) and do not directly write state. Export executes no controls, launches no preview/browser/QA/daemon, installs no packages, calls no network/AI services, and writes no files outside `.ai-web/workbench/index.html` and `.ai-web/workbench/workbench.json`. The file tree and summaries intentionally exclude `.env`, `.env.*`, `.git`, `node_modules`, and bulky generated directories so local secrets are not surfaced.
 
 Phase-sensitive commands are guarded by the Director state machine:
 
@@ -149,6 +162,7 @@ Phase-sensitive commands are guarded by the Director state machine:
 ./bin/aiweb qa-report --status failed --task-id golden-page --duration-minutes 61
 ./bin/aiweb repair --from-qa latest --dry-run
 ./bin/aiweb visual-polish --repair --from-critique latest --dry-run
+./bin/aiweb workbench --dry-run
 ```
 
 Quality is an explicit contract. After entering phase-0.25, review `.ai-web/quality.yaml` and set `quality.approved: true` before advancing again.
@@ -169,6 +183,7 @@ Manual repair/override for guarded commands:
 ./bin/aiweb repair --force --from-qa latest --dry-run
 ./bin/aiweb visual-critique --force --screenshot ./evidence/home.png --dry-run
 ./bin/aiweb visual-polish --repair --force --from-critique latest --dry-run
+./bin/aiweb workbench --force --export
 ```
 
 Rollback leaves the phase blocked until recovery evidence is recorded:

@@ -11,7 +11,7 @@ class WebbuilderLauncher
     help --help -h version --version
     start init status runtime-plan scaffold-status build preview interview run design-brief design-system design-prompt design select-design scaffold ingest-design next-task
     qa-checklist qa-report repair qa-playwright qa-a11y qa-lighthouse visual-critique visual-polish advance rollback resolve-blocker snapshot
-    design-systems skills craft intent
+    workbench design-systems skills craft intent
   ].freeze
 
   def initialize(argv, stdin: STDIN, stdout: STDOUT, stderr: STDERR, root: Dir.pwd)
@@ -68,6 +68,8 @@ class WebbuilderLauncher
         웹빌더 --path ~/Desktop/my-site visual-critique --screenshot ./evidence/home.png --metadata ./evidence/home.json --dry-run
         웹빌더 --path ~/Desktop/my-site repair --from-qa latest --dry-run
         웹빌더 --path ~/Desktop/my-site visual-polish --repair --from-critique latest --dry-run
+        웹빌더 --path ~/Desktop/my-site workbench --dry-run
+        웹빌더 --path ~/Desktop/my-site workbench --export
 
       웹빌더가 숙지한 시작 순서:
         Phase 0: 웹 유형 / 난이도 / 릴리즈 범위 결정
@@ -99,6 +101,10 @@ class WebbuilderLauncher
       visual-polish는 source auto-patch나 source file edit, build/QA 실행, preview/browser/capture, install, deploy, external hosting, network/AI 호출, .env 접근을 수행하지 않는다.
       visual-polish는 .env/.env.* critique 경로를 거부하고 --max-cycles로 같은 critique source 반복 polish loop를 제한한다.
       visual-polish --dry-run은 쓰기/스냅샷 복사/프로세스 실행 없이 예정 polish record, snapshot, task 경로만 확인한다.
+      workbench는 chat, plan/artifacts, design candidates, selected DESIGN.md, preview, file tree, QA results, visual critique, run timeline 패널을 정적 로컬 UI artifact로 계획하거나 내보낸다.
+      workbench control은 aiweb run/design/build/preview/QA/repair/visual-polish 같은 선언적 CLI 명령 descriptor이며 .ai-web/state.yaml을 직접 수정하지 않는다.
+      workbench export는 control 실행, preview/browser/QA/daemon 실행, 설치, network/AI 호출 없이 .ai-web/workbench/index.html 및 workbench.json만 쓴다.
+      workbench --dry-run은 .ai-web/workbench/index.html 및 workbench.json의 예정 경로만 보고하고 파일 쓰기와 state.yaml 변경을 수행하지 않는다.
       --dry-run은 설치/쓰기/빌드/프로세스 실행을 수행하지 않는 사전 점검 경로로 사용한다.
 
       고급 명령은 기존 aiweb 명령과 동일하게 사용할 수 있다.
