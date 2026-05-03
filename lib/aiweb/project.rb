@@ -1339,6 +1339,7 @@ module Aiweb
             end
           end
           if status == "passed"
+            exit_code = 0
             missing = screenshot_paths.values.reject { |path| File.file?(path) }
             unless missing.empty?
               status = "failed"
@@ -1403,6 +1404,7 @@ module Aiweb
         changes << write_json(run_metadata_path, run_metadata, false)
         state["qa"] ||= {}
         state["qa"]["last_result"] = relative(result_path)
+        state["qa"]["latest_screenshot_result"] = relative(result_path)
         state["qa"]["latest_screenshot_metadata"] = relative(screenshot_metadata_path)
         state["visual"] ||= {}
         state["visual"]["latest_screenshot_metadata"] = relative(screenshot_metadata_path)
@@ -3674,7 +3676,8 @@ module Aiweb
         "stderr_log" => stderr_log,
         "screenshot_metadata_path" => screenshot_metadata_path,
         "result_path" => result_path,
-        "metadata_path" => metadata_path,
+        "metadata_path" => screenshot_metadata_path,
+        "run_metadata_path" => metadata_path,
         "provider" => adapter["provider"],
         "evidence_schema" => adapter["evidence_schema"],
         "allowed_hosts" => Array(adapter["allowed_hosts"]),
