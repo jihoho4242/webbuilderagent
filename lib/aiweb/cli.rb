@@ -210,6 +210,8 @@ module Aiweb
         project.qa_playwright(url: opts[:url], task_id: opts[:task_id], force: opts[:force], dry_run: @dry_run)
       when "qa-screenshot", "screenshot-qa"
         opts = parse_browser_qa_options(command)
+        return qa_screenshot_adapter_unavailable_payload(command, opts) unless project.respond_to?(:qa_screenshot)
+
         project.qa_screenshot(url: opts[:url], task_id: opts[:task_id], force: opts[:force], dry_run: @dry_run)
       when "qa-a11y", "a11y-qa"
         opts = parse_options do |o, options|
@@ -837,6 +839,40 @@ module Aiweb
       }
     end
 
+    def qa_screenshot_adapter_unavailable_payload(command, opts)
+      target = opts[:url].to_s.strip
+      command_line = ["aiweb", command]
+      command_line.concat(["--url", target]) unless target.empty?
+      command_line.concat(["--task-id", opts[:task_id].to_s]) unless opts[:task_id].to_s.empty?
+      command_line << "--force" if opts[:force]
+      command_line << "--dry-run" if @dry_run
+
+      {
+        "schema_version" => 1,
+        "current_phase" => nil,
+        "action_taken" => "screenshot QA unavailable",
+        "changed_files" => [],
+        "blocking_issues" => ["qa-screenshot command surface is reserved, but the screenshot QA project adapter is not implemented yet."],
+        "missing_artifacts" => [],
+        "screenshot_qa" => {
+          "schema_version" => 1,
+          "status" => "blocked",
+          "command" => command_line.join(" "),
+          "url" => target.empty? ? nil : target,
+          "task_id" => opts[:task_id],
+          "dry_run" => @dry_run,
+          "planned_screenshots" => [
+            ".ai-web/qa/screenshots/mobile-home.png",
+            ".ai-web/qa/screenshots/tablet-home.png",
+            ".ai-web/qa/screenshots/desktop-home.png"
+          ],
+          "planned_metadata_path" => ".ai-web/qa/screenshots/metadata.json",
+          "blocking_issues" => ["qa-screenshot project adapter is not available in this build."]
+        },
+        "next_action" => "integrate the local qa-screenshot project adapter, then rerun aiweb qa-screenshot --url http://127.0.0.1:4321"
+      }
+    end
+
     def browser_adapter_unavailable_payload(command, opts)
       adapter = command.sub(/^qa-/, "")
       target = opts[:url].to_s.strip
@@ -1281,7 +1317,11 @@ module Aiweb
     end
 
     def qa_screenshot_exit_code(result)
-      %w[dry_run passed].include?(result.dig("screenshot_qa", "status")) ? EXIT_SUCCESS : EXIT_VALIDATION_FAILED
+      status = result.dig("screenshot_qa", "status").to_s
+      return EXIT_SUCCESS if %w[dry_run passed].include?(status)
+      return EXIT_ADAPTER_UNAVAILABLE if status == "blocked" && (result["action_taken"].to_s =~ /unavailable/)
+
+      EXIT_VALIDATION_FAILED
     end
 
     def qa_a11y_exit_code(result)
