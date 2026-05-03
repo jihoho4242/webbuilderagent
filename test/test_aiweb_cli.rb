@@ -4915,6 +4915,42 @@ class AiwebCliTest < Minitest::Test
     end
   end
 
+
+  def test_qa_screenshot_records_fake_failure_result_without_build_preview_or_install
+    in_tmp do |dir|
+      prepare_profile_d_design_flow
+      json_cmd("scaffold", "--profile", "D")
+      env_body = "SECRET=do-not-touch
+"
+      File.write(".env", env_body)
+      bin_dir = write_fake_qa_screenshot_tooling(dir)
+      env = {
+        "PATH" => [bin_dir, "/usr/bin", "/bin", "/usr/sbin", "/sbin"].join(File::PATH_SEPARATOR),
+        "QA_SCREENSHOT_FAKE_STATUS" => "failed"
+      }
+
+      stdout, stderr, code = run_aiweb_env(env, "qa-screenshot", "--url", "http://localhost:4321", "--task-id", "home-fail", "--json")
+      payload = JSON.parse(stdout)
+
+      assert_equal 1, code, stdout
+      assert_equal "", stderr
+      screenshot_qa = payload.fetch("qa_screenshot")
+      assert_equal "failed", screenshot_qa["status"]
+      assert_equal 1, screenshot_qa["exit_code"]
+      assert_match(%r{\A\.ai-web/runs/qa-screenshot-\d{8}T\d{6}Z/stdout\.log\z}, screenshot_qa["stdout_log"])
+      assert_match(%r{\A\.ai-web/runs/qa-screenshot-\d{8}T\d{6}Z/stderr\.log\z}, screenshot_qa["stderr_log"])
+      assert_match(%r{\A\.ai-web/qa/results/qa-\d{8}T\d{6}Z-.*\.json\z}, screenshot_qa["result_path"])
+      assert File.file?(screenshot_qa["stderr_log"])
+      assert_match(/fake screenshot failure/, File.read(screenshot_qa["stderr_log"]))
+      fail_result = JSON.parse(File.read(screenshot_qa["result_path"]))
+      assert_equal "failed", fail_result["status"]
+      assert_equal "home-fail", fail_result["task_id"]
+      assert_equal "http://localhost:4321", fail_result.dig("environment", "url")
+      assert_equal env_body, File.read(".env"), "failed qa-screenshot must not mutate .env"
+      refute Dir.exist?("dist"), "failed qa-screenshot must not build or deploy"
+    end
+  end
+
   def test_qa_screenshot_help_and_webbuilder_passthrough
     stdout, stderr, code = run_aiweb("help")
     assert_equal 0, code
