@@ -44,6 +44,40 @@ class AiwebCliTest < Minitest::Test
     [stdout, stderr, status.exitstatus]
   end
 
+  def write_fake_playwright_tooling(root)
+    FileUtils.mkdir_p(File.join(root, "node_modules", ".bin"))
+    write_fake_executable(
+      File.join(root, "node_modules", ".bin"),
+      "playwright",
+      "echo local playwright shim >/dev/null"
+    )
+
+    bin_dir = File.join(root, "fake-bin")
+    FileUtils.mkdir_p(bin_dir)
+    write_fake_executable(
+      bin_dir,
+      "pnpm",
+      <<~'SH'
+        [ "$1" = "exec" ] || { echo "expected pnpm exec" >&2; exit 64; }
+        [ "$2" = "playwright" ] || { echo "expected playwright" >&2; exit 64; }
+        [ "$3" = "test" ] || { echo "expected test" >&2; exit 64; }
+        case "$*" in
+          *" --reporter=json"*) ;;
+          *) echo "missing json reporter" >&2; exit 64 ;;
+        esac
+        if [ "${PLAYWRIGHT_FAKE_STATUS:-passed}" = "failed" ]; then
+          echo '{"status":"failed","suites":[],"stats":{"expected":0,"unexpected":1,"flaky":0,"skipped":0}}'
+          echo 'fake playwright failure' >&2
+          exit 1
+        fi
+        echo '{"status":"passed","suites":[],"stats":{"expected":1,"unexpected":0,"flaky":0,"skipped":0}}'
+        echo 'fake playwright pass' >&2
+        exit 0
+      SH
+    )
+    bin_dir
+  end
+
   def run_webbuilder(*args, input: nil)
     stdout, stderr, status = Open3.capture3(WEBBUILDER, *args.map(&:to_s), stdin_data: input)
     [stdout, stderr, status.exitstatus]
@@ -2570,6 +2604,193 @@ class AiwebCliTest < Minitest::Test
       assert_equal payload["build"], metadata
       assert_equal "built", File.read("dist/index.html")
       assert_equal env_body, File.read(".env"), "successful build must not mutate .env"
+    end
+  end
+
+
+  def test_qa_playwright_uninitialized_and_unready_are_safe
+    in_tmp do
+      env_body = "SECRET=do-not-touch\n"
+      File.write(".env", env_body)
+
+      stdout, stderr, code = run_aiweb("qa-playwright", "--json")
+      payload = JSON.parse(stdout)
+
+      assert_equal 1, code
+      assert_equal "", stderr
+      assert_equal "error", payload["status"]
+      assert_match(/not initialized|initialize/i, payload.dig("error", "message"))
+      refute Dir.exist?(".ai-web/runs"), "uninitialized qa-playwright must not create run artifacts"
+      assert_equal env_body, File.read(".env"), "uninitialized qa-playwright must not mutate .env"
+
+      json_cmd("init", "--profile", "D")
+      before_state = File.read(".ai-web/state.yaml")
+      stdout, stderr, code = run_aiweb("qa-playwright", "--json")
+      payload = JSON.parse(stdout)
+
+      assert_equal 1, code
+      assert_equal "", stderr
+      assert_equal "playwright QA blocked", payload["action_taken"]
+      assert_equal "blocked", payload.dig("playwright_qa", "status")
+      assert_equal false, payload.dig("playwright_qa", "dry_run")
+      assert_match(/Scaffold has not been created|runtime-plan/i, payload["blocking_issues"].join("\n"))
+      assert_empty payload["changed_files"]
+      assert_equal before_state, File.read(".ai-web/state.yaml"), "runtime-plan block must not persist state changes"
+      assert_equal env_body, File.read(".env"), "blocked qa-playwright must not mutate .env"
+      refute Dir.exist?(".ai-web/runs"), "runtime-plan block must not create run artifacts"
+      refute Dir.exist?("node_modules"), "qa-playwright must not install dependencies"
+      refute Dir.exist?("dist"), "qa-playwright must not run build output"
+    end
+  end
+
+  def test_qa_playwright_dry_run_on_ready_scaffold_plans_without_writes
+    in_tmp do
+      prepare_profile_d_design_flow
+      json_cmd("scaffold", "--profile", "D")
+      env_body = "SECRET=do-not-touch\n"
+      File.write(".env", env_body)
+      before_entries = Dir.glob("**/*", File::FNM_DOTMATCH).reject { |path| path == "." || path == ".." }.sort
+
+      stdout, stderr, code = run_aiweb("qa-playwright", "--url", "http://127.0.0.1:4321", "--task-id", "dry-smoke", "--dry-run", "--json")
+      payload = JSON.parse(stdout)
+      after_entries = Dir.glob("**/*", File::FNM_DOTMATCH).reject { |path| path == "." || path == ".." }.sort
+
+      assert_equal 0, code
+      assert_equal "", stderr
+      assert_equal true, payload["dry_run"]
+      assert_equal "planned Playwright QA", payload["action_taken"]
+      assert_equal "dry_run", payload.dig("playwright_qa", "status")
+      assert_equal true, payload.dig("playwright_qa", "dry_run")
+      assert_equal "http://127.0.0.1:4321", payload.dig("playwright_qa", "url")
+      assert_equal "dry-smoke", payload.dig("playwright_qa", "task_id")
+      assert_match(/pnpm exec playwright test .* --reporter=json/, payload.dig("playwright_qa", "command"))
+      assert_match(%r{\A\.ai-web/runs/playwright-qa-\d{8}T\d{6}Z/smoke\.spec\.(js|mjs)\z}, payload.dig("playwright_qa", "spec_path"))
+      assert_match(%r{\A\.ai-web/runs/playwright-qa-\d{8}T\d{6}Z/stdout\.log\z}, payload.dig("playwright_qa", "stdout_log"))
+      assert_match(%r{\A\.ai-web/runs/playwright-qa-\d{8}T\d{6}Z/stderr\.log\z}, payload.dig("playwright_qa", "stderr_log"))
+      assert_match(%r{\A\.ai-web/runs/playwright-qa-\d{8}T\d{6}Z/playwright-qa\.json\z}, payload.dig("playwright_qa", "metadata_path"))
+      assert_nil payload.dig("playwright_qa", "exit_code"), "dry-run must not execute Playwright"
+      assert payload["changed_files"].any? { |path| path.match?(%r{\A\.ai-web/runs/playwright-qa-\d{8}T\d{6}Z\z}) }
+      assert_equal before_entries, after_entries, "qa-playwright --dry-run must not write run artifacts or generated specs"
+      assert_equal env_body, File.read(".env"), "qa-playwright --dry-run must not mutate .env"
+      refute Dir.exist?("node_modules"), "qa-playwright --dry-run must not install dependencies"
+      refute Dir.exist?("dist"), "qa-playwright --dry-run must not run a build"
+    end
+  end
+
+  def test_qa_playwright_missing_local_playwright_blocks_with_artifacts
+    in_tmp do
+      prepare_profile_d_design_flow
+      json_cmd("scaffold", "--profile", "D")
+      env_body = "SECRET=do-not-touch\n"
+      File.write(".env", env_body)
+      FileUtils.mkdir_p("node_modules")
+      bin_dir = File.join(Dir.pwd, "fake-bin")
+      FileUtils.mkdir_p(bin_dir)
+      write_fake_executable(bin_dir, "pnpm", "echo should-not-run >&2; exit 99")
+
+      stdout, stderr, code = run_aiweb_env({ "PATH" => [bin_dir, "/usr/bin", "/bin", "/usr/sbin", "/sbin"].join(File::PATH_SEPARATOR) }, "qa-playwright", "--url", "http://127.0.0.1:4321", "--json")
+      payload = JSON.parse(stdout)
+
+      assert_equal 1, code
+      assert_equal "", stderr
+      assert_equal "playwright QA blocked", payload["action_taken"]
+      assert_equal "blocked", payload.dig("playwright_qa", "status")
+      assert_nil payload.dig("playwright_qa", "exit_code"), "missing local Playwright must not execute pnpm"
+      assert_match(/Playwright executable is missing|node_modules\/\.bin\/playwright/, payload["blocking_issues"].join("\n"))
+      assert_match(%r{\A\.ai-web/runs/playwright-qa-\d{8}T\d{6}Z/stdout\.log\z}, payload.dig("playwright_qa", "stdout_log"))
+      assert_match(%r{\A\.ai-web/runs/playwright-qa-\d{8}T\d{6}Z/stderr\.log\z}, payload.dig("playwright_qa", "stderr_log"))
+      assert_match(%r{\A\.ai-web/runs/playwright-qa-\d{8}T\d{6}Z/playwright-qa\.json\z}, payload.dig("playwright_qa", "metadata_path"))
+      assert_match(%r{\A\.ai-web/qa/results/qa-\d{8}T\d{6}Z-.*\.json\z}, payload.dig("playwright_qa", "result_path"))
+      assert File.file?(payload.dig("playwright_qa", "stdout_log"))
+      assert File.file?(payload.dig("playwright_qa", "stderr_log"))
+      assert File.file?(payload.dig("playwright_qa", "metadata_path"))
+      result = JSON.parse(File.read(payload.dig("playwright_qa", "result_path")))
+      assert_equal "blocked", result["status"]
+      assert_equal "http://127.0.0.1:4321", result.dig("environment", "url")
+      assert_equal payload.dig("playwright_qa", "blocking_issues").join("\n") + "\n", File.read(payload.dig("playwright_qa", "stderr_log"))
+      assert_equal env_body, File.read(".env"), "missing-local-playwright QA must not mutate .env"
+      refute Dir.exist?("dist"), "qa-playwright must not build or deploy"
+    end
+  end
+
+  def test_qa_playwright_records_fake_pass_and_fail_results
+    in_tmp do |dir|
+      prepare_profile_d_design_flow
+      json_cmd("scaffold", "--profile", "D")
+      env_body = "SECRET=do-not-touch\n"
+      File.write(".env", env_body)
+      bin_dir = write_fake_playwright_tooling(dir)
+      env = { "PATH" => [bin_dir, "/usr/bin", "/bin", "/usr/sbin", "/sbin"].join(File::PATH_SEPARATOR) }
+
+      stdout, stderr, code = run_aiweb_env(env, "qa-playwright", "--url", "http://127.0.0.1:4321", "--task-id", "smoke-pass", "--json")
+      payload = JSON.parse(stdout)
+
+      assert_equal 0, code
+      assert_equal "", stderr
+      assert_equal "ran Playwright QA", payload["action_taken"]
+      assert_equal "passed", payload.dig("playwright_qa", "status")
+      assert_equal 0, payload.dig("playwright_qa", "exit_code")
+      assert_match(/pnpm exec playwright test .* --reporter=json/, payload.dig("playwright_qa", "command"))
+      assert_match(%r{\A\.ai-web/runs/playwright-qa-\d{8}T\d{6}Z/smoke\.spec\.(js|mjs)\z}, payload.dig("playwright_qa", "spec_path"))
+      assert File.file?(payload.dig("playwright_qa", "spec_path"))
+      assert File.file?(payload.dig("playwright_qa", "metadata_path"))
+      assert File.file?(payload.dig("playwright_qa", "result_path"))
+      pass_result = JSON.parse(File.read(payload.dig("playwright_qa", "result_path")))
+      assert_equal "passed", pass_result["status"]
+      assert_equal "smoke-pass", pass_result["task_id"]
+      assert_equal "http://127.0.0.1:4321", pass_result.dig("environment", "url")
+      assert_equal "fake playwright pass\n", File.read(payload.dig("playwright_qa", "stderr_log"))
+      assert_equal env_body, File.read(".env"), "successful qa-playwright must not mutate .env"
+      refute Dir.exist?("dist"), "qa-playwright must not run build output"
+
+      fail_env = env.merge("PLAYWRIGHT_FAKE_STATUS" => "failed")
+      fail_stdout, fail_stderr, fail_code = run_aiweb_env(fail_env, "qa-playwright", "--url", "http://127.0.0.1:4321", "--task-id", "smoke-fail", "--json")
+      fail_payload = JSON.parse(fail_stdout)
+
+      assert_equal 1, fail_code
+      assert_equal "", fail_stderr
+      assert_equal "ran Playwright QA", fail_payload["action_taken"]
+      assert_equal "failed", fail_payload.dig("playwright_qa", "status")
+      assert_equal 1, fail_payload.dig("playwright_qa", "exit_code")
+      fail_result = JSON.parse(File.read(fail_payload.dig("playwright_qa", "result_path")))
+      assert_equal "failed", fail_result["status"]
+      assert_equal "smoke-fail", fail_result["task_id"]
+      assert_match(/fake playwright failure/, File.read(fail_payload.dig("playwright_qa", "stderr_log")))
+      assert_equal env_body, File.read(".env"), "failed qa-playwright must not mutate .env"
+      refute Dir.exist?("dist"), "failed qa-playwright must not build or deploy"
+    end
+  end
+
+  def test_qa_playwright_help_and_webbuilder_passthrough
+    stdout, stderr, code = run_aiweb("help")
+    assert_equal 0, code
+    assert_equal "", stderr
+    assert_includes stdout, "qa-playwright"
+    assert_match(/qa-playwright: runs safe local Playwright QA/i, stdout)
+
+    help_stdout, help_stderr, help_code = run_webbuilder("--help")
+    assert_equal 0, help_code
+    assert_equal "", help_stderr
+    assert_match(/qa-playwright/, help_stdout)
+
+    in_tmp do |dir|
+      target = File.join(dir, "passthrough-playwright")
+      Dir.mkdir(target)
+      Dir.chdir(target) do
+        prepare_profile_d_design_flow
+        json_cmd("scaffold", "--profile", "D")
+        File.write(".env", "SECRET=do-not-touch\n")
+      end
+
+      web_stdout, web_stderr, web_code = run_webbuilder("--path", target, "qa-playwright", "--url", "http://127.0.0.1:4321", "--task-id", "web-dry", "--dry-run", "--json")
+      web_payload = JSON.parse(web_stdout)
+      assert_equal 0, web_code
+      assert_equal "", web_stderr
+      assert_equal "planned Playwright QA", web_payload["action_taken"]
+      assert_equal "dry_run", web_payload.dig("playwright_qa", "status")
+      assert_equal "web-dry", web_payload.dig("playwright_qa", "task_id")
+      assert_equal "SECRET=do-not-touch\n", File.read(File.join(target, ".env"))
+      refute Dir.exist?(File.join(target, ".ai-web", "runs")), "webbuilder qa-playwright --dry-run must not write run artifacts"
     end
   end
 

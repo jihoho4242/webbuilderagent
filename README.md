@@ -15,6 +15,7 @@ Today the CLI manages the project director workspace: `.ai-web` state, phase gat
 - Provide a friendly Korean entry point, `웹빌더`, over the lower-level `aiweb` CLI.
 - Expose the PR9 Astro build contract through `aiweb build` / `웹빌더 build`: it must check runtime-plan readiness before executing, preserve `.env` untouched, support `--dry-run` without writes/install/build, record run evidence under `.ai-web`, and report missing package manager, missing `node_modules`, or build failure as explicit statuses.
 - Expose the PR10 local preview contract through `aiweb preview` / `웹빌더 preview`: it must gate on runtime-plan readiness, preserve `.env` untouched, avoid dependency installation, start only the scaffold dev server locally, record run evidence under `.ai-web`, support a no-write/no-process `--dry-run`, support `--stop` for the recorded preview PID, and explicitly avoid Playwright, axe/Lighthouse, repair, deploy, or external hosting.
+- Expose the PR11 safe Playwright browser QA contract through `aiweb qa-playwright` / `웹빌더 qa-playwright`: it must use a running local preview or explicit localhost/127.0.0.1 `--url`, preserve `.env` untouched, never install packages or start preview, require an already-present project-local Playwright executable, record run/QA evidence under `.ai-web`, support no-write/no-process `--dry-run`, and explicitly avoid axe/Lighthouse, automatic repair, deploy, or external hosting.
 
 ## Upgrade direction
 
@@ -80,6 +81,16 @@ PR10 adds the local preview contract on the same readiness boundary:
 ```
 
 `preview --dry-run` is no-write and no-process: it reports the planned scaffold dev command, preview URL, and `.ai-web/runs/<run>/` metadata/log paths without installing dependencies or starting a server. A real preview starts only the local scaffold dev server, records PID/port/URL/cwd/command/status plus stdout/stderr logs under `.ai-web`, never reads or writes `.env`, never installs dependencies, and reports explicit blocked statuses for runtime-plan not-ready, missing `pnpm`, missing `node_modules`, or an already-running recorded preview. `preview --stop` may stop only the recorded preview PID. PR10 preview intentionally does not run Playwright, axe/Lighthouse, repair, deploy, or external hosting.
+
+PR11 adds the safe local Playwright QA contract as a separate step:
+
+```bash
+./bin/aiweb --path ~/Desktop/aiweb-premium-service-site qa-playwright --dry-run
+./bin/aiweb --path ~/Desktop/aiweb-premium-service-site qa-playwright --url http://127.0.0.1:4321 --json
+웹빌더 --path ~/Desktop/aiweb-premium-service-site qa-playwright --url http://127.0.0.1:4321
+```
+
+`qa-playwright --dry-run` is a planning path only: it must not create run artifacts, start processes, install packages, touch `.env`, or invoke Playwright. A real `qa-playwright` run uses the explicit localhost/127.0.0.1 `--url` when provided, otherwise the recorded running preview URL. It runs through local project tooling only after `node_modules/.bin/playwright` already exists, records stdout/stderr/spec metadata under `.ai-web/runs/playwright-qa-*`, writes a schema-compatible QA result under `.ai-web/qa/results/`, and returns deterministic `blocked`, `failed`, or `passed` status in the `playwright_qa` JSON payload. Missing runtime readiness, missing preview/URL, missing `pnpm`, or missing local Playwright is reported as blocked; PR11 does not install Playwright, run axe/Lighthouse, start/stop preview, auto-repair, deploy, or contact external hosting.
 
 Phase-sensitive commands are guarded by the Director state machine:
 

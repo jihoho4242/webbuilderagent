@@ -6,6 +6,7 @@ require "json"
 require "open3"
 require "timeout"
 require "time"
+require "uri"
 require "yaml"
 
 require_relative "archetypes"
@@ -704,6 +705,162 @@ module Aiweb
           next_action: preview_next_action(status)
         )
       end
+    end
+
+    def qa_playwright(url: nil, task_id: nil, force: false, dry_run: false)
+      assert_initialized!
+
+      state, state_error = runtime_state_snapshot
+      ensure_scaffold_state_defaults!(state) if state
+      scaffold = runtime_scaffold_summary(state)
+      metadata = runtime_metadata_summary(scaffold)
+      design = runtime_design_summary(state, metadata)
+      package_json = runtime_package_json_summary
+      missing_files = SCAFFOLD_PROFILE_D_REQUIRED_FILES.reject { |path| File.exist?(File.join(root, path)) }
+      blockers = runtime_plan_blockers(state, state_error, scaffold, metadata, design, package_json, missing_files)
+      return qa_playwright_blocked_payload(state, blockers, dry_run: dry_run, command: qa_playwright_command(nil), target: nil) unless blockers.empty?
+
+      preview = running_preview_metadata
+      target = qa_playwright_target(url: url, preview: preview)
+      target_blockers = qa_playwright_target_blockers(state, target, preview: preview, force: force)
+      return qa_playwright_blocked_payload(state, target_blockers, dry_run: dry_run, command: qa_playwright_command(target && target["url"]), target: target) unless target_blockers.empty?
+
+      timestamp = Time.now.utc.strftime("%Y%m%dT%H%M%SZ")
+      run_id = "playwright-qa-#{timestamp}"
+      result_task_id = qa_playwright_task_id(task_id, run_id)
+      run_dir = File.join(aiweb_dir, "runs", run_id)
+      spec_path = File.join(run_dir, "smoke.spec.js")
+      stdout_path = File.join(run_dir, "stdout.log")
+      stderr_path = File.join(run_dir, "stderr.log")
+      result_path = File.join(aiweb_dir, "qa", "results", "qa-#{timestamp}-#{slug(result_task_id)}.json")
+      metadata_path = File.join(run_dir, "playwright-qa.json")
+      command = qa_playwright_command(relative(spec_path))
+      planned_changes = [relative(run_dir), relative(spec_path), relative(stdout_path), relative(stderr_path), relative(result_path), relative(metadata_path)]
+
+      if dry_run
+        result = qa_playwright_result(
+          task_id: result_task_id,
+          status: "pending",
+          started_at: nil,
+          finished_at: nil,
+          duration_minutes: 0,
+          timed_out: false,
+          target: target,
+          checks: [qa_playwright_pending_check],
+          evidence: [],
+          console_errors: [],
+          network_errors: []
+        )
+        validate_qa_result!(result)
+        metadata = qa_playwright_run_metadata(
+          run_id: run_id,
+          task_id: result_task_id,
+          status: "dry_run",
+          command: command,
+          started_at: nil,
+          finished_at: nil,
+          exit_code: nil,
+          target: target,
+          spec_path: relative(spec_path),
+          stdout_log: relative(stdout_path),
+          stderr_log: relative(stderr_path),
+          result_path: relative(result_path),
+          metadata_path: relative(metadata_path),
+          blocking_issues: [],
+          dry_run: true
+        )
+        metadata["qa_result"] = result
+        return qa_playwright_payload(
+          state: state,
+          metadata: metadata,
+          changed_files: planned_changes,
+          action_taken: "planned Playwright QA",
+          blocking_issues: [],
+          next_action: "rerun aiweb qa-playwright without --dry-run to execute local Playwright QA against #{target["url"]}"
+        )
+      end
+
+      changes = []
+      mutation(dry_run: false) do
+        FileUtils.mkdir_p(run_dir)
+        changes << relative(run_dir)
+        changes << write_file(spec_path, qa_playwright_spec, false)
+        started_at = Time.now.utc
+        status = "blocked"
+        exit_code = nil
+        blocking_issues = []
+        stdout = ""
+        stderr = ""
+        executable = qa_playwright_executable_path
+
+        if executable.nil?
+          blocking_issues << "Local Playwright executable node_modules/.bin/playwright is missing; install project dependencies outside aiweb qa-playwright, then rerun."
+          stderr = blocking_issues.join("\n") + "\n"
+        elsif executable_path("pnpm").nil?
+          blocking_issues << "pnpm executable is missing; install project dependencies outside aiweb qa-playwright, then rerun."
+          stderr = blocking_issues.join("\n") + "\n"
+        else
+          stdout, stderr, process_status = Open3.capture3({ "PLAYWRIGHT_BASE_URL" => target["url"] }, "pnpm", "exec", "playwright", "test", relative(spec_path), "--reporter=json", chdir: root)
+          exit_code = process_status.exitstatus
+          status = process_status.success? ? "passed" : "failed"
+          blocking_issues << "#{command} failed with exit code #{exit_code}" unless process_status.success?
+        end
+
+        finished_at = Time.now.utc
+        duration_minutes = ((finished_at - started_at) / 60.0).round(4)
+        changes << write_file(stdout_path, stdout, false)
+        changes << write_file(stderr_path, stderr, false)
+        result = qa_playwright_result(
+          task_id: result_task_id,
+          status: status == "passed" ? "passed" : status,
+          started_at: started_at.iso8601,
+          finished_at: finished_at.iso8601,
+          duration_minutes: duration_minutes,
+          timed_out: false,
+          target: target,
+          checks: [qa_playwright_status_check(status, blocking_issues, stdout_path, stderr_path)],
+          evidence: [relative(stdout_path), relative(stderr_path)],
+          console_errors: [],
+          network_errors: []
+        )
+        validate_qa_result!(result)
+        changes << write_json(result_path, result, false)
+        metadata = qa_playwright_run_metadata(
+          run_id: run_id,
+          task_id: result_task_id,
+          status: status,
+          command: command,
+          started_at: started_at.iso8601,
+          finished_at: finished_at.iso8601,
+          exit_code: exit_code,
+          target: target,
+          spec_path: relative(spec_path),
+          stdout_log: relative(stdout_path),
+          stderr_log: relative(stderr_path),
+          result_path: relative(result_path),
+          metadata_path: relative(metadata_path),
+          blocking_issues: blocking_issues,
+          dry_run: false
+        )
+        changes << write_json(metadata_path, metadata, false)
+        state["qa"] ||= {}
+        state["qa"]["last_result"] = relative(result_path)
+        add_decision!(state, "qa_playwright", "Recorded Playwright QA result #{result["status"]} for #{result["task_id"]}")
+        state["project"]["updated_at"] = now if state["project"].is_a?(Hash)
+        changes << write_yaml(state_path, state, false)
+        return qa_playwright_payload(
+          state: state,
+          metadata: metadata,
+          changed_files: compact_changes(changes),
+          action_taken: status == "blocked" ? "playwright QA blocked" : "ran Playwright QA",
+          blocking_issues: blocking_issues,
+          next_action: qa_playwright_next_action(status)
+        )
+      end
+    end
+
+    def browser_qa(dry_run: false)
+      qa_playwright(dry_run: dry_run)
     end
 
     def next_task(type: nil, dry_run: false, force: false)
@@ -1536,6 +1693,215 @@ module Aiweb
         "preview" => metadata,
         "next_action" => next_action
       }
+    end
+
+    def qa_playwright_payload(state:, metadata:, changed_files:, action_taken:, blocking_issues:, next_action:)
+      {
+        "schema_version" => 1,
+        "current_phase" => state&.dig("phase", "current"),
+        "action_taken" => action_taken,
+        "changed_files" => changed_files,
+        "blocking_issues" => blocking_issues,
+        "missing_artifacts" => [],
+        "playwright_qa" => metadata,
+        "next_action" => next_action
+      }
+    end
+
+    def qa_playwright_blocked_payload(state, blockers, dry_run:, command:, target:)
+      qa_playwright_payload(
+        state: state,
+        metadata: {
+          "schema_version" => 1,
+          "status" => "blocked",
+          "command" => command,
+          "url" => target && target["url"],
+          "dry_run" => dry_run,
+          "blocking_issues" => blockers
+        },
+        changed_files: [],
+        action_taken: "playwright QA blocked",
+        blocking_issues: blockers,
+        next_action: "resolve Playwright QA blockers, then rerun aiweb qa-playwright"
+      )
+    end
+
+    def qa_playwright_run_metadata(run_id:, task_id:, status:, command:, started_at:, finished_at:, exit_code:, target:, spec_path:, stdout_log:, stderr_log:, result_path:, metadata_path:, blocking_issues:, dry_run:)
+      adapter = browser_qa_adapter(load_state_if_present)
+      {
+        "schema_version" => 1,
+        "run_id" => run_id,
+        "task_id" => task_id,
+        "status" => status,
+        "command" => command,
+        "cwd" => root,
+        "started_at" => started_at,
+        "finished_at" => finished_at,
+        "exit_code" => exit_code,
+        "url" => target["url"],
+        "preview_url" => target["url"],
+        "preview_run_id" => target["preview_run_id"],
+        "spec_path" => spec_path,
+        "stdout_log" => stdout_log,
+        "stderr_log" => stderr_log,
+        "result_path" => result_path,
+        "metadata_path" => metadata_path,
+        "provider" => adapter["provider"],
+        "evidence_schema" => adapter["evidence_schema"],
+        "allowed_hosts" => Array(adapter["allowed_hosts"]),
+        "file_access" => adapter["file_access"],
+        "dry_run" => dry_run,
+        "blocking_issues" => blocking_issues
+      }
+    end
+
+    def qa_playwright_command(spec_path)
+      parts = ["pnpm", "exec", "playwright", "test"]
+      parts << spec_path unless spec_path.to_s.empty?
+      parts << "--reporter=json"
+      parts.join(" ")
+    end
+
+    def qa_playwright_executable_path
+      path = File.join(root, "node_modules", ".bin", "playwright")
+      File.executable?(path) && !File.directory?(path) ? path : nil
+    end
+
+    def browser_qa_adapter(state)
+      adapter = state&.dig("adapters", "browser_qa")
+      adapter = {} unless adapter.is_a?(Hash)
+      {
+        "provider" => adapter["provider"] || "playwright_script",
+        "allowed_hosts" => Array(adapter["allowed_hosts"]).empty? ? %w[localhost 127.0.0.1] : Array(adapter["allowed_hosts"]),
+        "evidence_schema" => adapter["evidence_schema"] || "qa-result-v1",
+        "file_access" => adapter["file_access"] || "workspace_only"
+      }
+    end
+
+    def qa_playwright_target(url:, preview:)
+      target_url = url.to_s.strip
+      target_url = (preview && (preview["preview_url"] || preview["url"]).to_s) if target_url.empty?
+      return nil if target_url.empty?
+
+      {
+        "url" => target_url,
+        "preview_run_id" => preview && preview["run_id"],
+        "server_command" => preview ? preview["command"].to_s : "external local preview (--force)",
+        "source" => url.to_s.strip.empty? ? "recorded_preview" : "explicit_url"
+      }
+    end
+
+    def qa_playwright_target_blockers(state, target, preview:, force:)
+      blockers = []
+      adapter = browser_qa_adapter(state)
+      unless target
+        blockers << "No running local preview was found; run aiweb preview first and keep it running before Playwright QA, or pass --url with --force for an already-running local preview."
+        return blockers
+      end
+      begin
+        uri = URI.parse(target["url"].to_s)
+        host = uri.host.to_s
+        unless uri.scheme == "http" && %w[localhost 127.0.0.1].include?(host)
+          blockers << "Playwright QA may only target local http preview URLs on localhost or 127.0.0.1; found #{target["url"].inspect}."
+        end
+        unless adapter.fetch("allowed_hosts").include?(host)
+          blockers << "Preview host #{host.inspect} is not in adapters.browser_qa.allowed_hosts #{adapter.fetch("allowed_hosts").inspect}."
+        end
+      rescue URI::InvalidURIError
+        blockers << "Preview URL #{target["url"].inspect} is not a valid URI."
+      end
+
+      if adapter["file_access"] == "unrestricted"
+        blockers << "Playwright QA file_access must be workspace_only or explicit_paths, not unrestricted."
+      end
+      blockers
+    end
+
+    def qa_playwright_spec
+      <<~JS
+        const { test, expect } = require('@playwright/test');
+
+        test('AI Web Director PR11 smoke', async ({ page }) => {
+          const url = process.env.PLAYWRIGHT_BASE_URL;
+          if (!url) throw new Error('PLAYWRIGHT_BASE_URL is required');
+          await page.goto(url);
+          await expect(page.locator('body')).toBeVisible();
+        });
+      JS
+    end
+
+    def qa_playwright_task_id(task_id, run_id)
+      value = task_id.to_s.strip
+      value.empty? ? run_id : value
+    end
+
+    def qa_playwright_result(task_id:, status:, started_at:, finished_at:, duration_minutes:, timed_out:, target:, checks:, evidence:, console_errors:, network_errors:)
+      {
+        "schema_version" => 1,
+        "task_id" => task_id,
+        "status" => status,
+        "started_at" => started_at || now,
+        "finished_at" => finished_at || now,
+        "duration_minutes" => duration_minutes,
+        "timed_out" => timed_out,
+        "environment" => {
+          "url" => target["url"],
+          "browser" => "playwright",
+          "browser_version" => "unknown",
+          "viewport" => { "width" => 1440, "height" => 900, "name" => "desktop" },
+          "commit_sha" => git_commit_sha,
+          "server_command" => target["server_command"].to_s
+        },
+        "checks" => checks,
+        "evidence" => evidence,
+        "console_errors" => console_errors,
+        "network_errors" => network_errors,
+        "recommended_action" => status == "passed" ? "advance" : "create_fix_packet",
+        "created_fix_task" => nil
+      }
+    end
+
+    def qa_playwright_pending_check
+      {
+        "id" => "QA-PLAYWRIGHT",
+        "category" => "flow",
+        "severity" => "high",
+        "status" => "pending",
+        "expected" => "Playwright QA runs only against a local preview URL under the configured browser QA adapter contract.",
+        "actual" => "Dry run only; no files, browsers, or Node processes are started.",
+        "evidence" => [],
+        "notes" => "No files or browser processes are created during --dry-run.",
+        "accepted_risk_id" => nil
+      }
+    end
+
+    def qa_playwright_status_check(status, blocking_issues, stdout_path, stderr_path)
+      {
+        "id" => "QA-PLAYWRIGHT",
+        "category" => "flow",
+        "severity" => "high",
+        "status" => status == "passed" ? "passed" : status,
+        "expected" => "Local Playwright QA completes without installs, builds, repairs, deploys, external hosts, or .env mutation.",
+        "actual" => blocking_issues.empty? ? "Playwright command completed successfully." : blocking_issues.join("; "),
+        "evidence" => [relative(stdout_path), relative(stderr_path)],
+        "notes" => "Runner command uses node_modules/.bin/playwright with PLAYWRIGHT_BASE_URL and executes from the project root.",
+        "accepted_risk_id" => nil
+      }
+    end
+
+    def qa_playwright_next_action(status)
+      case status
+      when "passed" then "use the recorded qa-result-v1 evidence for QA gate review or rerun aiweb qa-report --from if a phase report is required"
+      when "blocked" then "resolve the blocked local Playwright QA precondition, then rerun aiweb qa-playwright"
+      else "inspect .ai-web/runs Playwright QA logs, fix the scaffold or tests, then rerun aiweb qa-playwright"
+      end
+    end
+
+    def git_commit_sha
+      stdout, _stderr, status = Open3.capture3("git", "rev-parse", "HEAD", chdir: root)
+      status.success? ? stdout.strip : "unknown"
+    rescue StandardError
+      "unknown"
     end
 
     def preview_run_metadata(run_id:, status:, command:, started_at:, finished_at:, exit_code:, pid:, port:, url:, stdout_log:, stderr_log:, metadata_path:, blocking_issues:, dry_run:)
