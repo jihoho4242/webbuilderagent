@@ -2788,7 +2788,9 @@ class AiwebCliTest < Minitest::Test
       assert_equal 0, code
       assert_equal "", stderr
       assert_equal true, payload["dry_run"]
-      assert_equal "planned agent run", payload["action_taken"]
+      assert_match(/agent run/i, payload["action_taken"])
+      assert_includes %w[planned dry_run], payload.dig("agent_run", "status")
+      assert_equal true, payload.dig("agent_run", "dry_run")
       assert_match(/agent run/i, payload["next_action"])
       assert_no_agent_run_side_effects(before_entries: before_entries, before_state: before_state)
       assert_equal before_source, File.read("src/components/Hero.astro"), "agent-run --dry-run must not patch source"
@@ -2839,7 +2841,7 @@ class AiwebCliTest < Minitest::Test
 
       assert_equal 5, code
       assert_equal "", stderr
-      assert_equal "blocked", payload["status"]
+      assert_equal "blocked", payload.dig("agent_run", "status")
       assert_match(/approved|approval/i, [payload.dig("error", "message"), payload["blocking_issues"], payload.dig("agent_run", "blocking_issues")].flatten.compact.join("\n"))
       assert_no_agent_run_side_effects(before_entries: before_entries, before_state: before_state)
       assert_equal before_source, File.read("src/components/Hero.astro"), "blocked agent-run must not patch source"
@@ -2903,7 +2905,7 @@ class AiwebCliTest < Minitest::Test
       assert_equal 0, code
       assert_equal "", stderr
       assert_equal false, payload["dry_run"]
-      assert_equal "passed", payload["status"]
+      assert_equal "passed", payload.dig("agent_run", "status")
       assert_match(/agent run/i, payload["action_taken"])
       assert run_dir, "approved agent-run must write a run directory"
       assert diff_path, "approved agent-run must write a diff patch"
@@ -2966,7 +2968,7 @@ class AiwebCliTest < Minitest::Test
 
       assert_equal 1, code
       assert_equal "", stderr
-      assert_equal "failed", payload["status"]
+      assert_equal "failed", payload.dig("agent_run", "status")
       assert_match(/failed|exit code 23/i, [payload.dig("error", "message"), payload["blocking_issues"], payload.dig("agent_run", "blocking_issues")].flatten.compact.join("\n"))
       assert run_dir, "failed agent-run must still write a run directory"
       assert_equal "fake codex failure stdout\n", File.read(File.join(run_dir, "stdout.log"))
@@ -2976,7 +2978,7 @@ class AiwebCliTest < Minitest::Test
     end
   end
 
-  def test_agent_run_rejects_env_paths_and_no_target_tasks_without_leaking_secrets_or_writing
+  def test_agent_run_rejects_env_paths_without_leaking_secrets_or_writing
     in_tmp do
       prepare_profile_d_scaffold_flow
       json_cmd("component-map")
@@ -3015,10 +3017,32 @@ class AiwebCliTest < Minitest::Test
 
       assert_equal 5, code
       assert_equal "", stderr
-      assert_equal "blocked", payload["status"]
+      assert_equal "blocked", payload.dig("agent_run", "status")
       assert_match(/\.env|unsafe|refus/i, [payload.dig("error", "message"), payload["blocking_issues"], payload.dig("agent_run", "blocking_issues")].flatten.compact.join("\n"))
       assert_no_agent_run_side_effects(before_entries: before_entries, before_state: before_state, env_size: env_size, env_mtime: env_mtime)
       refute_includes stdout, secret
+    end
+  end
+
+  def test_agent_run_blocks_without_safe_target_or_task_artifact
+    in_tmp do
+      prepare_profile_d_scaffold_flow
+      json_cmd("component-map")
+      state = load_state
+      state["implementation"]["current_task"] = nil
+      write_state(state)
+      FileUtils.rm_rf(".ai-web/tasks")
+      before_entries = project_entries
+      before_state = File.read(".ai-web/state.yaml")
+
+      stdout, stderr, code = run_aiweb("agent-run", "--task", "latest", "--agent", "codex", "--approved", "--json")
+      payload = JSON.parse(stdout)
+
+      assert_equal 5, code
+      assert_equal "", stderr
+      assert_equal "blocked", payload.dig("agent_run", "status")
+      assert_match(/task|target|latest|source/i, [payload.dig("error", "message"), payload["blocking_issues"], payload.dig("agent_run", "blocking_issues")].flatten.compact.join("\n"))
+      assert_no_agent_run_side_effects(before_entries: before_entries, before_state: before_state)
     end
   end
 
