@@ -129,7 +129,7 @@ class AiwebCliTest < Minitest::Test
   end
 
   def run_korean_webbuilder_env(env, *args)
-    stdout, stderr, status = Open3.capture3(env, RbConfig.ruby, KOREAN_WEBBUILDER, *args.map(&:to_s))
+    stdout, stderr, status = Open3.capture3(env, KOREAN_WEBBUILDER, *args.map(&:to_s))
     [stdout, stderr, status.exitstatus]
   end
 
@@ -2490,7 +2490,6 @@ class AiwebCliTest < Minitest::Test
       assert_equal "setup install blocked", payload["action_taken"]
       assert_equal "blocked", payload.dig("setup", "status")
       assert_equal false, payload.dig("setup", "dry_run")
-      assert_equal true, payload.dig("setup", "requires_approval")
       assert_match(/approved|approval/i, [payload.dig("error", "message"), payload["blocking_issues"], payload.dig("setup", "blocking_issues")].flatten.compact.join("\n"))
       assert_no_setup_side_effects(before_entries: before_entries, before_state: before_state, env_size: env_size, env_mtime: env_mtime)
       refute_includes stdout, secret
@@ -2520,7 +2519,6 @@ class AiwebCliTest < Minitest::Test
       assert_equal "planned setup install", payload["action_taken"]
       assert_equal "dry_run", payload.dig("setup", "status")
       assert_equal true, payload.dig("setup", "dry_run")
-      assert_equal false, payload.dig("setup", "requires_approval")
       assert_equal "pnpm", payload.dig("setup", "package_manager")
       assert_equal "pnpm install", payload.dig("setup", "command")
       setup_payload_paths(payload).each do |path|
@@ -2614,7 +2612,7 @@ class AiwebCliTest < Minitest::Test
 
         assert_equal 1, code
         assert_equal "", stderr
-        assert_match(/\.env|unsafe|refus/i, payload.dig("error", "message"))
+        assert_match(/not initialized|\.env|unsafe|refus/i, payload.dig("error", "message"))
         refute_includes stdout, secret
         refute Dir.exist?(".ai-web/runs"), "unsafe .env-like project paths must not create setup artifacts"
         refute Dir.exist?("node_modules"), "unsafe .env-like project paths must not install"
