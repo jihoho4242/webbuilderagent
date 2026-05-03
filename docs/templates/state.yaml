@@ -100,6 +100,11 @@ implementation:
   scaffold_metadata_path: null
   current_task: null
   completed_tasks: []
+setup:
+  latest_run: null
+  package_manager: null
+  node_modules_present: false
+  last_installed_at: null
 qa:
   current_checklist: null
   final_report: ".ai-web/qa/final-report.md"

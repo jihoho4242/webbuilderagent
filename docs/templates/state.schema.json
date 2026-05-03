@@ -12,6 +12,7 @@
     "artifacts",
     "design_candidates",
     "implementation",
+    "setup",
     "qa",
     "deploy",
     "budget",
@@ -374,6 +375,39 @@
           "items": {
             "type": "string"
           }
+        }
+      }
+    },
+    "setup": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "latest_run",
+        "package_manager",
+        "node_modules_present",
+        "last_installed_at"
+      ],
+      "properties": {
+        "latest_run": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "package_manager": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "node_modules_present": {
+          "type": "boolean"
+        },
+        "last_installed_at": {
+          "type": [
+            "string",
+            "null"
+          ]
         }
       }
     },
