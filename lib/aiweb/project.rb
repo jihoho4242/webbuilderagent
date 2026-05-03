@@ -1583,7 +1583,13 @@ module Aiweb
       diff_path = File.join(aiweb_dir, "diffs", "#{run_id}.patch")
 
       task_source = resolve_agent_run_task_source(task, state)
-      component_map = load_agent_run_component_map
+      component_map = nil
+      component_map_error = nil
+      begin
+        component_map = load_agent_run_component_map
+      rescue UserError => e
+        component_map_error = e.message
+      end
       task_text = task_source["path"] ? File.read(task_source["path"]) : nil
       design_path = File.join(aiweb_dir, "DESIGN.md")
       design_text = File.file?(design_path) ? File.read(design_path) : nil
@@ -1598,7 +1604,7 @@ module Aiweb
       blockers = []
       blockers << task_source["reason"] if task_source["path"].nil?
       blockers << "agent-run task packet does not identify any safe source targets" if source_paths.empty?
-      blockers << "agent-run component map is malformed" if component_map_text && component_map.nil?
+      blockers << "agent-run component map is malformed" if component_map_error
       blockers << "agent-run requires --approved for real command execution" if !dry_run && !approved
       blockers << "codex executable is missing from PATH" if !dry_run && approved && executable_path(agent_name).nil?
       blockers.concat(agent_run_forbidden_path_blockers(task_text, component_map_text))
