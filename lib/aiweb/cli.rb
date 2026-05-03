@@ -587,7 +587,7 @@ module Aiweb
       return result unless result.is_a?(Hash) && result["setup"].is_a?(Hash)
 
       setup = result["setup"]
-      setup["requires_approval"] = !approved && !dry_run && setup["status"].to_s == "blocked"
+      setup["requires_approval"] = !approved
       setup["approved"] = approved unless setup.key?("approved")
       setup["dry_run"] = dry_run unless setup.key?("dry_run")
       result
