@@ -31,7 +31,7 @@ module Aiweb
     def run
       parse_global_flags!
       if unsafe_env_path?(@root)
-        return emit_error("unsafe project path blocked: .env/.env.* paths are not allowed", EXIT_VALIDATION_FAILED)
+        return emit_error("unsafe project path blocked: .env/.env.* paths are not allowed", EXIT_UNSAFE_EXTERNAL_ACTION)
       end
 
       command = @argv.shift || "help"
@@ -73,11 +73,11 @@ module Aiweb
         when "--path"
           value = @argv.shift
           raise OptionParser::MissingArgument, "--path" if value.to_s.empty?
-          raise UserError.new("unsafe --path target blocked: .env/.env.* paths are not allowed", EXIT_VALIDATION_FAILED) if unsafe_env_path?(value)
+          raise UserError.new("unsafe --path target blocked: .env/.env.* paths are not allowed", EXIT_UNSAFE_EXTERNAL_ACTION) if unsafe_env_path?(value)
 
           @root = File.expand_path(value)
         when /\A--path=(.+)\z/
-          raise UserError.new("unsafe --path target blocked: .env/.env.* paths are not allowed", EXIT_VALIDATION_FAILED) if unsafe_env_path?($1)
+          raise UserError.new("unsafe --path target blocked: .env/.env.* paths are not allowed", EXIT_UNSAFE_EXTERNAL_ACTION) if unsafe_env_path?($1)
 
           @root = File.expand_path($1)
         else
@@ -560,8 +560,8 @@ module Aiweb
 
       task = opts[:task].to_s.strip
       agent = opts[:agent].to_s.strip
-      raise UserError.new("agent-run requires --task TASK", EXIT_VALIDATION_FAILED) if task.empty?
-      raise UserError.new("agent-run requires --agent AGENT", EXIT_VALIDATION_FAILED) if agent.empty?
+      raise UserError.new("agent-run requires --task TASK", EXIT_UNSAFE_EXTERNAL_ACTION) if task.empty?
+      raise UserError.new("agent-run requires --agent AGENT", EXIT_UNSAFE_EXTERNAL_ACTION) if agent.empty?
 
       approved = !!opts[:approved]
       return agent_run_approval_blocked_payload(task: task, agent: agent) if !@dry_run && !approved
