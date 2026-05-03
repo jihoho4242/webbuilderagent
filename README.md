@@ -22,6 +22,7 @@ Today the CLI manages the project director workspace: `.ai-web` state, phase gat
 - Expose the PR15 safe local visual polish contract through `aiweb visual-polish --repair` / `웹빌더 visual-polish --repair`: it consumes failed, `repair`, or `redesign` visual critique evidence into a bounded `visual_polish` record, pre-polish snapshot, and polish task without editing source, installing packages, starting preview, running build/QA, capturing screenshots, touching `.env`, deploying, contacting external hosting, or calling network/AI services.
 - Expose the PR16 local Workbench UI foundation through `aiweb workbench` / `웹빌더 workbench`: it plans or exports `.ai-web/workbench/index.html` and `.ai-web/workbench/workbench.json` from existing Director state/artifacts, represents controls as declarative CLI command descriptors, supports no-write `--dry-run`, excludes `.env` / `.env.*` from surfaced artifacts, and never directly mutates `.ai-web/state.yaml`.
 - Expose the PR17 Component Map + Visual Edit planning foundation through `aiweb component-map` / `웹빌더 component-map` and `aiweb visual-edit` / `웹빌더 visual-edit`: it maps stable `data-aiweb-id` DOM regions to source files in `.ai-web/component-map.json`, creates selected-region visual edit handoff artifacts under `.ai-web/tasks/` and `.ai-web/visual/`, supports no-write `--dry-run`, rejects `.env` / `.env.*` map paths without reading them, and never auto-patches source, runs build/QA/browser/preview, deploys, installs packages, or calls network/AI services.
+- Expose the PR18 Profile S local scaffold and Supabase secret QA surface through `aiweb scaffold --profile S` / `웹빌더 scaffold --profile S` and `aiweb supabase-secret-qa` / `웹빌더 supabase-secret-qa`: Profile S is a local-only Next.js + Supabase SSR placeholder scaffold, uses `supabase/env.example.template` instead of `.env.example`, includes only `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` placeholders, and intentionally performs no external Supabase project creation, network calls, deploy, install, build, or preview.
 
 ## Upgrade direction
 
@@ -36,9 +37,10 @@ The intended product direction is a design-first, natural-language webbuilder: t
 7. Convert failed visual critique evidence into bounded local visual polish tasks and records.
 8. Review the local Workbench UI panels for chat, artifacts, design, preview, file tree, QA, critique, and run timeline status.
 9. Select a mapped `data-aiweb-id` region and create a bounded visual edit handoff instead of regenerating the full page.
-10. Repair implementation manually or through later approved automation, then deploy later once gates pass and evidence is recorded.
+10. For Supabase-backed work, scaffold Profile S locally with safe SSR placeholders and rerun `supabase-secret-qa` before copying values into a private local env file outside the generator guardrail.
+11. Repair implementation manually or through later approved automation, then deploy later once gates pass and evidence is recorded.
 
-The current Director CLI is the foundation for that loop: state, gates, QA contracts, snapshots, local preview evidence, bounded repair-loop records, visual polish records/tasks/snapshots, component maps, and targeted visual edit handoff records are in place before the system grows into end-to-end generation, source repair automation, and deploy. It is not yet a full app generator.
+The current Director CLI is the foundation for that loop: state, gates, QA contracts, snapshots, local preview evidence, bounded repair-loop records, visual polish records/tasks/snapshots, component maps, targeted visual edit handoff records, and local-only Profile S Supabase scaffold/secret-QA records are in place before the system grows into end-to-end generation, source repair automation, and deploy. It is not yet a full app generator.
 
 ## Quick start
 
@@ -147,6 +149,19 @@ PR16 adds the local Workbench UI foundation as a static artifact export:
 
 `workbench --dry-run` is a no-write planning path: it reports `workbench.status: planned`, the panel list, declarative control descriptors, and planned `.ai-web/workbench/index.html` / `.ai-web/workbench/workbench.json` paths without creating files or changing `.ai-web/state.yaml`. A real `workbench --export` may write only the Workbench HTML and JSON manifest under `.ai-web/workbench/`; it summarizes existing Director artifacts for panels such as chat, plan/artifacts, design candidates, selected `DESIGN.md`, preview, file tree, QA results, visual critique, and run timeline. Workbench controls are descriptors for existing CLI/daemon commands (`aiweb run`, `aiweb design`, `aiweb build`, `aiweb preview`, `aiweb qa-playwright`, `aiweb visual-critique`, `aiweb repair`, `aiweb visual-polish`, `aiweb component-map`, `aiweb visual-edit --target DATA_AIWEB_ID --prompt TEXT`) and do not directly write state. Export executes no controls, launches no preview/browser/QA/daemon, installs no packages, calls no network/AI services, and writes no files outside `.ai-web/workbench/index.html` and `.ai-web/workbench/workbench.json`. The file tree and summaries intentionally exclude `.env`, `.env.*`, `.git`, `node_modules`, and bulky generated directories so local secrets are not surfaced.
 
+PR18 adds the local-only Profile S Supabase scaffold and secret QA surface:
+
+```bash
+./bin/aiweb --path ~/Desktop/aiweb-premium-service-site scaffold --profile S --dry-run
+./bin/aiweb --path ~/Desktop/aiweb-premium-service-site scaffold --profile S
+./bin/aiweb --path ~/Desktop/aiweb-premium-service-site supabase-secret-qa --dry-run --json
+./bin/aiweb --path ~/Desktop/aiweb-premium-service-site supabase-secret-qa --json
+웹빌더 --path ~/Desktop/aiweb-premium-service-site scaffold --profile S --dry-run
+웹빌더 --path ~/Desktop/aiweb-premium-service-site supabase-secret-qa --dry-run
+```
+
+Profile S is a local scaffold/QA path for Next.js + Supabase SSR placeholders. It writes a safe non-dot template at `supabase/env.example.template` and intentionally does **not** generate `.env.example` while the no-`.env` guardrail is active. The only documented public placeholders are `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`; service-role, password, private-key, and other secret placeholders are rejected by the secret QA contract. `supabase-secret-qa --dry-run` writes nothing and must not read `.env` / `.env.*`; a real QA run records its artifact at `.ai-web/qa/supabase-secret-qa.json`. Real Profile S scaffold/QA remains local-only: it does not run `supabase login`, `supabase link`, `supabase projects create`, `supabase init`, `supabase start`, `supabase db push`, package install, build, preview, deploy, external hosting, or other network/project-creation actions.
+
 PR17 adds the local Component Map + Visual Edit planning foundation:
 
 ```bash
@@ -182,6 +197,8 @@ Phase-sensitive commands are guarded by the Director state machine:
 ./bin/aiweb workbench --dry-run
 ./bin/aiweb component-map --dry-run
 ./bin/aiweb visual-edit --target component.hero.copy --prompt "이 섹션 더 고급스럽게" --dry-run
+./bin/aiweb scaffold --profile S --dry-run
+./bin/aiweb supabase-secret-qa --dry-run
 ```
 
 Quality is an explicit contract. After entering phase-0.25, review `.ai-web/quality.yaml` and set `quality.approved: true` before advancing again.
@@ -205,6 +222,8 @@ Manual repair/override for guarded commands:
 ./bin/aiweb workbench --force --export
 ./bin/aiweb component-map --force
 ./bin/aiweb visual-edit --target component.hero.copy --prompt "이 섹션 더 고급스럽게" --from-map latest --force
+./bin/aiweb scaffold --profile S --force
+./bin/aiweb supabase-secret-qa --force
 ```
 
 Rollback leaves the phase blocked until recovery evidence is recorded:

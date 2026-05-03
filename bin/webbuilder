@@ -9,7 +9,7 @@ require "time"
 class WebbuilderLauncher
   KNOWN_COMMANDS = %w[
     help --help -h version --version
-    start init status runtime-plan scaffold-status build preview interview run design-brief design-system design-prompt design select-design scaffold ingest-design next-task
+    start init status runtime-plan scaffold-status build preview interview run design-brief design-system design-prompt design select-design scaffold supabase-secret-qa ingest-design next-task
     qa-checklist qa-report repair qa-playwright qa-a11y qa-lighthouse visual-critique visual-polish advance rollback resolve-blocker snapshot
     workbench component-map visual-edit design-systems skills craft intent
   ].freeze
@@ -58,6 +58,8 @@ class WebbuilderLauncher
         웹빌더 --path ~/Desktop/my-site status
         웹빌더 --path ~/Desktop/my-site advance
         웹빌더 --path ~/Desktop/my-site scaffold --profile D
+        웹빌더 --path ~/Desktop/my-site scaffold --profile S --dry-run
+        웹빌더 --path ~/Desktop/my-site supabase-secret-qa --dry-run
         웹빌더 --path ~/Desktop/my-site runtime-plan
         웹빌더 --path ~/Desktop/my-site build --dry-run
         웹빌더 --path ~/Desktop/my-site preview --dry-run
@@ -83,7 +85,11 @@ class WebbuilderLauncher
 
       기본 스택 프로필:
         D — Astro + MDX/Content Collections + Cloudflare Pages + Tailwind
+        S — Next.js + Supabase SSR placeholder scaffold (local-only)
 
+      Profile S는 로컬 scaffold/QA 전용이다. Supabase 프로젝트 생성, 네트워크, deploy, install, build, preview를 수행하지 않는다.
+      Profile S의 안전 템플릿은 supabase/env.example.template이며 NEXT_PUBLIC_SUPABASE_URL, NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY placeholder만 포함한다.
+      활성 no-.env guardrail 때문에 .env.example은 의도적으로 생성하지 않으며, supabase-secret-qa는 .env/.env.*를 읽지 않고 안전 경로만 점검해 .ai-web/qa/supabase-secret-qa.json에 기록한다.
       런타임 준비 확인은 runtime-plan 또는 scaffold-status로 패키지 설치/Node 실행 없이 읽기 전용으로 점검한다.
       빌드와 로컬 프리뷰는 runtime-plan 준비 상태가 ready일 때만 웹빌더 build/preview 또는 aiweb build/preview로 실행한다.
       preview는 scaffold dev 명령을 로컬에서 띄우는 PR10 경로이며 설치, .env 접근, Playwright/axe/repair/deploy를 수행하지 않는다.

@@ -17,7 +17,7 @@ module Aiweb
     EXIT_UNSAFE_EXTERNAL_ACTION = 5
     EXIT_INTERNAL_ERROR = 10
 
-    MUTATION_COMMANDS = %w[start init interview run ingest-design next-task qa-checklist qa-report repair advance rollback resolve-blocker snapshot design-brief design-system design-prompt design select-design scaffold build preview qa-playwright browser-qa qa-a11y a11y-qa qa-lighthouse lighthouse-qa visual-critique visual-polish workbench component-map visual-edit].freeze
+    MUTATION_COMMANDS = %w[start init interview run ingest-design next-task qa-checklist qa-report repair advance rollback resolve-blocker snapshot design-brief design-system design-prompt design select-design scaffold build preview qa-playwright browser-qa qa-a11y a11y-qa qa-lighthouse lighthouse-qa visual-critique visual-polish workbench component-map visual-edit supabase-secret-qa].freeze
     RUNTIME_PLAN_COMMANDS = %w[runtime-plan scaffold-status].freeze
     REGISTRY_COMMANDS = %w[design-systems skills craft].freeze
 
@@ -159,6 +159,18 @@ module Aiweb
           raise UserError.new("scaffold does not accept extra positional arguments: #{@argv.join(", ")}", EXIT_VALIDATION_FAILED)
         end
         project.scaffold(profile: opts[:profile] || "D", dry_run: @dry_run, force: opts[:force])
+      when "supabase-secret-qa"
+        opts = parse_options do |o, options|
+          o.on("--force") { options[:force] = true }
+        end
+        unless @argv.empty?
+          raise UserError.new("supabase-secret-qa does not accept extra positional arguments: #{@argv.join(", ")}", EXIT_VALIDATION_FAILED)
+        end
+        unless project.respond_to?(:supabase_secret_qa)
+          return supabase_secret_qa_adapter_unavailable_payload(opts)
+        end
+
+        project.supabase_secret_qa(dry_run: @dry_run, force: opts[:force])
       when "build"
         parse_options
         unless @argv.empty?
@@ -438,6 +450,34 @@ module Aiweb
       opts
     end
 
+    def supabase_secret_qa_adapter_unavailable_payload(opts)
+      command_line = ["aiweb", "supabase-secret-qa"]
+      command_line << "--force" if opts[:force]
+      command_line << "--dry-run" if @dry_run
+
+      {
+        "schema_version" => 1,
+        "current_phase" => nil,
+        "action_taken" => "supabase secret QA unavailable",
+        "changed_files" => [],
+        "blocking_issues" => ["supabase-secret-qa command surface is reserved, but the project adapter is not implemented yet."],
+        "missing_artifacts" => [],
+        "supabase_secret_qa" => {
+          "schema_version" => 1,
+          "status" => "blocked",
+          "dry_run" => @dry_run,
+          "force" => !!opts[:force],
+          "command" => command_line.join(" "),
+          "planned_artifact_path" => ".ai-web/qa/supabase-secret-qa.json",
+          "scanned_paths" => ["supabase/env.example.template"],
+          "read_dot_env" => false,
+          "guardrails" => ["no .env/.env.* reads", "no .env.example generation", "no external Supabase project creation", "no network/deploy/install/build/preview"],
+          "blocking_issues" => ["supabase-secret-qa project adapter is not available in this build."]
+        },
+        "next_action" => "integrate the local Profile S Supabase secret QA project adapter, then rerun aiweb supabase-secret-qa --dry-run"
+      }
+    end
+
     def visual_critique_adapter_unavailable_payload(opts)
       command_line = ["aiweb", "visual-critique"]
       command_line.concat(["--screenshot", opts[:screenshot].to_s]) unless opts[:screenshot].to_s.empty?
@@ -651,6 +691,8 @@ module Aiweb
           design --candidates 3 [--force]
           select-design candidate-01|candidate-02|candidate-03
           scaffold --profile D [--force]
+          scaffold --profile S [--force]
+          supabase-secret-qa [--force]
           runtime-plan (alias: scaffold-status)
           build
           ingest-design [--id ID] [--title TITLE] [--source SOURCE] [--notes NOTES] [--selected] [--force]
@@ -683,7 +725,8 @@ module Aiweb
           design-prompt: phase-3 or phase-3.5
           design: creates deterministic HTML design candidates without app scaffold
           select-design: records selected HTML candidate without overwriting DESIGN.md
-          scaffold: creates Profile D Astro-style static app skeleton without installing packages
+          scaffold: creates Profile D Astro-style static app skeleton or Profile S local Next.js + Supabase SSR scaffold without installing packages, creating .env.example, contacting Supabase, deploying, or running build/preview
+          supabase-secret-qa: reruns local-only Profile S secret guard QA against safe scaffold/template paths, including supabase/env.example.template, and records .ai-web/qa/supabase-secret-qa.json; --dry-run writes nothing and never reads .env/.env.*
           runtime-plan/scaffold-status: read-only runtime readiness metadata; does not install or launch Node
           build: runs the scaffolded Astro build only after runtime-plan is ready and records .ai-web/runs logs
           preview: starts/stops the local scaffold dev server after runtime-plan is ready; --dry-run does not write files or launch Node
@@ -702,6 +745,7 @@ module Aiweb
           visual-critique: phase-7 through phase-11; records deterministic local visual critique evidence from explicit input paths only
           visual-polish --repair: records safe local visual polish repair loop from failed/repair/redesign critique evidence in phase-7 through phase-11 without source edits, build, QA, preview, browser capture, deploy, package install, network, or AI calls
           component-map / visual-edit: phase-7 through phase-11; map stable DOM regions and create selected-region visual edit handoff records without source auto-patches or external execution
+          Profile S: local scaffold/QA only; Supabase SSR placeholders are NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY in supabase/env.example.template, and .env.example is intentionally not generated under the no-.env guardrail
         Use --force only for manual repair/override.
       HELP
     end
@@ -753,6 +797,7 @@ module Aiweb
       return human_workbench_result(result) if result["workbench"]
       return human_component_map_result(result) if result["component_map"]
       return human_visual_edit_result(result) if result["visual_edit"]
+      return human_supabase_secret_qa_result(result) if result["supabase_secret_qa"]
 
       changed = result["changed_files"] || result["artifacts_changed"] || []
       blockers = result["blocking_issues"] || []
@@ -780,6 +825,25 @@ module Aiweb
         "- Forbidden design patterns: #{intent.fetch("forbidden_design_patterns").join("; ")}"
       ]
       lines.join("\n")
+    end
+
+    def human_supabase_secret_qa_result(result)
+      qa = result.fetch("supabase_secret_qa")
+      blockers = qa["blocking_issues"] || result["blocking_issues"] || []
+      paths = []
+      %w[artifact_path planned_artifact_path].each do |key|
+        value = qa[key]
+        paths << "#{key}=#{value}" unless value.to_s.empty?
+      end
+      [
+        "Supabase secret QA: #{qa["status"] || "n/a"}",
+        "Dry run: #{qa.key?("dry_run") ? qa["dry_run"] : "n/a"}",
+        "Read .env: #{qa.key?("read_dot_env") ? qa["read_dot_env"] : false}",
+        "Scanned paths: #{Array(qa["scanned_paths"]).empty? ? "none" : Array(qa["scanned_paths"]).join(", ")}",
+        "Artifacts: #{paths.empty? ? "none" : paths.join(", ")}",
+        "Blocking issues: #{blockers.empty? ? "none" : blockers.join("; ")}",
+        "Next command: #{result["next_action"] || "n/a"}"
+      ].join("\n")
     end
 
     def human_visual_critique_result(result)
@@ -1019,6 +1083,15 @@ module Aiweb
       EXIT_VALIDATION_FAILED
     end
 
+    def supabase_secret_qa_exit_code(result)
+      status = result.dig("supabase_secret_qa", "status").to_s
+      return EXIT_ADAPTER_UNAVAILABLE if status == "blocked" && (result["action_taken"].to_s =~ /unavailable/)
+      return EXIT_SUCCESS if %w[planned dry_run passed].include?(status)
+      return EXIT_PHASE_BLOCKED if status == "blocked" && ((result.dig("supabase_secret_qa", "blocking_issues") || []) + (result["blocking_issues"] || [])).join(" ").match?(/phase/i)
+
+      EXIT_VALIDATION_FAILED
+    end
+
     def workbench_exit_code(result)
       status = result.dig("workbench", "status").to_s
       return EXIT_ADAPTER_UNAVAILABLE if status == "blocked" && (result["action_taken"].to_s =~ /unavailable/)
@@ -1043,6 +1116,7 @@ module Aiweb
       return workbench_exit_code(result) if command == "workbench"
       return component_map_exit_code(result) if command == "component-map"
       return visual_edit_exit_code(result) if command == "visual-edit"
+      return supabase_secret_qa_exit_code(result) if command == "supabase-secret-qa"
       return EXIT_SUCCESS if %w[help version status start init interview run design-brief design-system design-prompt design select-design scaffold ingest-design next-task qa-checklist qa-report rollback resolve-blocker snapshot visual-critique visual-polish component-map visual-edit].include?(command)
       if command == "advance" && result["action_taken"] == "advance blocked"
         issue = result["blocking_issues"].join(" ")

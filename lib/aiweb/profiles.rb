@@ -26,13 +26,19 @@ module Aiweb
         scaffold_target: "Astro + MDX/Content Collections + Cloudflare Pages + Tailwind + sitemap/RSS",
         deploy: "Cloudflare Pages static deploy with sitemap/RSS release checklist",
         override: "Canonical default for content/SEO/brand sites without server-side app complexity."
+      },
+      "S" => {
+        name: "Next.js + Supabase local app scaffold",
+        scaffold_target: "Next.js App Router + Supabase SSR client/server stubs + draft migrations/RLS/storage docs",
+        deploy: "Local-only Supabase planning scaffold; external project creation and deployment are intentionally out of scope",
+        override: "Use when the next slice needs local auth/data/storage planning without touching external Supabase resources."
       }
     }.freeze
 
     def self.fetch!(profile)
       key = profile.to_s.upcase
       data = PROFILES[key]
-      raise ArgumentError, "unknown profile #{profile.inspect}; expected A, B, C, or D" unless data
+      raise ArgumentError, "unknown profile #{profile.inspect}; expected A, B, C, D, or S" unless data
       [key, data]
     end
   end

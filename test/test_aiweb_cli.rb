@@ -2051,6 +2051,31 @@ class AiwebCliTest < Minitest::Test
     json_cmd("select-design", "candidate-02")
   end
 
+  def prepare_profile_s_design_flow
+    _init_payload, init_code = json_cmd("init", "--profile", "S")
+    assert_equal 0, init_code
+    _interview_payload, interview_code = json_cmd("interview", "--idea", "회원 로그인과 대시보드가 있는 Supabase 기반 로컬 우선 웹앱")
+    assert_equal 0, interview_code
+    _brief_payload, brief_code = json_cmd("design-brief", "--force")
+    assert_equal 0, brief_code
+    File.write(".ai-web/DESIGN.md", "# Supabase App Design System\n\nUse authenticated app clarity, local-first data boundaries, and explicit secret handling.\n")
+    _design_payload, design_code = json_cmd("design", "--candidates", "3")
+    assert_equal 0, design_code
+    _select_payload, select_code = json_cmd("select-design", "candidate-02")
+    assert_equal 0, select_code
+  end
+
+  def assert_no_dot_env_files_created
+    assert_empty Dir.glob(".env*"), "Profile S must not create .env, .env.*, or .env.example files"
+  end
+
+  def profile_s_generated_text
+    Dir.glob("{package.json,next.config.mjs,tsconfig.json,src/**/*,supabase/**/*,.ai-web/scaffold-profile-S.json,.ai-web/qa/supabase-secret-qa.json}", File::FNM_DOTMATCH)
+       .select { |path| File.file?(path) }
+       .map { |path| "#{path}\n#{File.read(path)}" }
+       .join("\n")
+  end
+
   def refute_scaffold_outputs(*allowed_existing)
     scaffold_outputs = %w[
       package.json
@@ -2250,6 +2275,123 @@ class AiwebCliTest < Minitest::Test
       assert_equal "", web_stderr
       assert_equal "generated scaffold profile D", web_payload["action_taken"]
       assert File.exist?(File.join(target, "src", "pages", "index.astro"))
+    end
+  end
+
+  def test_init_profile_s_records_local_supabase_stack_without_dot_env_template
+    in_tmp do
+      payload, code = json_cmd("init", "--profile", "S")
+
+      assert_equal 0, code
+      assert_equal "initialized profile S", payload["action_taken"]
+      state = load_state
+      assert_equal "S", state.dig("implementation", "stack_profile")
+      assert_match(/Supabase/i, state.dig("implementation", "scaffold_target"))
+      assert File.exist?(".ai-web/stack.md")
+      assert File.exist?(".ai-web/deploy.md")
+      assert_match(/Supabase/i, File.read(".ai-web/stack.md"))
+      assert_match(/external deploy\/provider actions require explicit human approval/i, File.read(".ai-web/deploy.md"))
+      refute_match(/supabase login|supabase projects create|supabase link/i, File.read(".ai-web/deploy.md"))
+      assert_no_dot_env_files_created
+    end
+  end
+
+  def test_scaffold_profile_s_creates_local_next_supabase_scaffold_without_external_actions
+    in_tmp do
+      prepare_profile_s_design_flow
+
+      payload, code = json_cmd("scaffold", "--profile", "S")
+
+      assert_equal 0, code
+      assert_equal "generated scaffold profile S", payload["action_taken"]
+      %w[
+        package.json
+        next.config.mjs
+        tsconfig.json
+        src/app/layout.tsx
+        src/app/page.tsx
+        src/app/globals.css
+        src/lib/supabase/client.ts
+        src/lib/supabase/server.ts
+        supabase/migrations/0001_initial_schema.sql
+        supabase/rls-draft.md
+        supabase/storage.md
+        supabase/env.example.template
+        .ai-web/scaffold-profile-S.json
+        .ai-web/qa/supabase-secret-qa.json
+      ].each do |path|
+        assert File.exist?(path), "expected Profile S scaffold to create #{path}"
+        assert_includes payload["changed_files"], path
+      end
+      assert_no_dot_env_files_created
+      refute File.exist?(".ai-web/supabase-secret-qa.json"), "stale root secret QA artifact must not be created"
+
+      package = JSON.parse(File.read("package.json"))
+      assert_equal true, package["private"]
+      assert_equal "next dev", package.dig("scripts", "dev")
+      assert_equal "next build", package.dig("scripts", "build")
+      assert_equal "next start", package.dig("scripts", "start")
+      assert package.dig("dependencies", "next"), "Profile S package.json should include Next.js"
+      assert package.dig("dependencies", "@supabase/supabase-js"), "Profile S package.json should include Supabase JS"
+      assert package.dig("dependencies", "@supabase/ssr"), "Profile S package.json should include Supabase SSR"
+
+      client = File.read("src/lib/supabase/client.ts")
+      server = File.read("src/lib/supabase/server.ts")
+      assert_match(/NEXT_PUBLIC_SUPABASE_URL/, client)
+      assert_match(/NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY/, client)
+      assert_match(/createBrowserClient|createClient/, client)
+      assert_match(/createServerClient|cookies/, server)
+
+      migration = File.read("supabase/migrations/0001_initial_schema.sql")
+      assert_match(/enable row level security/i, migration)
+      assert_match(/create policy/i, migration)
+      assert_match(/draft|local/i, File.read("supabase/rls-draft.md"))
+      assert_match(/storage/i, File.read("supabase/storage.md"))
+      assert_match(/NEXT_PUBLIC_SUPABASE_URL/, File.read("supabase/env.example.template"))
+      assert_match(/NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY/, File.read("supabase/env.example.template"))
+
+      generated = profile_s_generated_text
+      refute_match(/supabase\s+(login|link|projects\s+create|init|start|db\s+push)/i, generated)
+      refute_match(/\b(vercel|netlify|cloudflare)\s+deploy\b/i, generated)
+      refute_match(/\bcurl\s+https?:\/\//i, generated)
+      refute_match(/SUPABASE_SERVICE_ROLE_KEY|sb_secret_[A-Za-z0-9_-]+|eyJ[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]{20,}/, generated)
+
+      metadata = JSON.parse(File.read(".ai-web/scaffold-profile-S.json"))
+      assert_equal "S", metadata["profile"]
+      assert_equal "Next.js", metadata["framework"]
+      assert_equal "pnpm", metadata["package_manager"]
+      assert_equal "pnpm dev", metadata["dev_command"]
+      assert_equal "pnpm build", metadata["build_command"]
+      assert_includes metadata["guardrails"], "no external Supabase project creation"
+      assert_includes metadata["guardrails"], "no deploy/external hosting"
+      assert_includes metadata["guardrails"], "no .env or .env.* files"
+
+      secret_qa = JSON.parse(File.read(".ai-web/qa/supabase-secret-qa.json"))
+      assert_equal "passed", secret_qa["status"]
+      assert_equal false, secret_qa["read_dot_env"]
+      assert_includes secret_qa["scanned_paths"], "supabase/env.example.template"
+      refute secret_qa["scanned_paths"].any? { |path| File.basename(path).match?(/\A\.env(?:\.|\z)/) }
+
+      state = load_state
+      assert_equal true, state.dig("implementation", "scaffold_created")
+      assert_equal "S", state.dig("implementation", "scaffold_profile")
+      assert_equal "Next.js", state.dig("implementation", "scaffold_framework")
+      assert_equal ".ai-web/scaffold-profile-S.json", state.dig("implementation", "scaffold_metadata_path")
+    end
+  end
+
+  def test_scaffold_profile_s_preserves_existing_regular_files_and_does_not_create_env_example
+    in_tmp do
+      prepare_profile_s_design_flow
+      json_cmd("scaffold", "--profile", "S")
+      File.write("src/app/page.tsx", "// local user edit\n")
+
+      payload, code = json_cmd("scaffold", "--profile", "S")
+
+      assert_equal 1, code
+      assert_match(/existing files.*src\/app\/page\.tsx/, payload.dig("error", "message"))
+      assert_equal "// local user edit\n", File.read("src/app/page.tsx")
+      assert_no_dot_env_files_created
     end
   end
 

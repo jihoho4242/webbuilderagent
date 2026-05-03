@@ -58,6 +58,8 @@ module Aiweb
     ].freeze
 
     SCAFFOLD_PROFILE_D_METADATA_PATH = ".ai-web/scaffold-profile-D.json".freeze
+    SCAFFOLD_PROFILE_S_METADATA_PATH = ".ai-web/scaffold-profile-S.json".freeze
+    SCAFFOLD_PROFILE_S_SECRET_QA_PATH = ".ai-web/qa/supabase-secret-qa.json".freeze
 
 
     WORKBENCH_PANELS = %w[
@@ -121,6 +123,29 @@ module Aiweb
       astro
       tailwindcss
       @tailwindcss/vite
+    ].freeze
+
+    SCAFFOLD_PROFILE_S_REQUIRED_FILES = %w[
+      package.json
+      next.config.mjs
+      tsconfig.json
+      src/app/layout.tsx
+      src/app/page.tsx
+      src/app/globals.css
+      src/lib/supabase/client.ts
+      src/lib/supabase/server.ts
+      supabase/migrations/0001_initial_schema.sql
+      supabase/rls-draft.md
+      supabase/storage.md
+      supabase/env.example.template
+      .ai-web/scaffold-profile-S.json
+      .ai-web/qa/supabase-secret-qa.json
+    ].freeze
+
+    PROFILE_S_SECRET_EXPOSURE_PATTERNS = [
+      /SUPABASE_SERVICE_ROLE_KEY/,
+      /sb_secret_[A-Za-z0-9_-]+/,
+      /eyJ[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]{20,}/
     ].freeze
 
     attr_reader :root, :templates_dir
@@ -457,8 +482,10 @@ module Aiweb
     def scaffold(profile: "D", dry_run: false, force: false)
       assert_initialized!
       selected_profile, profile_data = Profiles.fetch!(profile)
+      return scaffold_profile_s(profile_data, dry_run: dry_run, force: force) if selected_profile == "S"
+
       unless selected_profile == "D"
-        raise UserError.new("scaffold currently supports --profile D only; received #{profile.inspect}", 1)
+        raise UserError.new("scaffold currently supports --profile D or --profile S; received #{profile.inspect}", 1)
       end
 
       changes = []
@@ -470,7 +497,7 @@ module Aiweb
         files = scaffold_profile_d_files(state)
         scaffold_metadata_path = File.join(aiweb_dir, "scaffold-profile-D.json")
         conflicts = scaffold_conflicts(files, force: force)
-        preflight_scaffold_targets!(files, metadata_path: scaffold_metadata_path, force: force)
+        preflight_scaffold_targets!(files, metadata_path: scaffold_metadata_path, force: force, profile: "D")
 
         unless conflicts.empty?
           raise UserError.new(
@@ -500,6 +527,94 @@ module Aiweb
       end
       payload
     end
+
+
+    def scaffold_profile_s(profile_data, dry_run:, force:)
+      changes = []
+      payload = nil
+      mutation(dry_run: dry_run) do
+        state = load_state
+        ensure_scaffold_state_defaults!(state)
+        files = scaffold_profile_s_files(state)
+        scaffold_metadata_path = File.join(aiweb_dir, "scaffold-profile-S.json")
+        secret_qa_path = File.join(aiweb_dir, "qa", "supabase-secret-qa.json")
+        conflicts = scaffold_conflicts(files, force: force)
+        preflight_scaffold_targets!(files, metadata_path: scaffold_metadata_path, force: force, profile: "S")
+        preflight_scaffold_targets!({}, metadata_path: secret_qa_path, force: force, profile: "S")
+
+        unless conflicts.empty?
+          raise UserError.new(
+            "scaffold profile S found existing files that differ and were preserved: #{conflicts.join(", ")}. No scaffold files were written. Rerun aiweb scaffold --profile S --force to overwrite regular scaffold files after reviewing those files.",
+            1
+          )
+        end
+
+        files.each do |relative_path, content|
+          path = File.join(root, relative_path)
+          next if File.exist?(path) && File.read(path) == content
+
+          changes << write_file(path, content, dry_run)
+        end
+
+        metadata = scaffold_profile_s_metadata(files, profile_data)
+        changes << write_json(scaffold_metadata_path, metadata, dry_run)
+        secret_qa = scaffold_profile_s_secret_qa(files.merge(SCAFFOLD_PROFILE_S_METADATA_PATH => JSON.pretty_generate(metadata) + "\n"))
+        changes << write_json(secret_qa_path, secret_qa, dry_run)
+        apply_scaffold_state!(state, metadata)
+        add_decision!(state, "scaffold_profile_s", "Generated local-only Profile S Next.js + Supabase scaffold with safe non-dot env template and secret QA artifact")
+        state["project"]["updated_at"] = now
+        changes << write_yaml(state_path, state, dry_run)
+
+        payload = status_hash(state: state, changed_files: compact_changes(changes))
+        payload["action_taken"] = force ? "regenerated scaffold profile S" : "generated scaffold profile S"
+        payload["scaffold"] = metadata.reject { |key, _| key == "files" }
+        payload["secret_qa"] = secret_qa.reject { |key, _| key == "files" }
+        payload["next_action"] = "review generated local-only Next.js/Supabase files; copy supabase/env.example.template manually into an untracked local env file only when ready"
+      end
+      payload
+    end
+
+    def supabase_secret_qa(dry_run: false, force: false)
+      assert_initialized!
+      state = load_state
+      files = supabase_secret_qa_scan_files
+      artifact_path = File.join(root, SCAFFOLD_PROFILE_S_SECRET_QA_PATH)
+      qa = scaffold_profile_s_secret_qa(files)
+      qa["artifact_path"] = SCAFFOLD_PROFILE_S_SECRET_QA_PATH
+      qa["profile"] = "S"
+      planned_changes = [SCAFFOLD_PROFILE_S_SECRET_QA_PATH]
+
+      if dry_run
+        payload = status_hash(state: state, changed_files: [])
+        payload["action_taken"] = "planned Supabase secret QA"
+        payload["planned_changes"] = planned_changes
+        payload["supabase_secret_qa"] = qa.merge("dry_run" => true)
+        payload["next_action"] = "rerun supabase_secret_qa without dry_run to write #{SCAFFOLD_PROFILE_S_SECRET_QA_PATH}"
+        return payload
+      end
+
+      changes = []
+      payload = nil
+      mutation(dry_run: false) do
+        existing_conflict = File.file?(artifact_path) && !force && JSON.parse(File.read(artifact_path)).is_a?(Hash) == false
+        raise UserError.new("Supabase secret QA artifact is malformed; review #{SCAFFOLD_PROFILE_S_SECRET_QA_PATH} or rerun with force", 1) if existing_conflict
+
+        changes << write_json(artifact_path, qa, false)
+        state["qa"] ||= {}
+        state["qa"]["supabase_secret_qa"] = SCAFFOLD_PROFILE_S_SECRET_QA_PATH
+        add_decision!(state, "supabase_secret_qa", "Scanned generated Profile S safe files without reading dot-env paths")
+        state["project"]["updated_at"] = now if state["project"].is_a?(Hash)
+        changes << write_yaml(state_path, state, false)
+        payload = status_hash(state: state, changed_files: compact_changes(changes))
+        payload["action_taken"] = "recorded Supabase secret QA"
+        payload["supabase_secret_qa"] = qa
+        payload["next_action"] = qa["status"] == "passed" ? "keep dot-env files local and untracked" : "review Profile S generated safe files for credential exposure patterns"
+      end
+      payload
+    rescue JSON::ParserError
+      raise UserError.new("Supabase secret QA artifact is malformed; review #{SCAFFOLD_PROFILE_S_SECRET_QA_PATH} or rerun with force", 1)
+    end
+
 
     def workbench(export: false, dry_run: false, force: false)
       state, state_error = workbench_state_snapshot
@@ -3603,7 +3718,7 @@ module Aiweb
 
     def apply_scaffold_state!(state, metadata)
       ensure_scaffold_state_defaults!(state)
-      state["implementation"]["stack_profile"] = "D"
+      state["implementation"]["stack_profile"] = metadata.fetch("profile")
       state["implementation"]["scaffold_target"] = metadata.fetch("scaffold_target")
       state["implementation"]["scaffold_created"] = true
       state["implementation"]["scaffold_profile"] = metadata.fetch("profile")
@@ -3611,7 +3726,7 @@ module Aiweb
       state["implementation"]["scaffold_package_manager"] = metadata.fetch("package_manager")
       state["implementation"]["scaffold_dev_command"] = metadata.fetch("dev_command")
       state["implementation"]["scaffold_build_command"] = metadata.fetch("build_command")
-      state["implementation"]["scaffold_metadata_path"] = ".ai-web/scaffold-profile-D.json"
+      state["implementation"]["scaffold_metadata_path"] = metadata.fetch("metadata_path")
       state
     end
 
@@ -3642,11 +3757,11 @@ module Aiweb
       candidates.find { |path| File.file?(path) } || candidates.first
     end
 
-    def preflight_scaffold_targets!(files, metadata_path:, force:)
+    def preflight_scaffold_targets!(files, metadata_path:, force:, profile: "D")
       conflicts = scaffold_target_type_conflicts(files.keys + [relative(metadata_path)])
       return if conflicts.empty?
 
-      raise UserError.new("scaffold profile D cannot write because directories conflict with required scaffold files: #{conflicts.join(", ")}. Remove or rename those directories before rerunning; --force only overwrites regular files and wrote no scaffold files.", 1)
+      raise UserError.new("scaffold profile #{profile} cannot write because directories conflict with required scaffold files: #{conflicts.join(", ")}. Remove or rename those directories before rerunning; --force only overwrites regular files and wrote no scaffold files.", 1)
     end
 
     def scaffold_target_type_conflicts(relative_paths)
@@ -3695,6 +3810,7 @@ module Aiweb
         "design_source" => File.exist?(File.join(aiweb_dir, "DESIGN.md")) ? ".ai-web/DESIGN.md" : nil,
         "design_brief_source" => File.exist?(File.join(aiweb_dir, "design-brief.md")) ? ".ai-web/design-brief.md" : nil,
         "created_at" => now,
+        "metadata_path" => SCAFFOLD_PROFILE_D_METADATA_PATH,
         "files" => files.keys.map do |relative_path|
           {
             "path" => relative_path,
@@ -3717,6 +3833,350 @@ module Aiweb
         "src/pages/index.astro" => index_page_profile_d(context),
         "public/.gitkeep" => ""
       }
+    end
+
+
+    def scaffold_profile_s_metadata(files, profile_data)
+      {
+        "schema_version" => 1,
+        "profile" => "S",
+        "framework" => "Next.js",
+        "framework_detail" => "Next.js App Router + Supabase SSR",
+        "package_manager" => "pnpm",
+        "dev_command" => "pnpm dev",
+        "build_command" => "pnpm build",
+        "scaffold_target" => profile_data.fetch(:scaffold_target),
+        "metadata_path" => SCAFFOLD_PROFILE_S_METADATA_PATH,
+        "secret_qa_path" => SCAFFOLD_PROFILE_S_SECRET_QA_PATH,
+        "local_only" => true,
+        "external_actions_allowed" => false,
+        "env_template_path" => "supabase/env.example.template",
+        "env_dotfile_created" => false,
+        "supabase_public_env" => %w[NEXT_PUBLIC_SUPABASE_URL NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY],
+        "guardrails" => [
+          "no external Supabase project creation",
+          "no deploy/external hosting",
+          "no .env or .env.* files"
+        ],
+        "created_at" => now,
+        "files" => files.keys.map do |relative_path|
+          {
+            "path" => relative_path,
+            "sha256" => Digest::SHA256.hexdigest(files.fetch(relative_path))
+          }
+        end
+      }
+    end
+
+    def scaffold_profile_s_files(state)
+      context = scaffold_context(state)
+      {
+        "package.json" => package_json_profile_s(context),
+        "next.config.mjs" => next_config_profile_s,
+        "tsconfig.json" => tsconfig_profile_s,
+        "src/app/layout.tsx" => layout_tsx_profile_s(context),
+        "src/app/page.tsx" => page_tsx_profile_s(context),
+        "src/app/globals.css" => globals_css_profile_s,
+        "src/lib/supabase/client.ts" => supabase_client_ts_profile_s,
+        "src/lib/supabase/server.ts" => supabase_server_ts_profile_s,
+        "supabase/migrations/0001_initial_schema.sql" => supabase_initial_schema_profile_s,
+        "supabase/rls-draft.md" => supabase_rls_draft_profile_s,
+        "supabase/storage.md" => supabase_storage_profile_s,
+        "supabase/env.example.template" => supabase_env_template_profile_s
+      }
+    end
+
+    def supabase_secret_qa_scan_files
+      SCAFFOLD_PROFILE_S_REQUIRED_FILES.each_with_object({}) do |relative_path, memo|
+        next if relative_path == SCAFFOLD_PROFILE_S_SECRET_QA_PATH
+        next if unsafe_env_path?(relative_path)
+
+        path = File.join(root, relative_path)
+        memo[relative_path] = File.read(path) if File.file?(path)
+      end
+    end
+
+    def scaffold_profile_s_secret_qa(files)
+      scanned = files.keys.reject { |path| unsafe_env_path?(path) }.sort
+      findings = scanned.flat_map do |relative_path|
+        body = files.fetch(relative_path)
+        PROFILE_S_SECRET_EXPOSURE_PATTERNS.each_with_object([]) do |pattern, memo|
+          next unless body.match?(pattern)
+
+          memo << { "path" => relative_path, "pattern" => pattern.source }
+        end
+      end
+      {
+        "schema_version" => 1,
+        "status" => findings.empty? ? "passed" : "failed",
+        "created_at" => now,
+        "scanned_paths" => scanned,
+        "read_dot_env" => false,
+        "scan" => {
+          "mode" => "generated-safe-files-only",
+          "excluded_patterns" => [".env", ".env.*"],
+          "scanned_files" => scanned,
+          "env_files_read" => false,
+          "source_contents_embedded" => false
+        },
+        "files" => scanned.map { |relative_path| { "path" => relative_path, "sha256" => Digest::SHA256.hexdigest(files.fetch(relative_path)) } },
+        "findings" => findings
+      }
+    end
+
+    def unsafe_env_path?(relative_path)
+      relative_path.to_s.tr("\\", "/").split("/").any? { |part| part.start_with?(".env") }
+    end
+
+    def package_json_profile_s(context)
+      JSON.pretty_generate(
+        "name" => npm_package_name(context.fetch(:project_id).empty? ? context.fetch(:project_name) : context.fetch(:project_id)),
+        "version" => "0.1.0",
+        "private" => true,
+        "type" => "module",
+        "scripts" => {
+          "dev" => "next dev",
+          "build" => "next build",
+          "start" => "next start"
+        },
+        "dependencies" => {
+          "@supabase/ssr" => "latest",
+          "@supabase/supabase-js" => "latest",
+          "next" => "latest",
+          "react" => "latest",
+          "react-dom" => "latest"
+        },
+        "devDependencies" => {
+          "@types/node" => "latest",
+          "@types/react" => "latest",
+          "@types/react-dom" => "latest",
+          "typescript" => "latest"
+        }
+      ) + "\n"
+    end
+
+    def next_config_profile_s
+      <<~JS
+        /** @type {import('next').NextConfig} */
+        const nextConfig = {};
+
+        export default nextConfig;
+      JS
+    end
+
+    def tsconfig_profile_s
+      JSON.pretty_generate(
+        "compilerOptions" => {
+          "target" => "ES2017",
+          "lib" => %w[dom dom.iterable esnext],
+          "allowJs" => true,
+          "skipLibCheck" => true,
+          "strict" => true,
+          "noEmit" => true,
+          "esModuleInterop" => true,
+          "module" => "esnext",
+          "moduleResolution" => "bundler",
+          "resolveJsonModule" => true,
+          "isolatedModules" => true,
+          "jsx" => "preserve",
+          "incremental" => true,
+          "plugins" => [{ "name" => "next" }],
+          "paths" => { "@/*" => ["./src/*"] }
+        },
+        "include" => ["next-env.d.ts", "**/*.ts", "**/*.tsx", ".next/types/**/*.ts"],
+        "exclude" => ["node_modules"]
+      ) + "\n"
+    end
+
+    def layout_tsx_profile_s(context)
+      title = context.fetch(:title).to_s.empty? ? context.fetch(:project_name) : context.fetch(:title)
+      <<~TSX
+        import type { Metadata } from 'next';
+        import './globals.css';
+
+        export const metadata: Metadata = {
+          title: #{title.inspect},
+          description: #{context.fetch(:description).inspect},
+        };
+
+        export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
+          return (
+            <html lang="ko">
+              <body>{children}</body>
+            </html>
+          );
+        }
+      TSX
+    end
+
+    def page_tsx_profile_s(context)
+      title = context.fetch(:title).to_s.empty? ? context.fetch(:project_name) : context.fetch(:title)
+      <<~TSX
+        import { createClient } from '@/lib/supabase/server';
+
+        export default async function Home() {
+          const supabase = await createClient();
+          const { data: profileRows } = await supabase.from('profiles').select('id, display_name').limit(3);
+
+          return (
+            <main className="mx-auto flex min-h-screen max-w-5xl flex-col gap-8 px-6 py-16">
+              <section className="rounded-3xl border border-slate-200 bg-white p-8 shadow-sm">
+                <p className="text-sm font-semibold uppercase tracking-[0.24em] text-emerald-700">AI Web Director Profile S</p>
+                <h1 className="mt-4 text-4xl font-bold tracking-tight text-slate-950">#{CGI.escapeHTML(title)}</h1>
+                <p className="mt-4 max-w-2xl text-lg leading-8 text-slate-700">#{CGI.escapeHTML(context.fetch(:description))}</p>
+              </section>
+
+              <section className="rounded-3xl border border-dashed border-emerald-300 bg-emerald-50 p-6">
+                <h2 className="text-2xl font-bold text-slate-950">Local Supabase planning stub</h2>
+                <p className="mt-3 text-slate-700">
+                  This scaffold uses safe public browser env names only and does not create or read dot-env files.
+                </p>
+                <pre className="mt-4 overflow-auto rounded-2xl bg-slate-950 p-4 text-sm text-emerald-100">
+                  {JSON.stringify(profileRows ?? [], null, 2)}
+                </pre>
+              </section>
+            </main>
+          );
+        }
+      TSX
+    end
+
+    def globals_css_profile_s
+      <<~CSS
+        :root {
+          color: #0f172a;
+          background: #f8fafc;
+          font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        }
+
+        * {
+          box-sizing: border-box;
+        }
+
+        body {
+          margin: 0;
+          min-width: 320px;
+        }
+      CSS
+    end
+
+    def supabase_client_ts_profile_s
+      <<~TS
+        import { createBrowserClient } from '@supabase/ssr';
+
+        export function createClient() {
+          return createBrowserClient(
+            process.env.NEXT_PUBLIC_SUPABASE_URL!,
+            process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY!,
+          );
+        }
+      TS
+    end
+
+    def supabase_server_ts_profile_s
+      <<~TS
+        import { createServerClient } from '@supabase/ssr';
+        import { cookies } from 'next/headers';
+
+        export async function createClient() {
+          const cookieStore = await cookies();
+
+          return createServerClient(
+            process.env.NEXT_PUBLIC_SUPABASE_URL!,
+            process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY!,
+            {
+              cookies: {
+                getAll() {
+                  return cookieStore.getAll();
+                },
+                setAll(cookiesToSet) {
+                  try {
+                    cookiesToSet.forEach(({ name, value, options }) => cookieStore.set(name, value, options));
+                  } catch {
+                    // Server Components cannot set cookies. Middleware should refresh sessions when needed.
+                  }
+                },
+              },
+            },
+          );
+        }
+      TS
+    end
+
+    def supabase_initial_schema_profile_s
+      <<~SQL
+        -- Profile S draft migration for local planning only.
+        -- Review with a database owner before applying to any external Supabase project.
+
+        create table if not exists public.profiles (
+          id uuid primary key references auth.users(id) on delete cascade,
+          display_name text,
+          created_at timestamptz not null default now(),
+          updated_at timestamptz not null default now()
+        );
+
+        alter table public.profiles enable row level security;
+
+        create policy "profiles are viewable by owner"
+          on public.profiles for select
+          using (auth.uid() = id);
+
+        create policy "profiles are insertable by owner"
+          on public.profiles for insert
+          with check (auth.uid() = id);
+
+        create policy "profiles are updatable by owner"
+          on public.profiles for update
+          using (auth.uid() = id)
+          with check (auth.uid() = id);
+      SQL
+    end
+
+    def supabase_rls_draft_profile_s
+      <<~MD
+        # Supabase RLS Draft — Profile S
+
+        Status: draft for local planning only.
+
+        ## Policies
+        - `profiles`: owner-only select/insert/update using `auth.uid() = id`.
+        - Add table-specific policies before connecting real product data.
+
+        ## Guardrails
+        - Do not apply this draft to a hosted Supabase project without review.
+        - Keep service-role credentials out of generated app files and browser code.
+        - Public browser variables are limited to `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`.
+      MD
+    end
+
+    def supabase_storage_profile_s
+      <<~MD
+        # Supabase Storage Options — Profile S
+
+        Status: planning notes only; no buckets are created by this scaffold.
+
+        ## Option A: private user uploads
+        - Bucket: `user-uploads`.
+        - Access: authenticated owner read/write policies.
+        - Use signed URLs for temporary sharing.
+
+        ## Option B: public marketing assets
+        - Bucket: `public-assets`.
+        - Access: public read, restricted write.
+        - Prefer static `public/` files until product scope needs runtime uploads.
+
+        ## External-action guardrail
+        This scaffold does not run Supabase CLI commands, create buckets, or contact external APIs.
+      MD
+    end
+
+    def supabase_env_template_profile_s
+      <<~TXT
+        # Copy these keys into your local untracked environment file when you are ready.
+        # This is intentionally not named .env.example because Profile S must not create dot-env files.
+        NEXT_PUBLIC_SUPABASE_URL=https://your-project-ref.supabase.co
+        NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=your-publishable-key
+      TXT
     end
 
     def scaffold_context(state)
