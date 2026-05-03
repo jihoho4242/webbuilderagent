@@ -5,6 +5,7 @@ require "json"
 require "minitest/autorun"
 require "open3"
 require "rbconfig"
+require "shellwords"
 require "tmpdir"
 require "yaml"
 
@@ -2420,6 +2421,48 @@ class AiwebCliTest < Minitest::Test
       assert_equal "// local user edit\n", File.read("src/app/page.tsx")
       assert_no_dot_env_files_created
     end
+  end
+
+
+  def write_fake_pnpm_install_tooling(root, exit_status: 0, stdout: "fake pnpm install stdout", stderr: "fake pnpm install stderr")
+    bin_dir = File.join(root, "fake-setup-bin")
+    FileUtils.mkdir_p(bin_dir)
+    write_fake_executable(
+      bin_dir,
+      "pnpm",
+      <<~SH
+        [ "$1" = "install" ] || { echo "unexpected pnpm command: $*" >&2; exit 64; }
+        echo #{stdout.shellescape}
+        echo #{stderr.shellescape} >&2
+        exit #{exit_status.to_i}
+      SH
+    )
+    bin_dir
+  end
+
+  def assert_no_setup_side_effects(before_entries:, before_state:, env_path: ".env", env_size: nil, env_mtime: nil)
+    assert_equal before_entries, project_entries
+    assert_equal before_state, File.read(".ai-web/state.yaml")
+    assert_equal env_size, File.size(env_path) if env_size
+    assert_equal env_mtime, File.mtime(env_path) if env_mtime
+    refute Dir.exist?("node_modules"), "setup preflight/dry-run must not create node_modules"
+    refute Dir.exist?("dist"), "setup must not build"
+    refute Dir.exist?(".ai-web/runs"), "setup preflight/dry-run must not write run artifacts"
+  end
+
+  def assert_setup_artifacts_do_not_leak_secret(setup_payload, secret)
+    text = [setup_payload, setup_payload["setup"]].compact.map { |value| JSON.generate(value) }.join("
+")
+    refute_includes text, secret
+    Dir.glob(".ai-web/runs/setup-*/*", File::FNM_DOTMATCH).select { |path| File.file?(path) }.each do |path|
+      refute_match(%r{(^|/)\.env(\.|/|$)}, path)
+      refute_includes File.read(path), secret, "#{path} must not contain .env secret content"
+    end
+  end
+
+  def setup_payload_paths(payload)
+    setup = payload.fetch("setup")
+    [setup.fetch("stdout_log"), setup.fetch("stderr_log"), setup.fetch("metadata_path")]
   end
 
   def test_runtime_plan_blocks_uninitialized_and_unscaffolded_without_writes
