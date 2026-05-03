@@ -2858,7 +2858,7 @@ class AiwebCliTest < Minitest::Test
       )
       payload = JSON.parse(stdout)
 
-      assert_equal 1, code
+      assert_equal 5, code
       assert_equal "", stderr
       assert_equal "blocked", payload.dig("agent_run", "status")
       assert_match(/approved|approval/i, [payload.dig("error", "message"), payload["blocking_issues"], payload.dig("agent_run", "blocking_issues")].flatten.compact.join("\n"))
