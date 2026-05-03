@@ -10,7 +10,7 @@ class WebbuilderLauncher
   KNOWN_COMMANDS = %w[
     help --help -h version --version
     start init status runtime-plan scaffold-status setup build preview interview run design-brief design-system design-prompt design select-design scaffold supabase-secret-qa ingest-design next-task
-    qa-checklist qa-report repair qa-playwright qa-screenshot qa-a11y qa-lighthouse visual-critique visual-polish advance rollback resolve-blocker snapshot
+    agent-run qa-checklist qa-report repair qa-playwright qa-screenshot qa-a11y qa-lighthouse visual-critique visual-polish advance rollback resolve-blocker snapshot
     workbench component-map visual-edit github-sync deploy-plan deploy design-systems skills craft intent
   ].freeze
 
@@ -60,6 +60,8 @@ class WebbuilderLauncher
         웹빌더 --path ~/Desktop/my-site scaffold --profile D
         웹빌더 --path ~/Desktop/my-site scaffold --profile S --dry-run
         웹빌더 --path ~/Desktop/my-site supabase-secret-qa --dry-run
+        웹빌더 --path ~/Desktop/my-site agent-run --task latest --agent codex --dry-run
+        웹빌더 --path ~/Desktop/my-site agent-run --task latest --agent codex --approved
         웹빌더 --path ~/Desktop/my-site runtime-plan
         웹빌더 --path ~/Desktop/my-site setup --install --dry-run
         웹빌더 --path ~/Desktop/my-site setup --install --approved

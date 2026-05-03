@@ -487,6 +487,14 @@ module Aiweb
       text.to_i
     end
 
+    def relative_path(path)
+      path = File.expand_path(path.to_s)
+      root_prefix = @root.end_with?(File::SEPARATOR) ? @root : "#{@root}#{File::SEPARATOR}"
+      return path.sub(root_prefix, "") if path.start_with?(root_prefix)
+
+      path.sub(/\A#{Regexp.escape(@root)}\/?/, "")
+    end
+
     def unsafe_env_path?(path)
       value = path.to_s.strip
       return false if value.empty? || value == "latest"
@@ -538,6 +546,31 @@ module Aiweb
       raise unless setup_approval_error?(e)
 
       setup_approval_blocked_payload(e.message)
+    end
+
+    def dispatch_agent_run
+      opts = parse_options do |o, options|
+        o.on("--task TASK") { |v| options[:task] = v }
+        o.on("--agent AGENT") { |v| options[:agent] = v }
+        o.on("--approved") { options[:approved] = true }
+      end
+      unless @argv.empty?
+        raise UserError.new("agent-run does not accept extra positional arguments: #{@argv.join(", ")}", EXIT_VALIDATION_FAILED)
+      end
+
+      task = opts[:task].to_s.strip
+      agent = opts[:agent].to_s.strip
+      raise UserError.new("agent-run requires --task TASK", EXIT_VALIDATION_FAILED) if task.empty?
+      raise UserError.new("agent-run requires --agent AGENT", EXIT_VALIDATION_FAILED) if agent.empty?
+
+      approved = !!opts[:approved]
+      return agent_run_approval_blocked_payload(task: task, agent: agent) if !@dry_run && !approved
+      return agent_run_dry_run_payload(task: task, agent: agent, approved: approved) if @dry_run
+      return agent_run_adapter_unavailable_payload(task: task, agent: agent, approved: approved) unless project.respond_to?(:agent_run)
+
+      call_project_adapter(:agent_run, { task: task, agent: agent, approved: approved, dry_run: @dry_run }).tap do |result|
+        normalize_agent_run_payload!(result, task: task, agent: agent, approved: approved, dry_run: @dry_run)
+      end
     end
 
     def call_project_adapter(method_name, kwargs)
@@ -599,6 +632,100 @@ module Aiweb
       setup["approved"] = approved unless setup.key?("approved")
       setup["dry_run"] = dry_run unless setup.key?("dry_run")
       result
+    end
+
+    def normalize_agent_run_payload!(result, task:, agent:, approved:, dry_run:)
+      return result unless result.is_a?(Hash) && result["agent_run"].is_a?(Hash)
+
+      agent_run = result["agent_run"]
+      agent_run["task"] ||= task
+      agent_run["agent"] ||= agent
+      agent_run["approved"] = approved unless agent_run.key?("approved")
+      agent_run["dry_run"] = dry_run unless agent_run.key?("dry_run")
+      result
+    end
+
+    def agent_run_base_payload(status:, task:, agent:, approved:, dry_run:, action_taken:, blocking_issues:, next_action:)
+      timestamp = Time.now.utc.strftime("%Y%m%dT%H%M%SZ")
+      run_id = "agent-run-#{timestamp}"
+      run_dir = File.join(@root, ".ai-web", "runs", run_id)
+      stdout_path = File.join(run_dir, "stdout.log")
+      stderr_path = File.join(run_dir, "stderr.log")
+      metadata_path = File.join(run_dir, "agent-run.json")
+      diff_path = File.join(@root, ".ai-web", "diffs", "#{run_id}.patch")
+      command = ["aiweb", "agent-run", "--task", task, "--agent", agent]
+      command << "--approved" if approved
+      command << "--dry-run" if dry_run
+
+      {
+        "schema_version" => 1,
+        "current_phase" => nil,
+        "action_taken" => action_taken,
+        "changed_files" => dry_run ? [relative_path(run_dir), relative_path(stdout_path), relative_path(stderr_path), relative_path(metadata_path), relative_path(diff_path)] : [],
+        "blocking_issues" => blocking_issues,
+        "missing_artifacts" => [],
+        "agent_run" => {
+          "schema_version" => 1,
+          "status" => status,
+          "task" => task,
+          "agent" => agent,
+          "dry_run" => dry_run,
+          "approved" => approved,
+          "command" => command.join(" "),
+          "planned_run_dir" => relative_path(run_dir),
+          "planned_stdout_path" => relative_path(stdout_path),
+          "planned_stderr_path" => relative_path(stderr_path),
+          "planned_metadata_path" => relative_path(metadata_path),
+          "planned_diff_path" => relative_path(diff_path),
+          "guardrails" => [
+            "--approved required for real local agent execution",
+            "--dry-run writes nothing",
+            "no build/preview/QA/deploy/provider CLI",
+            "no .env/.env.* reads or output"
+          ],
+          "blocking_issues" => blocking_issues
+        },
+        "next_action" => next_action
+      }
+    end
+
+    def agent_run_approval_blocked_payload(task:, agent:)
+      agent_run_base_payload(
+        status: "blocked",
+        task: task,
+        agent: agent,
+        approved: false,
+        dry_run: false,
+        action_taken: "agent run blocked",
+        blocking_issues: ["--approved is required for real local agent execution"],
+        next_action: "rerun aiweb agent-run --task #{task} --agent #{agent} --dry-run or --approved"
+      )
+    end
+
+    def agent_run_dry_run_payload(task:, agent:, approved:)
+      agent_run_base_payload(
+        status: "dry_run",
+        task: task,
+        agent: agent,
+        approved: approved,
+        dry_run: true,
+        action_taken: "planned agent run",
+        blocking_issues: [],
+        next_action: "rerun aiweb agent-run --task #{task} --agent #{agent} --approved to execute locally"
+      )
+    end
+
+    def agent_run_adapter_unavailable_payload(task:, agent:, approved:)
+      agent_run_base_payload(
+        status: "blocked",
+        task: task,
+        agent: agent,
+        approved: approved,
+        dry_run: false,
+        action_taken: "agent run unavailable",
+        blocking_issues: ["agent-run project adapter is not available in this build."],
+        next_action: "integrate the local agent-run project adapter, then rerun aiweb agent-run --task #{task} --agent #{agent} --approved"
+      )
     end
 
     def unsafe_deploy_blocked_payload(target, message)
@@ -1332,6 +1459,16 @@ module Aiweb
       EXIT_VALIDATION_FAILED
     end
 
+    def agent_run_exit_code(result)
+      status = result.dig("agent_run", "status").to_s
+      return EXIT_SUCCESS if %w[planned dry_run passed completed].include?(status)
+      return EXIT_ADAPTER_UNAVAILABLE if status == "blocked" && (result["action_taken"].to_s =~ /unavailable/)
+      return EXIT_UNSAFE_EXTERNAL_ACTION if status == "blocked" && ((result.dig("agent_run", "blocking_issues") || []) + (result["blocking_issues"] || [])).join(" ").match?(/approved|approval|unsafe/i)
+      return EXIT_PHASE_BLOCKED if status == "blocked" && ((result.dig("agent_run", "blocking_issues") || []) + (result["blocking_issues"] || [])).join(" ").match?(/phase/i)
+
+      EXIT_VALIDATION_FAILED
+    end
+
     def build_exit_code(result)
       result.dig("build", "status") == "passed" || result.dig("build", "status") == "dry_run" ? EXIT_SUCCESS : EXIT_VALIDATION_FAILED
     end
@@ -1452,6 +1589,7 @@ module Aiweb
       return result.dig("runtime_plan", "readiness") == "ready" ? EXIT_SUCCESS : EXIT_VALIDATION_FAILED if RUNTIME_PLAN_COMMANDS.include?(command)
       return EXIT_SUCCESS if REGISTRY_COMMANDS.include?(command) || command == "intent"
       return setup_exit_code(result) if command == "setup"
+      return agent_run_exit_code(result) if command == "agent-run"
       return build_exit_code(result) if command == "build"
       return preview_exit_code(result) if command == "preview"
       return qa_playwright_exit_code(result) if %w[qa-playwright browser-qa].include?(command)
@@ -1468,7 +1606,7 @@ module Aiweb
       return deploy_plan_exit_code(result) if command == "deploy-plan"
       return deploy_exit_code(result) if command == "deploy"
       return supabase_secret_qa_exit_code(result) if command == "supabase-secret-qa"
-      return EXIT_SUCCESS if %w[help version status start init interview run design-brief design-system design-prompt design select-design scaffold ingest-design next-task qa-checklist qa-report rollback resolve-blocker snapshot visual-critique visual-polish component-map visual-edit].include?(command)
+      return EXIT_SUCCESS if %w[help version status start init interview run agent-run design-brief design-system design-prompt design select-design scaffold ingest-design next-task qa-checklist qa-report rollback resolve-blocker snapshot visual-critique visual-polish component-map visual-edit].include?(command)
       if command == "advance" && result["action_taken"] == "advance blocked"
         issue = result["blocking_issues"].join(" ")
         return EXIT_BUDGET_BLOCKED if issue =~ /budget|candidate cap|design generation cap/i

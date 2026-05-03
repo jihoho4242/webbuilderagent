@@ -21,6 +21,7 @@ Today the CLI manages the project director workspace: `.ai-web` state, phase gat
 - Expose the PR13 safe local repair-loop contract through `aiweb repair` / `웹빌더 repair`: it consumes failed/blocked QA evidence into a bounded `repair_loop` record, pre-repair snapshot, and fix task without installing packages, starting preview, running build/QA, auto-patching source, touching `.env`, deploying, or contacting external hosting.
 - Expose the PR14 safe local visual critique contract through `aiweb visual-critique` / `웹빌더 visual-critique`: it evaluates explicit local screenshot/metadata evidence only, produces deterministic score/approval artifacts under `.ai-web/visual`, supports no-write `--dry-run`, rejects `.env` / `.env.*` paths without reading them, and never launches browsers, captures screenshots, installs packages, auto-repairs source, deploys, contacts external hosting, or calls network/AI services.
 - Expose the PR15 safe local visual polish contract through `aiweb visual-polish --repair` / `웹빌더 visual-polish --repair`: it consumes failed, `repair`, or `redesign` visual critique evidence into a bounded `visual_polish` record, pre-polish snapshot, and polish task without editing source, installing packages, starting preview, running build/QA, capturing screenshots, touching `.env`, deploying, contacting external hosting, or calling network/AI services.
+- Expose the PR22 local source-patch agent-run contract through `aiweb agent-run` / `웹빌더 agent-run`: it requires an explicit task and agent, supports `--dry-run` without writes or processes, requires `--approved` for real execution, captures stdout/stderr/diff evidence under `.ai-web`, rejects `.env` / `.env.*` access, and does not add verify-loop, build/preview/QA/deploy, provider CLI, or `--force` approval semantics.
 - Expose the PR16 local Workbench UI foundation through `aiweb workbench` / `웹빌더 workbench`: it plans or exports `.ai-web/workbench/index.html` and `.ai-web/workbench/workbench.json` from existing Director state/artifacts, represents controls as declarative CLI command descriptors, supports no-write `--dry-run`, excludes `.env` / `.env.*` from surfaced artifacts, and never directly mutates `.ai-web/state.yaml`.
 - Expose the PR17 Component Map + Visual Edit planning foundation through `aiweb component-map` / `웹빌더 component-map` and `aiweb visual-edit` / `웹빌더 visual-edit`: it maps stable `data-aiweb-id` DOM regions to source files in `.ai-web/component-map.json`, creates selected-region visual edit handoff artifacts under `.ai-web/tasks/` and `.ai-web/visual/`, supports no-write `--dry-run`, rejects `.env` / `.env.*` map paths without reading them, and never auto-patches source, runs build/QA/browser/preview, deploys, installs packages, or calls network/AI services.
 - Expose the PR18 Profile S local scaffold and Supabase secret QA surface through `aiweb scaffold --profile S` / `웹빌더 scaffold --profile S` and `aiweb supabase-secret-qa` / `웹빌더 supabase-secret-qa`: Profile S is a local-only Next.js + Supabase SSR placeholder scaffold, uses `supabase/env.example.template` instead of `.env.example`, includes only `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` placeholders, and intentionally performs no external Supabase project creation, network calls, deploy, install, build, or preview.
@@ -209,6 +210,17 @@ PR19 adds local-only GitHub sync and deploy planning commands:
 
 `github-sync` only reports the intended GitHub sync command shape; it does not run `git push`, contact GitHub, invoke provider CLIs, build, preview, install packages, or read `.env` / `.env.*`. `deploy-plan` only reports the target-specific deploy checklist for `cloudflare-pages` or `vercel`; it performs no provider CLI, network, build, preview, install, or `.env` access. `deploy` intentionally supports only `--target cloudflare-pages|vercel --dry-run`; omitting `--dry-run` returns an unsafe-deploy-blocked result so shell automation cannot accidentally treat a real deploy request as successful.
 
+PR22 adds the local source-patch agent-run surface for repair / visual-polish / visual-edit task packets:
+
+```bash
+./bin/aiweb --path ~/Desktop/aiweb-premium-service-site agent-run --task latest --agent codex --dry-run --json
+./bin/aiweb --path ~/Desktop/aiweb-premium-service-site agent-run --task latest --agent codex --approved --json
+웹빌더 --path ~/Desktop/aiweb-premium-service-site agent-run --task latest --agent codex --dry-run
+웹빌더 --path ~/Desktop/aiweb-premium-service-site agent-run --task latest --agent codex --approved
+```
+
+`agent-run --dry-run` is a no-write / no-process preflight: it reports the planned `.ai-web/runs/agent-run-<timestamp>/agent-run.json`, `stdout.log`, `stderr.log`, and `.ai-web/diffs/agent-run-<timestamp>.patch` paths without executing a local agent. A real `agent-run` requires `--approved`; omitting `--approved` blocks execution with approval-required semantics and writes nothing. The command is limited to task packets with safe task/source hints, reads only task/design/component-map/source context that is already allowed by the task packet, refuses `.env` / `.env.*` paths, captures stdout/stderr and a git/source diff patch when it runs, and records the latest run metadata in `.ai-web` safe state. PR22 does not add verify-loop semantics, does not run build/preview/QA/deploy/provider CLIs, and does not treat `--force` as approval.
+
 Phase-sensitive commands are guarded by the Director state machine:
 
 ```bash
@@ -226,9 +238,11 @@ Phase-sensitive commands are guarded by the Director state machine:
 ./bin/aiweb qa-report --status failed --task-id golden-page --duration-minutes 61
 ./bin/aiweb repair --from-qa latest --dry-run
 ./bin/aiweb visual-polish --repair --from-critique latest --dry-run
+./bin/aiweb agent-run --task latest --agent codex --dry-run
 ./bin/aiweb workbench --dry-run
 ./bin/aiweb component-map --dry-run
 ./bin/aiweb visual-edit --target component.hero.copy --prompt "이 섹션 더 고급스럽게" --dry-run
+./bin/aiweb agent-run --task latest --agent codex --approved
 ./bin/aiweb github-sync --json
 ./bin/aiweb deploy-plan --target cloudflare-pages --json
 ./bin/aiweb deploy --target cloudflare-pages --dry-run --json
