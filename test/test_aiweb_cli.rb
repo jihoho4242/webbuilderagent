@@ -2486,6 +2486,27 @@ class AiwebCliTest < Minitest::Test
     bin_dir
   end
 
+  def write_fake_codex_tooling(root)
+    bin_dir = File.join(root, "fake-agent-bin")
+    FileUtils.mkdir_p(bin_dir)
+    write_fake_executable(
+      bin_dir,
+      "codex",
+      <<~'SH'
+        echo "${FAKE_CODEX_STDOUT:-fake codex stdout}"
+        echo "${FAKE_CODEX_STDERR:-fake codex stderr}" >&2
+        if [ -n "${FAKE_CODEX_PATCH_PATH:-}" ] && [ -f "${FAKE_CODEX_PATCH_PATH}" ]; then
+          printf '\n<!-- patched by fake codex -->\n' >> "${FAKE_CODEX_PATCH_PATH}"
+        fi
+        if [ -n "${FAKE_CODEX_MARKER:-}" ]; then
+          touch "${FAKE_CODEX_MARKER}"
+        fi
+        exit "${FAKE_CODEX_EXIT_STATUS:-0}"
+      SH
+    )
+    bin_dir
+  end
+
   def assert_no_setup_side_effects(before_entries:, before_state:, env_path: ".env", env_size: nil, env_mtime: nil)
     assert_equal before_entries, project_entries
     assert_equal before_state, File.read(".ai-web/state.yaml")
@@ -2509,6 +2530,40 @@ class AiwebCliTest < Minitest::Test
   def setup_payload_paths(payload)
     setup = payload.fetch("setup")
     [setup.fetch("stdout_log"), setup.fetch("stderr_log"), setup.fetch("metadata_path")]
+  end
+
+  def prepare_agent_run_fixture(task_markdown:, secret: nil)
+    prepare_profile_d_scaffold_flow
+    File.write(".ai-web/DESIGN.md", "# Agent Run Design System\n\nUse source-safe patching and recorded evidence.\n")
+    json_cmd("component-map")
+
+    FileUtils.mkdir_p(".ai-web/tasks")
+    task_path = ".ai-web/tasks/agent-run-latest.md"
+    File.write(task_path, task_markdown)
+
+    state = load_state
+    state["implementation"] ||= {}
+    state["implementation"]["current_task"] = task_path
+    state["implementation"]["latest_agent_run"] = nil
+    state["implementation"]["last_diff"] = nil
+    write_state(state)
+
+    File.write(".env", "#{secret}\n") if secret
+    task_path
+  end
+
+  def assert_no_agent_run_side_effects(before_entries:, before_state:, env_size: nil, env_mtime: nil)
+    assert_equal before_entries, project_entries
+    assert_equal before_state, File.read(".ai-web/state.yaml")
+    assert_equal env_size, File.size(".env") if env_size
+    assert_equal env_mtime, File.mtime(".env") if env_mtime
+    refute Dir.exist?(".ai-web/runs"), "agent-run dry-run/blocking paths must not write run artifacts"
+    refute Dir.exist?(".ai-web/diffs"), "agent-run dry-run/blocking paths must not write diff artifacts"
+  end
+
+  def assert_agent_run_artifacts_do_not_leak_secret(secret, *paths)
+    text = paths.map { |path| File.exist?(path) ? File.read(path) : "" }.join("\n")
+    refute_includes text, secret
   end
 
 
@@ -2684,6 +2739,344 @@ class AiwebCliTest < Minitest::Test
       assert_equal "passed", web_payload.dig("setup", "status")
       assert_equal "pnpm install", web_payload.dig("setup", "command")
       assert_equal "fake Korean wrapper install\n", File.read(File.join(target, web_payload.dig("setup", "stdout_log")))
+    end
+  end
+
+  def test_agent_run_dry_run_plans_source_patch_without_writes_or_process_execution
+    in_tmp do |dir|
+      task_markdown = <<~MD
+        # Task Packet — repair
+
+        Task ID: agent-run-latest
+        Phase: phase-7
+        Created at: 2026-05-03T00:00:00Z
+
+        ## Goal
+        Improve the hero copy using a local source patch.
+
+        ## Inputs
+        - `.ai-web/state.yaml`
+        - `.ai-web/DESIGN.md`
+        - `.ai-web/component-map.json`
+        - `src/components/Hero.astro`
+
+        ## Constraints
+        - Do not read `.env` or `.env.*`
+        - Keep changes local and reversible
+
+        ## Acceptance Criteria
+        - Source patch evidence is recorded.
+        - Logs and diff artifacts are written only on approved runs.
+      MD
+      prepare_agent_run_fixture(task_markdown: task_markdown)
+      bin_dir = write_fake_codex_tooling(dir)
+      marker = File.join(dir, "codex-was-run")
+      before_entries = project_entries
+      before_state = File.read(".ai-web/state.yaml")
+      before_source = File.read("src/components/Hero.astro")
+
+      stdout, stderr, code = run_aiweb_env(
+        {
+          "PATH" => [bin_dir, "/usr/bin", "/bin", "/usr/sbin", "/sbin"].join(File::PATH_SEPARATOR),
+          "FAKE_CODEX_MARKER" => marker,
+          "FAKE_CODEX_PATCH_PATH" => File.join(dir, "src/components/Hero.astro")
+        },
+        "agent-run", "--task", "latest", "--agent", "codex", "--dry-run", "--json"
+      )
+      payload = JSON.parse(stdout)
+
+      assert_equal 0, code
+      assert_equal "", stderr
+      assert_equal true, payload["dry_run"]
+      assert_equal "planned agent run", payload["action_taken"]
+      assert_match(/agent run/i, payload["next_action"])
+      assert_no_agent_run_side_effects(before_entries: before_entries, before_state: before_state)
+      assert_equal before_source, File.read("src/components/Hero.astro"), "agent-run --dry-run must not patch source"
+      refute File.exist?(marker), "agent-run --dry-run must not execute codex"
+      refute_includes stdout, "fake codex stdout"
+      refute_includes stdout, "fake codex stderr"
+    end
+  end
+
+  def test_agent_run_without_approval_blocks_without_writes_or_process_execution
+    in_tmp do |dir|
+      task_markdown = <<~MD
+        # Task Packet — repair
+
+        Task ID: agent-run-latest
+        Phase: phase-7
+        Created at: 2026-05-03T00:00:00Z
+
+        ## Goal
+        Improve the hero copy using a local source patch.
+
+        ## Inputs
+        - `.ai-web/state.yaml`
+        - `.ai-web/DESIGN.md`
+        - `.ai-web/component-map.json`
+        - `src/components/Hero.astro`
+
+        ## Constraints
+        - Do not read `.env` or `.env.*`
+        - Keep changes local and reversible
+      MD
+      prepare_agent_run_fixture(task_markdown: task_markdown)
+      bin_dir = write_fake_codex_tooling(dir)
+      marker = File.join(dir, "codex-was-run")
+      before_entries = project_entries
+      before_state = File.read(".ai-web/state.yaml")
+      before_source = File.read("src/components/Hero.astro")
+
+      stdout, stderr, code = run_aiweb_env(
+        {
+          "PATH" => [bin_dir, "/usr/bin", "/bin", "/usr/sbin", "/sbin"].join(File::PATH_SEPARATOR),
+          "FAKE_CODEX_MARKER" => marker,
+          "FAKE_CODEX_PATCH_PATH" => File.join(dir, "src/components/Hero.astro")
+        },
+        "agent-run", "--task", "latest", "--agent", "codex", "--json"
+      )
+      payload = JSON.parse(stdout)
+
+      assert_equal 5, code
+      assert_equal "", stderr
+      assert_equal "blocked", payload["status"]
+      assert_match(/approved|approval/i, [payload.dig("error", "message"), payload["blocking_issues"], payload.dig("agent_run", "blocking_issues")].flatten.compact.join("\n"))
+      assert_no_agent_run_side_effects(before_entries: before_entries, before_state: before_state)
+      assert_equal before_source, File.read("src/components/Hero.astro"), "blocked agent-run must not patch source"
+      refute File.exist?(marker), "blocked agent-run must not execute codex"
+      refute_includes stdout, "fake codex stdout"
+      refute_includes stdout, "fake codex stderr"
+    end
+  end
+
+  def test_agent_run_approved_fake_codex_success_records_logs_diff_and_safe_state
+    in_tmp do |dir|
+      secret = "SECRET=pr22-agent-run-do-not-leak"
+      task_markdown = <<~MD
+        # Task Packet — repair
+
+        Task ID: agent-run-latest
+        Phase: phase-7
+        Created at: 2026-05-03T00:00:00Z
+
+        ## Goal
+        Improve the hero copy using a local source patch.
+
+        ## Inputs
+        - `.ai-web/state.yaml`
+        - `.ai-web/DESIGN.md`
+        - `.ai-web/component-map.json`
+        - `src/components/Hero.astro`
+
+        ## Constraints
+        - Do not read `.env` or `.env.*`
+        - Keep changes local and reversible
+
+        ## Acceptance Criteria
+        - Source patch evidence is recorded.
+        - Logs, metadata, and diff evidence are written.
+      MD
+      prepare_agent_run_fixture(task_markdown: task_markdown, secret: secret)
+      bin_dir = write_fake_codex_tooling(dir)
+      marker = File.join(dir, "codex-was-run")
+      before_entries = project_entries
+      before_state = File.read(".ai-web/state.yaml")
+      before_source = File.read("src/components/Hero.astro")
+      env_size = File.size(".env")
+      env_mtime = File.mtime(".env")
+
+      stdout, stderr, code = run_aiweb_env(
+        {
+          "PATH" => [bin_dir, "/usr/bin", "/bin", "/usr/sbin", "/sbin"].join(File::PATH_SEPARATOR),
+          "FAKE_CODEX_MARKER" => marker,
+          "FAKE_CODEX_PATCH_PATH" => File.join(dir, "src/components/Hero.astro"),
+          "FAKE_CODEX_STDOUT" => "fake codex approved stdout",
+          "FAKE_CODEX_STDERR" => "fake codex approved stderr"
+        },
+        "agent-run", "--task", "latest", "--agent", "codex", "--approved", "--json"
+      )
+      payload = JSON.parse(stdout)
+      run_dir = Dir.glob(".ai-web/runs/agent-run-*").sort.last
+      diff_path = Dir.glob(".ai-web/diffs/agent-run-*.patch").sort.last
+      state = load_state
+
+      assert_equal 0, code
+      assert_equal "", stderr
+      assert_equal false, payload["dry_run"]
+      assert_equal "passed", payload["status"]
+      assert_match(/agent run/i, payload["action_taken"])
+      assert run_dir, "approved agent-run must write a run directory"
+      assert diff_path, "approved agent-run must write a diff patch"
+      assert File.exist?(File.join(run_dir, "agent-run.json")), "approved agent-run must write metadata JSON"
+      assert_equal "fake codex approved stdout\n", File.read(File.join(run_dir, "stdout.log"))
+      assert_equal "fake codex approved stderr\n", File.read(File.join(run_dir, "stderr.log"))
+      assert_match(/patched by fake codex/, File.read("src/components/Hero.astro"))
+      assert_not_equal before_source, File.read("src/components/Hero.astro"), "approved agent-run must patch source"
+      after_entries = project_entries
+      assert_operator after_entries.size, :>, before_entries.size, "approved agent-run must write artifacts"
+      assert after_entries.any? { |path| path.start_with?(".ai-web/runs/agent-run-") }, "approved agent-run must write run artifacts"
+      assert after_entries.any? { |path| path.start_with?(".ai-web/diffs/agent-run-") }, "approved agent-run must write diff artifacts"
+      assert_equal env_size, File.size(".env")
+      assert_equal env_mtime, File.mtime(".env")
+      assert_equal false, File.read(diff_path).include?(secret)
+      assert_agent_run_artifacts_do_not_leak_secret(secret, File.join(run_dir, "agent-run.json"), File.join(run_dir, "stdout.log"), File.join(run_dir, "stderr.log"), diff_path)
+      assert_not_nil state.dig("implementation", "latest_agent_run")
+      assert_match(%r{\A\.ai-web/runs/agent-run-.+/agent-run\.json\z}, state.dig("implementation", "latest_agent_run"))
+      assert_not_nil state.dig("implementation", "last_diff")
+      assert_match(%r{\A\.ai-web/diffs/agent-run-.+\.patch\z}, state.dig("implementation", "last_diff"))
+      assert File.exist?(marker), "approved agent-run must execute the fake codex command"
+    end
+  end
+
+  def test_agent_run_approved_fake_codex_failure_records_failure_and_logs
+    in_tmp do |dir|
+      task_markdown = <<~MD
+        # Task Packet — repair
+
+        Task ID: agent-run-latest
+        Phase: phase-7
+        Created at: 2026-05-03T00:00:00Z
+
+        ## Goal
+        Improve the hero copy using a local source patch.
+
+        ## Inputs
+        - `.ai-web/state.yaml`
+        - `.ai-web/DESIGN.md`
+        - `.ai-web/component-map.json`
+        - `src/components/Hero.astro`
+      MD
+      prepare_agent_run_fixture(task_markdown: task_markdown)
+      bin_dir = write_fake_codex_tooling(dir)
+      marker = File.join(dir, "codex-was-run")
+
+      stdout, stderr, code = run_aiweb_env(
+        {
+          "PATH" => [bin_dir, "/usr/bin", "/bin", "/usr/sbin", "/sbin"].join(File::PATH_SEPARATOR),
+          "FAKE_CODEX_MARKER" => marker,
+          "FAKE_CODEX_EXIT_STATUS" => "23",
+          "FAKE_CODEX_STDOUT" => "fake codex failure stdout",
+          "FAKE_CODEX_STDERR" => "fake codex failure stderr"
+        },
+        "agent-run", "--task", "latest", "--agent", "codex", "--approved", "--json"
+      )
+      payload = JSON.parse(stdout)
+      run_dir = Dir.glob(".ai-web/runs/agent-run-*").sort.last
+      state = load_state
+
+      assert_equal 1, code
+      assert_equal "", stderr
+      assert_equal "failed", payload["status"]
+      assert_match(/failed|exit code 23/i, [payload.dig("error", "message"), payload["blocking_issues"], payload.dig("agent_run", "blocking_issues")].flatten.compact.join("\n"))
+      assert run_dir, "failed agent-run must still write a run directory"
+      assert_equal "fake codex failure stdout\n", File.read(File.join(run_dir, "stdout.log"))
+      assert_equal "fake codex failure stderr\n", File.read(File.join(run_dir, "stderr.log"))
+      assert_not_nil state.dig("implementation", "latest_agent_run")
+      assert File.exist?(marker), "failed agent-run must still execute the fake codex command"
+    end
+  end
+
+  def test_agent_run_rejects_env_paths_and_no_target_tasks_without_leaking_secrets_or_writing
+    in_tmp do
+      prepare_profile_d_scaffold_flow
+      json_cmd("component-map")
+      secret = "SECRET=pr22-env-guard-do-not-leak"
+      File.write(".env", "#{secret}\n")
+      FileUtils.mkdir_p(".ai-web/tasks")
+      malicious_task_path = ".ai-web/tasks/agent-run-malicious.md"
+      File.write(
+        malicious_task_path,
+        <<~MD
+          # Task Packet — repair
+
+          Task ID: agent-run-malicious
+          Phase: phase-7
+          Created at: 2026-05-03T00:00:00Z
+
+          ## Goal
+          Refuse unsafe paths.
+
+          ## Inputs
+          - `.ai-web/state.yaml`
+          - `.env.local`
+          - `src/components/Hero.astro`
+        MD
+      )
+      state = load_state
+      state["implementation"]["current_task"] = malicious_task_path
+      write_state(state)
+      before_entries = project_entries
+      before_state = File.read(".ai-web/state.yaml")
+      env_size = File.size(".env")
+      env_mtime = File.mtime(".env")
+
+      stdout, stderr, code = run_aiweb("agent-run", "--task", "latest", "--agent", "codex", "--approved", "--json")
+      payload = JSON.parse(stdout)
+
+      assert_equal 5, code
+      assert_equal "", stderr
+      assert_equal "blocked", payload["status"]
+      assert_match(/\.env|unsafe|refus/i, [payload.dig("error", "message"), payload["blocking_issues"], payload.dig("agent_run", "blocking_issues")].flatten.compact.join("\n"))
+      assert_no_agent_run_side_effects(before_entries: before_entries, before_state: before_state, env_size: env_size, env_mtime: env_mtime)
+      refute_includes stdout, secret
+    end
+  end
+
+  def test_agent_run_help_and_webbuilder_passthrough
+    stdout, stderr, code = run_aiweb("help")
+    assert_equal 0, code
+    assert_equal "", stderr
+    assert_includes stdout, "agent-run --task latest --agent codex --approved"
+    assert_includes stdout, "agent-run --task latest --agent codex --dry-run"
+
+    help_stdout, help_stderr, help_code = run_webbuilder("--help")
+    assert_equal 0, help_code
+    assert_equal "", help_stderr
+    assert_match(/agent-run/, help_stdout)
+
+    in_tmp do |dir|
+      target = File.join(dir, "passthrough-agent-run")
+      Dir.mkdir(target)
+      Dir.chdir(target) { prepare_profile_d_scaffold_flow }
+      json_cmd("--path", target, "component-map")
+      FileUtils.mkdir_p(File.join(target, ".ai-web", "tasks"))
+      File.write(
+        File.join(target, ".ai-web", "tasks", "agent-run-latest.md"),
+        <<~MD
+          # Task Packet — repair
+
+          Task ID: agent-run-latest
+          Phase: phase-7
+          Created at: 2026-05-03T00:00:00Z
+
+          ## Goal
+          Improve the hero copy using a local source patch.
+
+          ## Inputs
+          - `.ai-web/state.yaml`
+          - `.ai-web/DESIGN.md`
+          - `.ai-web/component-map.json`
+          - `src/components/Hero.astro`
+        MD
+      )
+      state_path = File.join(target, ".ai-web", "state.yaml")
+      state = YAML.load_file(state_path)
+      state["implementation"]["current_task"] = ".ai-web/tasks/agent-run-latest.md"
+      File.write(state_path, YAML.dump(state))
+
+      bin_dir = write_fake_codex_tooling(dir)
+      web_stdout, web_stderr, web_code = run_webbuilder_env(
+        { "PATH" => [bin_dir, "/usr/bin", "/bin", "/usr/sbin", "/sbin"].join(File::PATH_SEPARATOR) },
+        "--path", target, "agent-run", "--task", "latest", "--agent", "codex", "--dry-run", "--json"
+      )
+      web_payload = JSON.parse(web_stdout)
+      assert_equal 0, web_code
+      assert_equal "", web_stderr
+      assert_equal true, web_payload["dry_run"]
+      assert_equal "planned agent run", web_payload["action_taken"]
+      assert Dir.glob(File.join(target, ".ai-web", "runs", "agent-run-*")).empty?, "webbuilder agent-run --dry-run must not write run artifacts"
+      assert Dir.glob(File.join(target, ".ai-web", "diffs", "agent-run-*.patch")).empty?, "webbuilder agent-run --dry-run must not write diff artifacts"
+      refute File.exist?(File.join(target, ".ai-web", "runs", "agent-run-was-run"))
     end
   end
 
