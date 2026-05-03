@@ -5998,7 +5998,7 @@ module Aiweb
 
       if requested == "latest"
         latest = state.dig("implementation", "current_task").to_s.strip
-        latest = latest_agent_run_task_artifact if latest.empty?
+        latest = latest_agent_run_task_artifact.to_s.strip if latest.empty?
         return { "relative" => nil, "path" => nil, "reason" => "no implementation task artifact is available" } if latest.empty?
 
         reject_env_file_segment!(latest, "agent-run refuses to read .env or .env.* task paths")
@@ -6079,9 +6079,23 @@ module Aiweb
     def agent_run_forbidden_paths_from_text(text)
       return [] if text.to_s.strip.empty?
 
-      text.scan(%r{(?<![\w.-])(?:\.{1,2}/)?(?:[\w.-]+/)*\.env(?:\.[\w.-]+)?(?:/[^\s`"'<>]*)?}).flatten.map do |path|
-        path.sub(/[),.;:]+$/, "")
-      end.reject(&:empty?).uniq
+      text.each_line.each_with_object([]) do |line, blockers|
+        next if agent_run_negative_env_guardrail_line?(line)
+
+        line.scan(%r{(?<![\w.-])(?:\.{1,2}/)?(?:[\w.-]+/)*\.env(?:\.[\w.-]+)?(?:/[^\s`"'<>]*)?}).flatten.each do |path|
+          normalized = path.sub(/[),.;:]+$/, "")
+          next if normalized.empty?
+
+          blockers << normalized
+        end
+      end.uniq
+    end
+
+    def agent_run_negative_env_guardrail_line?(line)
+      normalized = line.to_s.downcase
+      return false unless normalized.include?(".env")
+
+      normalized.match?(/\b(do not|don't|dont|no)\b.*\.env/) || normalized.match?(/\.env.*\b(not allowed|forbidden|must not|never)\b/)
     end
 
     def agent_run_context_manifest(task_source:, design_text:, component_map_text:, source_paths:)
