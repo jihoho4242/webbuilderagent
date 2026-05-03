@@ -84,6 +84,46 @@ class AiwebCliTest < Minitest::Test
     write_fake_static_qa_tooling(root)
   end
 
+  def write_fake_qa_screenshot_tooling(root)
+    FileUtils.mkdir_p(File.join(root, "node_modules", ".bin"))
+    write_fake_executable(
+      File.join(root, "node_modules", ".bin"),
+      "playwright",
+      "echo local playwright shim >/dev/null"
+    )
+
+    bin_dir = File.join(root, "fake-screenshot-bin")
+    FileUtils.mkdir_p(bin_dir)
+    write_fake_executable(
+      bin_dir,
+      "pnpm",
+      <<~'SH'
+        [ "$1" = "exec" ] || { echo "expected pnpm exec" >&2; exit 64; }
+        [ "$2" = "playwright" ] || { echo "expected playwright" >&2; exit 64; }
+        shift 2
+        wrote=0
+        for arg in "$@"; do
+          case "$arg" in
+            *.png)
+              mkdir -p "$(dirname "$arg")"
+              printf 'fake screenshot for %s
+' "$arg" > "$arg"
+              wrote=1
+              ;;
+          esac
+        done
+        if [ "${QA_SCREENSHOT_FAKE_STATUS:-passed}" = "failed" ]; then
+          echo 'fake screenshot failure' >&2
+          exit 1
+        fi
+        [ "$wrote" = 1 ] || { echo "no png output path provided" >&2; exit 64; }
+        echo 'fake screenshot pass' >&2
+        exit 0
+      SH
+    )
+    bin_dir
+  end
+
   def write_fake_static_qa_tooling(root)
     FileUtils.mkdir_p(File.join(root, "node_modules", ".bin"))
     %w[axe lighthouse].each do |name|
@@ -4709,6 +4749,204 @@ class AiwebCliTest < Minitest::Test
 
       assert_equal env_body, File.read(".env"), "static QA commands must not mutate .env"
       refute Dir.exist?("dist"), "static QA commands must not build or deploy"
+    end
+  end
+
+
+  def test_qa_screenshot_dry_run_plans_local_viewport_artifacts_without_writes
+    ["http://127.0.0.1:4321", "http://localhost:4321"].each do |url|
+      in_tmp do
+        prepare_profile_d_design_flow
+        json_cmd("scaffold", "--profile", "D")
+        env_body = "SECRET=do-not-touch
+"
+        File.write(".env", env_body)
+        before_entries = Dir.glob("**/*", File::FNM_DOTMATCH).reject { |path| path == "." || path == ".." }.sort
+
+        stdout, stderr, code = run_aiweb("qa-screenshot", "--url", url, "--task-id", "home-shot", "--dry-run", "--json")
+        payload = JSON.parse(stdout)
+        after_entries = Dir.glob("**/*", File::FNM_DOTMATCH).reject { |path| path == "." || path == ".." }.sort
+
+        assert_equal 0, code, stdout
+        assert_equal "", stderr
+        assert_equal true, payload["dry_run"]
+        screenshot_qa = payload.fetch("qa_screenshot")
+        assert_equal "dry_run", screenshot_qa["status"]
+        assert_equal true, screenshot_qa["dry_run"]
+        assert_equal url, screenshot_qa["url"]
+        assert_equal "home-shot", screenshot_qa["task_id"]
+        assert_equal ".ai-web/qa/screenshots/metadata.json", screenshot_qa["metadata_path"]
+        assert_equal ".ai-web/qa/screenshots/mobile-home.png", screenshot_qa.dig("screenshots", "mobile", "path")
+        assert_equal ".ai-web/qa/screenshots/tablet-home.png", screenshot_qa.dig("screenshots", "tablet", "path")
+        assert_equal ".ai-web/qa/screenshots/desktop-home.png", screenshot_qa.dig("screenshots", "desktop", "path")
+        assert_nil screenshot_qa["exit_code"], "dry-run must not execute Playwright"
+        assert_equal before_entries, after_entries, "qa-screenshot --dry-run must not write screenshots, metadata, runs, or results"
+        assert_equal env_body, File.read(".env"), "qa-screenshot --dry-run must not mutate .env"
+        refute Dir.exist?("node_modules"), "qa-screenshot --dry-run must not install dependencies"
+        refute Dir.exist?("dist"), "qa-screenshot --dry-run must not run a build"
+      end
+    end
+  end
+
+  def test_qa_screenshot_rejects_external_urls_before_playwright_or_writes
+    in_tmp do |dir|
+      prepare_profile_d_design_flow
+      json_cmd("scaffold", "--profile", "D")
+      env_body = "SECRET=do-not-print
+"
+      File.write(".env", env_body)
+      bin_dir = File.join(dir, "fake-bin")
+      FileUtils.mkdir_p(bin_dir)
+      marker = File.join(dir, "pnpm-ran")
+      write_fake_executable(bin_dir, "pnpm", "echo ran > #{Shellwords.escape(marker)}")
+
+      stdout, stderr, code = run_aiweb_env(
+        { "PATH" => [bin_dir, "/usr/bin", "/bin", "/usr/sbin", "/sbin"].join(File::PATH_SEPARATOR) },
+        "qa-screenshot",
+        "--url", "https://example.com",
+        "--json"
+      )
+      payload = JSON.parse(stdout)
+
+      assert_equal 1, code
+      assert_equal "", stderr
+      assert_equal "error", payload["status"]
+      assert_match(/localhost|127\.0\.0\.1|local|external|unsafe/i, payload.dig("error", "message"))
+      refute File.exist?(marker), "external URL rejection must happen before pnpm/playwright starts"
+      refute Dir.exist?(".ai-web/qa/screenshots"), "external URL rejection must not write screenshot artifacts"
+      refute_includes stdout, "do-not-print"
+      assert_equal env_body, File.read(".env"), "external URL rejection must not mutate .env"
+    end
+  end
+
+  def test_qa_screenshot_missing_local_playwright_blocks_with_clear_artifacts
+    in_tmp do |dir|
+      prepare_profile_d_design_flow
+      json_cmd("scaffold", "--profile", "D")
+      env_body = "SECRET=do-not-touch
+"
+      File.write(".env", env_body)
+      FileUtils.mkdir_p("node_modules")
+      bin_dir = File.join(dir, "fake-bin")
+      FileUtils.mkdir_p(bin_dir)
+      write_fake_executable(bin_dir, "pnpm", "echo should-not-run >&2; exit 99")
+
+      stdout, stderr, code = run_aiweb_env(
+        { "PATH" => [bin_dir, "/usr/bin", "/bin", "/usr/sbin", "/sbin"].join(File::PATH_SEPARATOR) },
+        "qa-screenshot",
+        "--url", "http://127.0.0.1:4321",
+        "--json"
+      )
+      payload = JSON.parse(stdout)
+
+      assert_equal 1, code
+      assert_equal "", stderr
+      screenshot_qa = payload.fetch("qa_screenshot")
+      assert_equal "blocked", screenshot_qa["status"]
+      assert_nil screenshot_qa["exit_code"], "missing local Playwright must not execute pnpm"
+      assert_match(/Playwright|node_modules\/\.bin\/playwright/i, payload["blocking_issues"].join("
+"))
+      assert_match(%r{\A\.ai-web/runs/qa-screenshot-\d{8}T\d{6}Z/stdout\.log\z}, screenshot_qa["stdout_log"])
+      assert_match(%r{\A\.ai-web/runs/qa-screenshot-\d{8}T\d{6}Z/stderr\.log\z}, screenshot_qa["stderr_log"])
+      assert_match(%r{\A\.ai-web/qa/results/qa-\d{8}T\d{6}Z-.*\.json\z}, screenshot_qa["result_path"])
+      assert File.file?(screenshot_qa["stdout_log"])
+      assert File.file?(screenshot_qa["stderr_log"])
+      assert File.file?(screenshot_qa["result_path"])
+      result = JSON.parse(File.read(screenshot_qa["result_path"]))
+      assert_equal "blocked", result["status"]
+      assert_equal "http://127.0.0.1:4321", result.dig("environment", "url")
+      assert_equal env_body, File.read(".env"), "missing-local-playwright qa-screenshot must not mutate .env"
+      refute Dir.exist?("dist"), "qa-screenshot must not build or deploy"
+    end
+  end
+
+  def test_qa_screenshot_records_fake_viewport_screenshots_metadata_and_visual_critique_handoff
+    in_tmp do |dir|
+      prepare_profile_d_design_flow
+      json_cmd("scaffold", "--profile", "D")
+      env_body = "SECRET=do-not-touch
+"
+      File.write(".env", env_body)
+      bin_dir = write_fake_qa_screenshot_tooling(dir)
+      env = { "PATH" => [bin_dir, "/usr/bin", "/bin", "/usr/sbin", "/sbin"].join(File::PATH_SEPARATOR) }
+
+      stdout, stderr, code = run_aiweb_env(env, "qa-screenshot", "--url", "http://127.0.0.1:4321", "--task-id", "home", "--json")
+      payload = JSON.parse(stdout)
+
+      assert_equal 0, code, stdout
+      assert_equal "", stderr
+      screenshot_qa = payload.fetch("qa_screenshot")
+      assert_equal "passed", screenshot_qa["status"]
+      assert_equal 0, screenshot_qa["exit_code"]
+      assert_equal "http://127.0.0.1:4321", screenshot_qa["url"]
+      assert_equal "home", screenshot_qa["task_id"]
+      expected_paths = {
+        "mobile" => ".ai-web/qa/screenshots/mobile-home.png",
+        "tablet" => ".ai-web/qa/screenshots/tablet-home.png",
+        "desktop" => ".ai-web/qa/screenshots/desktop-home.png"
+      }
+      expected_paths.each do |viewport, path|
+        assert_equal path, screenshot_qa.dig("screenshots", viewport, "path")
+        assert File.file?(path), "#{viewport} screenshot must be written"
+        assert_match(/fake screenshot/, File.read(path))
+      end
+      assert_equal ".ai-web/qa/screenshots/metadata.json", screenshot_qa["metadata_path"]
+      assert File.file?(screenshot_qa["metadata_path"])
+      assert File.file?(screenshot_qa["result_path"])
+
+      metadata = JSON.parse(File.read(screenshot_qa["metadata_path"]))
+      assert_equal 1, metadata["schema_version"]
+      assert_equal "http://127.0.0.1:4321", metadata["url"]
+      assert_equal expected_paths, metadata.fetch("screenshots").transform_values { |entry| entry.fetch("path") }
+      refute_match(Regexp.escape(dir), JSON.generate(metadata), "metadata must stay artifact-relative and not leak absolute project paths")
+
+      state = load_state
+      assert_equal screenshot_qa["metadata_path"], state.dig("qa", "latest_screenshot_metadata")
+      assert_equal screenshot_qa["result_path"], state.dig("qa", "latest_screenshot_result")
+      assert_equal env_body, File.read(".env"), "qa-screenshot must not mutate .env"
+      refute Dir.exist?("dist"), "qa-screenshot must not build or deploy"
+
+      critique_stdout, critique_stderr, critique_code = run_aiweb("visual-critique", "--from-screenshots", "latest", "--dry-run", "--json")
+      critique_payload = JSON.parse(critique_stdout)
+      assert_equal 0, critique_code, critique_stdout
+      assert_equal "", critique_stderr
+      assert_equal screenshot_qa["metadata_path"], critique_payload.dig("visual_critique", "metadata_path")
+      assert_equal expected_paths["desktop"], critique_payload.dig("visual_critique", "screenshot_path")
+    end
+  end
+
+  def test_qa_screenshot_help_and_webbuilder_passthrough
+    stdout, stderr, code = run_aiweb("help")
+    assert_equal 0, code
+    assert_equal "", stderr
+    assert_includes stdout, "qa-screenshot"
+    assert_match(/qa-screenshot: captures safe local screenshot evidence/i, stdout)
+
+    help_stdout, help_stderr, help_code = run_webbuilder("--help")
+    assert_equal 0, help_code
+    assert_equal "", help_stderr
+    assert_match(/qa-screenshot/, help_stdout)
+
+    in_tmp do |dir|
+      target = File.join(dir, "passthrough-screenshot")
+      Dir.mkdir(target)
+      Dir.chdir(target) do
+        prepare_profile_d_design_flow
+        json_cmd("scaffold", "--profile", "D")
+        File.write(".env", "SECRET=do-not-touch
+")
+      end
+
+      web_stdout, web_stderr, web_code = run_webbuilder("--path", target, "qa-screenshot", "--url", "http://localhost:4321", "--task-id", "web-shot", "--dry-run", "--json")
+      web_payload = JSON.parse(web_stdout)
+      assert_equal 0, web_code, web_stdout
+      assert_equal "", web_stderr
+      assert_equal "dry_run", web_payload.dig("qa_screenshot", "status")
+      assert_equal "web-shot", web_payload.dig("qa_screenshot", "task_id")
+      assert_equal "SECRET=do-not-touch
+", File.read(File.join(target, ".env"))
+      refute Dir.exist?(File.join(target, ".ai-web", "qa", "screenshots")), "webbuilder qa-screenshot --dry-run must not write screenshot artifacts"
+      refute Dir.exist?(File.join(target, ".ai-web", "runs")), "webbuilder qa-screenshot --dry-run must not write run artifacts"
     end
   end
 
