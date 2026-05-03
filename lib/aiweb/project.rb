@@ -4683,6 +4683,8 @@ module Aiweb
       state["implementation"]["scaffold_dev_command"] ||= nil
       state["implementation"]["scaffold_build_command"] ||= nil
       state["implementation"]["scaffold_metadata_path"] ||= nil
+      state["implementation"]["latest_agent_run"] ||= nil
+      state["implementation"]["last_diff"] ||= nil
       state
     end
 

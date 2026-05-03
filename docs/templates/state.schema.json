@@ -298,6 +298,8 @@
         "scaffold_dev_command",
         "scaffold_build_command",
         "scaffold_metadata_path",
+        "latest_agent_run",
+        "last_diff",
         "current_task",
         "completed_tasks"
       ],
@@ -359,6 +361,18 @@
           ]
         },
         "scaffold_metadata_path": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "latest_agent_run": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "last_diff": {
           "type": [
             "string",
             "null"
