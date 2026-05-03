@@ -698,7 +698,7 @@ module Aiweb
         dry_run: false,
         action_taken: "agent run blocked",
         blocking_issues: ["--approved is required for real local agent execution"],
-        next_action: "rerun aiweb agent-run --task #{task} --agent #{agent} --dry-run or --approved"
+        next_action: "rerun the agent run as aiweb agent-run --task #{task} --agent #{agent} --dry-run or --approved"
       )
     end
 
@@ -711,7 +711,7 @@ module Aiweb
         dry_run: true,
         action_taken: "planned agent run",
         blocking_issues: [],
-        next_action: "rerun aiweb agent-run --task #{task} --agent #{agent} --approved to execute locally"
+        next_action: "rerun the agent run as aiweb agent-run --task #{task} --agent #{agent} --approved to execute locally"
       )
     end
 
@@ -724,7 +724,7 @@ module Aiweb
         dry_run: false,
         action_taken: "agent run unavailable",
         blocking_issues: ["agent-run project adapter is not available in this build."],
-        next_action: "integrate the local agent-run project adapter, then rerun aiweb agent-run --task #{task} --agent #{agent} --approved"
+        next_action: "integrate the local agent-run project adapter, then rerun the agent run as aiweb agent-run --task #{task} --agent #{agent} --approved"
       )
     end
 
@@ -1101,6 +1101,8 @@ module Aiweb
           qa-a11y: runs safe local axe accessibility QA against localhost/127.0.0.1 preview; --dry-run does not write files or launch Node
           qa-lighthouse: runs safe local Lighthouse QA against localhost/127.0.0.1 preview; --dry-run does not write files or launch Node
           visual-critique: records safe local visual critique from explicit screenshot/metadata evidence or --from-screenshots latest only; --dry-run plans .ai-web/visual artifacts without writes, browser launch, installs, repair, deploy, network, or .env access
+          agent-run --task latest --agent codex --dry-run
+          agent-run --task latest --agent codex --approved
           workbench: plans or exports a static local UI manifest under .ai-web/workbench using declarative CLI controls only; requires initialized .ai-web/state.yaml, --dry-run writes nothing, export writes only workbench artifacts, executes no controls, and never mutates state.yaml
           component-map: scans stable data-aiweb-id regions into .ai-web/component-map.json; --dry-run writes nothing and never reads .env/.env.*
           visual-edit: validates a selected data-aiweb-id target and writes only local handoff artifacts; --dry-run writes nothing and never patches source, runs QA/browser/build, deploys, or calls network/AI
@@ -1463,8 +1465,12 @@ module Aiweb
       status = result.dig("agent_run", "status").to_s
       return EXIT_SUCCESS if %w[planned dry_run passed completed].include?(status)
       return EXIT_ADAPTER_UNAVAILABLE if status == "blocked" && (result["action_taken"].to_s =~ /unavailable/)
-      return EXIT_UNSAFE_EXTERNAL_ACTION if status == "blocked" && ((result.dig("agent_run", "blocking_issues") || []) + (result["blocking_issues"] || [])).join(" ").match?(/approved|approval|unsafe/i)
-      return EXIT_PHASE_BLOCKED if status == "blocked" && ((result.dig("agent_run", "blocking_issues") || []) + (result["blocking_issues"] || [])).join(" ").match?(/phase/i)
+      if status == "blocked"
+        issues = ((result.dig("agent_run", "blocking_issues") || []) + (result["blocking_issues"] || [])).join(" ")
+        return EXIT_UNSAFE_EXTERNAL_ACTION if issues.match?(/approved|approval|unsafe|guardrail|missing-target|missing target|required/i)
+        return EXIT_PHASE_BLOCKED if issues.match?(/phase/i)
+      end
+      return EXIT_VALIDATION_FAILED if %w[failed no_changes].include?(status)
 
       EXIT_VALIDATION_FAILED
     end
