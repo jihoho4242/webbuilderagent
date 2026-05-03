@@ -1581,6 +1581,7 @@ module Aiweb
       stderr_path = File.join(run_dir, "stderr.log")
       metadata_path = File.join(run_dir, "agent-run.json")
       diff_path = File.join(aiweb_dir, "diffs", "#{run_id}.patch")
+      blockers = []
 
       task_source = resolve_agent_run_task_source(task, state)
       component_map = nil
@@ -1590,10 +1591,25 @@ module Aiweb
       rescue UserError => e
         component_map_error = e.message
       end
-      task_text = task_source["path"] ? File.read(task_source["path"]) : nil
+      task_text = nil
+      begin
+        task_text = task_source["path"] ? File.read(task_source["path"]) : nil
+      rescue SystemCallError => e
+        blockers << "agent-run cannot read task packet: #{e.message}"
+      end
       design_path = File.join(aiweb_dir, "DESIGN.md")
-      design_text = File.file?(design_path) ? File.read(design_path) : nil
-      component_map_text = component_map ? File.read(File.join(aiweb_dir, "component-map.json")) : nil
+      design_text = nil
+      begin
+        design_text = File.file?(design_path) ? File.read(design_path) : nil
+      rescue SystemCallError => e
+        blockers << "agent-run cannot read DESIGN.md: #{e.message}"
+      end
+      component_map_text = nil
+      begin
+        component_map_text = component_map ? File.read(File.join(aiweb_dir, "component-map.json")) : nil
+      rescue SystemCallError => e
+        blockers << "agent-run cannot read component-map.json: #{e.message}"
+      end
       source_paths = agent_run_source_paths(task_text, component_map)
       context = agent_run_context_manifest(
         task_source: task_source,
@@ -1601,7 +1617,6 @@ module Aiweb
         component_map_text: component_map_text,
         source_paths: source_paths
       )
-      blockers = []
       blockers << task_source["reason"] if task_source["path"].nil?
       blockers << "agent-run task packet does not identify any safe source targets" if source_paths.empty?
       blockers << "agent-run component map is malformed" if component_map_error
@@ -1702,6 +1717,7 @@ module Aiweb
                   end,
           changed_source_files: changed_source_files
         )
+        changes.concat(changed_source_files)
         changes << write_json(metadata_path, metadata, false)
         state["implementation"]["latest_agent_run"] = relative(metadata_path)
         state["implementation"]["last_diff"] = relative(diff_path)
@@ -6117,7 +6133,7 @@ module Aiweb
       lines << "Do not run build, preview, QA, deploy, or package install commands."
       lines << ""
       lines << "## Task packet"
-      lines << context["task"].to_h.fetch("content", "").to_s
+      lines << (context["task"] && context["task"]["content"]).to_s
       if context["design"] && context["design"]["content"]
         lines << ""
         lines << "## DESIGN.md"
