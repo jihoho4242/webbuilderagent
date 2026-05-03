@@ -6072,7 +6072,6 @@ module Aiweb
     def agent_run_forbidden_path_blockers(task_text, component_map_text)
       blockers = []
       blockers.concat(agent_run_forbidden_paths_from_text(task_text))
-      blockers.concat(agent_run_forbidden_paths_from_text(component_map_text))
       blockers.uniq
     end
 
