@@ -2017,9 +2017,9 @@ module Aiweb
     end
 
 
-    def visual_critique(paths: nil, evidence_paths: nil, screenshot: nil, screenshots: nil, metadata: nil, task_id: nil, dry_run: false, **_options)
+    def visual_critique(paths: nil, evidence_paths: nil, screenshot: nil, screenshots: nil, from_screenshots: nil, metadata: nil, task_id: nil, dry_run: false, **_options)
       assert_initialized!
-      evidence = visual_critique_evidence_paths(paths, evidence_paths, screenshot, screenshots, metadata)
+      evidence = visual_critique_evidence_paths(paths, evidence_paths, screenshot, [screenshots, from_screenshots], metadata)
       raise UserError.new("visual-critique requires at least one local evidence path", 1) if evidence.empty?
 
       evidence.each { |path| validate_visual_critique_input_path!(path) }
@@ -6831,7 +6831,11 @@ module Aiweb
 
       metadata = JSON.parse(File.read(metadata_path))
       screenshots = metadata["screenshots"]
-      items = screenshots.is_a?(Hash) ? screenshots.values : Array(screenshots)
+      items = if screenshots.is_a?(Hash)
+                %w[desktop tablet mobile].map { |name| screenshots[name] }.compact
+              else
+                Array(screenshots)
+              end
       paths = items.map { |item| item.is_a?(Hash) ? item["path"].to_s.strip : "" }.reject(&:empty?)
       paths << relative(metadata_path)
       paths
