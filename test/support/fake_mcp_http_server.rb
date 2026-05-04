@@ -76,8 +76,24 @@ class FakeMcpHttpServer
   end
 
   def read_body(client, headers)
+    return read_chunked_body(client) if headers["transfer-encoding"].to_s.downcase.include?("chunked")
+
     length = headers.fetch("content-length", "0").to_i
     length.positive? ? client.read(length).to_s : ""
+  end
+
+  def read_chunked_body(client)
+    body = +""
+    loop do
+      size_line = client.gets.to_s.strip
+      size = size_line.to_i(16)
+      break if size.zero?
+
+      body << client.read(size).to_s
+      client.read(2)
+    end
+    read_headers(client)
+    body
   end
 
   def write_json(client, status, payload)
