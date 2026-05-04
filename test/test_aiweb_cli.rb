@@ -469,7 +469,7 @@ class AiwebCliTest < Minitest::Test
 
         payload, research_code = json_cmd_with_env({ "LAZYWEB_MCP_TOKEN" => "secret-token" }, "design-research", "--provider", "lazyweb", "--limit", "5", "--force")
 
-        assert_equal 0, research_code
+        assert_equal 0, research_code, payload.inspect
         assert_equal "completed design research", payload["action_taken"]
         assert_includes payload["changed_files"], ".ai-web/design-reference-brief.md"
         assert_includes payload["changed_files"], ".ai-web/research/lazyweb/results.json"
