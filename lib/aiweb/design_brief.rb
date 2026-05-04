@@ -18,6 +18,7 @@ module Aiweb
       "Motion Intensity",
       "First-view Obligations",
       "Forbidden Patterns",
+      "Reference Research Intent",
       "Candidate Generation Instructions"
     ].freeze
 
@@ -44,6 +45,7 @@ module Aiweb
         "Motion Intensity" => motion_intensity,
         "First-view Obligations" => first_view_obligations,
         "Forbidden Patterns" => forbidden_patterns,
+        "Reference Research Intent" => reference_research_intent,
         "Candidate Generation Instructions" => candidate_generation_instructions
       }
 
@@ -169,14 +171,41 @@ module Aiweb
       bullet_list(patterns.uniq)
     end
 
+    def reference_research_intent
+      bullet_list(reference_research_queries.map { |query| "If design research is enabled, use pattern-only reference query: #{query}" } + [
+        "Use reference research only for hierarchy, CTA, layout, visual language, responsive, and trust-pattern grounding.",
+        "Do not copy exact screenshots, layouts, copy, prices, trademarks, or brand-specific claims from references."
+      ])
+    end
+
     def candidate_generation_instructions
       bullet_list([
-        "Generate design candidates from this brief, `.ai-web/product.md`, `.ai-web/brand.md`, `.ai-web/content.md`, `.ai-web/ia.md`, and `.ai-web/first-view-contract.md`.",
+        "Generate design candidates from this brief, `.ai-web/product.md`, `.ai-web/brand.md`, `.ai-web/content.md`, `.ai-web/ia.md`, `.ai-web/first-view-contract.md`, and `.ai-web/design-reference-brief.md` when present.",
         "Use PR2 design system `#{@design_system}`, skill `#{@skill}`, and craft IDs #{CRAFT_IDS.join(", ")} as explicit constraints.",
         "Preserve the existing intent fields exactly; do not reclassify the idea, surface, audience, or first-view obligations.",
         "Every candidate must satisfy first-view obligations, avoid forbidden patterns, and pass safety overlay checks before visual novelty.",
-        "Return implementation-useful notes for typography, color, layout, imagery/icons, motion, and risks."
+        "Return implementation-useful notes for typography, color, layout, imagery/icons, motion, and risks.",
+        "If reference research exists, interpret patterns rather than imitating exact reference layouts or copy."
       ])
+    end
+
+    def reference_research_queries
+      case @market
+      when "saas"
+        ["B2B SaaS landing page", "developer tools pricing page", "dashboard onboarding"]
+      when "ecommerce"
+        ["mobile product detail page", "checkout flow", "cart upsell"]
+      when "service"
+        ["local service booking page", "trust section", "contact booking CTA"]
+      when "premium"
+        ["luxury editorial landing page", "premium product page", "high trust hero"]
+      else
+        if @intent["archetype"].to_s.include?("chat")
+          ["AI assistant onboarding", "chat app first screen", "dashboard empty state"]
+        else
+          ["high trust landing page", "responsive first screen", "conversion CTA pattern"]
+        end
+      end
     end
 
     def route_mood

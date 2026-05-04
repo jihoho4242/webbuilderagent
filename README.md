@@ -226,6 +226,7 @@ Phase-sensitive commands are guarded by the Director state machine:
 ```bash
 # Once current phase is phase-3 or phase-3.5
 ./bin/aiweb design-prompt
+./bin/aiweb design-research --provider lazyweb --dry-run
 
 # Once current phase is phase-3.5
 ./bin/aiweb ingest-design --title "Candidate 1"
@@ -249,6 +250,18 @@ Phase-sensitive commands are guarded by the Director state machine:
 ./bin/aiweb scaffold --profile S --dry-run
 ./bin/aiweb supabase-secret-qa --dry-run
 ```
+
+Lazyweb design research is represented in `.ai-web/state.yaml` as a separate
+`research.design_research` contract plus a sibling `adapters.design_research`
+adapter. Its default policy is `opportunistic`: use Lazyweb when configured,
+otherwise keep the research artifacts missing/skipped without changing the core
+webbuilder UX. The planned local outputs are `.ai-web/design-reference-brief.md`,
+`.ai-web/research/lazyweb/results.json`, and
+`.ai-web/research/lazyweb/pattern-matrix.md`. This is intentionally separate
+from the implementation agent: `adapters.implementation_agent.network_allowed`
+remains `false` and `mcp_servers_allowed` remains `[]` by default, so source
+patching stays local/no-MCP while design phases can consume normalized reference
+evidence.
 
 Quality is an explicit contract. After entering phase-0.25, review `.ai-web/quality.yaml` and set `quality.approved: true` before advancing again.
 

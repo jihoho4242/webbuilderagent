@@ -71,6 +71,9 @@ artifacts:
   design_comparison: { path: ".ai-web/design-candidates/comparison.md", status: "missing" }
   selected_design_candidate: { path: ".ai-web/design-candidates/selected.md", status: "missing" }
   design_system: { path: ".ai-web/DESIGN.md", status: "stub" }
+  design_reference_brief: { path: ".ai-web/design-reference-brief.md", status: "missing" }
+  design_reference_results: { path: ".ai-web/research/lazyweb/results.json", status: "missing" }
+  design_pattern_matrix: { path: ".ai-web/research/lazyweb/pattern-matrix.md", status: "missing" }
   deploy: { path: ".ai-web/deploy.md", status: "stub" }
   github_sync: { path: ".ai-web/github-sync.json", status: "missing" }
   deploy_plan: { path: ".ai-web/deploy-plan.json", status: "missing" }
@@ -88,6 +91,19 @@ design_candidates:
   regeneration_requested: false
   regeneration_rounds: 0
   gate_2_draft_path: ".ai-web/gates/gate-2-design.md"
+research:
+  design_research:
+    policy: "opportunistic"
+    provider: "lazyweb"
+    latest_run: null
+    status: "missing"
+    reference_brief_path: ".ai-web/design-reference-brief.md"
+    pattern_matrix_path: ".ai-web/research/lazyweb/pattern-matrix.md"
+    normalized_results_path: ".ai-web/research/lazyweb/results.json"
+    min_references: 5
+    min_companies: 3
+    last_error: null
+    skipped_reason: null
 implementation:
   stack_profile: null
   scaffold_target: null
@@ -152,6 +168,18 @@ adapters:
     network_allowed: false
     mcp_servers_allowed: []
     command_timeout_minutes: 30
+  design_research:
+    provider: "lazyweb"
+    transport: "streamable-http"
+    endpoint: "https://www.lazyweb.com/mcp"
+    network_allowed: true
+    mcp_servers_allowed: ["lazyweb"]
+    token_sources:
+      - "LAZYWEB_MCP_TOKEN"
+      - "~/.lazyweb/lazyweb_mcp_token"
+      - "~/.codex/lazyweb_mcp_token"
+    token_storage_allowed_in_repo: false
+    command_timeout_seconds: 45
   image_generation:
     provider: "openai"
     tool: "gpt-image"

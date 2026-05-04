@@ -11,14 +11,19 @@ Before implementation, read:
 - `.ai-web/content.md`
 - `.ai-web/ia.md`
 - `.ai-web/DESIGN.md`
+- `.ai-web/design-reference-brief.md` when present
 
 Implementation rules:
 
 - Work from the current task packet only.
 - Do not invent new design tokens or component variants unless `DESIGN.md` is updated.
+- Do not call Lazyweb or external design-research tools during implementation; use persisted markdown pattern guidance only.
+- Do not copy exact reference screenshots, layouts, copy, prices, trademarks, or brand-specific claims.
 - Run verification listed in the task packet.
 - Create or update QA evidence for browser-visible changes.
 - Record blockers instead of silently expanding scope.
+- Treat Lazyweb/design-research artifacts as read-only design evidence.
+- Do not request or use Lazyweb tokens, network access, or MCP servers from implementation task packets.
 
 
 Approval and QA rules:
@@ -27,4 +32,5 @@ Approval and QA rules:
 - Do not enter Phase 4 unless Gate 2 is approved.
 - Do not release with critical/high open QA failures unless the release is explicitly blocked or a valid accepted-risk policy allows it.
 - Respect adapter contracts in `.ai-web/state.yaml`.
+- Preserve `adapters.implementation_agent.network_allowed: false` and `mcp_servers_allowed: []` unless a human explicitly approves a contract change.
 - Do not run external deploy/provider actions without explicit approval.

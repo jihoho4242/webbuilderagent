@@ -11,6 +11,7 @@
     "gates",
     "artifacts",
     "design_candidates",
+    "research",
     "implementation",
     "setup",
     "qa",
@@ -125,6 +126,9 @@
         "design_comparison",
         "selected_design_candidate",
         "design_system",
+        "design_reference_brief",
+        "design_reference_results",
+        "design_pattern_matrix",
         "deploy",
         "github_sync",
         "deploy_plan",
@@ -225,6 +229,15 @@
           "$ref": "#/$defs/artifact"
         },
         "deploy_vercel": {
+          "$ref": "#/$defs/artifact"
+        },
+        "design_reference_brief": {
+          "$ref": "#/$defs/artifact"
+        },
+        "design_reference_results": {
+          "$ref": "#/$defs/artifact"
+        },
+        "design_pattern_matrix": {
           "$ref": "#/$defs/artifact"
         }
       }
@@ -596,6 +609,94 @@
       "items": {
         "type": "object"
       }
+    },
+    "research": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "design_research"
+      ],
+      "properties": {
+        "design_research": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "policy",
+            "provider",
+            "latest_run",
+            "status",
+            "reference_brief_path",
+            "pattern_matrix_path",
+            "normalized_results_path",
+            "min_references",
+            "min_companies",
+            "last_error",
+            "skipped_reason"
+          ],
+          "properties": {
+            "policy": {
+              "type": "string",
+              "enum": [
+                "off",
+                "opportunistic",
+                "required"
+              ]
+            },
+            "provider": {
+              "type": "string",
+              "enum": [
+                "lazyweb",
+                "manual"
+              ]
+            },
+            "latest_run": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "status": {
+              "type": "string",
+              "enum": [
+                "missing",
+                "planned",
+                "skipped",
+                "ready",
+                "blocked"
+              ]
+            },
+            "reference_brief_path": {
+              "type": "string"
+            },
+            "pattern_matrix_path": {
+              "type": "string"
+            },
+            "normalized_results_path": {
+              "type": "string"
+            },
+            "min_references": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "min_companies": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "last_error": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "skipped_reason": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          }
+        }
+      }
     }
   },
   "$defs": {
@@ -913,6 +1014,7 @@
       "additionalProperties": false,
       "required": [
         "implementation_agent",
+        "design_research",
         "image_generation",
         "browser_qa",
         "deploy"
@@ -1084,6 +1186,61 @@
               "items": {
                 "type": "string"
               }
+            }
+          }
+        },
+        "design_research": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "provider",
+            "transport",
+            "endpoint",
+            "network_allowed",
+            "mcp_servers_allowed",
+            "token_sources",
+            "token_storage_allowed_in_repo",
+            "command_timeout_seconds"
+          ],
+          "properties": {
+            "provider": {
+              "type": "string",
+              "enum": [
+                "lazyweb",
+                "manual"
+              ]
+            },
+            "transport": {
+              "type": "string",
+              "enum": [
+                "streamable-http",
+                "manual"
+              ]
+            },
+            "endpoint": {
+              "type": "string"
+            },
+            "network_allowed": {
+              "type": "boolean"
+            },
+            "mcp_servers_allowed": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "token_sources": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "token_storage_allowed_in_repo": {
+              "type": "boolean"
+            },
+            "command_timeout_seconds": {
+              "type": "integer",
+              "minimum": 1
             }
           }
         }

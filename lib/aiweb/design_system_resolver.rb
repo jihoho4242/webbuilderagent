@@ -42,6 +42,7 @@ module Aiweb
       market = present(intent["market_archetype"], intent["archetype"] || "fallback")
       design_system_body = read_design_system(selected_design_system)
       craft_sections = CRAFT_IDS.map { |id| [id, read_craft(id)] }
+      reference_brief = design_reference_brief
 
       <<~MD
         #{MANAGED_MARKER}
@@ -85,6 +86,8 @@ module Aiweb
         ## PR4 Design Brief
         #{indent_block(design_brief)}
 
+        #{reference_pattern_constraints(reference_brief)}
+
         ## Selected Design System: #{selected_design_system}
         #{indent_block(design_system_body)}
 
@@ -119,6 +122,25 @@ module Aiweb
       return File.read(path) if path && File.exist?(path)
 
       "Missing craft rule `#{id}` at `craft/#{id}.md`."
+    end
+
+    def design_reference_brief
+      path = File.join(aiweb_dir, "design-reference-brief.md")
+      return nil unless File.file?(path)
+
+      content = File.read(path).to_s.strip
+      content.length >= 40 ? content : nil
+    end
+
+    def reference_pattern_constraints(reference_brief)
+      return "" if reference_brief.to_s.strip.empty?
+
+      <<~MD.rstrip
+        ## Reference-backed Pattern Constraints
+        The following local reference brief is pattern evidence only. Use it for hierarchy, CTA, layout, visual language, responsive behavior, and trust decisions. Do not copy exact screenshots, layouts, copy, prices, trademarks, or brand-specific claims.
+
+        #{indent_block(reference_brief)}
+      MD
     end
 
     def asset_path(*parts)

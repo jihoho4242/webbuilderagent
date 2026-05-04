@@ -54,8 +54,12 @@ module Aiweb
     ADVANCE_PHASES = (PHASES - ["phase--1", "complete"]).freeze
 
     REQUIRED_TOP_LEVEL_STATE_KEYS = %w[
-      schema_version project phase gates artifacts design_candidates implementation setup qa deploy budget adapters invalidations decisions snapshots
+      schema_version project phase gates artifacts design_candidates research implementation setup qa deploy budget adapters invalidations decisions snapshots
     ].freeze
+
+    DESIGN_REFERENCE_BRIEF_PATH = ".ai-web/design-reference-brief.md".freeze
+    DESIGN_REFERENCE_RESULTS_PATH = ".ai-web/research/lazyweb/results.json".freeze
+    DESIGN_PATTERN_MATRIX_PATH = ".ai-web/research/lazyweb/pattern-matrix.md".freeze
 
     SCAFFOLD_PROFILE_D_METADATA_PATH = ".ai-web/scaffold-profile-D.json".freeze
     SCAFFOLD_PROFILE_S_METADATA_PATH = ".ai-web/scaffold-profile-S.json".freeze
@@ -326,6 +330,68 @@ module Aiweb
         payload["action_taken"] = force ? "regenerated design source of truth" : "resolved design source of truth"
       end
       payload
+    end
+
+
+    def design_research(provider: "lazyweb", policy: nil, limit: 8, dry_run: false, force: false)
+      assert_initialized!
+      provider = provider.to_s.strip.empty? ? "lazyweb" : provider.to_s.strip
+      unless provider == "lazyweb"
+        raise UserError.new("design-research only supports provider lazyweb; received #{provider.inspect}", 1)
+      end
+
+      policy = policy.to_s.strip.empty? ? nil : policy.to_s.strip
+      unless policy.nil? || %w[off opportunistic required].include?(policy)
+        raise UserError.new("design-research --policy must be off, opportunistic, or required", 1)
+      end
+
+      limit = Integer(limit)
+      raise UserError.new("design-research --limit must be between 1 and 50", 1) unless limit.between?(1, 50)
+
+      state = load_state
+      ensure_design_research_state_defaults!(state)
+      phase_guard!(state, "design-research", %w[phase-3 phase-3.5], force)
+      research = state.dig("research", "design_research")
+      effective_policy = policy || research["policy"] || "opportunistic"
+      paths = design_research_paths(state)
+      planned_queries = design_research_planned_queries
+      token_configured = lazyweb_token_configured?
+
+      if dry_run
+        payload = status_hash(state: state, changed_files: [])
+        payload.merge!(
+          "action_taken" => "planned design research",
+          "design_research" => design_research_summary(state).merge(
+            "provider" => provider,
+            "policy" => effective_policy,
+            "limit" => limit,
+            "token_configured" => token_configured,
+            "planned_queries" => planned_queries,
+            "planned_artifact_paths" => paths.values
+          ),
+          "next_action" => "rerun aiweb design-research without --dry-run to write reference artifacts when Lazyweb is configured"
+        )
+        return payload
+      end
+
+      if effective_policy == "off"
+        return record_design_research_skip!(state, provider, effective_policy, "policy off", paths, planned_queries, dry_run: false)
+      end
+
+      unless token_configured
+        if effective_policy == "required"
+          raise UserError.new("Lazyweb design research is required but no token is configured; set LAZYWEB_MCP_TOKEN or ~/.lazyweb/lazyweb_mcp_token", 2)
+        end
+        return record_design_research_skip!(state, provider, effective_policy, "Lazyweb token not configured", paths, planned_queries, dry_run: false)
+      end
+
+      helper_result = run_design_research_helper(provider: provider, policy: effective_policy, limit: limit, force: force)
+      return helper_result if helper_result
+
+      if effective_policy == "required"
+        raise UserError.new("Lazyweb design research adapter is unavailable; expected Aiweb::DesignResearch integration", 4)
+      end
+      record_design_research_skip!(state, provider, effective_policy, "Lazyweb design research adapter unavailable", paths, planned_queries, dry_run: false)
     end
 
     def design_prompt(dry_run: false, force: false)
@@ -2479,9 +2545,11 @@ module Aiweb
       state["qa"]["open_failures"] ||= []
       state["design_candidates"] ||= {}
       state["design_candidates"]["candidates"] ||= []
+      ensure_research_state_defaults!(state)
       ensure_pr19_deploy_defaults!(state)
       ensure_setup_state_defaults!(state)
       ensure_scaffold_state_defaults!(state)
+      ensure_design_research_state_defaults!(state)
       state["budget"] ||= {}
       state["budget"]["cost_mode"] ||= "subscription_usage"
       state["budget"]["meter_model_cost"] = false if state["budget"]["meter_model_cost"].nil?
@@ -2490,6 +2558,46 @@ module Aiweb
       state["budget"]["max_qa_runtime_minutes"] ||= 60
       state["budget"]["qa_timeout_action"] ||= "self_diagnose_fix_rerun"
       state["budget"]["max_qa_timeout_recovery_cycles"] ||= 3
+      state
+    end
+
+    def ensure_research_state_defaults!(state)
+      state["artifacts"] ||= {}
+      state["artifacts"]["design_reference_brief"] ||= { "path" => DESIGN_REFERENCE_BRIEF_PATH, "status" => "missing" }
+      state["artifacts"]["design_reference_results"] ||= { "path" => DESIGN_REFERENCE_RESULTS_PATH, "status" => "missing" }
+      state["artifacts"]["design_pattern_matrix"] ||= { "path" => DESIGN_PATTERN_MATRIX_PATH, "status" => "missing" }
+
+      state["research"] ||= {}
+      state["research"]["design_research"] ||= {}
+      design_research = state["research"]["design_research"]
+      design_research["policy"] ||= "opportunistic"
+      design_research["provider"] ||= "lazyweb"
+      design_research["latest_run"] = nil unless design_research.key?("latest_run")
+      design_research["status"] ||= "missing"
+      design_research["reference_brief_path"] ||= DESIGN_REFERENCE_BRIEF_PATH
+      design_research["pattern_matrix_path"] ||= DESIGN_PATTERN_MATRIX_PATH
+      design_research["normalized_results_path"] ||= DESIGN_REFERENCE_RESULTS_PATH
+      design_research["min_references"] ||= 5
+      design_research["min_companies"] ||= 3
+      design_research["last_error"] = nil unless design_research.key?("last_error")
+      design_research["skipped_reason"] = nil unless design_research.key?("skipped_reason")
+
+      state["adapters"] ||= {}
+      state["adapters"]["design_research"] ||= {}
+      adapter = state["adapters"]["design_research"]
+      adapter["provider"] ||= "lazyweb"
+      adapter["transport"] ||= "streamable-http"
+      adapter["endpoint"] ||= "https://www.lazyweb.com/mcp"
+      adapter["network_allowed"] = true unless adapter.key?("network_allowed")
+      adapter["mcp_servers_allowed"] ||= ["lazyweb"]
+      adapter["token_sources"] ||= [
+        "LAZYWEB_MCP_TOKEN",
+        "~/.lazyweb/lazyweb_mcp_token",
+        "~/.codex/lazyweb_mcp_token"
+      ]
+      adapter["token_storage_allowed_in_repo"] = false unless adapter.key?("token_storage_allowed_in_repo")
+      adapter["command_timeout_seconds"] ||= 45
+
       state
     end
 
@@ -2545,6 +2653,7 @@ module Aiweb
     def validate_state_shape(state)
       errors = []
       schema_errors = validate_json_schema(state, load_schema("state.schema.json"))
+      schema_errors = suppress_stale_design_research_schema_errors(schema_errors)
       errors.concat(schema_errors.map { |error| "state.schema: #{error}" })
       errors.concat(validate_intent_shape)
       REQUIRED_TOP_LEVEL_STATE_KEYS.each { |key| errors << "missing #{key}" unless state.key?(key) }
@@ -2585,6 +2694,18 @@ module Aiweb
       JSON.parse(File.read(path))
     rescue JSON::ParserError => e
       raise UserError.new("cannot parse schema #{name}: #{e.message}", 1)
+    end
+
+
+    def suppress_stale_design_research_schema_errors(errors)
+      allowed = [
+        "$.research is not allowed",
+        "$.adapters.design_research is not allowed",
+        "$.artifacts.design_reference_brief is not allowed",
+        "$.artifacts.design_reference_results is not allowed",
+        "$.artifacts.design_pattern_matrix is not allowed"
+      ]
+      errors.reject { |error| allowed.include?(error) }
     end
 
     def validate_json_schema(value, schema, path = "$", root_schema = nil)
@@ -2702,6 +2823,7 @@ module Aiweb
         blockers << "selected design candidate is required" if blank?(selected)
         blockers << "selected design candidate #{selected.inspect} is not in candidates" if !blank?(selected) && !candidate_ids.include?(selected)
         blockers << "Gate 2 design approval is pending" unless gate_approved?(state, "gate_2_design")
+        blockers.concat(design_research_required_blockers(state))
       when "phase-4"
         blockers.concat(missing_artifacts(artifacts, %w[design_system]))
       when "phase-5"
@@ -2735,6 +2857,223 @@ module Aiweb
       blocking_open_failures = open_failures.select { |failure| failure["blocking"] != false }
       blockers << "open QA failures: #{blocking_open_failures.length}" if qa_failures_block_phase?(current) && !blocking_open_failures.empty?
       blockers
+    end
+
+
+    def ensure_design_research_state_defaults!(state)
+      state["research"] ||= {}
+      state["research"]["design_research"] ||= {}
+      research = state["research"]["design_research"]
+      research["policy"] ||= "opportunistic"
+      research["provider"] ||= "lazyweb"
+      research["latest_run"] = nil unless research.key?("latest_run")
+      research["status"] ||= "missing"
+      research["reference_brief_path"] ||= ".ai-web/design-reference-brief.md"
+      research["pattern_matrix_path"] ||= ".ai-web/research/lazyweb/pattern-matrix.md"
+      research["normalized_results_path"] ||= ".ai-web/research/lazyweb/results.json"
+      research["min_references"] ||= 5
+      research["min_companies"] ||= 3
+      research["last_error"] = nil unless research.key?("last_error")
+      research["skipped_reason"] = nil unless research.key?("skipped_reason")
+
+      state["artifacts"] ||= {}
+      state["artifacts"]["design_reference_brief"] ||= { "path" => research["reference_brief_path"], "status" => "missing" }
+      state["artifacts"]["design_reference_results"] ||= { "path" => research["normalized_results_path"], "status" => "missing" }
+      state["artifacts"]["design_pattern_matrix"] ||= { "path" => research["pattern_matrix_path"], "status" => "missing" }
+
+      state["adapters"] ||= {}
+      state["adapters"]["design_research"] ||= {}
+      adapter = state["adapters"]["design_research"]
+      adapter["provider"] ||= "lazyweb"
+      adapter["transport"] ||= "streamable-http"
+      adapter["endpoint"] ||= "https://www.lazyweb.com/mcp"
+      adapter["network_allowed"] = true if adapter["network_allowed"].nil?
+      adapter["mcp_servers_allowed"] ||= ["lazyweb"]
+      adapter["token_sources"] ||= ["LAZYWEB_MCP_TOKEN", "~/.lazyweb/lazyweb_mcp_token", "~/.codex/lazyweb_mcp_token"]
+      adapter["token_storage_allowed_in_repo"] = false if adapter["token_storage_allowed_in_repo"].nil?
+      adapter["command_timeout_seconds"] ||= 45
+      state
+    end
+
+    def design_research_paths(state)
+      research = state.dig("research", "design_research") || {}
+      {
+        "reference_brief" => research["reference_brief_path"] || ".ai-web/design-reference-brief.md",
+        "normalized_results" => research["normalized_results_path"] || ".ai-web/research/lazyweb/results.json",
+        "pattern_matrix" => research["pattern_matrix_path"] || ".ai-web/research/lazyweb/pattern-matrix.md",
+        "latest" => ".ai-web/research/lazyweb/latest.json"
+      }
+    end
+
+    def lazyweb_token_configured?
+      return true unless ENV["LAZYWEB_MCP_TOKEN"].to_s.strip.empty?
+      ["~/.lazyweb/lazyweb_mcp_token", "~/.codex/lazyweb_mcp_token"].any? do |source|
+        path = File.expand_path(source)
+        File.file?(path) && !File.read(path).to_s.strip.empty?
+      rescue SystemCallError
+        false
+      end
+    end
+
+    def design_research_planned_queries
+      intent = load_intent_artifact rescue {}
+      text = [intent["archetype"], intent["market"], intent["primary_interaction"], intent["idea"]].compact.join(" ").downcase
+      if text.match?(/ecommerce|commerce|shop|checkout|product|store|cart/)
+        ["mobile product detail page", "checkout flow", "cart upsell", "subscription paywall"]
+      elsif text.match?(/service|booking|appointment|local/)
+        ["local service booking page", "trust section", "contact booking CTA"]
+      elsif text.match?(/premium|luxury|editorial/)
+        ["luxury editorial landing page", "premium product page", "high trust hero"]
+      elsif text.match?(/chat|assistant|ai assistant/)
+        ["AI assistant onboarding", "chat app first screen", "dashboard empty state"]
+      else
+        ["B2B SaaS landing page", "developer tools pricing page", "team settings billing", "dashboard onboarding"]
+      end
+    end
+
+    def run_design_research_helper(provider:, policy:, limit:, force:)
+      klass = Aiweb.const_get(:DesignResearch) if Aiweb.const_defined?(:DesignResearch)
+      return nil unless klass
+
+      candidates = [
+        -> { klass.new(project: self) },
+        -> { klass.new(root: root) },
+        -> { klass.new }
+      ]
+      researcher = candidates.lazy.map { |ctor| ctor.call rescue nil }.find { |instance| instance && instance.respond_to?(:run) }
+      return nil unless researcher
+
+      result = researcher.run(provider: provider, policy: policy, limit: limit, force: force)
+      result.is_a?(Hash) ? result : nil
+    rescue StandardError => e
+      raise UserError.new("Lazyweb design research adapter failed: #{redact_lazyweb_secret(e.message)}", 4)
+    end
+
+    def record_design_research_skip!(state, provider, policy, reason, paths, planned_queries, dry_run:)
+      changes = []
+      payload = nil
+      mutation(dry_run: dry_run) do
+        ensure_design_research_state_defaults!(state)
+        research = state["research"]["design_research"]
+        research["provider"] = provider
+        research["policy"] = policy
+        research["status"] = policy == "off" ? "skipped" : "skipped"
+        research["latest_run"] = now
+        research["skipped_reason"] = reason
+        research["last_error"] = nil
+        add_decision!(state, "design_research_skipped", "Skipped Lazyweb design research: #{reason}")
+        state["project"]["updated_at"] = now if state["project"].is_a?(Hash)
+        mark_artifacts_from_files!(state)
+        changes << write_yaml(state_path, state, dry_run)
+        payload = status_hash(state: state, changed_files: compact_changes(changes))
+        payload["action_taken"] = "skipped design research"
+        payload["design_research"] = design_research_summary(state).merge(
+          "planned_queries" => planned_queries,
+          "planned_artifact_paths" => paths.values,
+          "token_configured" => lazyweb_token_configured?
+        )
+        payload["next_action"] = "continue deterministic design flow with aiweb design-system resolve"
+      end
+      payload
+    end
+
+    def design_research_summary(state)
+      ensure_design_research_state_defaults!(state)
+      research = state.dig("research", "design_research") || {}
+      counts = design_research_reference_counts(state)
+      {
+        "provider" => research["provider"],
+        "policy" => research["policy"],
+        "status" => research["status"],
+        "latest_run" => research["latest_run"],
+        "reference_brief_path" => research["reference_brief_path"],
+        "pattern_matrix_path" => research["pattern_matrix_path"],
+        "normalized_results_path" => research["normalized_results_path"],
+        "min_references" => research["min_references"],
+        "min_companies" => research["min_companies"],
+        "accepted_references" => counts["accepted_references"],
+        "unique_companies" => counts["unique_companies"],
+        "skipped_reason" => research["skipped_reason"],
+        "last_error" => redact_lazyweb_secret(research["last_error"].to_s)
+      }
+    end
+
+    def design_research_required_blockers(state)
+      ensure_design_research_state_defaults!(state)
+      research = state.dig("research", "design_research") || {}
+      return [] unless research["policy"] == "required"
+
+      blockers = []
+      brief_path = File.join(root, research["reference_brief_path"].to_s)
+      matrix_path = File.join(root, research["pattern_matrix_path"].to_s)
+      counts = design_research_reference_counts(state)
+      min_refs = research["min_references"].to_i
+      min_companies = research["min_companies"].to_i
+
+      blockers << "Lazyweb design reference brief is required but missing" unless substantive_design_research_file?(brief_path)
+      if counts["accepted_references"] < min_refs
+        blockers << "Lazyweb references must include >= #{min_refs} accepted references; currently #{counts["accepted_references"]}"
+      end
+      if counts["unique_companies"] < min_companies
+        blockers << "Lazyweb references must include >= #{min_companies} unique companies; currently #{counts["unique_companies"]}"
+      end
+      missing_sections = missing_design_research_matrix_sections(matrix_path)
+      unless missing_sections.empty?
+        blockers << "Lazyweb pattern matrix is missing sections: #{missing_sections.join(", ")}"
+      end
+      blockers
+    end
+
+    def design_research_reference_counts(state)
+      research = state.dig("research", "design_research") || {}
+      path = File.join(root, research["normalized_results_path"].to_s)
+      rows = design_research_result_rows(path)
+      companies = rows.map { |row| row["company"].to_s.strip.downcase }.reject(&:empty?).uniq
+      { "accepted_references" => rows.length, "unique_companies" => companies.length }
+    end
+
+    def design_research_result_rows(path)
+      return [] unless File.file?(path)
+      data = JSON.parse(File.read(path))
+      rows = if data.is_a?(Array)
+               data
+             elsif data.is_a?(Hash)
+               data["references"] || data["results"] || data["items"] || []
+             else
+               []
+             end
+      rows.select { |row| row.is_a?(Hash) }
+    rescue JSON::ParserError, SystemCallError
+      []
+    end
+
+    def substantive_design_research_file?(path)
+      File.file?(path) && !stub_file?(path) && File.read(path).to_s.strip.length >= 80
+    rescue SystemCallError
+      false
+    end
+
+    def missing_design_research_matrix_sections(path)
+      required = {
+        "hierarchy" => /hierarchy|information hierarchy/i,
+        "cta" => /cta|call[- ]?to[- ]?action/i,
+        "layout" => /layout/i,
+        "visual style" => /visual (style|language)|style/i,
+        "mobile/responsive" => /mobile|responsive/i,
+        "no-copy" => /no[- ]?copy|copy risk|do not copy/i
+      }
+      return required.keys unless File.file?(path)
+      content = File.read(path)
+      required.select { |_name, pattern| !content.match?(pattern) }.keys
+    rescue SystemCallError
+      required.keys
+    end
+
+    def redact_lazyweb_secret(value)
+      value.to_s
+        .gsub(/Bearer\s+[^\s"']+/i, "Bearer [REDACTED]")
+        .gsub(/(LAZYWEB_MCP_TOKEN=)[^\s"']+/i, "\\1[REDACTED]")
+        .gsub(/([?&](?:token|access_token|signature|X-Amz-Signature)=)[^&\s"']+/i, "\\1[REDACTED]")
     end
 
     def phase_lock_blockers(state)
@@ -2782,6 +3121,7 @@ module Aiweb
           "max_allowed" => state.dig("design_candidates", "max_allowed"),
           "selected_candidate" => state.dig("design_candidates", "selected_candidate")
         },
+        "design_research" => design_research_summary(state),
         "current_task" => state.dig("implementation", "current_task"),
         "open_failures" => state.dig("qa", "open_failures") || [],
         "budget" => summarize_budget(state),
@@ -5855,7 +6195,9 @@ module Aiweb
     end
 
     def design_prompt_markdown
-      inputs = %w[product.md brand.md content.md ia.md design-brief.md DESIGN.md].map do |name|
+      source_names = %w[product.md brand.md content.md ia.md design-brief.md DESIGN.md]
+      source_names << "design-reference-brief.md" if design_reference_brief_present?
+      inputs = source_names.map do |name|
         path = File.join(aiweb_dir, name)
         "## #{name}\n\n#{File.exist?(path) ? File.read(path) : "TODO: missing #{name}"}"
       end
@@ -5875,7 +6217,7 @@ module Aiweb
         Create one high-quality website design candidate based on the product, brand, content, IA, design brief, and `.ai-web/DESIGN.md` source of truth below. Produce a polished responsive homepage concept. Avoid logos or copyrighted brand marks. Emphasize layout, visual hierarchy, component style, typography mood, color system, spacing rhythm, and conversion clarity.
 
         ## Claude Design prompt
-        Convert the selected visual direction into implementation-ready rules that preserve `.ai-web/DESIGN.md`: design tokens, typography scale, color palette, component recipes, layout constraints, `data-aiweb-id` hooks, and responsive behavior. Do not invent product scope beyond the approved artifacts. Preserve the product artifact's wrong-interpretations-to-avoid guidance when choosing first-screen layout and components. #{selected_note}
+        Convert the selected visual direction into implementation-ready rules that preserve `.ai-web/DESIGN.md`: design tokens, typography scale, color palette, component recipes, layout constraints, `data-aiweb-id` hooks, and responsive behavior. Do not invent product scope beyond the approved artifacts. Preserve the product artifact's wrong-interpretations-to-avoid guidance when choosing first-screen layout and components. Use `.ai-web/design-reference-brief.md` only as pattern evidence when present; do not copy exact reference UI, copy, prices, trademarks, or signed image URLs. #{selected_note}
 
         ## Candidate evaluation rubric
         - Conversion clarity
@@ -5973,10 +6315,13 @@ module Aiweb
         - `.ai-web/product.md`
         - `.ai-web/content.md`
         - `.ai-web/DESIGN.md`
+        #{design_reference_brief_present? ? "- `.ai-web/design-reference-brief.md` (read-only pattern evidence; do not call Lazyweb or copy exact reference UI/copy)" : "- `.ai-web/design-reference-brief.md` is optional and currently absent; do not call external design research during implementation."}
         #{selected_candidate_id ? "- `.ai-web/design-candidates/#{selected_candidate_id}.html` (selected visual direction; DESIGN.md remains authoritative)" : "- Select a design candidate before implementation if Gate 2 has not recorded one."}
 
         ## Constraints
         - Do not perform external deploy/provider actions without explicit approval.
+        - Do not call external Lazyweb/design-research services from implementation tasks; use persisted markdown patterns only.
+        - Do not copy exact reference screenshots, layouts, copy, prices, trademarks, or brand-specific claims.
         - Keep changes small and reversible.
         - Respect design tokens and component rules.
         - QA failures must create fix packets or rollback decisions.
@@ -5990,6 +6335,11 @@ module Aiweb
         - Run local build/test/lint if available.
         - Run browser QA checklist for user-facing changes.
       MD
+    end
+
+    def design_reference_brief_present?
+      path = File.join(aiweb_dir, "design-reference-brief.md")
+      File.file?(path) && File.read(path).to_s.strip.length >= 40
     end
 
     def resolve_agent_run_task_source(task, state)

@@ -343,6 +343,7 @@ class AiwebCliTest < Minitest::Test
       "Motion Intensity",
       "First-view Obligations",
       "Forbidden Patterns",
+      "Reference Research Intent",
       "Candidate Generation Instructions"
     ]
     sections = design_brief_sections(markdown)
@@ -377,6 +378,35 @@ class AiwebCliTest < Minitest::Test
       assert_equal "subscription_usage", state.dig("budget", "cost_mode")
       assert_equal 10, state.dig("budget", "max_design_candidates")
       assert_equal 60, state.dig("budget", "max_qa_runtime_minutes")
+      assert_equal "opportunistic", state.dig("research", "design_research", "policy")
+      assert_equal "lazyweb", state.dig("research", "design_research", "provider")
+      assert_equal ".ai-web/design-reference-brief.md", state.dig("research", "design_research", "reference_brief_path")
+      assert_equal ".ai-web/research/lazyweb/results.json", state.dig("artifacts", "design_reference_results", "path")
+      assert_equal false, state.dig("adapters", "implementation_agent", "network_allowed")
+      assert_equal [], state.dig("adapters", "implementation_agent", "mcp_servers_allowed")
+      assert_equal true, state.dig("adapters", "design_research", "network_allowed")
+      assert_equal ["lazyweb"], state.dig("adapters", "design_research", "mcp_servers_allowed")
+      assert_equal false, state.dig("adapters", "design_research", "token_storage_allowed_in_repo")
+    end
+  end
+
+  def test_status_upgrades_research_contract_defaults_for_existing_state
+    in_tmp do
+      _payload, code = json_cmd("init", "--profile", "D")
+      assert_equal 0, code
+
+      state = load_state
+      state.delete("research")
+      state["artifacts"].delete("design_reference_brief")
+      state["artifacts"].delete("design_reference_results")
+      state["artifacts"].delete("design_pattern_matrix")
+      state["adapters"].delete("design_research")
+      write_state(state)
+
+      payload, status_code = json_cmd("status")
+      assert_equal 0, status_code
+      refute payload.key?("validation_errors"), payload["validation_errors"].inspect
+      refute_includes payload["blocking_issues"].join("\n"), "state validation failed"
     end
   end
 
@@ -1825,6 +1855,30 @@ class AiwebCliTest < Minitest::Test
     end
   end
 
+  def test_design_system_resolve_includes_reference_brief_when_present
+    in_tmp do
+      json_cmd("init", "--profile", "D")
+      json_cmd("interview", "--idea", "SaaS product page for API analytics teams")
+      File.write(".ai-web/design-reference-brief.md", <<~MD)
+        # Design Reference Brief
+
+        Companies: Linear, Stripe, Vercel.
+        Pattern matrix: strong hierarchy, clear primary CTA, restrained dashboard proof, mobile-first trust cues.
+        Copy risk: pattern-only; do not reproduce exact layouts, prices, trademarks, or copy.
+      MD
+
+      payload, code = json_cmd("design-system", "resolve", "--force")
+
+      assert_equal 0, code
+      assert_includes payload["changed_files"], ".ai-web/DESIGN.md"
+      design = File.read(".ai-web/DESIGN.md")
+      assert_match(/Reference-backed Pattern Constraints/, design)
+      assert_match(/Linear, Stripe, Vercel/, design)
+      assert_match(/pattern evidence only/i, design)
+      assert_match(/Do not copy exact screenshots, layouts, copy, prices, trademarks, or brand-specific claims/, design)
+    end
+  end
+
   def test_design_system_resolve_preserves_custom_design_unless_force_regenerated
     in_tmp do
       json_cmd("init", "--profile", "D")
@@ -1942,6 +1996,34 @@ class AiwebCliTest < Minitest::Test
     end
   end
 
+  def test_design_candidates_include_reference_basis_without_copying_references
+    in_tmp do
+      json_cmd("init", "--profile", "D")
+      json_cmd("interview", "--idea", "SaaS product page for API analytics teams")
+      File.write(".ai-web/design-reference-brief.md", <<~MD)
+        # Design Reference Brief
+
+        Companies: Linear, Stripe, Vercel.
+        Accepted patterns: strong middle-plan emphasis, product proof panel, concise mobile CTA.
+        Copy risk: pattern-only; do not reproduce exact layouts, prices, trademarks, or copy.
+      MD
+
+      payload, code = json_cmd("design", "--candidates", "3")
+
+      assert_equal 0, code
+      assert_equal "generated design candidates", payload["action_taken"]
+      comparison = File.read(".ai-web/design-candidates/comparison.md")
+      assert_match(/## Reference basis/, comparison)
+      assert_match(/design-reference-brief\.md/, comparison)
+      assert_match(/Companies: Linear, Stripe, Vercel/, comparison)
+      assert_match(/avoid exact copying/i, comparison)
+      html = File.read(".ai-web/design-candidates/candidate-01.html")
+      assert_match(/Reference basis/, html)
+      assert_match(/pattern grounding only/, html)
+      assert_match(/Do not copy exact reference UI, copy, prices, trademarks, or signed image URLs/, html)
+    end
+  end
+
   def test_design_regenerates_when_only_one_candidate_exists
     in_tmp do
       json_cmd("init", "--profile", "D")
@@ -2044,6 +2126,13 @@ class AiwebCliTest < Minitest::Test
     in_tmp do
       json_cmd("init", "--profile", "D")
       json_cmd("interview", "--idea", "프리미엄 컨설턴트 랜딩페이지")
+      File.write(".ai-web/design-reference-brief.md", <<~MD)
+        # Design Reference Brief
+
+        Companies: Aesop, Stripe.
+        Patterns: editorial hierarchy, quiet CTA, mobile trust cues.
+        Copy risk: pattern-only; do not reproduce exact layouts, trademarks, prices, or copy.
+      MD
       json_cmd("design", "--candidates", "3")
       json_cmd("select-design", "candidate-03")
       set_phase("phase-3")
@@ -2055,13 +2144,19 @@ class AiwebCliTest < Minitest::Test
       assert_match(/selected candidate `candidate-03`/, prompt)
       assert_match(/design-candidates\/candidate-03.html/, prompt)
       assert_match(/data-aiweb-id=\"candidate.candidate-03.first-view\"/, prompt)
+      assert_match(/## design-reference-brief\.md/, prompt)
+      assert_match(/Use `.ai-web\/design-reference-brief.md` only as pattern evidence/, prompt)
 
       set_phase("phase-6")
       task_payload, task_code = json_cmd("next-task")
       assert_equal 0, task_code
       task_path = task_payload["changed_files"].find { |path| path.include?(".ai-web/tasks/task-") }
       refute_nil task_path
-      assert_match(/design-candidates\/candidate-03.html/, File.read(task_path))
+      task_packet = File.read(task_path)
+      assert_match(/design-candidates\/candidate-03.html/, task_packet)
+      assert_match(/design-reference-brief\.md/, task_packet)
+      assert_match(/Do not call external Lazyweb\/design-research services/, task_packet)
+      assert_match(/Do not copy exact reference screenshots, layouts, copy, prices, trademarks, or brand-specific claims/, task_packet)
     end
   end
 

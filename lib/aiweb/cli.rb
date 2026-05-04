@@ -17,7 +17,7 @@ module Aiweb
     EXIT_UNSAFE_EXTERNAL_ACTION = 5
     EXIT_INTERNAL_ERROR = 10
 
-    MUTATION_COMMANDS = %w[start init interview run agent-run ingest-design next-task qa-checklist qa-report repair advance rollback resolve-blocker snapshot design-brief design-system design-prompt design select-design scaffold setup build preview qa-playwright browser-qa qa-screenshot screenshot-qa qa-a11y a11y-qa qa-lighthouse lighthouse-qa visual-critique visual-polish workbench component-map visual-edit supabase-secret-qa github-sync deploy-plan deploy].freeze
+    MUTATION_COMMANDS = %w[start init interview run agent-run ingest-design next-task qa-checklist qa-report repair advance rollback resolve-blocker snapshot design-brief design-research design-system design-prompt design select-design scaffold setup build preview qa-playwright browser-qa qa-screenshot screenshot-qa qa-a11y a11y-qa qa-lighthouse lighthouse-qa visual-critique visual-polish workbench component-map visual-edit supabase-secret-qa github-sync deploy-plan deploy].freeze
     RUNTIME_PLAN_COMMANDS = %w[runtime-plan scaffold-status].freeze
     REGISTRY_COMMANDS = %w[design-systems skills craft].freeze
 
@@ -135,6 +135,17 @@ module Aiweb
           o.on("--force") { options[:force] = true }
         end
         project.design_brief(dry_run: @dry_run, force: opts[:force])
+      when "design-research"
+        opts = parse_options do |o, options|
+          o.on("--provider PROVIDER") { |v| options[:provider] = v }
+          o.on("--policy POLICY") { |v| options[:policy] = v }
+          o.on("--limit N") { |v| options[:limit] = v }
+          o.on("--force") { options[:force] = true }
+        end
+        unless @argv.empty?
+          raise UserError.new("design-research does not accept extra positional arguments: #{@argv.join(", ")}", EXIT_VALIDATION_FAILED)
+        end
+        project.design_research(provider: opts[:provider] || "lazyweb", policy: opts[:policy], limit: opts[:limit] || 8, dry_run: @dry_run, force: opts[:force])
       when "design-system"
         dispatch_design_system
       when "design-prompt"
@@ -1044,6 +1055,7 @@ module Aiweb
           intent route --idea "..."
           run
           design-brief [--force]
+          design-research [--provider lazyweb] [--policy off|opportunistic|required] [--limit N] [--force]
           design-system resolve [--force]
           design-prompt [--force]
           design --candidates 3 [--force]
@@ -1086,6 +1098,7 @@ module Aiweb
           --path PATH  run against a project directory
 
         Phase-sensitive commands are guarded:
+          design-research: phase-3 or phase-3.5; --dry-run writes nothing and calls no network, real runs call Lazyweb only when configured, and implementation agents still receive no Lazyweb MCP/network access
           design-prompt: phase-3 or phase-3.5
           design: creates deterministic HTML design candidates without app scaffold
           select-design: records selected HTML candidate without overwriting DESIGN.md
@@ -1612,7 +1625,7 @@ module Aiweb
       return deploy_plan_exit_code(result) if command == "deploy-plan"
       return deploy_exit_code(result) if command == "deploy"
       return supabase_secret_qa_exit_code(result) if command == "supabase-secret-qa"
-      return EXIT_SUCCESS if %w[help version status start init interview run agent-run design-brief design-system design-prompt design select-design scaffold ingest-design next-task qa-checklist qa-report rollback resolve-blocker snapshot visual-critique visual-polish component-map visual-edit].include?(command)
+      return EXIT_SUCCESS if %w[help version status start init interview run agent-run design-brief design-research design-system design-prompt design select-design scaffold ingest-design next-task qa-checklist qa-report rollback resolve-blocker snapshot visual-critique visual-polish component-map visual-edit].include?(command)
       if command == "advance" && result["action_taken"] == "advance blocked"
         issue = result["blocking_issues"].join(" ")
         return EXIT_BUDGET_BLOCKED if issue =~ /budget|candidate cap|design generation cap/i
