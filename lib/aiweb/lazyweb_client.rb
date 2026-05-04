@@ -68,7 +68,7 @@ module Aiweb
 
     def call_tool(name, arguments)
       initialize_session!
-      rpc("tools/call", "name" => name, "arguments" => arguments)
+      rpc("tools/call", { "name" => name, "arguments" => arguments })
     rescue Error
       raise
     rescue StandardError => e
@@ -80,9 +80,11 @@ module Aiweb
 
       rpc(
         "initialize",
-        "protocolVersion" => "2024-11-05",
-        "capabilities" => {},
-        "clientInfo" => { "name" => "aiweb", "version" => "0.1.0" }
+        {
+          "protocolVersion" => "2024-11-05",
+          "capabilities" => {},
+          "clientInfo" => { "name" => "aiweb", "version" => "0.1.0" }
+        }
       )
       begin
         rpc("notifications/initialized", {}, notification: true)
