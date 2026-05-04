@@ -3,25 +3,17 @@
 require "json"
 require "minitest/autorun"
 require "tmpdir"
-require "webrick"
+
+require_relative "support/fake_mcp_http_server"
 
 $LOAD_PATH.unshift(File.expand_path("../lib", __dir__))
 require "aiweb/lazyweb_client"
 
 class LazywebClientTest < Minitest::Test
   def with_fake_mcp_server(responses)
-    received = []
-    server = WEBrick::HTTPServer.new(Port: 0, Logger: WEBrick::Log.new(File::NULL), AccessLog: [])
-    server.mount_proc "/mcp" do |request, response|
-      received << { "authorization" => request["authorization"], "body" => JSON.parse(request.body) }
-      response["Content-Type"] = "application/json"
-      response.body = JSON.generate(responses.call(received.last.fetch("body")))
+    FakeMcpHttpServer.open(responses) do |endpoint, received|
+      yield endpoint, received
     end
-    thread = Thread.new { server.start }
-    yield "http://127.0.0.1:#{server.config[:Port]}/mcp", received
-  ensure
-    server&.shutdown
-    thread&.join
   end
 
   def test_configured_is_false_without_token

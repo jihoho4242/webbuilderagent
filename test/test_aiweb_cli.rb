@@ -7,8 +7,9 @@ require "open3"
 require "rbconfig"
 require "shellwords"
 require "tmpdir"
-require "webrick"
 require "yaml"
+
+require_relative "support/fake_mcp_http_server"
 
 $LOAD_PATH.unshift(File.expand_path("../lib", __dir__))
 require "aiweb/project"
@@ -26,19 +27,9 @@ class AiwebCliTest < Minitest::Test
   end
 
   def with_fake_lazyweb_mcp_server
-    received = []
-    server = WEBrick::HTTPServer.new(Port: 0, Logger: WEBrick::Log.new(File::NULL), AccessLog: [])
-    server.mount_proc "/mcp" do |request, response|
-      payload = JSON.parse(request.body)
-      received << { "authorization" => request["authorization"], "body" => payload }
-      response["Content-Type"] = "application/json"
-      response.body = JSON.generate(fake_lazyweb_mcp_response(payload))
+    FakeMcpHttpServer.open(method(:fake_lazyweb_mcp_response)) do |endpoint, received|
+      yield endpoint, received
     end
-    thread = Thread.new { server.start }
-    yield "http://127.0.0.1:#{server.config[:Port]}/mcp", received
-  ensure
-    server&.shutdown
-    thread&.join
   end
 
   def fake_lazyweb_mcp_response(payload)
