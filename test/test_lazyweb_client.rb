@@ -66,6 +66,38 @@ class LazywebClientTest < Minitest::Test
     end
   end
 
+  def test_search_applies_company_cap_to_lazyweb_camel_case_results
+    responses = lambda do |payload|
+      case payload.fetch("method")
+      when "initialize"
+        { "jsonrpc" => "2.0", "id" => payload.fetch("id"), "result" => { "capabilities" => {} } }
+      when "notifications/initialized"
+        { "jsonrpc" => "2.0", "result" => {} }
+      when "tools/call"
+        {
+          "jsonrpc" => "2.0",
+          "id" => payload.fetch("id"),
+          "result" => {
+            "content" => [{ "type" => "text", "text" => JSON.generate("results" => [
+              { "siteId" => 1, "path" => "/pricing", "companyName" => "Acme", "imageUrl" => "https://lazyweb.test/1.png" },
+              { "siteId" => 2, "path" => "/pricing", "companyName" => "Acme", "imageUrl" => "https://lazyweb.test/2.png" },
+              { "siteId" => 3, "path" => "/pricing", "companyName" => "Beta", "imageUrl" => "https://lazyweb.test/3.png" }
+            ]) }]
+          }
+        }
+      else
+        flunk "unexpected MCP method #{payload.fetch("method")}"
+      end
+    end
+
+    with_fake_mcp_server(responses) do |endpoint, _received|
+      client = Aiweb::LazywebClient.new(endpoint: endpoint, token: "secret-token", timeout_seconds: 5)
+      results = client.search(query: "developer tools pricing", limit: 3, max_per_company: 1)
+
+      assert_equal ["Acme", "Beta"], results.map { |item| item.fetch("companyName") }
+    end
+  end
+
   def test_redact_removes_bearer_and_url_tokens
     text = "Authorization: Bearer abc123 https://x.test/image.png?token=abc123&safe=1"
 

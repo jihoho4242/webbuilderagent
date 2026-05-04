@@ -179,8 +179,17 @@ module Aiweb
       company_counts = Hash.new(0)
       results.each_with_object([]) do |result, memo|
         item = stringify_keys(result)
-        key = present(item["screenshot_id"]) || present(item["id"]) || present(item["url"]) || item.inspect
-        company = item["company"].to_s.downcase.strip
+        key = present(item["screenshot_id"]) ||
+              present(item["screenshotId"]) ||
+              present(item["id"]) ||
+              present(item["page_url"]) ||
+              present(item["pageUrl"]) ||
+              present(item["url"]) ||
+              present(item["image_url"]) ||
+              present(item["imageUrl"]) ||
+              present([item["siteId"], item["path"]].compact.join(":")) ||
+              item.inspect
+        company = (item["company"] || item["company_name"] || item["companyName"] || item["brand"]).to_s.downcase.strip
         next if seen_ids[key]
         next if !company.empty? && company_counts[company] >= max_for_company
 

@@ -101,22 +101,25 @@ module Aiweb
 
     def normalize_result(item, query:)
       now = timestamp
-      screenshot_id = item["screenshot_id"] || item["id"] || item["screenshotId"]
-      description = item["vision_description"] || item["description"] || item["text"] || item["title"]
+      screenshot_id = item["screenshot_id"] || item["screenshotId"] || item["id"] || item["screenshotName"] || item["siteId"]
+      description = item["vision_description"] || item["visionDescription"] || item["description"] || item["text"] || item["title"] || item["screenshotName"]
       {
         "schema_version" => 1,
         "provider" => PROVIDER,
         "retrieved_at" => now,
         "query" => query,
         "screenshot_id" => screenshot_id,
-        "company" => item["company"] || item["company_name"] || item["brand"],
+        "site_id" => item["site_id"] || item["siteId"],
+        "screenshot_name" => item["screenshot_name"] || item["screenshotName"],
+        "company" => item["company"] || item["company_name"] || item["companyName"] || item["brand"],
         "category" => item["category"],
         "platform" => item["platform"],
-        "page_url" => item["page_url"] || item["url"],
-        "image_url" => redact_ephemeral_url(item["image_url"] || item["screenshot_url"]),
+        "page_url" => item["page_url"] || item["pageUrl"] || item["url"],
+        "image_url" => redact_ephemeral_url(item["image_url"] || item["imageUrl"] || item["screenshot_url"] || item["screenshotUrl"]),
         "image_url_ephemeral" => true,
         "vision_description" => description,
         "similarity" => item["similarity"] || item["score"],
+        "match_count" => item["match_count"] || item["matchCount"],
         "accepted_patterns" => accepted_patterns(description),
         "copy_risk" => "pattern-only; do not reproduce exact layout/copy"
       }.compact

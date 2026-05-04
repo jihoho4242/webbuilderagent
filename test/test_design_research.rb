@@ -29,6 +29,27 @@ class DesignResearchTest < Minitest::Test
     end
   end
 
+  class FakeCamelCaseClient
+    def configured?
+      true
+    end
+
+    def search(query:, limit:, category: nil, company: nil, platform: "all", max_per_company: 1)
+      [{
+        "siteId" => 220600,
+        "screenshotName" => "#{query} pricing page",
+        "companyName" => "Acme",
+        "category" => "Developer Tools",
+        "platform" => "desktop",
+        "pageUrl" => "https://example.test/pricing",
+        "imageUrl" => "https://lazyweb.test/image.png?token=secret-token",
+        "visionDescription" => "Hero CTA pricing layout with mobile responsive hierarchy",
+        "similarity" => 0.49,
+        "matchCount" => 1
+      }].first(limit)
+    end
+  end
+
   def test_plans_route_specific_queries_without_network_or_writes
     Dir.mktmpdir("design-research-") do |dir|
       research = Aiweb::DesignResearch.new(root: dir, client: FakeClient.new, clock: FakeClock.new(Time.utc(2026, 5, 4, 14, 0, 0)))
@@ -74,6 +95,29 @@ class DesignResearchTest < Minitest::Test
       brief = File.read(File.join(dir, ".ai-web/design-reference-brief.md"))
       assert_includes brief, "Reference-backed Pattern Constraints"
       assert_includes brief, "Implementation agents must not call Lazyweb"
+    end
+  end
+
+  def test_run_normalizes_real_lazyweb_camel_case_fields
+    Dir.mktmpdir("design-research-") do |dir|
+      research = Aiweb::DesignResearch.new(root: dir, client: FakeCamelCaseClient.new, clock: FakeClock.new(Time.utc(2026, 5, 4, 14, 0, 0)))
+
+      research.run(
+        intent: { "original_intent" => "developer API monitoring SaaS", "market_archetype" => "saas", "archetype" => "landing-page" },
+        policy: "opportunistic",
+        limit: 1
+      )
+
+      result = JSON.parse(File.read(File.join(dir, ".ai-web/research/lazyweb/results.json"))).fetch("results").first
+      assert_equal "Acme", result.fetch("company")
+      assert_equal 220600, result.fetch("site_id")
+      assert_equal "Developer Tools", result.fetch("category")
+      assert_equal "desktop", result.fetch("platform")
+      assert_equal "https://example.test/pricing", result.fetch("page_url")
+      assert_equal 1, result.fetch("match_count")
+      assert_includes result.fetch("vision_description"), "Hero CTA"
+      refute_includes result.fetch("image_url"), "secret-token"
+      assert_includes result.fetch("accepted_patterns").join(" "), "decisive CTA"
     end
   end
 end
