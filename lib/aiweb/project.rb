@@ -14,8 +14,10 @@ require "yaml"
 require_relative "archetypes"
 require_relative "design_brief"
 require_relative "design_candidate_generator"
+require_relative "design_research"
 require_relative "design_system_resolver"
 require_relative "intent_router"
+require_relative "lazyweb_client"
 require_relative "profiles"
 
 module Aiweb
@@ -385,7 +387,7 @@ module Aiweb
         return record_design_research_skip!(state, provider, effective_policy, "Lazyweb token not configured", paths, planned_queries, dry_run: false)
       end
 
-      helper_result = run_design_research_helper(provider: provider, policy: effective_policy, limit: limit, force: force)
+      helper_result = run_design_research_helper(state: state, provider: provider, policy: effective_policy, limit: limit)
       return helper_result if helper_result
 
       if effective_policy == "required"
@@ -2931,22 +2933,67 @@ module Aiweb
       end
     end
 
-    def run_design_research_helper(provider:, policy:, limit:, force:)
+    def run_design_research_helper(state:, provider:, policy:, limit:)
       klass = Aiweb.const_get(:DesignResearch) if Aiweb.const_defined?(:DesignResearch)
       return nil unless klass
 
-      candidates = [
-        -> { klass.new(project: self) },
-        -> { klass.new(root: root) },
-        -> { klass.new }
-      ]
-      researcher = candidates.lazy.map { |ctor| ctor.call rescue nil }.find { |instance| instance && instance.respond_to?(:run) }
-      return nil unless researcher
+      ensure_design_research_state_defaults!(state)
+      adapter = state.dig("adapters", "design_research") || {}
+      client = Aiweb::LazywebClient.new(
+        endpoint: adapter["endpoint"] || "https://www.lazyweb.com/mcp",
+        timeout_seconds: adapter["command_timeout_seconds"] || 45,
+        token_sources: adapter["token_sources"] || ["LAZYWEB_MCP_TOKEN", "~/.lazyweb/lazyweb_mcp_token", "~/.codex/lazyweb_mcp_token"]
+      )
+      researcher = klass.new(root: root, client: client)
+      return nil unless researcher.respond_to?(:run)
 
-      result = researcher.run(provider: provider, policy: policy, limit: limit, force: force)
-      result.is_a?(Hash) ? result : nil
+      intent = load_intent_artifact
+      design_brief = read_design_research_brief_source
+      result = researcher.run(intent: intent, design_brief: design_brief, policy: policy, limit: limit)
+      return nil unless result.is_a?(Hash)
+
+      changes = Array(result["changed_files"])
+      payload = nil
+      mutation(dry_run: false) do
+        state = load_state
+        ensure_design_research_state_defaults!(state)
+        research = state["research"]["design_research"]
+        paths = design_research_paths(state)
+        research["provider"] = provider
+        research["policy"] = policy
+        research["status"] = "ready"
+        research["latest_run"] = now
+        research["skipped_reason"] = nil
+        research["last_error"] = nil
+        research["reference_brief_path"] = paths["reference_brief"]
+        research["pattern_matrix_path"] = paths["pattern_matrix"]
+        research["normalized_results_path"] = paths["normalized_results"]
+        mark_artifacts_from_files!(state)
+        add_decision!(state, "design_research_completed", "Completed Lazyweb design research and wrote reference artifacts")
+        state["project"]["updated_at"] = now if state["project"].is_a?(Hash)
+        changes << write_yaml(state_path, state, false)
+        payload = status_hash(state: state, changed_files: compact_changes(changes))
+        payload["action_taken"] = "completed design research"
+        payload["design_research"] = design_research_summary(state).merge(
+          "planned_queries" => Array(result.dig("latest", "queries")),
+          "planned_artifact_paths" => paths.values,
+          "token_configured" => true
+        )
+        payload["next_action"] = "review .ai-web/design-reference-brief.md, then continue with aiweb design-system resolve"
+      end
+      payload
     rescue StandardError => e
       raise UserError.new("Lazyweb design research adapter failed: #{redact_lazyweb_secret(e.message)}", 4)
+    end
+
+    def read_design_research_brief_source
+      path = File.join(aiweb_dir, "design-brief.md")
+      return nil unless File.file?(path)
+      return nil if stub_file?(path)
+
+      File.read(path)
+    rescue SystemCallError
+      nil
     end
 
     def record_design_research_skip!(state, provider, policy, reason, paths, planned_queries, dry_run:)

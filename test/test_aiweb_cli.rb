@@ -7,6 +7,7 @@ require "open3"
 require "rbconfig"
 require "shellwords"
 require "tmpdir"
+require "webrick"
 require "yaml"
 
 $LOAD_PATH.unshift(File.expand_path("../lib", __dir__))
@@ -21,6 +22,59 @@ class AiwebCliTest < Minitest::Test
   def in_tmp
     Dir.mktmpdir("aiweb-test-") do |dir|
       Dir.chdir(dir) { yield(dir) }
+    end
+  end
+
+  def with_fake_lazyweb_mcp_server
+    received = []
+    server = WEBrick::HTTPServer.new(Port: 0, Logger: WEBrick::Log.new(File::NULL), AccessLog: [])
+    server.mount_proc "/mcp" do |request, response|
+      payload = JSON.parse(request.body)
+      received << { "authorization" => request["authorization"], "body" => payload }
+      response["Content-Type"] = "application/json"
+      response.body = JSON.generate(fake_lazyweb_mcp_response(payload))
+    end
+    thread = Thread.new { server.start }
+    yield "http://127.0.0.1:#{server.config[:Port]}/mcp", received
+  ensure
+    server&.shutdown
+    thread&.join
+  end
+
+  def fake_lazyweb_mcp_response(payload)
+    case payload.fetch("method")
+    when "initialize"
+      { "jsonrpc" => "2.0", "id" => payload.fetch("id"), "result" => { "capabilities" => {} } }
+    when "notifications/initialized"
+      { "jsonrpc" => "2.0", "result" => {} }
+    when "tools/call"
+      query = payload.dig("params", "arguments", "query").to_s
+      {
+        "jsonrpc" => "2.0",
+        "id" => payload.fetch("id"),
+        "result" => {
+          "content" => [{ "type" => "text", "text" => JSON.generate("results" => [
+            {
+              "screenshot_id" => "#{query.hash.abs}-a",
+              "company" => "Acme",
+              "category" => "Developer Tools",
+              "platform" => "web",
+              "image_url" => "https://lazyweb.test/image.png?token=secret-token",
+              "vision_description" => "Hero CTA pricing layout with mobile responsive hierarchy"
+            },
+            {
+              "screenshot_id" => "#{query.hash.abs}-b",
+              "company" => "Beta",
+              "category" => "Developer Tools",
+              "platform" => "web",
+              "image_url" => "https://lazyweb.test/image2.png?access_token=secret-token",
+              "vision_description" => "Dashboard onboarding layout with visual typography and decisive signup CTA"
+            }
+          ]) }]
+        }
+      }
+    else
+      flunk "unexpected MCP method #{payload.fetch("method")}"
     end
   end
 
@@ -407,6 +461,46 @@ class AiwebCliTest < Minitest::Test
       assert_equal 0, status_code
       refute payload.key?("validation_errors"), payload["validation_errors"].inspect
       refute_includes payload["blocking_issues"].join("\n"), "state validation failed"
+    end
+  end
+
+  def test_design_research_with_configured_lazyweb_writes_artifacts_and_updates_state
+    with_fake_lazyweb_mcp_server do |endpoint, received|
+      in_tmp do
+        _payload, code = json_cmd("init", "--profile", "D")
+        assert_equal 0, code
+        _payload, code = json_cmd("interview", "--idea", "developer API monitoring SaaS")
+        assert_equal 0, code
+
+        state = load_state
+        state["adapters"]["design_research"]["endpoint"] = endpoint
+        write_state(state)
+
+        payload, research_code = json_cmd_with_env({ "LAZYWEB_MCP_TOKEN" => "secret-token" }, "design-research", "--provider", "lazyweb", "--limit", "5", "--force")
+
+        assert_equal 0, research_code
+        assert_equal "completed design research", payload["action_taken"]
+        assert_includes payload["changed_files"], ".ai-web/design-reference-brief.md"
+        assert_includes payload["changed_files"], ".ai-web/research/lazyweb/results.json"
+        assert_includes payload["changed_files"], ".ai-web/research/lazyweb/pattern-matrix.md"
+        assert_includes payload["changed_files"], ".ai-web/research/lazyweb/latest.json"
+        assert_includes payload["changed_files"], ".ai-web/state.yaml"
+        assert_equal "ready", payload.dig("design_research", "status")
+        assert_equal true, payload.dig("design_research", "token_configured")
+        assert_operator payload.dig("design_research", "accepted_references"), :>, 0
+
+        state = load_state
+        assert_equal "ready", state.dig("research", "design_research", "status")
+        assert_nil state.dig("research", "design_research", "skipped_reason")
+        assert_equal "draft", state.dig("artifacts", "design_reference_brief", "status")
+        assert_equal "draft", state.dig("artifacts", "design_reference_results", "status")
+        assert_equal "draft", state.dig("artifacts", "design_pattern_matrix", "status")
+
+        results_json = File.read(".ai-web/research/lazyweb/results.json")
+        refute_includes results_json, "secret-token"
+        assert_includes File.read(".ai-web/design-reference-brief.md"), "Reference-backed Pattern Constraints"
+        assert received.any? { |request| request.fetch("authorization") == "Bearer secret-token" }
+      end
     end
   end
 
