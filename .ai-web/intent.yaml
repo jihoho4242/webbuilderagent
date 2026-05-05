@@ -1,0 +1,34 @@
+schema_version: 1
+original_intent: ""
+archetype: "landing-page"
+market_archetype: "fallback"
+surface: "website"
+not_surface: "app-dashboard"
+primary_user: "prospective visitor evaluating the offer"
+primary_interaction: "scan the offer and choose a clear call to action"
+recommended_skill: "premium-landing-page"
+recommended_design_system: "luxury-editorial"
+recommended_profile: "B"
+framework: "Astro + Cloudflare Pages + Tailwind"
+style_keywords:
+  - clear
+  - focused
+  - trustworthy
+  - conversion-ready
+forbidden_design_patterns:
+  - generic landing page without a specific audience
+  - competing first-screen calls to action
+  - invented proof or unsupported claims
+  - decorative UI that hides the core offer
+safety_sensitive: false
+must_have_first_view:
+  - hero_headline
+  - value_proposition
+  - primary_cta
+  - trust_signal
+must_not_have:
+  - unclear_cta
+  - fake_app_controls
+semantic_risks:
+  - burying the value proposition below the fold
+  - presenting too many competing CTAs

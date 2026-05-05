@@ -1,0 +1,255 @@
+---
+schema_version: 1
+project:
+  id: webbuilderagent
+  name: webbuilderagent
+  created_at: '2026-05-05T08:10:04Z'
+  updated_at: '2026-05-05T08:10:04Z'
+phase:
+  current: phase-0
+  completed: []
+  blocked: false
+  block_reason: ''
+gates:
+  gate_1a_scope_quality_stack:
+    status: pending
+    approved_at:
+    approved_by:
+    approval_scope: []
+    approved_artifact_hashes: {}
+    accepted_risks: []
+    artifact: ".ai-web/gates/gate-1a-scope-quality-stack.md"
+  gate_1b_product_content_ia_data_security:
+    status: pending
+    approved_at:
+    approved_by:
+    approval_scope: []
+    approved_artifact_hashes: {}
+    accepted_risks: []
+    artifact: ".ai-web/gates/gate-1b-product-content-ia-data-security.md"
+  gate_2_design:
+    status: pending
+    approved_at:
+    approved_by:
+    approval_scope: []
+    approved_artifact_hashes: {}
+    accepted_risks: []
+    artifact: ".ai-web/gates/gate-2-design.md"
+  gate_3_golden_flow:
+    status: pending
+    approved_at:
+    approved_by:
+    approval_scope: []
+    approved_artifact_hashes: {}
+    accepted_risks: []
+    artifact: ".ai-web/gates/gate-3-golden-flow.md"
+  gate_4_predeploy:
+    status: pending
+    approved_at:
+    approved_by:
+    approval_scope: []
+    approved_artifact_hashes: {}
+    accepted_risks: []
+    artifact: ".ai-web/gates/gate-4-predeploy.md"
+artifacts:
+  intent:
+    path: ".ai-web/intent.yaml"
+    status: stub
+  first_view_contract:
+    path: ".ai-web/first-view-contract.md"
+    status: stub
+  project:
+    path: ".ai-web/project.md"
+    status: stub
+  quality:
+    path: ".ai-web/quality.yaml"
+    status: stub
+  product:
+    path: ".ai-web/product.md"
+    status: stub
+  stack:
+    path: ".ai-web/stack.md"
+    status: missing
+  brand:
+    path: ".ai-web/brand.md"
+    status: stub
+  content:
+    path: ".ai-web/content.md"
+    status: stub
+  ia:
+    path: ".ai-web/ia.md"
+    status: stub
+  data:
+    path: ".ai-web/data.md"
+    status: stub
+  security:
+    path: ".ai-web/security.md"
+    status: stub
+  design_brief:
+    path: ".ai-web/design-brief.md"
+    status: stub
+  design_candidates:
+    path: ".ai-web/design-candidates/"
+    status: missing
+    min_required: 2
+    count: 0
+  design_comparison:
+    path: ".ai-web/design-candidates/comparison.md"
+    status: missing
+  selected_design_candidate:
+    path: ".ai-web/design-candidates/selected.md"
+    status: missing
+  design_system:
+    path: ".ai-web/DESIGN.md"
+    status: stub
+  design_reference_brief:
+    path: ".ai-web/design-reference-brief.md"
+    status: missing
+  design_reference_results:
+    path: ".ai-web/research/lazyweb/results.json"
+    status: missing
+  design_pattern_matrix:
+    path: ".ai-web/research/lazyweb/pattern-matrix.md"
+    status: missing
+  deploy:
+    path: ".ai-web/deploy.md"
+    status: stub
+  github_sync:
+    path: ".ai-web/github-sync.json"
+    status: missing
+  deploy_plan:
+    path: ".ai-web/deploy-plan.json"
+    status: missing
+  deploy_cloudflare_pages:
+    path: ".ai-web/deploy/cloudflare-pages.json"
+    status: missing
+  deploy_vercel:
+    path: ".ai-web/deploy/vercel.json"
+    status: missing
+  final_qa_report:
+    path: ".ai-web/qa/final-report.md"
+    status: stub
+  post_launch_backlog:
+    path: ".ai-web/post-launch-backlog.md"
+    status: stub
+design_candidates:
+  min_required: 2
+  max_allowed: 10
+  candidates: []
+  comparison_path: ".ai-web/design-candidates/comparison.md"
+  selected_path: ".ai-web/design-candidates/selected.md"
+  selected_candidate:
+  regeneration_requested: false
+  regeneration_rounds: 0
+  gate_2_draft_path: ".ai-web/gates/gate-2-design.md"
+research:
+  design_research:
+    policy: opportunistic
+    provider: lazyweb
+    latest_run:
+    status: missing
+    reference_brief_path: ".ai-web/design-reference-brief.md"
+    pattern_matrix_path: ".ai-web/research/lazyweb/pattern-matrix.md"
+    normalized_results_path: ".ai-web/research/lazyweb/results.json"
+    min_references: 5
+    min_companies: 3
+    last_error:
+    skipped_reason:
+implementation:
+  stack_profile: D
+  scaffold_target: Astro + MDX/Content Collections + Cloudflare Pages + Tailwind +
+    sitemap/RSS
+  scaffold_created: false
+  scaffold_profile:
+  scaffold_framework:
+  scaffold_package_manager:
+  scaffold_dev_command:
+  scaffold_build_command:
+  scaffold_metadata_path:
+  latest_agent_run:
+  last_diff:
+  current_task:
+  completed_tasks: []
+setup:
+  latest_run:
+  package_manager:
+  node_modules_present: false
+  last_installed_at:
+qa:
+  current_checklist:
+  final_report: ".ai-web/qa/final-report.md"
+  last_result:
+  open_failures: []
+deploy:
+  plan: ".ai-web/deploy.md"
+  post_launch_backlog: ".ai-web/post-launch-backlog.md"
+  rollback_defined: false
+  rollback_dry_run_result:
+  github_sync_plan: ".ai-web/github-sync.json"
+  deploy_plan: ".ai-web/deploy-plan.json"
+  latest_plan:
+  provider_config_paths:
+    cloudflare-pages: ".ai-web/deploy/cloudflare-pages.json"
+    vercel: ".ai-web/deploy/vercel.json"
+  github_last_known_url:
+  preview_url:
+  production_url:
+  cloudflare_preview_url:
+  vercel_preview_url:
+  github_sync_last_planned_at:
+  deploy_plan_last_planned_at:
+budget:
+  cost_mode: subscription_usage
+  meter_model_cost: false
+  max_model_cost_usd:
+  max_design_generations_total: 10
+  max_design_candidates: 10
+  max_regeneration_rounds: 10
+  max_qa_runtime_minutes: 60
+  qa_timeout_action: self_diagnose_fix_rerun
+  max_qa_timeout_recovery_cycles: 3
+  require_user_approval_above_usd:
+  estimated_spend_usd: 0
+adapters:
+  implementation_agent:
+    provider: codex
+    command: codex
+    model: repo-default
+    permissions: edit
+    instruction_file: AGENTS.md
+    network_allowed: false
+    mcp_servers_allowed: []
+    command_timeout_minutes: 30
+  design_research:
+    provider: lazyweb
+    transport: streamable-http
+    endpoint: https://www.lazyweb.com/mcp
+    network_allowed: true
+    mcp_servers_allowed:
+    - lazyweb
+    token_sources:
+    - LAZYWEB_MCP_TOKEN
+    - "~/.lazyweb/lazyweb_mcp_token"
+    - "~/.codex/lazyweb_mcp_token"
+    token_storage_allowed_in_repo: false
+    command_timeout_seconds: 45
+  image_generation:
+    provider: openai
+    tool: gpt-image
+    model: gpt-image-2
+    model_snapshot:
+    api_surface: image_api
+  browser_qa:
+    provider: codex_browser
+    allowed_hosts:
+    - localhost
+    - 127.0.0.1
+    evidence_schema: qa-result-v1
+    file_access: workspace_only
+  deploy:
+    provider: manual
+    target:
+    config_files: []
+invalidations: []
+decisions: []
+snapshots: []

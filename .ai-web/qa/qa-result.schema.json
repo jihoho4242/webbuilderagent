@@ -1,0 +1,218 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ai-web-director.local/schemas/qa-result.schema.json",
+  "title": "AI Web Director QA result",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "task_id",
+    "status",
+    "started_at",
+    "finished_at",
+    "duration_minutes",
+    "timed_out",
+    "environment",
+    "checks",
+    "evidence",
+    "console_errors",
+    "network_errors",
+    "recommended_action",
+    "created_fix_task"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "integer",
+      "const": 1
+    },
+    "task_id": {
+      "type": "string"
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "pending",
+        "passed",
+        "failed",
+        "blocked"
+      ]
+    },
+    "started_at": {
+      "type": "string"
+    },
+    "finished_at": {
+      "type": "string"
+    },
+    "environment": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "url",
+        "browser",
+        "browser_version",
+        "viewport",
+        "commit_sha",
+        "server_command"
+      ],
+      "properties": {
+        "url": {
+          "type": "string"
+        },
+        "browser": {
+          "type": "string"
+        },
+        "browser_version": {
+          "type": "string"
+        },
+        "viewport": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "width",
+            "height",
+            "name"
+          ],
+          "properties": {
+            "width": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "height": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "name": {
+              "type": "string"
+            }
+          }
+        },
+        "commit_sha": {
+          "type": "string"
+        },
+        "server_command": {
+          "type": "string"
+        }
+      }
+    },
+    "checks": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "category",
+          "severity",
+          "status",
+          "expected",
+          "actual",
+          "evidence",
+          "notes",
+          "accepted_risk_id"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "category": {
+            "type": "string",
+            "enum": [
+              "responsive",
+              "accessibility",
+              "performance",
+              "seo",
+              "content",
+              "design",
+              "security",
+              "flow",
+              "build",
+              "other"
+            ]
+          },
+          "severity": {
+            "type": "string",
+            "enum": [
+              "critical",
+              "high",
+              "medium",
+              "low",
+              "info"
+            ]
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "pending",
+              "passed",
+              "failed",
+              "blocked",
+              "skipped"
+            ]
+          },
+          "expected": {
+            "type": "string"
+          },
+          "actual": {
+            "type": "string"
+          },
+          "evidence": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "notes": {
+            "type": "string"
+          },
+          "accepted_risk_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      }
+    },
+    "evidence": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "console_errors": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "network_errors": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "recommended_action": {
+      "type": "string",
+      "enum": [
+        "advance",
+        "create_fix_packet",
+        "rollback",
+        "accept_risk",
+        "none"
+      ]
+    },
+    "created_fix_task": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "duration_minutes": {
+      "type": "number",
+      "minimum": 0
+    },
+    "timed_out": {
+      "type": "boolean"
+    }
+  }
+}

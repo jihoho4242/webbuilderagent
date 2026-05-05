@@ -1,0 +1,137 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ai-web-director.local/schemas/intent.schema.json",
+  "title": "AI Web Director intent.yaml",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "original_intent",
+    "archetype",
+    "surface",
+    "not_surface",
+    "primary_user",
+    "primary_interaction",
+    "must_have_first_view",
+    "must_not_have",
+    "semantic_risks"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "integer",
+      "const": 1
+    },
+    "original_intent": {
+      "type": "string"
+    },
+    "archetype": {
+      "type": "string",
+      "minLength": 1
+    },
+    "surface": {
+      "type": "string",
+      "enum": [
+        "website",
+        "app"
+      ]
+    },
+    "not_surface": {
+      "type": "string",
+      "minLength": 1
+    },
+    "primary_user": {
+      "type": "string",
+      "minLength": 1
+    },
+    "primary_interaction": {
+      "type": "string",
+      "minLength": 1
+    },
+    "must_have_first_view": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "must_not_have": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "semantic_risks": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "qa": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "recommended_skill": {
+      "type": "string",
+      "enum": [
+        "premium-landing-page",
+        "service-business-site",
+        "saas-product-page",
+        "ecommerce-category-page"
+      ]
+    },
+    "recommended_design_system": {
+      "type": "string",
+      "enum": [
+        "luxury-editorial",
+        "local-service-trust",
+        "conversion-saas",
+        "mobile-commerce"
+      ]
+    },
+    "recommended_profile": {
+      "type": "string",
+      "enum": [
+        "A",
+        "B",
+        "C",
+        "D"
+      ]
+    },
+    "framework": {
+      "type": "string",
+      "minLength": 1
+    },
+    "style_keywords": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "forbidden_design_patterns": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "safety_sensitive": {
+      "type": "boolean"
+    },
+    "market_archetype": {
+      "type": "string",
+      "enum": [
+        "premium",
+        "service",
+        "saas",
+        "ecommerce",
+        "fallback"
+      ]
+    }
+  }
+}
