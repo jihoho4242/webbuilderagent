@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "fileutils"
+require "digest"
 require "json"
 require "minitest/autorun"
 require "open3"
@@ -297,6 +298,58 @@ class AiwebCliTest < Minitest::Test
     state = load_state
     state["phase"]["current"] = phase
     write_state(state)
+  end
+
+  def deploy_provenance_fixture(output_directory: "dist")
+    {
+      "schema_version" => 1,
+      "captured_at" => Time.now.utc.iso8601,
+      "workspace" => {
+        "git" => {
+          "available" => false,
+          "commit_sha" => "unknown",
+          "dirty" => nil,
+          "status_sha256" => nil
+        },
+        "source" => hash_paths_fixture(%w[src public astro.config.mjs astro.config.js next.config.js next.config.mjs tsconfig.json tailwind.config.js tailwind.config.mjs vite.config.js vite.config.mjs], "source"),
+        "package" => hash_paths_fixture(%w[package.json pnpm-lock.yaml package-lock.json yarn.lock bun.lockb], "package")
+      },
+      "output" => hash_paths_fixture([output_directory], "output").merge("directory" => output_directory),
+      "tool_versions" => {
+        "ruby" => RUBY_VERSION,
+        "pnpm" => nil,
+        "playwright" => nil,
+        "axe" => nil,
+        "lighthouse" => nil
+      }
+    }
+  end
+
+  def hash_paths_fixture(paths, label)
+    files = Array(paths).flat_map { |path| hashable_files_fixture(path) }.uniq.sort
+    digest = Digest::SHA256.new
+    files.each do |path|
+      digest.update("#{path}\0")
+      digest.update(Digest::SHA256.file(path).hexdigest)
+      digest.update("\0")
+    end
+    {
+      "label" => label,
+      "exists" => !files.empty?,
+      "file_count" => files.length,
+      "sha256" => files.empty? ? nil : digest.hexdigest
+    }
+  end
+
+  def hashable_files_fixture(path)
+    normalized = path.to_s.tr("\\", "/").sub(%r{\A(?:\./)+}, "")
+    return [] if normalized.empty? || normalized.split("/").any? { |part| part.start_with?(".env") || %w[.git .ai-web node_modules].include?(part) }
+    return [normalized] if File.file?(normalized)
+    return [] unless File.directory?(normalized)
+
+    Dir.glob(File.join(normalized, "**", "*"), File::FNM_DOTMATCH).select { |entry| File.file?(entry) }.map { |entry| entry.tr("\\", "/") }.reject do |entry|
+      entry.split("/").any? { |part| part.start_with?(".env") || %w[.git .ai-web node_modules].include?(part) }
+    end
   end
 
   def approve_quality_contract
@@ -2781,6 +2834,7 @@ class AiwebCliTest < Minitest::Test
         case "$1" in
           build)
             mkdir -p dist
+            printf '<h1>fake verify-loop build</h1>\n' > dist/index.html
             echo 'fake verify-loop build pass'
             exit "${BUILD_FAKE_EXIT_STATUS:-0}"
             ;;
@@ -3596,6 +3650,31 @@ class AiwebCliTest < Minitest::Test
     end
   end
 
+  def test_verify_loop_rejects_excessive_max_cycles_without_writes_or_processes
+    in_tmp do |dir|
+      prepare_profile_d_scaffold_flow
+      bin_dir = File.join(dir, "fake-verify-loop-bin")
+      FileUtils.mkdir_p(bin_dir)
+      marker = File.join(dir, "verify-loop-tool-was-run")
+      write_fake_executable(bin_dir, "pnpm", "touch #{marker.shellescape}; exit 99")
+      before_entries = project_entries
+      before_state = File.read(".ai-web/state.yaml")
+
+      stdout, stderr, code = run_aiweb_env(
+        { "PATH" => [bin_dir, "/usr/bin", "/bin", "/usr/sbin", "/sbin"].join(File::PATH_SEPARATOR) },
+        "verify-loop", "--max-cycles", "30000", "--dry-run", "--json"
+      )
+      payload = JSON.parse(stdout)
+
+      assert_equal 1, code
+      assert_equal "", stderr
+      assert_match(/max-cycles.*1.*10/i, payload.dig("error", "message"))
+      assert_equal before_entries, project_entries, "excessive verify-loop cycle count must not write artifacts"
+      assert_equal before_state, File.read(".ai-web/state.yaml"), "excessive verify-loop cycle count must not mutate state"
+      refute File.exist?(marker), "excessive verify-loop cycle count must not execute tools"
+    end
+  end
+
   def test_verify_loop_requires_approval_for_real_closed_loop_before_writes_or_processes
     in_tmp do |dir|
       prepare_profile_d_scaffold_flow
@@ -3635,6 +3714,7 @@ class AiwebCliTest < Minitest::Test
     assert_equal 0, code
     assert_equal "", stderr
     assert_includes stdout, "verify-loop --max-cycles 3"
+    assert_includes stdout, "--max-cycles is capped at 10"
     assert_match(/verify-loop: runs the local build -> preview -> QA -> critique -> task -> agent-run loop/i, stdout)
 
     help_stdout, help_stderr, help_code = run_webbuilder("--help")
@@ -3683,6 +3763,14 @@ class AiwebCliTest < Minitest::Test
       assert_equal "passed", loop["status"]
       assert_equal 1, loop["cycle_count"]
       assert_equal "verify loop passed", payload["action_taken"]
+      provenance = loop.fetch("provenance")
+      assert_equal 1, provenance.fetch("schema_version")
+      assert_equal "dist", provenance.dig("output", "directory")
+      assert_equal true, provenance.dig("output", "exists")
+      refute_nil provenance.dig("output", "sha256")
+      refute_nil provenance.dig("workspace", "source", "sha256")
+      refute_nil provenance.dig("workspace", "package", "sha256")
+      assert_includes provenance.fetch("tool_versions"), "ruby"
       assert File.file?(loop.fetch("metadata_path"))
       assert_equal loop, JSON.parse(File.read(loop.fetch("metadata_path")))
       %w[build preview qa-playwright qa-a11y qa-lighthouse qa-screenshot visual-critique].each do |step|
@@ -4449,7 +4537,8 @@ class AiwebCliTest < Minitest::Test
           "status" => "passed",
           "approved" => true,
           "dry_run" => false,
-          "cycle_count" => 1
+          "cycle_count" => 1,
+          "provenance" => deploy_provenance_fixture
         ) + "\n"
       )
       state = load_state
@@ -4504,6 +4593,113 @@ class AiwebCliTest < Minitest::Test
     end
   end
 
+  def test_deploy_approved_blocks_stale_verify_loop_provenance_without_provider_execution
+    in_tmp do |dir|
+      prepare_profile_d_scaffold_flow
+      set_phase("phase-11")
+      FileUtils.mkdir_p("dist")
+      File.write("dist/index.html", "<h1>Deploy fixture</h1>\n")
+      verify_dir = ".ai-web/runs/verify-loop-test"
+      FileUtils.mkdir_p(verify_dir)
+      verify_metadata_path = File.join(verify_dir, "verify-loop.json")
+      File.write(
+        verify_metadata_path,
+        JSON.pretty_generate(
+          "schema_version" => 1,
+          "status" => "passed",
+          "approved" => true,
+          "dry_run" => false,
+          "cycle_count" => 1,
+          "provenance" => deploy_provenance_fixture
+        ) + "\n"
+      )
+      state = load_state
+      state["implementation"]["latest_verify_loop"] = verify_metadata_path
+      state["implementation"]["verify_loop_status"] = "passed"
+      write_state(state)
+      File.write("dist/index.html", "<h1>Mutated after verify-loop</h1>\n")
+
+      bin_dir = File.join(dir, "fake-deploy-bin")
+      FileUtils.mkdir_p(bin_dir)
+      marker = File.join(dir, "fake-vercel-ran")
+      write_fake_executable(bin_dir, "vercel", "touch #{marker.shellescape}; exit 0")
+      before_entries = project_entries
+      before_state = File.read(".ai-web/state.yaml")
+
+      stdout, stderr, code = run_aiweb_env(
+        { "PATH" => [bin_dir, "/usr/bin", "/bin", "/usr/sbin", "/sbin"].join(File::PATH_SEPARATOR) },
+        "deploy", "--target", "vercel", "--approved", "--json"
+      )
+      payload = JSON.parse(stdout)
+      deploy = payload.fetch("deploy")
+      blockers = deploy.fetch("blocking_issues").join("\n")
+
+      assert_equal 5, code
+      assert_equal "", stderr
+      assert_equal "blocked", deploy.fetch("status")
+      assert_equal "blocked", deploy.dig("verify_loop_gate", "status")
+      assert_match(/provenance mismatch.*output\.sha256/i, blockers)
+      assert_equal false, deploy.fetch("provider_cli_invoked")
+      assert_equal false, deploy.fetch("external_deploy_performed")
+      assert_equal false, deploy.fetch("writes_performed")
+      refute File.exist?(marker), "stale verify-loop provenance must block provider command execution"
+      assert_equal before_entries, project_entries, "stale verify-loop provenance blocker must not write deploy artifacts"
+      assert_equal before_state, File.read(".ai-web/state.yaml"), "stale verify-loop provenance blocker must not mutate state"
+      refute_includes stdout, ".env"
+    end
+  end
+
+  def test_deploy_approved_blocks_legacy_verify_loop_evidence_without_provenance
+    in_tmp do |dir|
+      prepare_profile_d_scaffold_flow
+      set_phase("phase-11")
+      FileUtils.mkdir_p("dist")
+      File.write("dist/index.html", "<h1>Deploy fixture</h1>\n")
+      verify_dir = ".ai-web/runs/verify-loop-legacy"
+      FileUtils.mkdir_p(verify_dir)
+      verify_metadata_path = File.join(verify_dir, "verify-loop.json")
+      File.write(
+        verify_metadata_path,
+        JSON.pretty_generate(
+          "schema_version" => 1,
+          "status" => "passed",
+          "approved" => true,
+          "dry_run" => false,
+          "cycle_count" => 1
+        ) + "\n"
+      )
+      state = load_state
+      state["implementation"]["latest_verify_loop"] = verify_metadata_path
+      state["implementation"]["verify_loop_status"] = "passed"
+      write_state(state)
+
+      bin_dir = File.join(dir, "fake-deploy-bin")
+      FileUtils.mkdir_p(bin_dir)
+      marker = File.join(dir, "fake-vercel-ran")
+      write_fake_executable(bin_dir, "vercel", "touch #{marker.shellescape}; exit 0")
+      before_entries = project_entries
+      before_state = File.read(".ai-web/state.yaml")
+
+      stdout, stderr, code = run_aiweb_env(
+        { "PATH" => [bin_dir, "/usr/bin", "/bin", "/usr/sbin", "/sbin"].join(File::PATH_SEPARATOR) },
+        "deploy", "--target", "vercel", "--approved", "--json"
+      )
+      payload = JSON.parse(stdout)
+      deploy = payload.fetch("deploy")
+
+      assert_equal 5, code
+      assert_equal "", stderr
+      assert_equal "blocked", deploy.fetch("status")
+      assert_equal "blocked", deploy.dig("verify_loop_gate", "status")
+      assert_match(/missing deployment provenance/i, deploy.fetch("blocking_issues").join("\n"))
+      assert_equal false, deploy.fetch("provider_cli_invoked")
+      refute File.exist?(marker), "legacy verify-loop metadata must not unlock provider command execution"
+      assert_equal before_entries, project_entries, "legacy verify-loop provenance blocker must not write deploy artifacts"
+      assert_equal before_state, File.read(".ai-web/state.yaml"), "legacy verify-loop provenance blocker must not mutate state"
+      refute_includes stdout, ".env"
+    end
+  end
+
   def test_github_deploy_help_and_webbuilder_passthrough_surface
     aiweb_stdout, aiweb_stderr, aiweb_code = run_aiweb("help")
     assert_equal 0, aiweb_code
@@ -4511,6 +4707,7 @@ class AiwebCliTest < Minitest::Test
     ["github-sync", "deploy-plan", "deploy --target", "cloudflare-pages", "vercel", "--approved"].each do |snippet|
       assert_includes aiweb_stdout, snippet
     end
+    assert_includes aiweb_stdout, "deploy provenance"
 
     web_stdout, web_stderr, web_code = run_webbuilder("help")
     assert_equal 0, web_code
