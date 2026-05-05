@@ -17,7 +17,7 @@ module Aiweb
     EXIT_UNSAFE_EXTERNAL_ACTION = 5
     EXIT_INTERNAL_ERROR = 10
 
-    MUTATION_COMMANDS = %w[start init interview run agent-run verify-loop ingest-design next-task qa-checklist qa-report repair advance rollback resolve-blocker snapshot design-brief design-research design-system design-prompt design select-design scaffold setup build preview qa-playwright browser-qa qa-screenshot screenshot-qa qa-a11y a11y-qa qa-lighthouse lighthouse-qa visual-critique visual-polish workbench component-map visual-edit supabase-secret-qa supabase-local-verify github-sync deploy-plan deploy daemon backend].freeze
+    MUTATION_COMMANDS = %w[start init interview run run-cancel run-resume agent-run verify-loop ingest-design next-task qa-checklist qa-report repair advance rollback resolve-blocker snapshot design-brief design-research design-system design-prompt design select-design scaffold setup build preview qa-playwright browser-qa qa-screenshot screenshot-qa qa-a11y a11y-qa qa-lighthouse lighthouse-qa visual-critique visual-polish workbench component-map visual-edit supabase-secret-qa supabase-local-verify github-sync deploy-plan deploy daemon backend].freeze
     RUNTIME_PLAN_COMMANDS = %w[runtime-plan scaffold-status].freeze
     REGISTRY_COMMANDS = %w[design-systems skills craft].freeze
 
@@ -128,6 +128,31 @@ module Aiweb
         project.interview(idea: opts[:idea], dry_run: @dry_run)
       when "run"
         project.run(dry_run: @dry_run)
+      when "run-status"
+        opts = parse_options do |o, options|
+          o.on("--run-id ID") { |v| options[:run_id] = v }
+        end
+        unless @argv.empty?
+          raise UserError.new("run-status does not accept extra positional arguments: #{@argv.join(", ")}", EXIT_VALIDATION_FAILED)
+        end
+        project.run_status(run_id: opts[:run_id])
+      when "run-cancel"
+        opts = parse_options do |o, options|
+          o.on("--run-id ID") { |v| options[:run_id] = v }
+          o.on("--force") { options[:force] = true }
+        end
+        unless @argv.empty?
+          raise UserError.new("run-cancel does not accept extra positional arguments: #{@argv.join(", ")}", EXIT_VALIDATION_FAILED)
+        end
+        project.run_cancel(run_id: opts[:run_id] || "active", force: opts[:force], dry_run: @dry_run)
+      when "run-resume"
+        opts = parse_options do |o, options|
+          o.on("--run-id ID") { |v| options[:run_id] = v }
+        end
+        unless @argv.empty?
+          raise UserError.new("run-resume does not accept extra positional arguments: #{@argv.join(", ")}", EXIT_VALIDATION_FAILED)
+        end
+        project.run_resume(run_id: opts[:run_id] || "latest", dry_run: @dry_run)
       when "agent-run"
         dispatch_agent_run
       when "verify-loop"
@@ -1126,6 +1151,9 @@ module Aiweb
           interview --idea "..."
           intent route --idea "..."
           run
+          run-status [--run-id active|latest|ID]
+          run-cancel [--run-id active|ID] [--force]
+          run-resume [--run-id latest|ID]
           design-brief [--force]
           design-research [--provider lazyweb] [--policy off|opportunistic|required] [--limit N] [--force]
           design-system resolve [--force]
@@ -1187,6 +1215,7 @@ module Aiweb
           supabase-secret-qa: reruns local-only Profile S secret guard QA against safe scaffold/template paths, including supabase/env.example.template, and records .ai-web/qa/supabase-secret-qa.json; --dry-run writes nothing and never reads .env/.env.*
           supabase-local-verify: verifies generated Profile S files, safe Supabase template, migrations/RLS/storage docs, and SSR client/server stubs locally, records .ai-web/qa/supabase-local-verify.json, and never creates hosted Supabase projects, runs provider CLI/network, deploys, installs, builds, previews, or reads .env/.env.*
           runtime-plan/scaffold-status: read-only runtime readiness metadata; does not install or launch Node
+          run-status/run-cancel/run-resume: local run lifecycle control plane backed by .ai-web/runs/active-run.json plus per-run lifecycle/cancel/resume descriptors; status is read-only, cancel/resume support --dry-run no-write planning, cancellation is observed at lifecycle checkpoints, and resume records a descriptor without launching provider or agent commands
           build: runs the scaffolded Astro build only after runtime-plan is ready and records .ai-web/runs logs
           preview: starts/stops the local scaffold dev server after runtime-plan is ready; --dry-run does not write files or launch Node
           agent-run: runs an approved local source-patch agent task packet for repair / visual-polish / visual-edit evidence with logs and diff artifacts; --dry-run does not write files or launch a process
@@ -1273,12 +1302,29 @@ module Aiweb
       return human_supabase_local_verify_result(result) if result["supabase_local_verify"]
       return human_supabase_secret_qa_result(result) if result["supabase_secret_qa"]
       return human_setup_result(result) if result["setup"]
+      return human_run_lifecycle_result(result) if result["run_lifecycle"]
 
       changed = result["changed_files"] || result["artifacts_changed"] || []
       blockers = result["blocking_issues"] || []
       [
         "Current phase: #{result["current_phase"] || "n/a"}",
         "Action taken: #{result["action_taken"] || "n/a"}",
+        "Artifacts changed: #{changed.empty? ? "none" : changed.join(", ")}",
+        "Blocking issues: #{blockers.empty? ? "none" : blockers.join("; ")}",
+        "Next command: #{result["next_action"] || "n/a"}"
+      ].join("\n")
+    end
+
+    def human_run_lifecycle_result(result)
+      lifecycle = result.fetch("run_lifecycle")
+      changed = result["changed_files"] || result["artifacts_changed"] || []
+      blockers = lifecycle["blocking_issues"] || result["blocking_issues"] || []
+      active = lifecycle["active_run"]
+      selected = lifecycle["selected_run"]
+      [
+        "Run lifecycle: #{lifecycle["status"] || "n/a"}",
+        "Active run: #{active ? "#{active["run_id"]} (#{active["kind"] || "unknown"})" : "none"}",
+        "Selected run: #{selected ? "#{selected["run_id"]} (#{selected["kind"] || "unknown"})" : "none"}",
         "Artifacts changed: #{changed.empty? ? "none" : changed.join(", ")}",
         "Blocking issues: #{blockers.empty? ? "none" : blockers.join("; ")}",
         "Next command: #{result["next_action"] || "n/a"}"
@@ -1686,7 +1732,7 @@ module Aiweb
 
     def verify_loop_exit_code(result)
       status = result.dig("verify_loop", "status").to_s
-      return EXIT_SUCCESS if %w[dry_run planned passed].include?(status)
+      return EXIT_SUCCESS if %w[dry_run planned passed cancelled].include?(status)
       return EXIT_BUDGET_BLOCKED if status == "max_cycles"
       if status == "blocked"
         issues = ((result.dig("verify_loop", "blocking_issues") || []) + (result["blocking_issues"] || [])).join(" ")
@@ -1696,6 +1742,14 @@ module Aiweb
       return EXIT_VALIDATION_FAILED if status == "agent_run_failed"
 
       EXIT_VALIDATION_FAILED
+    end
+
+    def run_lifecycle_exit_code(result)
+      status = result.dig("run_lifecycle", "status").to_s
+      return EXIT_SUCCESS if %w[idle running cancel_planned cancel_requested resume_planned].include?(status)
+      return EXIT_VALIDATION_FAILED if status == "blocked"
+
+      EXIT_SUCCESS
     end
 
     def component_map_exit_code(result)
@@ -1765,6 +1819,7 @@ module Aiweb
       return EXIT_VALIDATION_FAILED if result["validation_errors"] && !result["validation_errors"].empty?
       return result.dig("runtime_plan", "readiness") == "ready" ? EXIT_SUCCESS : EXIT_VALIDATION_FAILED if RUNTIME_PLAN_COMMANDS.include?(command)
       return EXIT_SUCCESS if REGISTRY_COMMANDS.include?(command) || command == "intent"
+      return run_lifecycle_exit_code(result) if %w[run-status run-cancel run-resume].include?(command)
       return setup_exit_code(result) if command == "setup"
       return agent_run_exit_code(result) if command == "agent-run"
       return build_exit_code(result) if command == "build"
@@ -1785,7 +1840,7 @@ module Aiweb
       return deploy_exit_code(result) if command == "deploy"
       return supabase_secret_qa_exit_code(result) if command == "supabase-secret-qa"
       return supabase_local_verify_exit_code(result) if command == "supabase-local-verify"
-      return EXIT_SUCCESS if %w[help version status start init interview run agent-run verify-loop design-brief design-research design-system design-prompt design select-design scaffold ingest-design next-task qa-checklist qa-report rollback resolve-blocker snapshot visual-critique visual-polish component-map visual-edit].include?(command)
+      return EXIT_SUCCESS if %w[help version status start init interview run run-status run-cancel run-resume agent-run verify-loop design-brief design-research design-system design-prompt design select-design scaffold ingest-design next-task qa-checklist qa-report rollback resolve-blocker snapshot visual-critique visual-polish component-map visual-edit].include?(command)
       if command == "advance" && result["action_taken"] == "advance blocked"
         issue = result["blocking_issues"].join(" ")
         return EXIT_BUDGET_BLOCKED if issue =~ /budget|candidate cap|design generation cap/i

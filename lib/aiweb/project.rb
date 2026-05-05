@@ -7,6 +7,7 @@ require "find"
 require "json"
 require "open3"
 require "rbconfig"
+require "shellwords"
 require "timeout"
 require "time"
 require "uri"
@@ -75,6 +76,18 @@ module Aiweb
       "vercel" => ".ai-web/deploy/vercel.json"
     }.freeze
     VERIFY_LOOP_MAX_CYCLES = 10
+    ACTIVE_RUN_LOCK_PATH = ".ai-web/runs/active-run.json"
+    RUN_LIFECYCLE_FILE = "lifecycle.json"
+    RUN_CANCEL_REQUEST_FILE = "cancel-request.json"
+    RUN_RESUME_PLAN_FILE = "resume-plan.json"
+    RUN_METADATA_FILENAMES = %w[
+      verify-loop.json
+      deploy.json
+      workbench-serve.json
+      setup.json
+      agent-run.json
+      preview.json
+    ].freeze
 
     WORKBENCH_PANELS = %w[
       chat
@@ -881,8 +894,18 @@ module Aiweb
         )
       end
 
+      active_record = active_run_begin!(
+        kind: "workbench-serve",
+        run_id: run_id,
+        run_dir: run_dir,
+        metadata_path: metadata_path,
+        command: workbench_serve_command(bind_host, bind_port),
+        force: force,
+        keep_active: true
+      )
+      begin
       changes = []
-      mutation(dry_run: false) do
+      result = mutation(dry_run: false) do
         FileUtils.mkdir_p(run_dir)
         changes << relative(run_dir)
         changes << write_file(File.join(root, paths["index_html"]), workbench_html(manifest), false)
@@ -919,6 +942,14 @@ module Aiweb
         )
         manifest["status"] = "running"
         manifest["serve"] = workbench_serve_summary(metadata)
+        active_record = active_record.merge(
+          "pid" => pid,
+          "status" => "running",
+          "heartbeat_at" => now,
+          "url" => url
+        )
+        changes << write_json(active_run_lock_path, active_record, false)
+        changes << write_json(run_lifecycle_path(run_id), active_record, false)
         changes << write_json(File.join(root, paths["manifest_json"]), manifest, false)
         changes << relative(stdout_path)
         changes << relative(stderr_path)
@@ -931,6 +962,150 @@ module Aiweb
           next_action: "open #{url} locally; stop pid #{pid} when finished"
         )
       end
+      active_record = nil
+      result
+      ensure
+        active_run_finish!(active_record, "failed") if active_record
+      end
+    end
+
+    def run_status(run_id: nil)
+      assert_initialized!
+      state = load_state
+      lifecycle = run_lifecycle_status(run_id: run_id)
+      payload = status_hash(state: state, changed_files: [])
+      payload["action_taken"] = "reported run lifecycle"
+      payload["run_lifecycle"] = lifecycle
+      payload["next_action"] = lifecycle["active_run"] ? "inspect the active run or request cancellation with aiweb run-cancel --run-id active" : "start a local run such as aiweb verify-loop --max-cycles 3 --dry-run"
+      payload
+    end
+
+    def run_cancel(run_id: "active", dry_run: false, force: false)
+      assert_initialized!
+      state = load_state
+      target = resolve_run_lifecycle_target(run_id)
+      blockers = []
+      blockers << "no active or matching run found for #{run_id.to_s.empty? ? "active" : run_id}" unless target
+      run_dir = target && run_lifecycle_run_dir(target.fetch("run_id"))
+      request_path = run_dir && File.join(run_dir, RUN_CANCEL_REQUEST_FILE)
+      metadata = run_cancel_request_metadata(target, request_path, dry_run: dry_run, force: force, blocking_issues: blockers)
+
+      if dry_run || !blockers.empty?
+        payload = status_hash(state: state, changed_files: [])
+        payload["action_taken"] = blockers.empty? ? "planned run cancellation" : "run cancellation blocked"
+        payload["run_lifecycle"] = {
+          "status" => blockers.empty? ? "cancel_planned" : "blocked",
+          "selected_run" => target,
+          "cancel_request" => metadata,
+          "blocking_issues" => blockers
+        }
+        payload["planned_changes"] = blockers.empty? ? [relative(request_path), relative(run_lifecycle_path(target.fetch("run_id")))] : []
+        payload["blocking_issues"] = (payload["blocking_issues"] + blockers).uniq
+        payload["next_action"] = blockers.empty? ? "rerun aiweb run-cancel --run-id #{target.fetch("run_id")} without --dry-run to request cancellation" : "inspect aiweb run-status before requesting cancellation"
+        return payload
+      end
+
+      changes = []
+      mutation(dry_run: false) do
+        FileUtils.mkdir_p(run_dir)
+        changes << write_json(request_path, metadata, false)
+        changes << write_json(run_lifecycle_path(target.fetch("run_id")), run_lifecycle_record(target).merge(
+          "status" => "cancel_requested",
+          "cancel_requested_at" => metadata["requested_at"],
+          "cancel_request_path" => relative(request_path)
+        ), false)
+        if active_run_matches?(target.fetch("run_id"))
+          active = read_active_run_lock || {}
+          active = active.merge(
+            "status" => "cancel_requested",
+            "cancel_requested_at" => metadata["requested_at"],
+            "cancel_request_path" => relative(request_path)
+          )
+          changes << write_json(active_run_lock_path, active, false)
+        end
+        if target["kind"] == "workbench-serve" && live_process?(target["pid"].to_i)
+          Process.kill("TERM", target["pid"].to_i)
+          metadata["process_signal"] = "TERM"
+          changes << write_json(request_path, metadata, false)
+          workbench_metadata_path = run_main_metadata_path(target.fetch("run_id"))
+          workbench_metadata = workbench_metadata_path && read_json_file(workbench_metadata_path)
+          if workbench_metadata
+            workbench_metadata = workbench_metadata.merge(
+              "status" => "cancelled",
+              "finished_at" => now,
+              "blocking_issues" => []
+            )
+            changes << write_json(workbench_metadata_path, workbench_metadata, false)
+          end
+          changes << write_json(run_lifecycle_path(target.fetch("run_id")), run_lifecycle_record(target).merge(
+            "status" => "cancelled",
+            "finished_at" => now,
+            "cancel_requested_at" => metadata["requested_at"],
+            "cancel_request_path" => relative(request_path)
+          ), false)
+          FileUtils.rm_f(active_run_lock_path) if active_run_matches?(target.fetch("run_id"))
+        end
+      end
+
+      payload = status_hash(state: load_state, changed_files: compact_changes(changes))
+      payload["action_taken"] = "requested run cancellation"
+      payload["run_lifecycle"] = {
+        "status" => "cancel_requested",
+        "selected_run" => target,
+        "cancel_request" => metadata,
+        "blocking_issues" => []
+      }
+      payload["next_action"] = "poll aiweb run-status; long-running commands stop at their next lifecycle checkpoint"
+      payload
+    end
+
+    def run_resume(run_id: "latest", dry_run: false)
+      assert_initialized!
+      state = load_state
+      target = resolve_run_lifecycle_target(run_id.to_s.strip.empty? ? "latest" : run_id)
+      metadata = target && run_main_metadata(target.fetch("run_id"))
+      plan = metadata ? run_resume_plan(target, metadata) : nil
+      blockers = []
+      blockers << "no matching run found for #{run_id}" unless target
+      blockers << "run type is not resumable by descriptor" if target && plan.nil?
+      plan_path = target && File.join(run_lifecycle_run_dir(target.fetch("run_id")), RUN_RESUME_PLAN_FILE)
+
+      if dry_run || !blockers.empty?
+        payload = status_hash(state: state, changed_files: [])
+        payload["action_taken"] = blockers.empty? ? "planned run resume" : "run resume blocked"
+        payload["run_lifecycle"] = {
+          "status" => blockers.empty? ? "resume_planned" : "blocked",
+          "selected_run" => target,
+          "resume_plan" => plan,
+          "blocking_issues" => blockers
+        }
+        payload["planned_changes"] = blockers.empty? ? [relative(plan_path)] : []
+        payload["blocking_issues"] = (payload["blocking_issues"] + blockers).uniq
+        payload["next_action"] = blockers.empty? ? "rerun aiweb run-resume --run-id #{target.fetch("run_id")} to record the resume descriptor, then execute next_command manually if desired" : "inspect aiweb run-status and choose a resumable run"
+        return payload
+      end
+
+      changes = []
+      mutation(dry_run: false) do
+        FileUtils.mkdir_p(File.dirname(plan_path))
+        changes << write_json(plan_path, plan, false)
+        changes << write_json(run_lifecycle_path(target.fetch("run_id")), run_lifecycle_record(target).merge(
+          "status" => "resume_planned",
+          "resume_planned_at" => plan["created_at"],
+          "resume_plan_path" => relative(plan_path)
+        ), false)
+      end
+
+      payload = status_hash(state: load_state, changed_files: compact_changes(changes))
+      payload["action_taken"] = "recorded run resume descriptor"
+      payload["run_lifecycle"] = {
+        "status" => "resume_planned",
+        "selected_run" => target,
+        "resume_plan" => plan,
+        "blocking_issues" => []
+      }
+      payload["next_action"] = plan.fetch("next_command")
+      payload
     end
 
     def runtime_plan
@@ -2105,6 +2280,15 @@ module Aiweb
         )
       end
 
+      active_record = active_run_begin!(
+        kind: "verify-loop",
+        run_id: run_id,
+        run_dir: run_dir,
+        metadata_path: metadata_path,
+        command: ["aiweb", "verify-loop", "--max-cycles", cycle_limit.to_s, "--approved"],
+        force: force
+      )
+      begin
       FileUtils.mkdir_p(run_dir)
       changed_files = [relative(run_dir)]
       cycles = []
@@ -2120,12 +2304,29 @@ module Aiweb
         cycle = verify_loop_cycle_record(cycle_number, cycle_dir)
         cycles << cycle
 
+        if (cancel_blocker = verify_loop_cancel_blocker(run_id))
+          latest_blocker = cancel_blocker
+          final_status = "cancelled"
+          stop_reason = "cancelled"
+          cycle["status"] = "cancelled"
+          cycle["blocking_issues"] << latest_blocker
+          break
+        end
+
         build_result = verify_loop_record_step(cycle, "build") { build(dry_run: false) }
         unless verify_loop_step_passed?(build_result, "build")
           latest_blocker = verify_loop_step_blocker("build", build_result)
           final_status = "blocked"
           stop_reason = "build_blocked"
           cycle["status"] = "blocked"
+          cycle["blocking_issues"] << latest_blocker
+          break
+        end
+        if (cancel_blocker = verify_loop_cancel_blocker(run_id))
+          latest_blocker = cancel_blocker
+          final_status = "cancelled"
+          stop_reason = "cancelled"
+          cycle["status"] = "cancelled"
           cycle["blocking_issues"] << latest_blocker
           break
         end
@@ -2139,6 +2340,14 @@ module Aiweb
           cycle["blocking_issues"] << latest_blocker
           break
         end
+        if (cancel_blocker = verify_loop_cancel_blocker(run_id))
+          latest_blocker = cancel_blocker
+          final_status = "cancelled"
+          stop_reason = "cancelled"
+          cycle["status"] = "cancelled"
+          cycle["blocking_issues"] << latest_blocker
+          break
+        end
 
         preview_url = verify_loop_preview_url(preview_result)
         qa_results = []
@@ -2146,6 +2355,15 @@ module Aiweb
         qa_results << verify_loop_record_step(cycle, "qa-a11y") { qa_a11y(url: preview_url, task_id: "verify-loop-cycle-#{cycle_number}-a11y", force: force, dry_run: false) }
         qa_results << verify_loop_record_step(cycle, "qa-lighthouse") { qa_lighthouse(url: preview_url, task_id: "verify-loop-cycle-#{cycle_number}-lighthouse", force: force, dry_run: false) }
         qa_results << verify_loop_record_step(cycle, "qa-screenshot") { qa_screenshot(url: preview_url, task_id: "verify-loop-cycle-#{cycle_number}-screenshot", force: force, dry_run: false) }
+
+        if (cancel_blocker = verify_loop_cancel_blocker(run_id))
+          latest_blocker = cancel_blocker
+          final_status = "cancelled"
+          stop_reason = "cancelled"
+          cycle["status"] = "cancelled"
+          cycle["blocking_issues"] << latest_blocker
+          break
+        end
 
         blocked_qa = qa_results.find { |result| verify_loop_step_status(result).to_s == "blocked" }
         if blocked_qa
@@ -2264,7 +2482,7 @@ module Aiweb
       state["project"]["updated_at"] = now if state["project"].is_a?(Hash)
       changed_files << write_yaml(state_path, state, false)
 
-      verify_loop_payload(
+      result = verify_loop_payload(
         state: state,
         metadata: metadata,
         changed_files: compact_changes(changed_files),
@@ -2272,6 +2490,12 @@ module Aiweb
         action_taken: verify_loop_action_taken(final_status),
         next_action: verify_loop_next_action(metadata)
       )
+      active_run_finish!(active_record, final_status)
+      active_record = nil
+      result
+      ensure
+        active_run_finish!(active_record, "failed") if active_record
+      end
     end
 
     def next_task(type: nil, dry_run: false, force: false)
@@ -2584,6 +2808,15 @@ module Aiweb
         payload["blocking_issues"] = (payload["blocking_issues"] + deploy_payload["blocking_issues"]).uniq
         payload["next_action"] = "resolve deploy gates, then rerun aiweb deploy --target #{normalized_target} --approved"
       else
+        active_record = active_run_begin!(
+          kind: "deploy",
+          run_id: run_id,
+          run_dir: run_dir,
+          metadata_path: metadata_path,
+          command: deploy_payload.fetch("command"),
+          force: force
+        )
+        begin
         changes = []
         mutation(dry_run: false) do
           FileUtils.mkdir_p(run_dir)
@@ -2626,6 +2859,11 @@ module Aiweb
           payload["requires_approval"] = false
           payload["blocking_issues"] = blocking_issues
           payload["next_action"] = status == "passed" ? "review #{relative(metadata_path)} before treating the provider deployment as accepted" : "inspect #{relative(stderr_path)} and provider readiness, then rerun deploy after fixing the blocker"
+        end
+        active_run_finish!(active_record, payload.dig("deploy", "status") || "completed")
+        active_record = nil
+        ensure
+          active_run_finish!(active_record, "failed") if active_record
         end
       end
       payload
@@ -3067,6 +3305,270 @@ module Aiweb
       ensure
         FileUtils.rm_f(lock) if lock_acquired
       end
+    end
+
+    def active_run_lock_path
+      File.join(root, ACTIVE_RUN_LOCK_PATH)
+    end
+
+    def runs_dir
+      File.join(aiweb_dir, "runs")
+    end
+
+    def run_lifecycle_run_dir(run_id)
+      safe_run_id = validate_run_id!(run_id)
+      File.join(runs_dir, safe_run_id)
+    end
+
+    def run_lifecycle_path(run_id)
+      File.join(run_lifecycle_run_dir(run_id), RUN_LIFECYCLE_FILE)
+    end
+
+    def run_cancel_request_path(run_id)
+      File.join(run_lifecycle_run_dir(run_id), RUN_CANCEL_REQUEST_FILE)
+    end
+
+    def validate_run_id!(run_id)
+      value = run_id.to_s.strip
+      raise UserError.new("run id is required", 1) if value.empty?
+      raise UserError.new("unsafe run id blocked", 5) if value.include?("/") || value.include?("\\") || value.include?("..") || value.start_with?(".") || unsafe_env_path?(value)
+
+      value
+    end
+
+    def read_json_file(path)
+      data = JSON.parse(File.read(path))
+      data.is_a?(Hash) ? data : nil
+    rescue JSON::ParserError, SystemCallError
+      nil
+    end
+
+    def read_active_run_lock
+      read_json_file(active_run_lock_path)
+    end
+
+    def active_run_matches?(run_id)
+      active = read_active_run_lock
+      active && active["run_id"] == run_id
+    end
+
+    def active_run_live?(record)
+      return false unless record.is_a?(Hash)
+      return false unless %w[running cancel_requested].include?(record["status"].to_s)
+
+      live_process?(record["pid"].to_i)
+    end
+
+    def with_active_run(kind:, run_id:, run_dir:, metadata_path:, command:, force: false)
+      record = active_run_begin!(kind: kind, run_id: run_id, run_dir: run_dir, metadata_path: metadata_path, command: command, force: force)
+      final_status = "completed"
+      result = yield
+      final_status = run_lifecycle_result_status(result) || final_status
+      result
+    rescue StandardError
+      final_status = "failed"
+      raise
+    ensure
+      active_run_finish!(record, final_status) if record
+    end
+
+    def active_run_begin!(kind:, run_id:, run_dir:, metadata_path:, command:, force: false, keep_active: false)
+      FileUtils.mkdir_p(runs_dir)
+      existing = read_active_run_lock
+      if existing && active_run_live?(existing) && !force
+        raise UserError.new("active run exists: #{existing["run_id"]} (#{existing["kind"]}); inspect aiweb run-status or request cancellation with aiweb run-cancel --run-id active", 1)
+      end
+
+      FileUtils.rm_f(active_run_lock_path) if existing && (!active_run_live?(existing) || force)
+      record = {
+        "schema_version" => 1,
+        "run_id" => run_id,
+        "kind" => kind,
+        "status" => "running",
+        "pid" => Process.pid,
+        "started_at" => now,
+        "heartbeat_at" => now,
+        "run_dir" => relative(run_dir),
+        "metadata_path" => relative(metadata_path),
+        "command" => command,
+        "lock_path" => ACTIVE_RUN_LOCK_PATH,
+        "cancel_request_path" => relative(run_cancel_request_path(run_id)),
+        "keep_active" => keep_active
+      }
+      File.open(active_run_lock_path, File::WRONLY | File::CREAT | File::EXCL) do |file|
+        file.write(JSON.pretty_generate(record) + "\n")
+      end
+      write_json(run_lifecycle_path(run_id), record, false)
+      record
+    rescue Errno::EEXIST
+      raise UserError.new("active run lock exists at #{ACTIVE_RUN_LOCK_PATH}; inspect aiweb run-status before starting another run", 1)
+    end
+
+    def active_run_finish!(record, status)
+      return unless record
+
+      final = record.merge(
+        "status" => status,
+        "finished_at" => now,
+        "heartbeat_at" => now
+      )
+      write_json(run_lifecycle_path(record.fetch("run_id")), final, false)
+      if read_active_run_lock&.fetch("run_id", nil) == record.fetch("run_id") && !record["keep_active"]
+        FileUtils.rm_f(active_run_lock_path)
+      end
+    rescue SystemCallError, JSON::ParserError
+      nil
+    end
+
+    def run_lifecycle_result_status(result)
+      return nil unless result.is_a?(Hash)
+
+      result.dig("verify_loop", "status") ||
+        result.dig("deploy", "status") ||
+        result.dig("workbench", "serve", "status") ||
+        result.dig("workbench", "status") ||
+        result.dig("setup", "status") ||
+        result.dig("agent_run", "status")
+    end
+
+    def run_lifecycle_status(run_id: nil)
+      active = read_active_run_lock
+      active_live = active_run_live?(active)
+      selected = resolve_run_lifecycle_target(run_id) if run_id && !run_id.to_s.strip.empty?
+      {
+        "status" => active_live ? "running" : "idle",
+        "active_lock_path" => ACTIVE_RUN_LOCK_PATH,
+        "active_run" => active,
+        "active_run_live" => active_live,
+        "selected_run" => selected,
+        "recent_runs" => recent_run_lifecycle_entries(10),
+        "blocking_issues" => []
+      }
+    end
+
+    def resolve_run_lifecycle_target(run_id)
+      selector = run_id.to_s.strip
+      selector = "active" if selector.empty?
+      if selector == "active"
+        active = read_active_run_lock
+        return active if active
+
+        return nil
+      end
+
+      selector = latest_run_id if selector == "latest"
+      return nil if selector.to_s.empty?
+
+      safe_run_id = validate_run_id!(selector)
+      run_lifecycle_record("run_id" => safe_run_id)
+    end
+
+    def latest_run_id
+      Dir.glob(File.join(runs_dir, "*")).select { |path| File.directory?(path) }.map { |path| File.basename(path) }.sort.last
+    end
+
+    def recent_run_lifecycle_entries(limit)
+      Dir.glob(File.join(runs_dir, "*")).select { |path| File.directory?(path) }.sort.last(limit).reverse.map do |dir|
+        run_lifecycle_record("run_id" => File.basename(dir))
+      end.compact
+    end
+
+    def run_lifecycle_record(target)
+      run_id = validate_run_id!(target.fetch("run_id"))
+      lifecycle = read_json_file(run_lifecycle_path(run_id)) || {}
+      metadata_path = run_main_metadata_path(run_id)
+      metadata = metadata_path ? (read_json_file(metadata_path) || {}) : {}
+      lifecycle.merge(
+        "run_id" => run_id,
+        "kind" => lifecycle["kind"] || run_kind_from_id(run_id, metadata),
+        "status" => lifecycle["status"] || metadata["status"] || "unknown",
+        "run_dir" => lifecycle["run_dir"] || relative(run_lifecycle_run_dir(run_id)),
+        "metadata_path" => lifecycle["metadata_path"] || metadata["metadata_path"] || (metadata_path ? relative(metadata_path) : nil),
+        "pid" => lifecycle["pid"] || metadata["pid"],
+        "blocking_issues" => lifecycle["blocking_issues"] || metadata["blocking_issues"] || []
+      )
+    rescue UserError
+      nil
+    end
+
+    def run_main_metadata(run_id)
+      path = run_main_metadata_path(run_id)
+      path ? read_json_file(path) : nil
+    end
+
+    def run_main_metadata_path(run_id)
+      dir = run_lifecycle_run_dir(run_id)
+      RUN_METADATA_FILENAMES.map { |name| File.join(dir, name) }.find { |path| File.file?(path) } ||
+        Dir.glob(File.join(dir, "*.json")).reject { |path| [RUN_LIFECYCLE_FILE, RUN_CANCEL_REQUEST_FILE, RUN_RESUME_PLAN_FILE].include?(File.basename(path)) }.sort.first
+    rescue UserError
+      nil
+    end
+
+    def run_kind_from_id(run_id, metadata)
+      return "verify-loop" if run_id.start_with?("verify-loop-")
+      return "deploy" if run_id.start_with?("deploy-")
+      return "workbench-serve" if run_id.start_with?("workbench-serve-")
+      return "setup" if run_id.start_with?("setup-")
+      return "agent-run" if run_id.start_with?("agent-run-")
+      return "preview" if run_id.start_with?("preview-")
+
+      metadata["kind"] || metadata["command"]&.first || "unknown"
+    end
+
+    def run_cancel_request_metadata(target, request_path, dry_run:, force:, blocking_issues:)
+      {
+        "schema_version" => 1,
+        "run_id" => target && target["run_id"],
+        "kind" => target && target["kind"],
+        "status" => blocking_issues.empty? ? (dry_run ? "planned" : "cancel_requested") : "blocked",
+        "requested_at" => now,
+        "requested_by_pid" => Process.pid,
+        "dry_run" => dry_run,
+        "force" => force,
+        "request_path" => request_path ? relative(request_path) : nil,
+        "blocking_issues" => blocking_issues
+      }
+    end
+
+    def run_cancel_requested?(run_id)
+      File.file?(run_cancel_request_path(run_id))
+    rescue UserError
+      false
+    end
+
+    def run_resume_plan(target, metadata)
+      kind = target["kind"].to_s
+      command = case kind
+                when "verify-loop"
+                  ["aiweb", "verify-loop", "--max-cycles", metadata.fetch("max_cycles", 3).to_s, "--approved"]
+                when "deploy"
+                  target_name = metadata["target"].to_s
+                  target_name.empty? ? nil : ["aiweb", "deploy", "--target", target_name, "--approved"]
+                when "workbench-serve"
+                  command = ["aiweb", "workbench", "--serve", "--approved"]
+                  command += ["--host", metadata["host"].to_s] unless metadata["host"].to_s.empty?
+                  command += ["--port", metadata["port"].to_s] unless metadata["port"].to_s.empty?
+                  command
+                when "setup"
+                  ["aiweb", "setup", "--install", "--approved"]
+                when "agent-run"
+                  ["aiweb", "agent-run", "--task", "latest", "--agent", metadata["agent"].to_s.empty? ? "codex" : metadata["agent"].to_s, "--approved"]
+                end
+      return nil unless command
+
+      {
+        "schema_version" => 1,
+        "status" => "planned",
+        "run_id" => target.fetch("run_id"),
+        "kind" => kind,
+        "created_at" => now,
+        "source_metadata_path" => target["metadata_path"],
+        "command" => command,
+        "next_command" => command.shelljoin,
+        "executes_process" => false,
+        "writes_only_descriptor" => true,
+        "guardrails" => ["resume records a descriptor only", "no provider CLI or agent process is launched by run-resume", "no .env/.env.* access"]
+      }
     end
 
     def ensure_defaults!(state)
@@ -8058,10 +8560,17 @@ module Aiweb
       payload
     end
 
+    def verify_loop_cancel_blocker(run_id)
+      return nil unless run_cancel_requested?(run_id)
+
+      "verify-loop cancellation requested for #{run_id}"
+    end
+
     def verify_loop_action_taken(status)
       case status
       when "passed" then "verify loop passed"
       when "max_cycles" then "verify loop reached max cycles"
+      when "cancelled" then "verify loop cancelled"
       when "agent_run_failed" then "verify loop stopped after agent-run failure"
       else "verify loop blocked"
       end
@@ -8075,6 +8584,8 @@ module Aiweb
         "inspect #{metadata["metadata_path"]}, review latest blocker, then rerun with a higher --max-cycles only after reviewing the generated task/diff evidence"
       when "agent_run_failed"
         "inspect the cycle agent-run logs in #{metadata["run_dir"]}, then repair the task packet or source allowlist"
+      when "cancelled"
+        "inspect #{metadata["metadata_path"]}, then record a resume descriptor with aiweb run-resume --run-id #{metadata["run_id"]} if you want to continue"
       else
         "resolve #{metadata["latest_blocker"] || "verify-loop blockers"}, then rerun aiweb verify-loop --max-cycles #{metadata["max_cycles"]} --approved"
       end

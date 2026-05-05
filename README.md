@@ -29,6 +29,7 @@ Today the CLI manages the project director workspace: `.ai-web` state, phase gat
 - Expose the PR19/PR27/PR28 GitHub sync and deploy surfaces through `aiweb github-sync`, `aiweb deploy-plan`, and `aiweb deploy --target cloudflare-pages|vercel --dry-run|--approved` / matching `웹빌더` commands: dry-runs remain no-write/no-process local planning, while approved deploy adapters require passing approved verify-loop evidence whose deploy provenance still matches the current git/source/package/output/tool-version snapshot plus provider readiness before any provider CLI can run; they never run `git push`, install/build/preview, or read `.env` / `.env.*`.
 - Expose the PR20 approved dependency setup surface through `aiweb setup --install --approved` / `웹빌더 setup --install --approved`: `--dry-run` writes nothing and reports the planned install/log paths; a real install requires `--approved`, records stdout/stderr/setup metadata under `.ai-web/runs/setup-<timestamp>/`, warns about package lifecycle scripts, updates only safe setup state, and never builds, previews, runs QA, repairs, deploys, calls provider CLIs, or reads/prints `.env` / `.env.*`.
 - Expose the local backend bridge through `aiweb daemon` / `aiweb backend`: it binds only to localhost-class hosts by default, allows only local browser origins, requires `X-Aiweb-Token` for every `/api/*` request, exposes JSON endpoints for the future web Workbench, invokes this repository's `bin/aiweb` by absolute path instead of shell interpolation, keeps approved Codex/setup execution behind `X-Aiweb-Approval-Token`, and blocks raw shell, frontend-supplied backend flags, missing project paths, unsafe deploy, and `.env` / `.env.*` paths.
+- Expose the PR29 local run lifecycle control plane through `aiweb run-status`, `aiweb run-cancel`, and `aiweb run-resume` / matching `웹빌더` commands: active runs are locked through `.ai-web/runs/active-run.json`, per-run `lifecycle.json` evidence records status transitions, cancellation writes `cancel-request.json` and is observed at lifecycle checkpoints, and resume records `resume-plan.json` descriptors without launching provider, agent, build, preview, or network commands.
 
 ## Upgrade direction
 
@@ -47,6 +48,7 @@ The intended product direction is a design-first, natural-language webbuilder: t
 11. Review local-only GitHub sync and Cloudflare Pages/Vercel deploy dry-run plans; approved deploy adapters require passing verify-loop evidence with matching current workspace/output provenance and provider readiness before any external release work.
 12. Run `setup --install --dry-run` to inspect the planned dependency install, then `setup --install --approved` only when you explicitly approve local package installation.
 13. Repair implementation manually or through later approved automation, then deploy later once gates pass and evidence is recorded.
+14. Use `run-status`, `run-cancel`, and `run-resume` to inspect, request cancellation, or record a safe resume descriptor for long local runs.
 
 The current Director CLI is the foundation for that loop: state, gates, QA contracts, snapshots, local preview evidence, bounded repair-loop records, visual polish records/tasks/snapshots, component maps, targeted visual edit handoff records, local-only Profile S Supabase scaffold/secret-QA records, verify-loop evidence, and gated deploy-adapter boundaries are in place before the system grows into richer end-to-end generation and source repair automation. It is not yet a full app generator.
 
@@ -193,6 +195,21 @@ PR16 adds the local Workbench UI foundation as a static artifact export:
 
 `workbench --dry-run` is a no-write planning path: it reports `workbench.status: planned`, the panel list, declarative control descriptors, and planned `.ai-web/workbench/index.html` / `.ai-web/workbench/workbench.json` paths without creating files or changing `.ai-web/state.yaml`. A real `workbench --export` may write only the Workbench HTML and JSON manifest under `.ai-web/workbench/`; it summarizes existing Director artifacts for panels such as chat/control, plan/artifacts, design candidates, selected `DESIGN.md`, preview, file tree, QA results, visual critique, run timeline, and verify-loop status. Workbench controls are descriptors for existing CLI/daemon commands (`aiweb run`, `aiweb design`, `aiweb build`, `aiweb preview`, `aiweb qa-playwright`, `aiweb visual-critique`, `aiweb repair`, `aiweb visual-polish`, `aiweb verify-loop --max-cycles 3`, `aiweb component-map`, `aiweb visual-edit --target DATA_AIWEB_ID --prompt TEXT`) and do not directly write state. Export executes no controls, launches no preview/browser/QA/daemon, installs no packages, calls no network/AI services, and writes no files outside `.ai-web/workbench/index.html` and `.ai-web/workbench/workbench.json`. `workbench --serve --dry-run` plans host/port plus `.ai-web/runs/workbench-serve-*` evidence paths without writes or process execution. `workbench --serve --approved` writes the same Workbench artifacts, starts a localhost/127.0.0.1-only static server, and records `workbench-serve.json` metadata under `.ai-web/runs/workbench-serve-*`; it still executes no Workbench controls and does not mutate `.ai-web/state.yaml`. The file tree and summaries intentionally exclude `.env`, `.env.*`, `.git`, `node_modules`, and bulky generated directories so local secrets are not surfaced.
 
+PR29 adds a local run lifecycle control plane:
+
+```bash
+./bin/aiweb --path ~/Desktop/aiweb-premium-service-site run-status --json
+./bin/aiweb --path ~/Desktop/aiweb-premium-service-site run-cancel --run-id active --dry-run --json
+./bin/aiweb --path ~/Desktop/aiweb-premium-service-site run-cancel --run-id active --json
+./bin/aiweb --path ~/Desktop/aiweb-premium-service-site run-resume --run-id latest --dry-run --json
+./bin/aiweb --path ~/Desktop/aiweb-premium-service-site run-resume --run-id latest --json
+웹빌더 --path ~/Desktop/aiweb-premium-service-site run-status
+웹빌더 --path ~/Desktop/aiweb-premium-service-site run-cancel --run-id active --dry-run
+웹빌더 --path ~/Desktop/aiweb-premium-service-site run-resume --run-id latest --dry-run
+```
+
+`run-status` is read-only and reports `.ai-web/runs/active-run.json` plus recent per-run lifecycle summaries. Real long-running commands such as `verify-loop`, approved deploy adapters, and `workbench --serve --approved` create an active-run lock before local execution so another real run cannot silently overlap it. `run-cancel --dry-run` plans the cancel request without writes; a real `run-cancel` writes `.ai-web/runs/<run-id>/cancel-request.json` and updates `<run-id>/lifecycle.json`. `verify-loop` observes cancellation between lifecycle checkpoints and records `status: cancelled`; `workbench --serve` cancellation also sends a local TERM to the recorded localhost server pid. `run-resume` records only `.ai-web/runs/<run-id>/resume-plan.json` with the suggested next command; it does not launch agents, builds, provider CLIs, deploys, or network calls.
+
 PR18 adds the local-only Profile S Supabase scaffold and secret QA surface:
 
 ```bash
@@ -283,6 +300,9 @@ Phase-sensitive commands are guarded by the Director state machine:
 ./bin/aiweb visual-polish --repair --from-critique latest --dry-run
 ./bin/aiweb agent-run --task latest --agent codex --dry-run
 ./bin/aiweb verify-loop --max-cycles 3 --dry-run
+./bin/aiweb run-status --json
+./bin/aiweb run-cancel --run-id active --dry-run
+./bin/aiweb run-resume --run-id latest --dry-run
 ./bin/aiweb workbench --dry-run
 ./bin/aiweb workbench --serve --dry-run
 ./bin/aiweb component-map --dry-run

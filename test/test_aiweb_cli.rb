@@ -3715,6 +3715,9 @@ class AiwebCliTest < Minitest::Test
     assert_equal "", stderr
     assert_includes stdout, "verify-loop --max-cycles 3"
     assert_includes stdout, "--max-cycles is capped at 10"
+    assert_includes stdout, "run-status"
+    assert_includes stdout, "run-cancel"
+    assert_includes stdout, "run-resume"
     assert_match(/verify-loop: runs the local build -> preview -> QA -> critique -> task -> agent-run loop/i, stdout)
 
     help_stdout, help_stderr, help_code = run_webbuilder("--help")
@@ -3744,6 +3747,133 @@ class AiwebCliTest < Minitest::Test
     end
   end
 
+  def test_run_status_is_read_only_when_no_active_run
+    in_tmp do
+      prepare_profile_d_scaffold_flow
+      before_entries = project_entries
+      before_state = File.read(".ai-web/state.yaml")
+
+      stdout, stderr, code = run_aiweb("run-status", "--json")
+      payload = JSON.parse(stdout)
+
+      assert_equal 0, code
+      assert_equal "", stderr
+      lifecycle = payload.fetch("run_lifecycle")
+      assert_equal "idle", lifecycle.fetch("status")
+      assert_nil lifecycle.fetch("active_run")
+      assert_equal [], payload.fetch("changed_files")
+      assert_equal before_entries, project_entries, "run-status must not write lifecycle artifacts"
+      assert_equal before_state, File.read(".ai-web/state.yaml"), "run-status must not mutate state"
+    end
+  end
+
+  def test_run_cancel_and_resume_record_local_lifecycle_descriptors_without_process_execution
+    in_tmp do |dir|
+      prepare_profile_d_scaffold_flow
+      run_id = "verify-loop-20260506T000000Z"
+      run_dir = File.join(".ai-web", "runs", run_id)
+      FileUtils.mkdir_p(run_dir)
+      verify_metadata_path = File.join(run_dir, "verify-loop.json")
+      File.write(
+        verify_metadata_path,
+        JSON.pretty_generate(
+          "schema_version" => 1,
+          "run_id" => run_id,
+          "status" => "cancelled",
+          "approved" => true,
+          "dry_run" => false,
+          "max_cycles" => 3,
+          "cycle_count" => 1,
+          "metadata_path" => verify_metadata_path,
+          "blocking_issues" => ["verify-loop cancellation requested"]
+        ) + "\n"
+      )
+      active_lock = {
+        "schema_version" => 1,
+        "run_id" => run_id,
+        "kind" => "verify-loop",
+        "status" => "running",
+        "pid" => Process.pid,
+        "started_at" => Time.now.utc.iso8601,
+        "run_dir" => run_dir,
+        "metadata_path" => verify_metadata_path,
+        "command" => ["aiweb", "verify-loop", "--max-cycles", "3", "--approved"]
+      }
+      File.write(File.join(".ai-web", "runs", "active-run.json"), JSON.pretty_generate(active_lock) + "\n")
+      marker = File.join(dir, "unexpected-process")
+      bin_dir = File.join(dir, "fake-run-lifecycle-bin")
+      FileUtils.mkdir_p(bin_dir)
+      write_fake_executable(bin_dir, "codex", "touch #{marker.shellescape}; exit 99")
+      env = { "PATH" => [bin_dir, "/usr/bin", "/bin", "/usr/sbin", "/sbin"].join(File::PATH_SEPARATOR) }
+
+      cancel_stdout, cancel_stderr, cancel_code = run_aiweb_env(env, "run-cancel", "--run-id", "active", "--json")
+      cancel_payload = JSON.parse(cancel_stdout)
+
+      assert_equal 0, cancel_code
+      assert_equal "", cancel_stderr
+      assert_equal "cancel_requested", cancel_payload.dig("run_lifecycle", "status")
+      cancel_path = File.join(run_dir, "cancel-request.json")
+      lifecycle_path = File.join(run_dir, "lifecycle.json")
+      assert File.file?(cancel_path)
+      assert File.file?(lifecycle_path)
+      assert_equal "cancel_requested", JSON.parse(File.read(File.join(".ai-web", "runs", "active-run.json"))).fetch("status")
+      refute File.exist?(marker), "run-cancel must not launch local agent/provider commands"
+
+      dry_stdout, dry_stderr, dry_code = run_aiweb_env(env, "run-resume", "--run-id", run_id, "--dry-run", "--json")
+      dry_payload = JSON.parse(dry_stdout)
+      assert_equal 0, dry_code
+      assert_equal "", dry_stderr
+      assert_equal "resume_planned", dry_payload.dig("run_lifecycle", "status")
+      assert_equal ["aiweb", "verify-loop", "--max-cycles", "3", "--approved"], dry_payload.dig("run_lifecycle", "resume_plan", "command")
+      refute File.exist?(File.join(run_dir, "resume-plan.json")), "run-resume --dry-run must not write"
+
+      resume_stdout, resume_stderr, resume_code = run_aiweb_env(env, "run-resume", "--run-id", run_id, "--json")
+      resume_payload = JSON.parse(resume_stdout)
+      assert_equal 0, resume_code
+      assert_equal "", resume_stderr
+      assert_equal "resume_planned", resume_payload.dig("run_lifecycle", "status")
+      assert File.file?(File.join(run_dir, "resume-plan.json"))
+      assert_includes resume_payload.dig("run_lifecycle", "resume_plan", "next_command"), "aiweb verify-loop --max-cycles 3 --approved"
+      refute File.exist?(marker), "run-resume records a descriptor only"
+    end
+  end
+
+  def test_active_run_lock_blocks_real_verify_loop_without_running_tools
+    in_tmp do |dir|
+      prepare_profile_d_scaffold_flow
+      bin_dir = write_fake_verify_loop_tooling(dir)
+      marker = File.join(dir, "verify-loop-tool-was-run")
+      write_fake_executable(bin_dir, "pnpm", "touch #{marker.shellescape}; exit 99")
+      active_lock = {
+        "schema_version" => 1,
+        "run_id" => "verify-loop-active",
+        "kind" => "verify-loop",
+        "status" => "running",
+        "pid" => Process.pid,
+        "started_at" => Time.now.utc.iso8601,
+        "run_dir" => ".ai-web/runs/verify-loop-active",
+        "metadata_path" => ".ai-web/runs/verify-loop-active/verify-loop.json"
+      }
+      FileUtils.mkdir_p(File.join(".ai-web", "runs"))
+      File.write(File.join(".ai-web", "runs", "active-run.json"), JSON.pretty_generate(active_lock) + "\n")
+      before_entries = project_entries
+      before_state = File.read(".ai-web/state.yaml")
+
+      stdout, stderr, code = run_aiweb_env(
+        { "PATH" => [bin_dir, "/usr/bin", "/bin", "/usr/sbin", "/sbin"].join(File::PATH_SEPARATOR) },
+        "verify-loop", "--max-cycles", "1", "--approved", "--json"
+      )
+      payload = JSON.parse(stdout)
+
+      assert_equal 1, code
+      assert_equal "", stderr
+      assert_match(/active run exists/i, payload.dig("error", "message"))
+      assert_equal before_entries, project_entries, "active-run lock blocker must not write new verify-loop artifacts"
+      assert_equal before_state, File.read(".ai-web/state.yaml"), "active-run lock blocker must not mutate state"
+      refute File.exist?(marker), "active-run lock blocker must not execute verify-loop tools"
+    end
+  end
+
   def test_verify_loop_fake_success_records_cycle_evidence_and_safe_state
     in_tmp do |dir|
       prepare_profile_d_scaffold_flow
@@ -3763,6 +3893,10 @@ class AiwebCliTest < Minitest::Test
       assert_equal "passed", loop["status"]
       assert_equal 1, loop["cycle_count"]
       assert_equal "verify loop passed", payload["action_taken"]
+      lifecycle_path = File.join(loop.fetch("run_dir"), "lifecycle.json")
+      assert File.file?(lifecycle_path), "verify-loop should record lifecycle evidence"
+      assert_equal "passed", JSON.parse(File.read(lifecycle_path)).fetch("status")
+      refute File.exist?(File.join(".ai-web", "runs", "active-run.json")), "verify-loop should clear active-run lock after completion"
       provenance = loop.fetch("provenance")
       assert_equal 1, provenance.fetch("schema_version")
       assert_equal "dist", provenance.dig("output", "directory")
