@@ -849,3 +849,246 @@ type CodexAgentRunInput = {
 2. `github-sync --dry-run`, `deploy-plan`, `deploy --dry-run` 제안.
 3. QA/gate/security blocker와 함께 ReleaseReadinessChecklist 표시.
 4. 실제 deploy는 disabled이며 CLI 명시 실행 안내만 제공.
+
+---
+
+# 부록 B. Claude Design / Frontend Implementation Handoff Pack
+
+이 부록은 Claude Design 투입과 실제 프론트엔드 구현 단계에서 기능 누락, UI 혼선, API 연결 혼선을 막기 위한 보조 산출물이다.
+
+## B0. 문서 위치 판단 및 작성 방식
+
+| 항목 | 판단 |
+|---|---|
+| source of truth | 이 문서 전체, 특히 1~10장과 부록 A |
+| 기존 문서 구조 확인 결과 | `docs/frontend-design-plan.md`가 유일한 프론트엔드 계획 문서이며, `docs/templates/`는 aiweb 생성 템플릿이다. `.ai-web/*`는 현재 프로젝트 계약/상태 문서다. |
+| 유사 문서 여부 | 기능 매핑, 컴포넌트, 상태/API, 플로우가 이미 이 문서에 존재한다. |
+| 새 문서 생성 여부 | 새 파일 생성 대신 기존 `docs/frontend-design-plan.md`에 부록으로 보강한다. 이유: source of truth 분산과 내용 불일치 위험을 줄이기 위함. |
+| 권장 위치/파일명 | 보강 위치: `docs/frontend-design-plan.md`의 `부록 B. Claude Design / Frontend Implementation Handoff Pack`. |
+| 새로 정하지 않는 것 | 제품 방향, 페이지 수, 톤앤매너, 기능 범위, API 범위, 신규 백엔드 기능. |
+| 확인 필요로 남길 것 | 플랜에 권장/후보로만 적힌 프레임워크 확정, token 저장 정책, Claude Design 산출 포맷, 미구현 backend endpoint 도입 여부. |
+
+## B1. 필요한 보조 산출물 식별표
+
+| 산출물 | 목적 | 포함해야 할 내용 | 기준이 되는 기존 플랜 위치 | 새 문서/보강 판단 | 권장 위치/파일명 |
+|---|---|---|---|---|---|
+| Claude Design 투입용 디자인 브리프 | Claude Design이 제품 방향을 새로 만들지 않고 화면을 설계하게 함 | 제품 컨셉, 3개 route, 3-pane workspace, 금지사항, 확인 필요 항목 | 2장, 3장, 4장, 4.10, 4.11 | 기존 플랜 보강 | 이 문서 B2 |
+| 기능별 UI 매핑표 | 백엔드 command 누락 방지 | 기능군, 사용자 목적, UI 진입, component, API, 결과/오류 | 1.2, 5장 | 기존 표 유지 + 구현용 요약 보강 | 이 문서 B3, 전체 기준은 5장 |
+| 카드/버튼/CTA 매핑표 | 버튼 이름/위험도/확인 모달 혼선 방지 | 카드명, CTA, command, dry-run, approval, 결과 panel | 4.4~4.8, 5장 | 보강 필요 | 이 문서 B4 |
+| 사용자 요청별 플로우 | 자연어 요청이 어떤 action sequence로 가야 하는지 고정 | 요청 예시, 의도, 질문/폼, command 순서, 결과, follow-up | 부록 A, 2.2, 4.2 | 보강 필요 | 이 문서 B5 |
+| 화면별 구조 명세 | Claude Design의 레이아웃 흔들림 방지 | route, 영역, 핵심 카드, 금지/확인 필요 | 3장, 4.1, 4.11 | 보강 필요 | 이 문서 B6 |
+| 컴포넌트 설계 | 구현자가 UI 단위를 임의로 쪼개지 않게 함 | component, 책임, 상태, 연결 API | 6장 | 기존 표 유지 + 구현 기준 보강 | 이 문서 B7, 전체 기준은 6장 |
+| API와 UI 연결표 | API 호출 혼선 방지 | daemon route, command, frontend owner, refresh target | 1.1, 7.2~7.5 | 보강 필요 | 이 문서 B8 |
+| 상태 규칙 | 로딩/에러/빈 상태/권한/확인 모달 일관성 확보 | 상태 유형, trigger, UI, CTA, 금지사항 | 4.6~4.9, 7.3~7.4, 9장 | 보강 필요 | 이 문서 B9 |
+| Claude Design 투입 전 체크리스트 | 디자인 작업 전 source-of-truth 준수 확인 | 금지사항, 필수 화면, 필수 state, 미확정 표시 | 전 문서 | 보강 필요 | 이 문서 B10 |
+
+## B2. Claude Design 투입용 디자인 브리프
+
+> 이 섹션은 Claude Design에 가장 먼저 전달한다. 아래 내용 밖의 기능/페이지/톤앤매너를 추가하지 않는다.
+
+| 항목 | 브리프 |
+|---|---|
+| 제품명/작업명 | AI Web Director Workbench |
+| 핵심 경험 | 사용자가 자연어로 요청하면 에이전트가 현재 프로젝트 상태를 읽고, 가능한 작업을 ActionCard로 제안하고, 필요한 입력은 DynamicForm/Modal로 받고, backend command 실행 결과를 Result/Evidence panel에 구조화해 보여준다. |
+| 제품 유형 | 로컬-first 대화형 에이전트 웹앱. 단순 CRUD 관리자 페이지가 아니다. |
+| 페이지 수 | 최소 3개 route: `/`, `/workspace`, `/settings`. 추가 페이지는 만들지 않고 tab/drawer/modal/card로 흡수한다. |
+| 메인 화면 구조 | `/workspace`는 desktop 기준 3-pane: Left Chat, Center Action/Form, Right Evidence/Preview/Logs. |
+| 필수 UX 흐름 | Chat → Action proposal → Dynamic form if needed → Dry-run/confirmation → API command → Structured result → Follow-up actions. |
+| 주요 기능군 | Project setup/status, Design engine, Scaffold/setup/build/preview, QA/repair, Visual critique/polish/edit, Agent-run, Release dry-run planning, Settings/safety. |
+| 안전 원칙 | raw shell 입력 금지, `.env`/secret 노출 금지, backend-controlled flags 직접 입력 금지, `setup`/`agent-run` 승인 필요, `deploy`는 dry-run only. |
+| 결과 표현 | 텍스트만 표시하지 않고 카드, 표, 로그 탭, 후보 gallery, screenshot gallery, score panel, component tree, run timeline로 표현한다. |
+| 반응형 | Desktop 3-pane, Tablet 2-pane + drawer, Mobile single column + bottom sheet. |
+| 접근성 | keyboard-first, focus trap, aria-live, 색상 외 텍스트 label, WCAG AA 대비. |
+| 톤앤매너 | 확인 필요. 기존 플랜은 제품 구조/상태/안전 UX를 확정했지만 상세 색상/타이포/브랜드 감성은 확정하지 않았다. Claude Design은 임의 브랜드 방향을 만들지 말고 기능 중심 wireframe/interaction 우선으로 설계한다. |
+| 프론트 기술 스택 | 확인 필요. 기존 플랜은 `apps/workbench/`의 React/Vite SPA를 권장하지만 최종 확정으로 표현하지 않는다. |
+| Claude Design 금지사항 | 새로운 route 추가, 새로운 backend 기능 가정, real deploy UI 활성화, 채팅만 있고 evidence panel 없는 화면, API별 버튼 나열형 관리자 UI, secret/token 값 노출. |
+
+## B3. 기능별 UI 매핑 구현 요약
+
+전체 기능별 매핑의 원본은 5장이다. 구현 단계에서는 아래 기능군 단위로 화면 누락을 점검한다.
+
+| 기능군 | 포함 backend 기능 | 사용자 목적 | 주 진입 UI | 결과 UI | 확인 필요/주의 |
+|---|---|---|---|---|---|
+| 연결/엔진 | `/health`, `/api/engine`, `help`, `version`, `daemon`, `backend` | daemon 연결과 엔진 기능 확인 | `/`, Settings, TopBar status | 연결 badge, EngineInfoDrawer, ConnectionGuide | 브라우저에서 daemon 실제 start는 비노출. CLI 안내만. |
+| 프로젝트 상태 | `status`, `/api/project/status`, `workbench`, `/api/project/workbench`, `runs`, `/api/project/runs`, `runtime-plan`, `scaffold-status` | 현재 phase/blocker/next action 파악 | Workspace load, Status tab | PhaseStepper, BlockerList, RuntimeReadinessPanel, RunTimeline | workbench 상세 파일 본문 read는 backend 추가 필요. |
+| 온보딩/요구 파악 | `start`, `init`, `intent route`, `interview`, `run`, `next-task` | 자연어 idea를 프로젝트/작업으로 전환 | Home chat, ChatComposer, NextActionCard | created artifacts, task packet, next_action | `intent route`는 full chat brain이 아니라 routing helper. |
+| 디자인 엔진 | `design-brief`, `design-research`, `design-system resolve`, `design-prompt`, `design`, `select-design`, `ingest-design`, `design-systems list`, `skills list`, `craft list` | 디자인 brief부터 후보 선택까지 진행 | DesignEnginePanel, CandidateGallery, RegistryPicker | brief preview, research rows, DESIGN preview, prompt, candidate cards, selected gate | 색상/타이포 상세는 확인 필요. 기능 추가 금지. |
+| scaffold/build/preview | `scaffold`, `setup --install`, `build`, `preview`, `preview --stop`, `supabase-secret-qa` | 선택된 디자인을 실제 앱 skeleton/빌드/미리보기로 전환 | Build/Preview tab | FileChangeList, Install logs, Build logs, PreviewFrame, SecretQACard | `setup`은 approval required. profile S는 Supabase 전용 주의. |
+| QA/repair | `qa-playwright`, `browser-qa`, `qa-screenshot`, `screenshot-qa`, `qa-a11y`, `a11y-qa`, `qa-lighthouse`, `lighthouse-qa`, `qa-checklist`, `qa-report`, `repair` | 기능/시각/접근성/성능 검사와 실패 수정 task 생성 | QA tab, failed result card | QADashboard, ScreenshotGallery, AccessibilityReport, LighthouseReport, RepairActionCard | tool unavailable/preview missing state 필요. |
+| Visual edit | `visual-critique`, `visual-polish --repair`, `component-map`, `visual-edit` | screenshot/component 기반 시각 개선 task 생성 | Visual tab, ComponentMapPanel, VisualEditDrawer | ScoreCards, IssueList, PatchPlan, ComponentTree, task record | 최신 screenshot/map 없으면 먼저 생성 제안. |
+| Agent execution | `/api/codex/agent-run`, `agent-run` | task packet을 Codex CLI bridge로 실행 | AgentRunPanel, task card | diff/changed files/logs/run metadata | approval required. forbidden path/env guard 표시. |
+| release planning | `github-sync`, `deploy-plan`, `deploy --dry-run` | Git/deploy 준비 상태와 계획 확인 | Release drawer | ReleaseReadinessChecklist, dry-run plan | real deploy disabled. 새 배포 기능 가정 금지. |
+| 복구/운영 | `snapshot`, `advance`, `rollback`, `resolve-blocker` | 상태 전진/복구/수동 blocker 처리 | GateCard, Recovery drawer, Blocker card | state update, snapshot/rollback record | 위험 작업. dry-run + confirmation 필요. |
+
+## B4. 카드/버튼/CTA 매핑표
+
+| UI 카드/영역 | Primary CTA | Secondary CTA | Backend 연결 | 위험도/확인 규칙 | 결과 표시 |
+|---|---|---|---|---|---|
+| Daemon connection card | 연결 테스트 | 설정 열기 | `GET /health`, `GET /api/engine` | token 필요 시 Settings 이동 | DaemonStatusBadge, guardrails |
+| Project status card | 상태 새로고침 | Runtime plan 보기 | `GET /api/project/status`, `runtime-plan` | read-only | PhaseStepper, BlockerList |
+| Start project card | dry-run으로 시작 계획 보기 | 질문부터 시작 | `start --dry-run`, `interview` | 실제 `start`는 확인 후 | changed_files, next_action |
+| Init card | 초기화 dry-run | 실제 초기화 | `init` | 파일 생성 가능. confirmation | `.ai-web` 생성 결과 |
+| Next action card | 다음 단계 실행 | task 생성 | `run`, `next-task` | command별 위험도 상속 | action_taken, next_action |
+| Design brief card | brief 생성 | force 옵션 | `design-brief` | safe write. dry-run 기본 | markdown preview |
+| Research card | research 실행/skip 기록 | provider/policy 설정 | `design-research` | 외부 token 상태 설명. 임의 token 요구 금지 | research rows/skip reason |
+| Design system card | design system resolve | registry 보기 | `design-system resolve`, `design-systems list` | safe write. force 확인 | DESIGN preview |
+| Design prompt card | prompt 생성 | raw prompt 보기 | `design-prompt` | safe write | prompt preview |
+| Candidate generator card | 후보 생성 | 후보 수 조정 | `design` | safe write. candidates N validation | CandidateGallery |
+| Candidate card | 이 후보 선택 | 비교 보기 | `select-design` | Gate 영향. confirmation | selected/gate artifact |
+| Ingest design card | 후보 등록 | selected로 등록 | `ingest-design` | fields validation, force 확인 | candidate registered |
+| Scaffold card | scaffold dry-run | 실제 scaffold | `scaffold` | file writes. Gate/blocker 확인 | FileChangeList, metadata |
+| Install deps card | 승인하고 설치 | dry-run 보기 | `setup --install` | approval token required | install logs |
+| Build card | 빌드 실행 | 로그 보기 | `build` | scaffold/package 필요 | Build status/log tabs |
+| Preview card | preview 시작 | preview 중지 | `preview`, `preview --stop` | local process. 상태 표시 | PreviewFrame, url/pid |
+| E2E QA card | Playwright QA 실행 | task id 설정 | `qa-playwright`/`browser-qa` | preview/url 필요 | QA result/logs |
+| Screenshot QA card | screenshot 캡처 | viewport 보기 | `qa-screenshot`/`screenshot-qa` | preview/url 필요 | ScreenshotGallery |
+| A11y QA card | 접근성 검사 | report 보기 | `qa-a11y`/`a11y-qa` | preview/url 필요 | AccessibilityReport |
+| Lighthouse QA card | Lighthouse 실행 | report 보기 | `qa-lighthouse`/`lighthouse-qa` | preview/url 필요 | LighthouseReport |
+| QA checklist card | checklist 생성 | report 기록 | `qa-checklist`, `qa-report` | safe write | ChecklistPanel, QA status |
+| Repair card | repair task dry-run | repair task 생성 | `repair` | max cycles/blocker 확인 | repair record, task path |
+| Visual critique card | 시각 평가 실행 | screenshot 먼저 생성 | `visual-critique`, `qa-screenshot` | evidence path validation | scores/issues/patch plan |
+| Visual polish card | polish task 생성 | max cycles 설정 | `visual-polish --repair` | critique 필요, max cycles | polish record, task path |
+| Component map card | component map 생성 | force scan | `component-map` | component source 필요 | ComponentTree |
+| Visual edit drawer | 수정 task 생성 | target 다시 선택 | `visual-edit` | target/prompt required | visual edit task |
+| Agent run panel | dry-run 실행 | 승인하고 실행 | `/api/codex/agent-run`, `agent-run` | approval token required for real run | diff, logs, changed files |
+| Snapshot card | snapshot 만들기 | 이유 입력 | `snapshot` | safe write | snapshot manifest |
+| Advance gate card | phase 전진 | blocker 보기 | `advance` | gate confirmation | phase update |
+| Rollback card | rollback dry-run | rollback 실행 | `rollback` | destructive-ish. strong confirmation | rollback record |
+| Resolve blocker card | blocker 해소 기록 | 이유 수정 | `resolve-blocker` | reason required | blocker update |
+| Release plan card | deploy plan 보기 | git sync dry-run | `deploy-plan`, `github-sync` | planning only | readiness checklist |
+| Deploy dry-run card | deploy dry-run | CLI 안내 보기 | `deploy --dry-run` | real deploy disabled | dry-run payload |
+
+## B5. 사용자 요청별 플로우
+
+| 사용자 요청 예시 | 의도 | 필요한 질문/폼 | 실행 순서 | 결과 UI | 후속 추천 |
+|---|---|---|---|---|---|
+| “새 앱 시작해줘” | 프로젝트 시작 | idea, profile, advance 여부 | `intent route` optional → `start --dry-run` → confirm → `start` | changed_files, status, next_action | `design-brief` 또는 `interview` |
+| “요구사항부터 정리하자” | 인터뷰/요구 파악 | idea | `interview` | AgentQuestion/requirements artifact | `design-brief` |
+| “현재 뭐가 막혔어?” | 상태/blocker 확인 | project path only | `status` → `runtime-plan` → `workbench` | PhaseStepper, BlockerList, missing files | blocker별 ActionCard |
+| “디자인 후보 만들어줘” | 디자인 엔진 실행 | candidates N, force 여부 | `design-brief` if missing → `design-system resolve` if missing → `design-prompt` → `design` | CandidateGallery, comparison | `select-design` |
+| “이 디자인으로 가자” | 후보 선택 | candidate id | `select-design --dry-run` → confirm → `select-design` | selected badge, gate artifact | `scaffold` |
+| “외부 디자인도 후보로 넣어줘” | 수동 후보 등록 | id/title/source/notes/selected | `ingest-design` | candidate card | compare/select |
+| “구현 뼈대 만들어줘” | scaffold | profile D/S, force | `runtime-plan` → `scaffold --dry-run` → confirm → `scaffold` | FileChangeList | `setup --install` |
+| “설치하고 빌드해줘” | dependencies/build | approval token for setup | `setup --install --dry-run` → approval → `setup --install` → `build` | install/build logs | `preview` |
+| “미리보기 띄워줘” | local preview | stop 여부 없음 | `preview` | PreviewFrame/url/pid | QA 실행 |
+| “전체 QA 해줘” | QA suite | url/task_id optional | `qa-playwright` → `qa-screenshot` → `qa-a11y` → `qa-lighthouse` → `qa-checklist` | QADashboard, evidence tabs | 실패 시 `repair` |
+| “오류 고쳐줘” | QA 기반 repair | from_qa latest/path, max_cycles | `repair --dry-run` → confirm → `repair` | repair task/snapshot | `agent-run` dry-run |
+| “화면 더 예쁘게 다듬어줘” | visual critique/polish | screenshot source, max_cycles | `qa-screenshot` if needed → `visual-critique` → `visual-polish --repair` | visual scores/issues/task | `agent-run` |
+| “이 버튼/컴포넌트 바꿔줘” | visual edit task | target, prompt, from_map | `component-map` if needed → `visual-edit` | component task card | `agent-run` |
+| “작업 실행해줘” | Codex bridge 실행 | task, approval | `/api/codex/agent-run` dry-run → approval → `/api/codex/agent-run` | diff/logs/changed files | build/QA |
+| “배포 준비됐나 봐줘” | release planning | target optional | `github-sync --dry-run` → `deploy-plan` → `deploy --dry-run` | ReleaseReadinessChecklist | blocker 해결 |
+| “되돌려줘” | recovery | to phase or failure, reason | `snapshot` recommended → `rollback --dry-run` → confirm → `rollback` | rollback record | status refresh |
+
+## B6. 화면별 구조 명세
+
+### `/` Home / Connect
+
+| 영역 | 포함 요소 | 연결 기능 | 상태 규칙 |
+|---|---|---|---|
+| Connection panel | daemon URL, API token 입력, 연결 테스트 | `/health`, `/api/engine` | daemon down/token fail/connected |
+| Project selector | project path 입력/최근 path chip | `/api/project/status` | path required, unsafe `.env` path 금지 |
+| Onboarding prompt | idea textarea, quick actions | `intent route`, `start`, `init`, `interview` | idea missing이면 질문 |
+| Safety summary | local-only, token, approval, deploy dry-run 설명 | engine guardrails | secret 값 표시 금지 |
+
+금지: Home에 전체 기능별 버튼을 나열하지 않는다. 연결/시작/상태 진입만 제공한다.
+
+### `/workspace` Main Agent Workspace
+
+| Pane/영역 | 포함 요소 | 연결 기능 | 디자인 주의 |
+|---|---|---|---|
+| TopBar | project chip, daemon status, phase/gate, dry-run toggle | health/status | 항상 현재 context 표시 |
+| Left Chat | ChatTranscript, ChatComposer, suggestions | `intent route`, planner | 자연어 중심. command 이름을 먼저 노출하지 않음 |
+| Center Action | ActionCard stack, DynamicForm, ToolCallPreview | `/api/project/command` | 위험도 badge와 dry-run 우선 |
+| Right Evidence | ResultPanel, PreviewFrame, Logs, Artifact/QA/Visual tabs | workbench/runs/command result | 결과는 구조화, raw logs는 보조 tab |
+| SideRail | Agent, Design, Build/Preview, QA/Repair, Visual Edit, Release, History | tab state | 새 route로 늘리지 않음 |
+
+### `/settings` Settings / Safety
+
+| 영역 | 포함 요소 | 연결 기능 | 상태 규칙 |
+|---|---|---|---|
+| Auth settings | API token, approval token one-time entry | headers only | 저장 정책 확인 필요. 기본은 session memory 권장. |
+| Engine info | routes, allowed commands, guardrails | `/api/engine` | read-only |
+| Registry browser | design-systems, skills, craft | registry list commands | 선택은 디자인/agent 보조. 새 기능 추가 금지 |
+| Preferences | dry-run default, theme if implemented | local UI state | theme/tone 확인 필요 |
+| Safety docs | `.env` block, real deploy disabled | daemon guardrails | secret raw value 금지 |
+
+## B7. 컴포넌트 구현 기준
+
+전체 컴포넌트 목록은 6장이다. 구현자는 아래 책임 경계를 지킨다.
+
+| 컴포넌트 그룹 | 반드시 포함 | API/상태 연결 | 금지/확인 필요 |
+|---|---|---|---|
+| Layout | `AppShell`, `TopBar`, `SideRail`, `WorkspaceLayout`, responsive bottom sheet | connection/project/ui state | route 추가 금지 |
+| Chat | `ChatComposer`, `ChatTranscript`, `AgentMessage`, `AgentQuestion`, `FollowUpActions` | chat/planner state, optional `intent route` | full LLM chat backend 있다고 가정 금지 |
+| Action execution | `ActionCard`, `DynamicForm`, `ToolCallPreview`, `ConfirmationModal`, `ApprovalTokenGate` | command payload, dry_run, approved, headers | raw shell 입력 금지 |
+| Evidence/result | `ResultPanel`, `RunTimeline`, `LogViewer`, `FileChangeList`, `ArtifactPreview`, `ErrorPanel` | command result, runs, workbench | safe artifact read endpoint 없음은 확인 필요로 표시 |
+| Design | `DesignEnginePanel`, `CandidateGallery`, `DesignSystemPanel`, `PromptPreview` | design commands, registry list | 새 design system/tone 임의 생성 금지 |
+| Build/Preview | `RuntimeReadinessPanel`, `ScaffoldForm`, `PreviewController`, `BuildCard` | runtime-plan, scaffold/setup/build/preview | setup approval 필수 |
+| QA/Visual | `QADashboard`, `ScreenshotGallery`, `VisualCritiquePanel`, `ComponentMapPanel`, `VisualEditDrawer` | qa/visual/component commands | screenshot/map 선행 상태 필요 |
+| Release/Safety | `ReleasePanel`, `SettingsPanel`, `SecretQACard`, `DaemonStatusBadge` | deploy dry-run, github-sync, engine/health | real deploy 활성화 금지 |
+
+## B8. API와 UI 연결표
+
+| Frontend owner | API/command | Request source | 성공 후 refresh | 실패 UI |
+|---|---|---|---|---|
+| ConnectionProvider | `GET /health` | app load, manual retry | engine if ok | daemon down guide |
+| EngineProvider | `GET /api/engine` | token connected | settings/allowed command cache | token/origin ErrorPanel |
+| ProjectProvider | `GET /api/project/status?path=` | project path set, command complete | workbench/runs if changed | init/start suggestion |
+| WorkbenchProvider | `GET /api/project/workbench?path=` | workspace load, command complete | panels/artifacts | fallback to status summary |
+| RunsProvider | `GET /api/project/runs?path=` | history tab, command complete | run timeline | unreadable row warning |
+| CommandRunner | `POST /api/project/command` | ActionCard submit | status/workbench/runs | command-specific ErrorPanel |
+| AgentRunner | `POST /api/codex/agent-run` | AgentRunPanel submit | status/workbench/runs/build suggestion | approval/forbidden path ErrorPanel |
+| IntentInterpreter | command `intent route` | chat submit optional | planner candidates | ask for clearer idea |
+| DesignEnginePanel | design commands | Design tab forms | workbench/status | blocker-specific action |
+| BuildPreviewPanel | scaffold/setup/build/preview | Build/Preview tab | status/runs/preview metadata | logs and next action |
+| QADashboard | qa/report/repair commands | QA tab/result cards | runs/workbench/open failures | repair suggestion |
+| VisualPanel | visual/component commands | Visual tab/drawer | workbench/visual summaries | screenshot/map prerequisite card |
+| ReleasePanel | github/deploy dry-run commands | Release drawer | runs/release checklist | disabled real deploy explanation |
+
+## B9. 상태 규칙
+
+| 상태 유형 | Trigger | UI 규칙 | CTA | 금지사항 |
+|---|---|---|---|---|
+| Loading | health/status/workbench/runs/command pending | skeleton 또는 spinner + 현재 command label + 최대 180초 안내 | 취소는 backend endpoint 없어 확인 필요 | 무한 spinner만 표시 금지 |
+| Empty project | `.ai-web` 없음 또는 status init 필요 | 시작 카드와 init/start/interview 제안 | `start --dry-run`, `init --dry-run` | 빈 dashboard만 표시 금지 |
+| Blocked | `blocking_issues` 존재 | BlockerList + 원인 + 해결 action | blocker별 command | blocker를 숨기고 다음 단계 실행 금지 |
+| Error | HTTP error/command failed | ErrorPanel: message, exit_code, blocking_issues, command summary | retry dry-run, settings, repair | stderr만 raw로 던지기 금지 |
+| Auth required | `/api/*` 403 token | Settings drawer로 이동 | token 입력/연결 테스트 | token 값을 결과/로그에 표시 금지 |
+| Approval required | approved run without approval token | ConfirmationModal + ApprovalTokenGate | 승인하고 실행, dry-run만 실행 | 무승인 `setup`/`agent-run` 금지 |
+| Confirmation required | scaffold/setup/agent-run/advance/rollback/select-design/real writes | command summary, changed/planned files, risk badge | dry-run, confirm, cancel | primary CTA를 위험하게 숨기기 금지 |
+| Dry-run result | `dry_run: true` command success | “계획/예상 변경” badge | 실제 실행, 수정, 취소 | 실제 완료처럼 표현 금지 |
+| Success | command passed | ResultCard + changed_files + next_action | next recommended action | 성공 후 status refresh 누락 금지 |
+| Partial/unavailable | adapter unavailable/tool missing | disabled card + 이유 + 대체 action | settings/check docs/retry | 없는 기능을 있는 것처럼 활성화 금지 |
+| Secret/path blocked | `.env`/secret pattern | security warning + safe explanation | 입력 수정 | path/value preview 금지 |
+| Real deploy blocked | non-dry-run deploy 시도 | deploy dry-run only 안내 | deploy-plan, CLI explicit 안내 | 웹에서 실제 deploy 버튼 활성화 금지 |
+
+## B10. Claude Design 투입 전 체크리스트
+
+| 체크 | 기준 | 상태 |
+|---|---|---|
+| source of truth 확인 | `docs/frontend-design-plan.md` 전체, 특히 1~10장과 부록 A/B | 필수 |
+| route 수 고정 | `/`, `/workspace`, `/settings`만 사용 | 필수 |
+| workspace 구조 고정 | Chat / Action / Evidence 3-pane, responsive 변형 포함 | 필수 |
+| API 기능 누락 방지 | 1.2 F01~F49와 5장 매핑 확인 | 필수 |
+| 디자인 엔진 노출 | brief/research/system/prompt/candidate/select/ingest/visual/component-map/edit 모두 포함 | 필수 |
+| 안전 UX 포함 | token, approval, dry-run, `.env` block, real deploy disabled | 필수 |
+| 상태 UX 포함 | loading/error/empty/blocked/auth/confirmation/success/partial | 필수 |
+| 결과 패널 포함 | cards/tables/logs/previews/screenshot/score/component tree/run timeline | 필수 |
+| 신규 기능 금지 | 플랜에 없는 backend/API/page 추가 금지 | 필수 |
+| 톤앤매너 | 상세 brand/color/type은 확인 필요로 표시 | 확인 필요 |
+| 프론트 스택 | React/Vite SPA 권장은 있으나 최종 확정 여부 확인 필요 | 확인 필요 |
+| token 저장 정책 | session memory 기본 권장이나 최종 정책 확인 필요 | 확인 필요 |
+| backend 추가 endpoint | streaming/job/safe artifact read/agent planner 도입 여부 확인 필요 | 확인 필요 |
+| Claude Design 산출 형식 | wireframe, high-fidelity mock, component spec 중 무엇을 받을지 확인 필요 | 확인 필요 |
+
+## B11. Claude Design에 우선 전달할 산출물 순서
+
+| 우선순위 | 전달 산출물 | 이유 |
+|---|---|---|
+| 1 | B2 Claude Design 투입용 디자인 브리프 | 제품 방향/금지사항/화면 구조를 가장 짧게 고정한다. |
+| 2 | B6 화면별 구조 명세 | `/`, `/workspace`, `/settings`의 화면 구조 흔들림을 막는다. |
+| 3 | B4 카드/버튼/CTA 매핑표 | Claude Design이 실제 실행 카드와 CTA를 시각화할 수 있다. |
+| 4 | B9 상태 규칙 | 로딩/오류/권한/확인 모달 누락을 막는다. |
+| 5 | B3 기능별 UI 매핑 구현 요약 + 5장 전체 표 | backend command 누락을 최종 점검한다. |
+| 6 | B8 API와 UI 연결표 | 구현자가 mock/API client를 바로 연결할 수 있다. |
+| 7 | B10 체크리스트 | Claude Design 투입 직전/결과 검토 시 gate로 사용한다. |
