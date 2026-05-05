@@ -184,11 +184,14 @@ PR16 adds the local Workbench UI foundation as a static artifact export:
 ```bash
 ./bin/aiweb --path ~/Desktop/aiweb-premium-service-site workbench --dry-run
 ./bin/aiweb --path ~/Desktop/aiweb-premium-service-site workbench --export --json
+./bin/aiweb --path ~/Desktop/aiweb-premium-service-site workbench --serve --dry-run
+./bin/aiweb --path ~/Desktop/aiweb-premium-service-site workbench --serve --approved
 웹빌더 --path ~/Desktop/aiweb-premium-service-site workbench --dry-run
 웹빌더 --path ~/Desktop/aiweb-premium-service-site workbench --export
+웹빌더 --path ~/Desktop/aiweb-premium-service-site workbench --serve --dry-run
 ```
 
-`workbench --dry-run` is a no-write planning path: it reports `workbench.status: planned`, the panel list, declarative control descriptors, and planned `.ai-web/workbench/index.html` / `.ai-web/workbench/workbench.json` paths without creating files or changing `.ai-web/state.yaml`. A real `workbench --export` may write only the Workbench HTML and JSON manifest under `.ai-web/workbench/`; it summarizes existing Director artifacts for panels such as chat, plan/artifacts, design candidates, selected `DESIGN.md`, preview, file tree, QA results, visual critique, and run timeline. Workbench controls are descriptors for existing CLI/daemon commands (`aiweb run`, `aiweb design`, `aiweb build`, `aiweb preview`, `aiweb qa-playwright`, `aiweb visual-critique`, `aiweb repair`, `aiweb visual-polish`, `aiweb component-map`, `aiweb visual-edit --target DATA_AIWEB_ID --prompt TEXT`) and do not directly write state. Export executes no controls, launches no preview/browser/QA/daemon, installs no packages, calls no network/AI services, and writes no files outside `.ai-web/workbench/index.html` and `.ai-web/workbench/workbench.json`. The file tree and summaries intentionally exclude `.env`, `.env.*`, `.git`, `node_modules`, and bulky generated directories so local secrets are not surfaced.
+`workbench --dry-run` is a no-write planning path: it reports `workbench.status: planned`, the panel list, declarative control descriptors, and planned `.ai-web/workbench/index.html` / `.ai-web/workbench/workbench.json` paths without creating files or changing `.ai-web/state.yaml`. A real `workbench --export` may write only the Workbench HTML and JSON manifest under `.ai-web/workbench/`; it summarizes existing Director artifacts for panels such as chat/control, plan/artifacts, design candidates, selected `DESIGN.md`, preview, file tree, QA results, visual critique, run timeline, and verify-loop status. Workbench controls are descriptors for existing CLI/daemon commands (`aiweb run`, `aiweb design`, `aiweb build`, `aiweb preview`, `aiweb qa-playwright`, `aiweb visual-critique`, `aiweb repair`, `aiweb visual-polish`, `aiweb verify-loop --max-cycles 3`, `aiweb component-map`, `aiweb visual-edit --target DATA_AIWEB_ID --prompt TEXT`) and do not directly write state. Export executes no controls, launches no preview/browser/QA/daemon, installs no packages, calls no network/AI services, and writes no files outside `.ai-web/workbench/index.html` and `.ai-web/workbench/workbench.json`. `workbench --serve --dry-run` plans host/port plus `.ai-web/runs/workbench-serve-*` evidence paths without writes or process execution. `workbench --serve --approved` writes the same Workbench artifacts, starts a localhost/127.0.0.1-only static server, and records `workbench-serve.json` metadata under `.ai-web/runs/workbench-serve-*`; it still executes no Workbench controls and does not mutate `.ai-web/state.yaml`. The file tree and summaries intentionally exclude `.env`, `.env.*`, `.git`, `node_modules`, and bulky generated directories so local secrets are not surfaced.
 
 PR18 adds the local-only Profile S Supabase scaffold and secret QA surface:
 
@@ -275,6 +278,7 @@ Phase-sensitive commands are guarded by the Director state machine:
 ./bin/aiweb agent-run --task latest --agent codex --dry-run
 ./bin/aiweb verify-loop --max-cycles 3 --dry-run
 ./bin/aiweb workbench --dry-run
+./bin/aiweb workbench --serve --dry-run
 ./bin/aiweb component-map --dry-run
 ./bin/aiweb visual-edit --target component.hero.copy --prompt "이 섹션 더 고급스럽게" --dry-run
 ./bin/aiweb agent-run --task latest --agent codex --approved

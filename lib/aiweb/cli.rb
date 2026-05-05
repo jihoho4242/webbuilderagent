@@ -293,6 +293,10 @@ module Aiweb
       when "workbench"
         opts = parse_options do |o, options|
           o.on("--export") { options[:export] = true }
+          o.on("--serve") { options[:serve] = true }
+          o.on("--approved") { options[:approved] = true }
+          o.on("--host HOST") { |v| options[:host] = v }
+          o.on("--port N") { |v| options[:port] = parse_positive_integer(v, "--port") }
           o.on("--force") { options[:force] = true }
         end
         unless @argv.empty?
@@ -302,7 +306,7 @@ module Aiweb
           return workbench_adapter_unavailable_payload(opts)
         end
 
-        project.workbench(export: opts[:export], force: opts[:force], dry_run: @dry_run)
+        project.workbench(export: opts[:export], serve: opts[:serve], approved: !!opts[:approved], host: opts[:host] || "127.0.0.1", port: opts[:port], force: opts[:force], dry_run: @dry_run)
       when "component-map"
         opts = parse_options do |o, options|
           o.on("--force") { options[:force] = true }
@@ -1107,7 +1111,9 @@ module Aiweb
           qa-lighthouse [--url URL] [--task-id ID] [--force]
           visual-critique [--screenshot PATH] [--metadata PATH] [--from-screenshots latest] [--task-id ID] [--force]
           visual-polish --repair [--from-critique PATH|latest] [--max-cycles N] [--force]
-          workbench [--export] [--force]
+          workbench [--export] [--serve] [--approved] [--host localhost|127.0.0.1] [--port N] [--force]
+          workbench --serve --dry-run
+          workbench --serve --approved
           daemon [--host 127.0.0.1] [--port 4242]
           component-map [--force]
           visual-edit --target DATA_AIWEB_ID --prompt TEXT [--from-map PATH|latest] [--force]
@@ -1147,7 +1153,7 @@ module Aiweb
           verify-loop: runs the local build -> preview -> QA -> critique -> task -> agent-run loop; --dry-run writes nothing and plans build -> preview -> QA -> screenshot -> visual critique -> repair/visual-polish -> agent-run cycles, while real execution requires --approved, uses existing local adapters, records .ai-web/runs/verify-loop-<timestamp>/verify-loop.json plus per-cycle evidence, never installs packages, never deploys, and stops on pass, max cycles, blockers, unsafe action, or agent-run failure
           agent-run --task latest --agent codex --dry-run
           agent-run --task latest --agent codex --approved
-          workbench: plans or exports a static local UI manifest under .ai-web/workbench using declarative CLI controls only; requires initialized .ai-web/state.yaml, --dry-run writes nothing, export writes only workbench artifacts, executes no controls, and never mutates state.yaml
+          workbench: plans, exports, or serves a local UI manifest under .ai-web/workbench using declarative CLI controls only; requires initialized .ai-web/state.yaml, --dry-run writes nothing, export writes only workbench artifacts, serve binds only localhost/127.0.0.1 and requires --approved for real process launch, executes no controls, and never mutates state.yaml
           daemon: starts the local backend API bridge for the future web Workbench; --dry-run reports endpoints and guardrails without binding a port
           component-map: scans stable data-aiweb-id regions into .ai-web/component-map.json; --dry-run writes nothing and never reads .env/.env.*
           visual-edit: validates a selected data-aiweb-id target and writes only local handoff artifacts; --dry-run writes nothing and never patches source, runs QA/browser/build, deploys, or calls network/AI
@@ -1370,9 +1376,16 @@ module Aiweb
         value = workbench[key]
         paths << "#{key}=#{value}" unless value.to_s.empty?
       end
+      if workbench["paths"].is_a?(Hash)
+        workbench["paths"].each do |key, value|
+          paths << "#{key}=#{value}" unless value.to_s.empty?
+        end
+      end
+      serve = workbench["serve"].is_a?(Hash) ? workbench["serve"] : {}
       [
         "Workbench status: #{workbench["status"] || "n/a"}",
         "Dry run: #{workbench.key?("dry_run") ? workbench["dry_run"] : "n/a"}",
+        "Serve URL: #{serve["url"] || "n/a"}",
         "Artifacts changed: #{changed.empty? ? "none" : changed.join(", ")}",
         "Workbench paths: #{paths.empty? ? "none" : paths.join(", ")}",
         "Panels: #{panels.empty? ? "none" : panels.join(", ")}",
@@ -1664,8 +1677,9 @@ module Aiweb
     def workbench_exit_code(result)
       status = result.dig("workbench", "status").to_s
       return EXIT_ADAPTER_UNAVAILABLE if status == "blocked" && (result["action_taken"].to_s =~ /unavailable/)
-      return EXIT_SUCCESS if %w[planned exported ready].include?(status)
+      return EXIT_SUCCESS if %w[planned exported ready running already_running].include?(status)
       return EXIT_PHASE_BLOCKED if status == "blocked" && ((result.dig("workbench", "blocking_issues") || []) + (result["blocking_issues"] || [])).join(" ").match?(/phase/i)
+      return EXIT_UNSAFE_EXTERNAL_ACTION if status == "blocked" && ((result.dig("workbench", "blocking_issues") || []) + (result["blocking_issues"] || [])).join(" ").match?(/approved|unsafe|host|localhost|127\.0\.0\.1/i)
 
       EXIT_VALIDATION_FAILED
     end

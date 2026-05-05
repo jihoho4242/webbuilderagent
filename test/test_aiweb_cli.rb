@@ -3907,6 +3907,7 @@ class AiwebCliTest < Minitest::Test
         qa_results
         visual_critique
         run_timeline
+        verify_loop_status
       ]
       panels = payload.dig("workbench", "panels")
       panel_ids = panels.is_a?(Hash) ? panels.keys : panels.map { |panel| panel.fetch("id") }
@@ -3921,7 +3922,8 @@ class AiwebCliTest < Minitest::Test
         "aiweb qa-playwright",
         "aiweb visual-critique",
         "aiweb repair",
-        "aiweb visual-polish"
+        "aiweb visual-polish",
+        "aiweb verify-loop --max-cycles 3"
       ]
       assert_equal expected_controls, controls.map { |control| control.fetch("command") }
       controls.each do |control|
@@ -4012,6 +4014,104 @@ class AiwebCliTest < Minitest::Test
       assert_match(/not initialized|initialize/i, message)
       refute Dir.exist?(".ai-web"), "uninitialized workbench must not create .ai-web"
       refute_includes stdout, "do-not-touch"
+    end
+  end
+
+  def test_workbench_serve_dry_run_plans_localhost_server_without_writes_or_process
+    in_tmp do
+      prepare_profile_d_design_flow
+      env_body = "SECRET=do-not-touch\n"
+      File.write(".env", env_body)
+      before_state = File.read(".ai-web/state.yaml")
+      before_entries = project_entries
+
+      stdout, stderr, code = run_aiweb("workbench", "--serve", "--host", "localhost", "--port", "17345", "--dry-run", "--json")
+      payload = JSON.parse(stdout)
+
+      assert_equal 0, code
+      assert_equal "", stderr
+      assert_equal "planned", payload.dig("workbench", "status")
+      assert_equal true, payload.dig("workbench", "dry_run")
+      assert_equal "localhost", payload.dig("workbench", "serve", "host")
+      assert_equal 17_345, payload.dig("workbench", "serve", "port")
+      assert_equal "http://localhost:17345/", payload.dig("workbench", "serve", "url")
+      assert_match(%r{\A\.ai-web/runs/workbench-serve-.+/workbench-serve\.json\z}, payload.dig("workbench", "serve", "metadata_path"))
+      assert_equal before_entries, project_entries, "workbench --serve --dry-run must not write UI or run artifacts"
+      assert_equal before_state, File.read(".ai-web/state.yaml"), "workbench --serve --dry-run must not mutate state"
+      assert_equal env_body, File.read(".env"), "workbench --serve --dry-run must not mutate .env"
+      refute_includes stdout, "do-not-touch"
+    end
+  end
+
+  def test_workbench_serve_without_approval_blocks_without_writes_or_process
+    in_tmp do
+      prepare_profile_d_design_flow
+      before_state = File.read(".ai-web/state.yaml")
+      before_entries = project_entries
+
+      stdout, stderr, code = run_aiweb("workbench", "--serve", "--json")
+      payload = JSON.parse(stdout)
+
+      assert_equal 5, code
+      assert_equal "", stderr
+      assert_equal "blocked", payload.dig("workbench", "status")
+      assert_match(/approved/i, [payload.dig("error", "message"), payload["blocking_issues"], payload.dig("workbench", "blocking_issues")].flatten.compact.join("\n"))
+      assert_equal before_entries, project_entries, "unapproved workbench serve must not write artifacts"
+      assert_equal before_state, File.read(".ai-web/state.yaml"), "unapproved workbench serve must not mutate state"
+    end
+  end
+
+  def test_workbench_serve_blocks_non_localhost_host
+    in_tmp do
+      prepare_profile_d_design_flow
+      before_entries = project_entries
+
+      stdout, stderr, code = run_aiweb("workbench", "--serve", "--approved", "--host", "0.0.0.0", "--json")
+      payload = JSON.parse(stdout)
+
+      assert_equal 5, code
+      assert_equal "", stderr
+      assert_equal "blocked", payload.dig("workbench", "status")
+      assert_match(/localhost|127\.0\.0\.1/i, [payload.dig("error", "message"), payload["blocking_issues"], payload.dig("workbench", "blocking_issues")].flatten.compact.join("\n"))
+      assert_equal before_entries, project_entries, "non-localhost serve must not write artifacts"
+    end
+  end
+
+  def test_workbench_serve_approved_records_metadata_and_runs_local_server
+    in_tmp do
+      prepare_profile_d_design_flow
+      before_state = File.read(".ai-web/state.yaml")
+      port = 17_350 + (Process.pid % 500)
+      pid = nil
+
+      stdout, stderr, code = run_aiweb("workbench", "--serve", "--approved", "--port", port.to_s, "--json")
+      payload = JSON.parse(stdout)
+      pid = payload.dig("workbench", "serve", "pid").to_i
+
+      assert_equal 0, code
+      assert_equal "", stderr
+      assert_equal "running", payload.dig("workbench", "status")
+      assert_equal "127.0.0.1", payload.dig("workbench", "serve", "host")
+      assert_equal port, payload.dig("workbench", "serve", "port")
+      assert_equal true, payload.dig("workbench", "serve", "approved")
+      assert_operator pid, :>, 0
+      Process.kill(0, pid)
+      metadata_path = payload.dig("workbench", "serve", "metadata_path")
+      assert File.exist?(".ai-web/workbench/index.html")
+      assert File.exist?(".ai-web/workbench/workbench.json")
+      assert File.exist?(metadata_path)
+      metadata = JSON.parse(File.read(metadata_path))
+      assert_equal "running", metadata.fetch("status")
+      assert_equal port, metadata.fetch("port")
+      assert_equal true, metadata.fetch("local_only")
+      assert_equal before_state, File.read(".ai-web/state.yaml"), "workbench serve must not mutate state"
+    ensure
+      if pid && pid.positive?
+        begin
+          Process.kill("TERM", pid)
+        rescue Errno::ESRCH
+        end
+      end
     end
   end
 
@@ -4522,13 +4622,15 @@ class AiwebCliTest < Minitest::Test
     stdout, stderr, code = run_aiweb("help")
     assert_equal 0, code
     assert_equal "", stderr
-    assert_includes stdout, "workbench [--export] [--force]"
+    assert_includes stdout, "workbench [--export] [--serve] [--approved]"
+    assert_includes stdout, "workbench --serve --dry-run"
     assert_match(/workbench: .*local .*UI|workbench: .*local UI manifest/i, stdout)
 
     help_stdout, help_stderr, help_code = run_webbuilder("--help")
     assert_equal 0, help_code
     assert_equal "", help_stderr
     assert_match(/workbench/, help_stdout)
+    assert_match(/workbench --serve --dry-run/, help_stdout)
 
     in_tmp do |dir|
       target = File.join(dir, "passthrough-workbench")
@@ -4546,6 +4648,15 @@ class AiwebCliTest < Minitest::Test
       assert_equal true, web_payload.dig("workbench", "dry_run")
       refute Dir.exist?(File.join(target, ".ai-web", "workbench")), "webbuilder workbench --dry-run must not write artifacts"
       refute_includes web_stdout, "do-not-touch"
+
+      serve_stdout, serve_stderr, serve_code = run_webbuilder("--path", target, "workbench", "--serve", "--dry-run", "--json")
+      serve_payload = JSON.parse(serve_stdout)
+      assert_equal 0, serve_code
+      assert_equal "", serve_stderr
+      assert_equal "planned", serve_payload.dig("workbench", "status")
+      assert_equal "127.0.0.1", serve_payload.dig("workbench", "serve", "host")
+      refute Dir.exist?(File.join(target, ".ai-web", "workbench")), "webbuilder workbench --serve --dry-run must not write artifacts"
+      refute_includes serve_stdout, "do-not-touch"
     end
   end
 

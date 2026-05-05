@@ -6,6 +6,7 @@ require "fileutils"
 require "find"
 require "json"
 require "open3"
+require "rbconfig"
 require "timeout"
 require "time"
 require "uri"
@@ -83,6 +84,7 @@ module Aiweb
       qa_results
       visual_critique
       run_timeline
+      verify_loop_status
     ].freeze
 
     WORKBENCH_CONTROLS = [
@@ -93,7 +95,8 @@ module Aiweb
       ["qa_playwright", "Run Playwright QA", "aiweb qa-playwright"],
       ["visual_critique", "Record visual critique", "aiweb visual-critique"],
       ["repair", "Create repair packet", "aiweb repair"],
-      ["visual_polish", "Plan visual polish loop", "aiweb visual-polish"]
+      ["visual_polish", "Plan visual polish loop", "aiweb visual-polish"],
+      ["verify_loop", "Run verify loop", "aiweb verify-loop --max-cycles 3"]
     ].freeze
 
     WORKBENCH_FILE_TREE_EXCLUDES = %w[
@@ -689,7 +692,9 @@ module Aiweb
     end
 
 
-    def workbench(export: false, dry_run: false, force: false)
+    def workbench(export: false, serve: false, approved: false, host: "127.0.0.1", port: nil, dry_run: false, force: false)
+      return workbench_serve(approved: approved, host: host, port: port, dry_run: dry_run, force: force) if serve
+
       state, state_error = workbench_state_snapshot
       paths = workbench_paths
       should_export = !!export && !dry_run
@@ -721,6 +726,159 @@ module Aiweb
         blocking_issues: blockers,
         next_action: blockers.empty? ? "rerun aiweb workbench --export to write the local workbench artifacts" : "run aiweb init or aiweb start before exporting the workbench"
       )
+    end
+
+    def workbench_serve(approved:, host:, port:, dry_run:, force:)
+      state, state_error = workbench_state_snapshot
+      paths = workbench_paths
+      bind_host = workbench_serve_host(host)
+      bind_port = workbench_serve_port(port)
+      timestamp = Time.now.utc.strftime("%Y%m%dT%H%M%SZ")
+      run_id = "workbench-serve-#{timestamp}"
+      run_dir = File.join(aiweb_dir, "runs", run_id)
+      stdout_path = File.join(run_dir, "stdout.log")
+      stderr_path = File.join(run_dir, "stderr.log")
+      metadata_path = File.join(run_dir, "workbench-serve.json")
+      url = "http://#{bind_host}:#{bind_port}/"
+      blockers = []
+      blockers << state_error if state_error
+      blockers << "workbench --serve requires localhost or 127.0.0.1 host" unless workbench_serve_allowed_host?(bind_host)
+      blockers << "workbench --serve requires --approved for real local serving" if !dry_run && !approved
+      planned_changes = [paths["index_html"], paths["manifest_json"], relative(run_dir), relative(stdout_path), relative(stderr_path), relative(metadata_path)]
+      running = blockers.empty? ? running_workbench_serve_metadata : nil
+
+      if running
+        already = running.merge("status" => "already_running", "dry_run" => dry_run, "approved" => approved, "blocking_issues" => [])
+        manifest = workbench_manifest(
+          state: state,
+          status: "already_running",
+          export: true,
+          dry_run: dry_run,
+          blocking_issues: [],
+          paths: paths,
+          serve: workbench_serve_summary(already)
+        )
+        return workbench_payload(
+          state: state,
+          workbench: manifest,
+          changed_files: [],
+          blocking_issues: [],
+          next_action: "open #{already["url"]} locally or stop pid #{already["pid"]} before starting another workbench server"
+        )
+      end
+
+      status = blockers.empty? ? (dry_run ? "planned" : "serving") : "blocked"
+      metadata = workbench_serve_metadata(
+        run_id: run_id,
+        status: dry_run && blockers.empty? ? "dry_run" : status,
+        host: bind_host,
+        port: bind_port,
+        url: url,
+        command: workbench_serve_command(bind_host, bind_port),
+        pid: nil,
+        started_at: nil,
+        finished_at: nil,
+        stdout_log: relative(stdout_path),
+        stderr_log: relative(stderr_path),
+        metadata_path: relative(metadata_path),
+        workbench_paths: paths,
+        dry_run: dry_run,
+        approved: approved,
+        blocking_issues: blockers
+      )
+      manifest = workbench_manifest(
+        state: state,
+        status: status,
+        export: !dry_run && blockers.empty?,
+        dry_run: dry_run,
+        blocking_issues: blockers,
+        paths: paths,
+        serve: workbench_serve_summary(metadata)
+      )
+
+      if dry_run || !blockers.empty?
+        return workbench_payload(
+          state: state,
+          workbench: manifest,
+          changed_files: blockers.empty? ? planned_changes : [],
+          blocking_issues: blockers,
+          next_action: blockers.empty? ? "rerun aiweb workbench --serve --approved to write artifacts and start the localhost server" : "resolve workbench serve blockers, then rerun with --dry-run or --approved"
+        )
+      end
+
+      existing_conflicts = workbench_existing_conflicts(paths, manifest)
+      unless existing_conflicts.empty? || force
+        blockers = existing_conflicts.map { |path| "workbench artifact already exists and differs: #{path}" }
+        metadata["status"] = "blocked"
+        metadata["blocking_issues"] = blockers
+        manifest = workbench_manifest(
+          state: state,
+          status: "blocked",
+          export: true,
+          dry_run: false,
+          blocking_issues: blockers,
+          paths: paths,
+          serve: workbench_serve_summary(metadata)
+        )
+        return workbench_payload(
+          state: state,
+          workbench: manifest,
+          changed_files: [],
+          blocking_issues: blockers,
+          next_action: "review existing workbench artifacts or rerun aiweb workbench --serve --approved --force"
+        )
+      end
+
+      changes = []
+      mutation(dry_run: false) do
+        FileUtils.mkdir_p(run_dir)
+        changes << relative(run_dir)
+        changes << write_file(File.join(root, paths["index_html"]), workbench_html(manifest), false)
+        changes << write_json(File.join(root, paths["manifest_json"]), manifest, false)
+        FileUtils.touch(stdout_path)
+        FileUtils.touch(stderr_path)
+        stdout_file = File.open(stdout_path, "ab")
+        stderr_file = File.open(stderr_path, "ab")
+        pid = nil
+        begin
+          pid = Process.spawn(*workbench_serve_command(bind_host, bind_port), chdir: root, out: stdout_file, err: stderr_file)
+          Process.detach(pid)
+        ensure
+          stdout_file.close
+          stderr_file.close
+        end
+        metadata = workbench_serve_metadata(
+          run_id: run_id,
+          status: "running",
+          host: bind_host,
+          port: bind_port,
+          url: url,
+          command: workbench_serve_command(bind_host, bind_port),
+          pid: pid,
+          started_at: now,
+          finished_at: nil,
+          stdout_log: relative(stdout_path),
+          stderr_log: relative(stderr_path),
+          metadata_path: relative(metadata_path),
+          workbench_paths: paths,
+          dry_run: false,
+          approved: true,
+          blocking_issues: []
+        )
+        manifest["status"] = "running"
+        manifest["serve"] = workbench_serve_summary(metadata)
+        changes << write_json(File.join(root, paths["manifest_json"]), manifest, false)
+        changes << relative(stdout_path)
+        changes << relative(stderr_path)
+        changes << write_json(metadata_path, metadata, false)
+        workbench_payload(
+          state: state,
+          workbench: manifest,
+          changed_files: compact_changes(changes),
+          blocking_issues: [],
+          next_action: "open #{url} locally; stop pid #{pid} when finished"
+        )
+      end
     end
 
     def runtime_plan
@@ -3517,7 +3675,7 @@ module Aiweb
       }
     end
 
-    def workbench_manifest(state:, status:, export:, dry_run:, blocking_issues:, paths:)
+    def workbench_manifest(state:, status:, export:, dry_run:, blocking_issues:, paths:, serve: nil)
       {
         "schema_version" => 1,
         "status" => status,
@@ -3526,29 +3684,113 @@ module Aiweb
         "generated_at" => now,
         "root" => root,
         "paths" => paths,
+        "serve" => serve,
         "panels" => workbench_panels(state),
         "controls" => workbench_controls,
         "guardrails" => [
           "declarative CLI command descriptors only",
           "does not directly write .ai-web/state.yaml",
           "excludes local environment secret files from file-tree and artifact summaries",
-          "local artifact only; no install, build, preview, QA, deploy, network, or AI calls"
+          "local artifact/server only; no install, build, preview, QA, deploy, provider network, or AI calls",
+          "serve mode binds only to localhost or 127.0.0.1 and requires --approved for real process launch"
         ],
         "blocking_issues" => blocking_issues
       }
+    end
+
+    def workbench_serve_host(host)
+      value = host.to_s.strip
+      value.empty? ? "127.0.0.1" : value
+    end
+
+    def workbench_serve_port(port)
+      value = port.to_i
+      value.positive? ? value : 17342
+    end
+
+    def workbench_serve_allowed_host?(host)
+      %w[localhost 127.0.0.1].include?(host.to_s)
+    end
+
+    def workbench_serve_command(host, port)
+      [RbConfig.ruby, "-run", "-e", "httpd", File.join(root, ".ai-web", "workbench"), "-b", host.to_s, "-p", port.to_i.to_s]
+    end
+
+    def workbench_serve_metadata(run_id:, status:, host:, port:, url:, command:, pid:, started_at:, finished_at:, stdout_log:, stderr_log:, metadata_path:, workbench_paths:, dry_run:, approved:, blocking_issues:)
+      {
+        "schema_version" => 1,
+        "run_id" => run_id,
+        "status" => status,
+        "host" => host,
+        "port" => port,
+        "url" => url,
+        "local_only" => true,
+        "command" => command,
+        "cwd" => root,
+        "pid" => pid,
+        "started_at" => started_at,
+        "finished_at" => finished_at,
+        "stdout_log" => stdout_log,
+        "stderr_log" => stderr_log,
+        "metadata_path" => metadata_path,
+        "workbench_paths" => workbench_paths,
+        "dry_run" => dry_run,
+        "approved" => approved,
+        "blocking_issues" => blocking_issues
+      }
+    end
+
+    def workbench_serve_summary(metadata)
+      return nil unless metadata
+
+      metadata.slice("status", "host", "port", "url", "local_only", "pid", "metadata_path", "stdout_log", "stderr_log", "approved", "dry_run", "blocking_issues")
+    end
+
+    def running_workbench_serve_metadata
+      workbench_serve_metadata_files.reverse_each do |path|
+        metadata = read_workbench_serve_metadata(path)
+        next unless metadata
+        next unless metadata["status"] == "running"
+        next unless live_process?(metadata["pid"].to_i)
+
+        metadata["metadata_path"] ||= relative(path)
+        return metadata
+      end
+      nil
+    end
+
+    def workbench_serve_metadata_files
+      Dir.glob(File.join(aiweb_dir, "runs", "workbench-serve-*", "workbench-serve.json")).sort
+    end
+
+    def read_workbench_serve_metadata(path)
+      data = JSON.parse(File.read(path))
+      data.is_a?(Hash) ? data : nil
+    rescue JSON::ParserError, SystemCallError
+      nil
     end
 
     def workbench_payload(state:, workbench:, changed_files:, blocking_issues:, next_action:)
       {
         "schema_version" => 1,
         "current_phase" => state&.dig("phase", "current"),
-        "action_taken" => workbench["status"] == "exported" ? "exported workbench UI" : "planned workbench UI",
+        "action_taken" => workbench_action_taken(workbench),
         "changed_files" => changed_files,
         "blocking_issues" => blocking_issues,
         "missing_artifacts" => state ? [] : [".ai-web/state.yaml"],
         "workbench" => workbench,
         "next_action" => next_action
       }
+    end
+
+    def workbench_action_taken(workbench)
+      case workbench["status"]
+      when "exported" then "exported workbench UI"
+      when "running" then "started workbench server"
+      when "already_running" then "workbench server already running"
+      when "blocked" then "workbench blocked"
+      else "planned workbench UI"
+      end
     end
 
     def workbench_controls
@@ -3591,6 +3833,8 @@ module Aiweb
         { "status" => path ? "ready" : "empty", "latest" => path ? workbench_json_summary(path) : nil }
       when "run_timeline"
         { "status" => "ready", "runs" => workbench_run_timeline }
+      when "verify_loop_status"
+        workbench_verify_loop_status(state)
       else
         { "status" => "planned" }
       end
@@ -3667,6 +3911,19 @@ module Aiweb
       Dir.glob(File.join(aiweb_dir, "runs", "*", "*.json")).sort.last(20).map do |path|
         workbench_json_summary(relative(path))
       end.compact
+    end
+
+    def workbench_verify_loop_status(state)
+      implementation = state&.dig("implementation").is_a?(Hash) ? state.dig("implementation") : {}
+      latest_path = implementation["latest_verify_loop"]
+      latest = latest_path && !workbench_excluded_path?(latest_path) ? workbench_json_summary(latest_path) : nil
+      {
+        "status" => implementation["verify_loop_status"] || (latest ? latest["status"] : "empty"),
+        "latest_verify_loop" => latest_path,
+        "cycle_count" => implementation["verify_loop_cycle_count"],
+        "latest_blocker" => implementation["latest_blocker"],
+        "latest" => latest
+      }
     end
 
     def workbench_latest_json(pattern)
