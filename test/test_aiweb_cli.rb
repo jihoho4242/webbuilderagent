@@ -4382,18 +4382,140 @@ class AiwebCliTest < Minitest::Test
     end
   end
 
+  def test_deploy_approved_blocks_without_passing_verify_loop_evidence
+    in_tmp do
+      prepare_profile_d_scaffold_flow
+      set_phase("phase-11")
+      FileUtils.mkdir_p("dist")
+      before_entries = project_entries
+      before_state = File.read(".ai-web/state.yaml")
+
+      stdout, stderr, code = run_aiweb("deploy", "--target", "cloudflare-pages", "--approved", "--json")
+      payload = JSON.parse(stdout)
+
+      assert_equal 5, code
+      assert_equal "", stderr
+      deploy = payload.fetch("deploy")
+      assert_equal "blocked", deploy.fetch("status")
+      message = [payload["blocking_issues"], deploy.fetch("blocking_issues")].flatten.compact.join("\n")
+      assert_match(/verify-loop/i, message)
+      assert_match(/provider CLI|wrangler/i, message)
+      assert_equal false, deploy.fetch("provider_cli_invoked")
+      assert_equal false, deploy.fetch("external_deploy_performed")
+      assert_equal before_entries, project_entries, "approved deploy with missing gates must not write files"
+      assert_equal before_state, File.read(".ai-web/state.yaml"), "approved deploy with missing gates must not mutate state"
+    end
+  end
+
+  def test_deploy_approved_blocks_unsafe_verify_loop_evidence_path_without_reading_env
+    in_tmp do
+      prepare_profile_d_scaffold_flow
+      set_phase("phase-11")
+      state = load_state
+      state["implementation"]["latest_verify_loop"] = ".env.deploy"
+      write_state(state)
+      before_entries = project_entries
+      before_state = File.read(".ai-web/state.yaml")
+
+      stdout, stderr, code = run_aiweb("deploy", "--target", "vercel", "--approved", "--json")
+      payload = JSON.parse(stdout)
+
+      assert_equal 5, code
+      assert_equal "", stderr
+      deploy = payload.fetch("deploy")
+      assert_equal "blocked", deploy.fetch("status")
+      assert_equal "blocked", deploy.dig("verify_loop_gate", "status")
+      assert_includes deploy.dig("verify_loop_gate", "blocking_issues").join("\n"), "unsafe"
+      assert_equal false, deploy.fetch("provider_cli_invoked")
+      assert_equal false, deploy.fetch("external_deploy_performed")
+      assert_equal before_entries, project_entries, "unsafe verify-loop evidence path must not write files"
+      assert_equal before_state, File.read(".ai-web/state.yaml"), "unsafe verify-loop evidence path must not mutate state"
+    end
+  end
+
+  def test_deploy_approved_fake_provider_command_records_evidence_and_state
+    in_tmp do |dir|
+      prepare_profile_d_scaffold_flow
+      set_phase("phase-11")
+      FileUtils.mkdir_p("dist")
+      File.write("dist/index.html", "<h1>Deploy fixture</h1>\n")
+      verify_dir = ".ai-web/runs/verify-loop-test"
+      FileUtils.mkdir_p(verify_dir)
+      verify_metadata_path = File.join(verify_dir, "verify-loop.json")
+      File.write(
+        verify_metadata_path,
+        JSON.pretty_generate(
+          "schema_version" => 1,
+          "status" => "passed",
+          "approved" => true,
+          "dry_run" => false,
+          "cycle_count" => 1
+        ) + "\n"
+      )
+      state = load_state
+      state["implementation"]["latest_verify_loop"] = verify_metadata_path
+      state["implementation"]["verify_loop_status"] = "passed"
+      write_state(state)
+
+      bin_dir = File.join(dir, "fake-deploy-bin")
+      FileUtils.mkdir_p(bin_dir)
+      marker = File.join(dir, "fake-vercel-ran")
+      write_fake_executable(
+        bin_dir,
+        "vercel",
+        <<~SH
+          echo fake vercel deploy "$@"
+          touch #{marker.shellescape}
+          exit 0
+        SH
+      )
+      env = { "PATH" => [bin_dir, "/usr/bin", "/bin", "/usr/sbin", "/sbin"].join(File::PATH_SEPARATOR) }
+
+      stdout, stderr, code = run_aiweb_env(env, "deploy", "--target", "vercel", "--approved", "--json")
+      payload = JSON.parse(stdout)
+
+      assert_equal 0, code, stdout
+      assert_equal "", stderr
+      deploy = payload.fetch("deploy")
+      assert_equal "passed", deploy.fetch("status")
+      assert_equal "vercel", deploy.fetch("target")
+      assert_equal true, deploy.fetch("approved")
+      assert_equal false, deploy.fetch("dry_run")
+      assert_equal "passed", deploy.dig("verify_loop_gate", "status")
+      assert_equal "ready", deploy.dig("provider_readiness", "status")
+      assert_equal "vercel", deploy.fetch("command").first
+      assert_equal true, deploy.fetch("provider_executed")
+      assert_equal true, deploy.fetch("provider_cli_invoked")
+      assert_equal true, deploy.fetch("writes_performed")
+      assert File.file?(marker), "fake provider command should run only from test-controlled PATH"
+      assert File.file?(deploy.fetch("metadata_path")), "deploy metadata must be recorded"
+      assert File.file?(deploy.fetch("stdout_log")), "deploy stdout log must be recorded"
+      assert File.file?(deploy.fetch("stderr_log")), "deploy stderr log must be recorded"
+      assert_includes File.read(deploy.fetch("stdout_log")), "fake vercel deploy"
+      artifact = JSON.parse(File.read(deploy.fetch("metadata_path")))
+      assert_equal deploy, artifact
+      state = load_state
+      assert_equal deploy.fetch("metadata_path"), state.dig("deploy", "latest_deploy")
+      assert_equal "vercel", state.dig("deploy", "latest_deploy_target")
+      assert_equal "passed", state.dig("deploy", "latest_deploy_status")
+      refute_includes stdout, ".env"
+      refute_includes File.read(deploy.fetch("stdout_log")), ".env"
+      refute_includes File.read(deploy.fetch("stderr_log")), ".env"
+    end
+  end
+
   def test_github_deploy_help_and_webbuilder_passthrough_surface
     aiweb_stdout, aiweb_stderr, aiweb_code = run_aiweb("help")
     assert_equal 0, aiweb_code
     assert_equal "", aiweb_stderr
-    ["github-sync", "deploy-plan", "deploy --target", "cloudflare-pages", "vercel"].each do |snippet|
+    ["github-sync", "deploy-plan", "deploy --target", "cloudflare-pages", "vercel", "--approved"].each do |snippet|
       assert_includes aiweb_stdout, snippet
     end
 
     web_stdout, web_stderr, web_code = run_webbuilder("help")
     assert_equal 0, web_code
     assert_equal "", web_stderr
-    ["github-sync", "deploy-plan", "deploy", "cloudflare-pages", "vercel"].each do |snippet|
+    ["github-sync", "deploy-plan", "deploy", "cloudflare-pages", "vercel", "--approved"].each do |snippet|
       assert_includes web_stdout, snippet
     end
   end

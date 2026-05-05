@@ -26,7 +26,7 @@ Today the CLI manages the project director workspace: `.ai-web` state, phase gat
 - Expose the PR16 local Workbench UI foundation through `aiweb workbench` / `웹빌더 workbench`: it plans or exports `.ai-web/workbench/index.html` and `.ai-web/workbench/workbench.json` from existing Director state/artifacts, represents controls as declarative CLI command descriptors, supports no-write `--dry-run`, excludes `.env` / `.env.*` from surfaced artifacts, and never directly mutates `.ai-web/state.yaml`.
 - Expose the PR17 Component Map + Visual Edit planning foundation through `aiweb component-map` / `웹빌더 component-map` and `aiweb visual-edit` / `웹빌더 visual-edit`: it maps stable `data-aiweb-id` DOM regions to source files in `.ai-web/component-map.json`, creates selected-region visual edit handoff artifacts under `.ai-web/tasks/` and `.ai-web/visual/`, supports no-write `--dry-run`, rejects `.env` / `.env.*` map paths without reading them, and never auto-patches source, runs build/QA/browser/preview, deploys, installs packages, or calls network/AI services.
 - Expose the PR18/PR26 Profile S local scaffold, Supabase secret QA, and local verification surface through `aiweb scaffold --profile S` / `웹빌더 scaffold --profile S`, `aiweb supabase-secret-qa` / `웹빌더 supabase-secret-qa`, and `aiweb supabase-local-verify` / `웹빌더 supabase-local-verify`: Profile S is a local-only Next.js + Supabase SSR placeholder scaffold, uses `supabase/env.example.template` instead of `.env.example`, includes only `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` placeholders, verifies migrations/RLS/storage docs plus SSR stubs locally, and intentionally performs no external Supabase project creation, network calls, provider CLI, deploy, install, build, or preview.
-- Expose the PR19 GitHub sync and deploy planning surfaces through `aiweb github-sync`, `aiweb deploy-plan`, and `aiweb deploy --target cloudflare-pages|vercel --dry-run` / matching `웹빌더` commands: they are local-only planning commands that never run `git push`, provider CLIs, external deploys, network calls, build/preview/install, or read `.env` / `.env.*`; unsafe real deploy attempts are blocked.
+- Expose the PR19/PR27 GitHub sync and deploy surfaces through `aiweb github-sync`, `aiweb deploy-plan`, and `aiweb deploy --target cloudflare-pages|vercel --dry-run|--approved` / matching `웹빌더` commands: dry-runs remain no-write/no-process local planning, while approved deploy adapters require passing approved verify-loop evidence plus provider readiness before any provider CLI can run; they never run `git push`, install/build/preview, or read `.env` / `.env.*`.
 - Expose the PR20 approved dependency setup surface through `aiweb setup --install --approved` / `웹빌더 setup --install --approved`: `--dry-run` writes nothing and reports the planned install/log paths; a real install requires `--approved`, records stdout/stderr/setup metadata under `.ai-web/runs/setup-<timestamp>/`, warns about package lifecycle scripts, updates only safe setup state, and never builds, previews, runs QA, repairs, deploys, calls provider CLIs, or reads/prints `.env` / `.env.*`.
 - Expose the local backend bridge through `aiweb daemon` / `aiweb backend`: it binds only to localhost-class hosts by default, allows only local browser origins, requires `X-Aiweb-Token` for every `/api/*` request, exposes JSON endpoints for the future web Workbench, invokes this repository's `bin/aiweb` by absolute path instead of shell interpolation, keeps approved Codex/setup execution behind `X-Aiweb-Approval-Token`, and blocks raw shell, frontend-supplied backend flags, missing project paths, unsafe deploy, and `.env` / `.env.*` paths.
 
@@ -44,11 +44,11 @@ The intended product direction is a design-first, natural-language webbuilder: t
 8. Review the local Workbench UI panels for chat, artifacts, design, preview, file tree, QA, critique, and run timeline status.
 9. Select a mapped `data-aiweb-id` region and create a bounded visual edit handoff instead of regenerating the full page.
 10. For Supabase-backed work, scaffold Profile S locally with safe SSR placeholders and rerun `supabase-secret-qa` before copying values into a private local env file outside the generator guardrail.
-11. Review local-only GitHub sync and Cloudflare Pages/Vercel deploy dry-run plans before any separately approved external release work.
+11. Review local-only GitHub sync and Cloudflare Pages/Vercel deploy dry-run plans; approved deploy adapters require passing verify-loop evidence and provider readiness before any external release work.
 12. Run `setup --install --dry-run` to inspect the planned dependency install, then `setup --install --approved` only when you explicitly approve local package installation.
 13. Repair implementation manually or through later approved automation, then deploy later once gates pass and evidence is recorded.
 
-The current Director CLI is the foundation for that loop: state, gates, QA contracts, snapshots, local preview evidence, bounded repair-loop records, visual polish records/tasks/snapshots, component maps, targeted visual edit handoff records, and local-only Profile S Supabase scaffold/secret-QA records are in place before the system grows into end-to-end generation, source repair automation, and deploy. It is not yet a full app generator.
+The current Director CLI is the foundation for that loop: state, gates, QA contracts, snapshots, local preview evidence, bounded repair-loop records, visual polish records/tasks/snapshots, component maps, targeted visual edit handoff records, local-only Profile S Supabase scaffold/secret-QA records, verify-loop evidence, and gated deploy-adapter boundaries are in place before the system grows into richer end-to-end generation and source repair automation. It is not yet a full app generator.
 
 The intended product surface is now a browser Workbench, not terminal UX. Until a frontend exists, `aiweb daemon --dry-run --json` exposes the backend/API contract that the frontend should call later. The daemon keeps the Ruby Director engine as the backend source of truth and uses a guarded Codex CLI bridge only through approved `agent-run` jobs.
 
@@ -224,19 +224,22 @@ PR17 adds the local Component Map + Visual Edit planning foundation:
 
 `visual-edit` requires `--target DATA_AIWEB_ID` and `--prompt TEXT`; `--from-map` defaults to `latest`. The command validates that the selected target exists in the component map and creates only local handoff records such as `.ai-web/tasks/visual-edit-*.md` and `.ai-web/visual/visual-edit-*.json`. It intentionally does not patch source files, run build/QA/browser/preview, install packages, deploy, contact external hosting, call network/AI services, or mutate `.ai-web/state.yaml`. Explicit `.env` / `.env.*` map paths are rejected without reading. `visual-edit --dry-run` writes nothing and reports planned task/record paths so a user request like “이 섹션 더 고급스럽게” stays scoped to the selected region instead of triggering full-page regeneration.
 
-PR19 adds local-only GitHub sync and deploy planning commands:
+PR19/PR27 add local-first GitHub sync and deploy commands:
 
 ```bash
 ./bin/aiweb --path ~/Desktop/aiweb-premium-service-site github-sync --json
 ./bin/aiweb --path ~/Desktop/aiweb-premium-service-site deploy-plan --target cloudflare-pages --json
 ./bin/aiweb --path ~/Desktop/aiweb-premium-service-site deploy --target cloudflare-pages --dry-run --json
 ./bin/aiweb --path ~/Desktop/aiweb-premium-service-site deploy --target vercel --dry-run --json
+./bin/aiweb --path ~/Desktop/aiweb-premium-service-site deploy --target cloudflare-pages --approved --json
+./bin/aiweb --path ~/Desktop/aiweb-premium-service-site deploy --target vercel --approved --json
 웹빌더 --path ~/Desktop/aiweb-premium-service-site github-sync
 웹빌더 --path ~/Desktop/aiweb-premium-service-site deploy-plan --target vercel
 웹빌더 --path ~/Desktop/aiweb-premium-service-site deploy --target vercel --dry-run
+웹빌더 --path ~/Desktop/aiweb-premium-service-site deploy --target vercel --approved
 ```
 
-`github-sync` only reports the intended GitHub sync command shape; it does not run `git push`, contact GitHub, invoke provider CLIs, build, preview, install packages, or read `.env` / `.env.*`. `deploy-plan` only reports the target-specific deploy checklist for `cloudflare-pages` or `vercel`; it performs no provider CLI, network, build, preview, install, or `.env` access. `deploy` intentionally supports only `--target cloudflare-pages|vercel --dry-run`; omitting `--dry-run` returns an unsafe-deploy-blocked result so shell automation cannot accidentally treat a real deploy request as successful.
+`github-sync` only reports the intended GitHub sync command shape; it does not run `git push`, contact GitHub, invoke provider CLIs, build, preview, install packages, or read `.env` / `.env.*`. `deploy-plan` only reports the target-specific deploy checklist for `cloudflare-pages` or `vercel`; it performs no provider CLI, network, build, preview, install, or `.env` access. `deploy --dry-run` writes nothing and launches no process. `deploy --approved` is blocked unless the state points at a passing approved `verify-loop` evidence file, the scaffold output directory exists, and the selected provider executable is present on `PATH`; approved runs record `.ai-web/runs/deploy-*/deploy.json` plus stdout/stderr logs and update safe deploy state. Do not run approved deploy against real provider credentials until you intend a real external release.
 
 PR22 adds the local source-patch agent-run surface for repair / visual-polish / visual-edit task packets:
 
@@ -289,6 +292,7 @@ Phase-sensitive commands are guarded by the Director state machine:
 ./bin/aiweb github-sync --json
 ./bin/aiweb deploy-plan --target cloudflare-pages --json
 ./bin/aiweb deploy --target cloudflare-pages --dry-run --json
+./bin/aiweb deploy --target cloudflare-pages --approved --json
 ./bin/aiweb scaffold --profile S --dry-run
 ./bin/aiweb supabase-secret-qa --dry-run
 ./bin/aiweb supabase-local-verify --dry-run

@@ -88,6 +88,8 @@ class WebbuilderLauncher
         웹빌더 --path ~/Desktop/my-site deploy-plan --target cloudflare-pages
         웹빌더 --path ~/Desktop/my-site deploy --target cloudflare-pages --dry-run
         웹빌더 --path ~/Desktop/my-site deploy --target vercel --dry-run
+        웹빌더 --path ~/Desktop/my-site deploy --target cloudflare-pages --approved
+        웹빌더 --path ~/Desktop/my-site deploy --target vercel --approved
 
       웹빌더가 숙지한 시작 순서:
         Phase 0: 웹 유형 / 난이도 / 릴리즈 범위 결정
@@ -140,7 +142,7 @@ class WebbuilderLauncher
       visual-edit --dry-run은 .ai-web/tasks/visual-edit-*.md 및 .ai-web/visual/visual-edit-*.json 예정 경로만 보고하고 파일을 쓰지 않는다.
       github-sync는 GitHub 동기화 계획만 보여주는 로컬 전용 명령이며 git push, network, provider CLI, build/preview/install, .env/.env.* 접근을 수행하지 않는다.
       deploy-plan은 Cloudflare Pages 또는 Vercel 배포 체크리스트만 보여주는 로컬 전용 명령이며 provider CLI, network, build/preview/install, .env/.env.* 접근을 수행하지 않는다.
-      deploy는 --target cloudflare-pages|vercel --dry-run만 허용하며 실제 배포 시도는 unsafe deploy blocked로 차단한다.
+      deploy --dry-run은 쓰기/프로세스 실행 없이 계획만 보고한다. deploy --approved는 통과한 approved verify-loop 증거, output directory, provider CLI readiness가 모두 있을 때만 provider adapter를 실행하고 .ai-web/runs/deploy-*에 stdout/stderr/metadata를 기록한다.
       --dry-run은 설치/쓰기/빌드/프로세스 실행을 수행하지 않는 사전 점검 경로로 사용한다.
 
       고급 명령은 기존 aiweb 명령과 동일하게 사용할 수 있다.

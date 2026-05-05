@@ -374,6 +374,8 @@ module Aiweb
       when "deploy"
         opts = parse_options do |o, options|
           o.on("--target TARGET") { |v| options[:target] = v }
+          o.on("--approved") { options[:approved] = true }
+          o.on("--force") { options[:force] = true }
         end
         unless @argv.empty?
           raise UserError.new("deploy does not accept extra positional arguments: #{@argv.join(", ")}", EXIT_VALIDATION_FAILED)
@@ -582,7 +584,7 @@ module Aiweb
 
     def dispatch_deploy(opts)
       target = normalized_deploy_target_option(opts[:target], required: true, command: "deploy")
-      call_project_adapter(:deploy, { target: target, dry_run: @dry_run }).tap do |result|
+      call_project_adapter(:deploy, { target: target, approved: !!opts[:approved], force: !!opts[:force], dry_run: @dry_run }).tap do |result|
         normalize_deploy_adapter_payload!(result, target)
       end
     rescue UserError => e
@@ -1161,6 +1163,7 @@ module Aiweb
           github-sync [--remote NAME] [--branch NAME]
           deploy-plan [--target cloudflare-pages|vercel]
           deploy --target cloudflare-pages|vercel --dry-run
+          deploy --target cloudflare-pages|vercel --approved
           advance
           rollback [--to PHASE] [--failure CODE] [--reason "..."]
           resolve-blocker --reason "..."
@@ -1201,7 +1204,7 @@ module Aiweb
           visual-edit: validates a selected data-aiweb-id target and writes only local handoff artifacts; --dry-run writes nothing and never patches source, runs QA/browser/build, deploys, or calls network/AI
           github-sync: local-only GitHub sync planning surface; never runs git push, provider CLIs, network, build/preview/install, or reads .env/.env.*
           deploy-plan: local-only deploy checklist for Cloudflare Pages or Vercel; never runs provider CLIs, network, build/preview/install, or reads .env/.env.*
-          deploy --target cloudflare-pages|vercel --dry-run: reports the deploy plan only; unsafe real deploy attempts are blocked with exit code #{EXIT_UNSAFE_EXTERNAL_ACTION}
+          deploy --target cloudflare-pages|vercel --dry-run: reports the deploy plan only without writes/processes; deploy --approved is gated by passing approved verify-loop evidence plus provider readiness and records .ai-web/runs/deploy-* evidence before any provider adapter command can run
           ingest-design: phase-3.5
           next-task: phase-6 through phase-11
           qa-checklist: phase-7 through phase-11
@@ -1723,8 +1726,9 @@ module Aiweb
 
     def deploy_exit_code(result)
       status = result.dig("deploy", "status").to_s
-      return EXIT_SUCCESS if status == "planned"
-      return EXIT_UNSAFE_EXTERNAL_ACTION if ((result.dig("deploy", "blocking_issues") || []) + (result["blocking_issues"] || [])).join(" ").match?(/unsafe.*deploy.*blocked/i)
+      return EXIT_SUCCESS if %w[planned passed].include?(status)
+      issues = ((result.dig("deploy", "blocking_issues") || []) + (result["blocking_issues"] || [])).join(" ")
+      return EXIT_UNSAFE_EXTERNAL_ACTION if issues.match?(/unsafe.*deploy.*blocked|approved|approval|provider CLI|verify-loop|deploy output|missing/i)
 
       EXIT_VALIDATION_FAILED
     end

@@ -2543,14 +2543,31 @@ module Aiweb
       payload
     end
 
-    def deploy(target:, dry_run: false, force: false)
+    def deploy(target:, approved: false, dry_run: false, force: false)
       assert_initialized!
       normalized_target = normalize_deploy_target(target)
       state = load_state
       ensure_pr19_deploy_defaults!(state)
       descriptor_path = DEPLOY_PROVIDER_CONFIG_PATHS.fetch(normalized_target)
-      planned_changes = [DEPLOY_PLAN_PATH, descriptor_path]
-      deploy_payload = deploy_local_payload(normalized_target, state, dry_run: dry_run, force: force)
+      timestamp = Time.now.utc.strftime("%Y%m%dT%H%M%SZ")
+      run_id = "deploy-#{timestamp}-#{normalized_target}"
+      run_dir = File.join(aiweb_dir, "runs", run_id)
+      stdout_path = File.join(run_dir, "stdout.log")
+      stderr_path = File.join(run_dir, "stderr.log")
+      metadata_path = File.join(run_dir, "deploy.json")
+      planned_changes = [DEPLOY_PLAN_PATH, descriptor_path, relative(run_dir), relative(stdout_path), relative(stderr_path), relative(metadata_path)]
+      deploy_payload = deploy_local_payload(
+        normalized_target,
+        state,
+        dry_run: dry_run,
+        force: force,
+        approved: approved,
+        run_id: run_id,
+        run_dir: run_dir,
+        stdout_path: stdout_path,
+        stderr_path: stderr_path,
+        metadata_path: metadata_path
+      )
       payload = status_hash(state: state, changed_files: [])
       payload["action_taken"] = dry_run ? "deploy dry-run planned" : "deploy blocked"
       payload["deploy"] = deploy_payload
@@ -2558,10 +2575,54 @@ module Aiweb
       payload.merge!(pr19_safety_payload(planned_changes))
       payload["planned_changes"] = planned_changes
       if dry_run
-        payload["next_action"] = "obtain explicit approval before any external deployment; this dry-run wrote nothing and ran no provider CLI"
-      else
+        payload["next_action"] = "obtain explicit approval and passing verify-loop evidence before any provider deployment; this dry-run wrote nothing and ran no provider CLI"
+      elsif deploy_payload["status"] == "blocked"
         payload["blocking_issues"] = (payload["blocking_issues"] + deploy_payload["blocking_issues"]).uniq
-        payload["next_action"] = "rerun as aiweb deploy --target #{normalized_target} --dry-run; external deployment remains blocked until explicit approval exists"
+        payload["next_action"] = "resolve deploy gates, then rerun aiweb deploy --target #{normalized_target} --approved"
+      else
+        changes = []
+        mutation(dry_run: false) do
+          FileUtils.mkdir_p(run_dir)
+          changes << relative(run_dir)
+          started_at = now
+          command = deploy_payload.fetch("command")
+          stdout, stderr, process_status = Open3.capture3(*command, chdir: root)
+          status = process_status.success? ? "passed" : "failed"
+          blocking_issues = process_status.success? ? [] : ["#{command.first} exited with status #{process_status.exitstatus}"]
+          changes << write_file(stdout_path, stdout, false)
+          changes << write_file(stderr_path, stderr, false)
+          deploy_payload = deploy_payload.merge(
+            "status" => status,
+            "started_at" => started_at,
+            "finished_at" => now,
+            "exit_code" => process_status.exitstatus,
+            "stdout_log" => relative(stdout_path),
+            "stderr_log" => relative(stderr_path),
+            "metadata_path" => relative(metadata_path),
+            "blocking_issues" => blocking_issues,
+            "provider_executed" => true,
+            "provider_cli_invoked" => true,
+            "external_deploy_performed" => process_status.success?,
+            "network_calls_performed" => process_status.success?,
+            "writes_performed" => true
+          )
+          changes << write_json(metadata_path, deploy_payload, false)
+          state["deploy"]["latest_deploy"] = relative(metadata_path)
+          state["deploy"]["latest_deploy_target"] = normalized_target
+          state["deploy"]["latest_deploy_status"] = status
+          state["deploy"]["latest_deploy_at"] = deploy_payload["finished_at"]
+          state["project"]["updated_at"] = now if state["project"].is_a?(Hash)
+          add_decision!(state, "deploy_adapter", "Ran approved #{normalized_target} deploy adapter after passing verify-loop gate")
+          changes << write_yaml(state_path, state, false)
+          payload = status_hash(state: state, changed_files: compact_changes(changes))
+          payload["action_taken"] = status == "passed" ? "ran approved deploy adapter" : "approved deploy adapter failed"
+          payload["deploy"] = deploy_payload
+          payload.merge!(pr19_safety_payload(planned_changes))
+          payload["external_deploy_performed"] = deploy_payload["external_deploy_performed"]
+          payload["requires_approval"] = false
+          payload["blocking_issues"] = blocking_issues
+          payload["next_action"] = status == "passed" ? "review #{relative(metadata_path)} before treating the provider deployment as accepted" : "inspect #{relative(stderr_path)} and provider readiness, then rerun deploy after fixing the blocker"
+        end
       end
       payload
     end
@@ -5281,29 +5342,112 @@ module Aiweb
       }
     end
 
-    def deploy_local_payload(target, state, dry_run:, force:)
+    def deploy_local_payload(target, state, dry_run:, force:, approved:, run_id:, run_dir:, stdout_path:, stderr_path:, metadata_path:)
       descriptor = deploy_provider_descriptor(target, state)
-      blocked = !dry_run
+      command = deploy_provider_command(target, descriptor)
+      verify_gate = deploy_verify_loop_gate(state)
+      provider_readiness = deploy_provider_readiness(target, descriptor, command)
+      blockers = []
+      blockers << "--approved is required for real deploy adapter execution" if !dry_run && !approved
+      blockers.concat(verify_gate.fetch("blocking_issues"))
+      blockers.concat(provider_readiness.fetch("blocking_issues"))
+      blocked = !dry_run && !blockers.empty?
       {
         "schema_version" => 1,
-        "status" => blocked ? "blocked" : "planned",
+        "status" => dry_run ? "planned" : (blocked ? "blocked" : "ready"),
         "target" => target,
         "dry_run" => dry_run,
         "force" => force,
+        "approved" => approved,
+        "run_id" => run_id,
+        "run_dir" => relative(run_dir),
+        "stdout_log" => relative(stdout_path),
+        "stderr_log" => relative(stderr_path),
+        "metadata_path" => relative(metadata_path),
         "planned_artifact_path" => descriptor.fetch("planned_config_path"),
         "planned_config_path" => descriptor.fetch("planned_config_path"),
-        "planned_changes" => [DEPLOY_PLAN_PATH, descriptor.fetch("planned_config_path")],
+        "planned_changes" => [DEPLOY_PLAN_PATH, descriptor.fetch("planned_config_path"), relative(run_dir), relative(stdout_path), relative(stderr_path), relative(metadata_path)],
         "descriptor" => descriptor,
-        "blocking_issues" => blocked ? ["unsafe external deploy blocked"] : [],
-        "external_actions_allowed" => false,
+        "verify_loop_gate" => verify_gate,
+        "provider_readiness" => provider_readiness,
+        "command" => command,
+        "blocking_issues" => blocked ? blockers.uniq : [],
+        "external_actions_allowed" => approved && verify_gate["status"] == "passed" && provider_readiness["status"] == "ready",
         "external_push_performed" => false,
         "external_deploy_performed" => false,
         "provider_executed" => false,
-        "requires_approval" => true,
+        "requires_approval" => !approved,
         "writes_performed" => false,
         "provider_cli_invoked" => false,
         "network_calls_performed" => false
       }
+    end
+
+    def deploy_verify_loop_gate(state)
+      path = state.dig("implementation", "latest_verify_loop").to_s.strip
+      blockers = []
+      metadata = nil
+      if path.empty?
+        blockers << "passing verify-loop evidence is required before deploy"
+      elsif unsafe_env_path?(path)
+        blockers << "verify-loop evidence path is unsafe"
+      else
+        full = File.expand_path(path, root)
+        if !full.start_with?(aiweb_dir + File::SEPARATOR) || !File.file?(full)
+          blockers << "verify-loop evidence is missing: #{path}"
+        else
+          begin
+            metadata = JSON.parse(File.read(full))
+          rescue JSON::ParserError
+            blockers << "verify-loop evidence is malformed: #{path}"
+          end
+        end
+      end
+      if metadata
+        blockers << "verify-loop must pass before deploy" unless metadata["status"] == "passed"
+        blockers << "verify-loop evidence must be from an approved real run" unless metadata["approved"] == true && metadata["dry_run"] == false
+      end
+      {
+        "status" => blockers.empty? ? "passed" : "blocked",
+        "path" => path.empty? ? nil : path,
+        "verify_loop_status" => metadata && metadata["status"],
+        "approved" => metadata && metadata["approved"],
+        "dry_run" => metadata && metadata["dry_run"],
+        "blocking_issues" => blockers
+      }
+    end
+
+    def deploy_provider_command(target, descriptor)
+      output_directory = descriptor["output_directory"].to_s
+      case target
+      when "cloudflare-pages"
+        ["wrangler", "pages", "deploy", output_directory, "--project-name", deploy_project_name]
+      when "vercel"
+        ["vercel", "deploy", output_directory, "--prebuilt"]
+      else
+        [target]
+      end
+    end
+
+    def deploy_provider_readiness(target, descriptor, command)
+      blockers = []
+      output_directory = descriptor["output_directory"].to_s
+      blockers << "deploy output directory is missing for #{target}: #{output_directory}" if output_directory.empty? || !Dir.exist?(File.join(root, output_directory))
+      executable = command.first.to_s
+      blockers << "provider CLI executable is missing from PATH: #{executable}" if executable_path(executable).nil?
+      {
+        "status" => blockers.empty? ? "ready" : "blocked",
+        "target" => target,
+        "output_directory" => output_directory,
+        "executable" => executable,
+        "command" => command,
+        "blocking_issues" => blockers
+      }
+    end
+
+    def deploy_project_name
+      name = File.basename(root).gsub(/[^A-Za-z0-9_-]+/, "-").downcase.sub(/\A-+/, "").sub(/-+\z/, "")
+      name.empty? ? "aiweb-project" : name
     end
 
     def pr19_safety_payload(planned_changes)
