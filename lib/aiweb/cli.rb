@@ -17,7 +17,7 @@ module Aiweb
     EXIT_UNSAFE_EXTERNAL_ACTION = 5
     EXIT_INTERNAL_ERROR = 10
 
-    MUTATION_COMMANDS = %w[start init interview run agent-run ingest-design next-task qa-checklist qa-report repair advance rollback resolve-blocker snapshot design-brief design-research design-system design-prompt design select-design scaffold setup build preview qa-playwright browser-qa qa-screenshot screenshot-qa qa-a11y a11y-qa qa-lighthouse lighthouse-qa visual-critique visual-polish workbench component-map visual-edit supabase-secret-qa github-sync deploy-plan deploy].freeze
+    MUTATION_COMMANDS = %w[start init interview run agent-run ingest-design next-task qa-checklist qa-report repair advance rollback resolve-blocker snapshot design-brief design-research design-system design-prompt design select-design scaffold setup build preview qa-playwright browser-qa qa-screenshot screenshot-qa qa-a11y a11y-qa qa-lighthouse lighthouse-qa visual-critique visual-polish workbench component-map visual-edit supabase-secret-qa github-sync deploy-plan deploy daemon backend].freeze
     RUNTIME_PLAN_COMMANDS = %w[runtime-plan scaffold-status].freeze
     REGISTRY_COMMANDS = %w[design-systems skills craft].freeze
 
@@ -354,6 +354,22 @@ module Aiweb
         end
 
         dispatch_deploy(opts)
+      when "daemon", "backend"
+        opts = parse_options do |o, options|
+          o.on("--host HOST") { |v| options[:host] = v }
+          o.on("--port PORT") { |v| options[:port] = v }
+        end
+        unless @argv.empty?
+          raise UserError.new("#{command} does not accept extra positional arguments: #{@argv.join(", ")}", EXIT_VALIDATION_FAILED)
+        end
+        host = opts[:host] || "127.0.0.1"
+        port = opts[:port] || 4242
+        if @dry_run
+          Aiweb::LocalBackendDaemon.plan(host: host, port: port)
+        else
+          Aiweb::LocalBackendDaemon.new(host: host, port: port).start
+          base_payload("daemon stopped", "local backend daemon stopped")
+        end
       when "ingest-design"
         opts = parse_options do |o, options|
           o.on("--id ID") { |v| options[:id] = v }
@@ -1079,6 +1095,7 @@ module Aiweb
           visual-critique [--screenshot PATH] [--metadata PATH] [--from-screenshots latest] [--task-id ID] [--force]
           visual-polish --repair [--from-critique PATH|latest] [--max-cycles N] [--force]
           workbench [--export] [--force]
+          daemon [--host 127.0.0.1] [--port 4242]
           component-map [--force]
           visual-edit --target DATA_AIWEB_ID --prompt TEXT [--from-map PATH|latest] [--force]
           github-sync [--remote NAME] [--branch NAME]
@@ -1117,6 +1134,7 @@ module Aiweb
           agent-run --task latest --agent codex --dry-run
           agent-run --task latest --agent codex --approved
           workbench: plans or exports a static local UI manifest under .ai-web/workbench using declarative CLI controls only; requires initialized .ai-web/state.yaml, --dry-run writes nothing, export writes only workbench artifacts, executes no controls, and never mutates state.yaml
+          daemon: starts the local backend API bridge for the future web Workbench; --dry-run reports endpoints and guardrails without binding a port
           component-map: scans stable data-aiweb-id regions into .ai-web/component-map.json; --dry-run writes nothing and never reads .env/.env.*
           visual-edit: validates a selected data-aiweb-id target and writes only local handoff artifacts; --dry-run writes nothing and never patches source, runs QA/browser/build, deploys, or calls network/AI
           github-sync: local-only GitHub sync planning surface; never runs git push, provider CLIs, network, build/preview/install, or reads .env/.env.*

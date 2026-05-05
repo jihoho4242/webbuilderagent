@@ -27,6 +27,7 @@ Today the CLI manages the project director workspace: `.ai-web` state, phase gat
 - Expose the PR18 Profile S local scaffold and Supabase secret QA surface through `aiweb scaffold --profile S` / `웹빌더 scaffold --profile S` and `aiweb supabase-secret-qa` / `웹빌더 supabase-secret-qa`: Profile S is a local-only Next.js + Supabase SSR placeholder scaffold, uses `supabase/env.example.template` instead of `.env.example`, includes only `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` placeholders, and intentionally performs no external Supabase project creation, network calls, deploy, install, build, or preview.
 - Expose the PR19 GitHub sync and deploy planning surfaces through `aiweb github-sync`, `aiweb deploy-plan`, and `aiweb deploy --target cloudflare-pages|vercel --dry-run` / matching `웹빌더` commands: they are local-only planning commands that never run `git push`, provider CLIs, external deploys, network calls, build/preview/install, or read `.env` / `.env.*`; unsafe real deploy attempts are blocked.
 - Expose the PR20 approved dependency setup surface through `aiweb setup --install --approved` / `웹빌더 setup --install --approved`: `--dry-run` writes nothing and reports the planned install/log paths; a real install requires `--approved`, records stdout/stderr/setup metadata under `.ai-web/runs/setup-<timestamp>/`, warns about package lifecycle scripts, updates only safe setup state, and never builds, previews, runs QA, repairs, deploys, calls provider CLIs, or reads/prints `.env` / `.env.*`.
+- Expose the local backend bridge through `aiweb daemon` / `aiweb backend`: it binds only to localhost-class hosts by default, allows only local browser origins, requires `X-Aiweb-Token` for every `/api/*` request, exposes JSON endpoints for the future web Workbench, invokes this repository's `bin/aiweb` by absolute path instead of shell interpolation, keeps approved Codex/setup execution behind `X-Aiweb-Approval-Token`, and blocks raw shell, frontend-supplied backend flags, missing project paths, unsafe deploy, and `.env` / `.env.*` paths.
 
 ## Upgrade direction
 
@@ -47,6 +48,8 @@ The intended product direction is a design-first, natural-language webbuilder: t
 13. Repair implementation manually or through later approved automation, then deploy later once gates pass and evidence is recorded.
 
 The current Director CLI is the foundation for that loop: state, gates, QA contracts, snapshots, local preview evidence, bounded repair-loop records, visual polish records/tasks/snapshots, component maps, targeted visual edit handoff records, and local-only Profile S Supabase scaffold/secret-QA records are in place before the system grows into end-to-end generation, source repair automation, and deploy. It is not yet a full app generator.
+
+The intended product surface is now a browser Workbench, not terminal UX. Until a frontend exists, `aiweb daemon --dry-run --json` exposes the backend/API contract that the frontend should call later. The daemon keeps the Ruby Director engine as the backend source of truth and uses a guarded Codex CLI bridge only through approved `agent-run` jobs.
 
 ## Quick start
 
@@ -90,6 +93,24 @@ After the scaffold runtime plan reports `ready`, PR20 can install project depend
 ```
 
 `setup --install --dry-run` is a no-write/no-process preflight: it reports the planned `pnpm install` command and `.ai-web/runs/setup-<timestamp>/stdout.log`, `stderr.log`, and `setup.json` paths. Omitting both `--dry-run` and `--approved` is blocked and writes nothing. A real approved setup run supports the local `pnpm` install path, records stdout/stderr/setup metadata under `.ai-web/runs/setup-<timestamp>/`, reports lifecycle-script warnings from `package.json`, updates safe setup state such as latest run/package manager/node_modules presence, and intentionally does not build, preview, run QA, repair, deploy, call provider CLIs, or read/print `.env` / `.env.*`.
+
+Local backend bridge for the future web Workbench:
+
+```bash
+./bin/aiweb daemon --host 127.0.0.1 --port 4242 --dry-run --json
+AIWEB_DAEMON_TOKEN="$(ruby -rsecurerandom -e 'print SecureRandom.hex(24)')" \
+  ./bin/aiweb daemon --host 127.0.0.1 --port 4242
+```
+
+`daemon --dry-run` writes nothing and reports the local API contract. A real daemon exposes `GET /health`, `GET /api/engine`, `GET /api/project/status`, `GET /api/project/workbench`, `GET /api/project/runs`, `POST /api/project/command`, and `POST /api/codex/agent-run`. The frontend must send structured JSON only; the daemon never accepts raw shell commands, rejects non-local `Origin` headers, requires `X-Aiweb-Token` for every `/api/*` request, requires an explicit project `path` for project/Codex operations, rejects `.env` / `.env.*` paths, owns backend flags (`--path`, `--json`, `--dry-run`, `--approved`), calls this repository's `bin/aiweb` by absolute path, serializes command execution, caps request bodies at 1 MiB, limits request/header reads, times out long bridge commands, redacts secret-looking run summary values, and keeps real Codex source patching behind both `agent-run --approved` and a matching `X-Aiweb-Approval-Token` header.
+
+If `AIWEB_DAEMON_TOKEN` is omitted, the real daemon generates and prints a one-session local token. The future frontend should store that token only in local session state and send it as `X-Aiweb-Token`. For any future frontend control that sets `"approved": true`, either reuse the same token or set a stronger `AIWEB_DAEMON_APPROVAL_TOKEN` and send it as `X-Aiweb-Approval-Token`:
+
+```bash
+AIWEB_DAEMON_TOKEN="$(ruby -rsecurerandom -e 'print SecureRandom.hex(24)')" \
+AIWEB_DAEMON_APPROVAL_TOKEN="$(ruby -rsecurerandom -e 'print SecureRandom.hex(24)')" \
+  ./bin/aiweb daemon --host 127.0.0.1 --port 4242
+```
 
 After dependencies are present, PR9 adds the build contract:
 
