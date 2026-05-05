@@ -2673,6 +2673,11 @@ class AiwebCliTest < Minitest::Test
       bin_dir,
       "codex",
       <<~'SH'
+        if [ -n "${FAKE_CODEX_PROMPT_PATH:-}" ]; then
+          cat > "${FAKE_CODEX_PROMPT_PATH}"
+        else
+          cat >/dev/null
+        fi
         echo "${FAKE_CODEX_STDOUT:-fake codex stdout}"
         echo "${FAKE_CODEX_STDERR:-fake codex stderr}" >&2
         if [ -n "${FAKE_CODEX_PATCH_PATH:-}" ] && [ -f "${FAKE_CODEX_PATCH_PATH}" ]; then
@@ -3217,6 +3222,47 @@ class AiwebCliTest < Minitest::Test
     end
   end
 
+  def test_agent_run_targeted_visual_edit_uses_selected_source_only_and_blocks_full_page_regeneration
+    in_tmp do |dir|
+      prepare_profile_d_scaffold_flow
+      map_payload, map_code = json_cmd("component-map")
+      assert_equal 0, map_code
+      assert_includes component_map_ids(map_payload.fetch("component_map")), "component.hero.copy"
+      edit_payload, edit_code = json_cmd("visual-edit", "--target", "component.hero.copy", "--prompt", "Refine only the mapped hero component copy")
+      assert_equal 0, edit_code
+      task_path = edit_payload.fetch("changed_files").find { |path| path.match?(%r{\A\.ai-web/tasks/visual-edit-.*\.md\z}) }
+      state = load_state
+      state["implementation"]["current_task"] = task_path
+      write_state(state)
+
+      bin_dir = write_fake_codex_tooling(dir)
+      prompt_path = File.join(dir, "captured-codex-prompt.txt")
+      stdout, stderr, code = run_aiweb_env(
+        {
+          "PATH" => [bin_dir, "/usr/bin", "/bin", "/usr/sbin", "/sbin"].join(File::PATH_SEPARATOR),
+          "FAKE_CODEX_PATCH_PATH" => File.join(dir, "src/components/Hero.astro"),
+          "FAKE_CODEX_PROMPT_PATH" => prompt_path
+        },
+        "agent-run", "--task", "latest", "--agent", "codex", "--approved", "--json"
+      )
+      payload = JSON.parse(stdout)
+      prompt = File.read(prompt_path)
+
+      assert_equal 0, code
+      assert_equal "", stderr
+      assert_equal "passed", payload.dig("agent_run", "status")
+      assert_equal ["src/components/Hero.astro"], payload.dig("agent_run", "source_paths")
+      assert_equal true, payload.dig("agent_run", "context", "targeted_edit")
+      assert_equal ["src/components/Hero.astro"], payload.dig("agent_run", "context", "target_allowlist", "source_paths")
+      assert_equal ["src/components/Hero.astro"], payload.dig("agent_run", "changed_source_files")
+      assert_includes prompt, "Targeted visual edit allowlist"
+      assert_includes prompt, "Do not regenerate the full page"
+      assert_includes prompt, "Patch only the strict source_paths"
+      assert_includes prompt, "## src/components/Hero.astro"
+      refute_includes prompt, "## src/pages/index.astro"
+    end
+  end
+
   def test_agent_run_approved_fake_codex_failure_records_failure_and_logs
     in_tmp do |dir|
       task_markdown = <<~MD
@@ -3306,6 +3352,51 @@ class AiwebCliTest < Minitest::Test
       assert_equal "", stderr
       assert_equal "blocked", payload.dig("agent_run", "status")
       assert_match(/\.env|unsafe|refus/i, [payload.dig("error", "message"), payload["blocking_issues"], payload.dig("agent_run", "blocking_issues")].flatten.compact.join("\n"))
+      assert_no_agent_run_side_effects(before_entries: before_entries, before_state: before_state, env_size: env_size, env_mtime: env_mtime)
+      refute_includes stdout, secret
+    end
+  end
+
+  def test_agent_run_blocks_visual_edit_target_allowlist_with_unsafe_env_source
+    in_tmp do
+      prepare_profile_d_scaffold_flow
+      json_cmd("component-map")
+      secret = "SECRET=pr24-target-allowlist-do-not-leak"
+      File.write(".env", "#{secret}\n")
+      FileUtils.mkdir_p(".ai-web/tasks")
+      task_path = ".ai-web/tasks/visual-edit-unsafe.md"
+      File.write(
+        task_path,
+        <<~MD
+          # Visual Edit Handoff
+
+          ## Target Source Allowlist
+          ```json
+          {
+            "type": "visual_edit_target_allowlist",
+            "strict": true,
+            "data_aiweb_ids": ["component.hero.copy"],
+            "source_paths": [".env"],
+            "full_page_regeneration_allowed": false
+          }
+          ```
+        MD
+      )
+      state = load_state
+      state["implementation"]["current_task"] = task_path
+      write_state(state)
+      before_entries = project_entries
+      before_state = File.read(".ai-web/state.yaml")
+      env_size = File.size(".env")
+      env_mtime = File.mtime(".env")
+
+      stdout, stderr, code = run_aiweb("agent-run", "--task", "latest", "--agent", "codex", "--approved", "--json")
+      payload = JSON.parse(stdout)
+
+      assert_equal 5, code
+      assert_equal "", stderr
+      assert_equal "blocked", payload.dig("agent_run", "status")
+      assert_match(/allowlist|\.env|unsafe|source path/i, [payload.dig("error", "message"), payload["blocking_issues"], payload.dig("agent_run", "blocking_issues")].flatten.compact.join("\n"))
       assert_no_agent_run_side_effects(before_entries: before_entries, before_state: before_state, env_size: env_size, env_mtime: env_mtime)
       refute_includes stdout, secret
     end
@@ -4289,9 +4380,75 @@ class AiwebCliTest < Minitest::Test
       record = JSON.parse(File.read(record_path))
       assert_equal "component.hero.copy", record.dig("target", "data_aiweb_id")
       assert_equal "src/components/Hero.astro", record.dig("target", "source_path")
+      assert_equal true, record.dig("target_allowlist", "strict")
+      assert_equal "visual_edit_target_allowlist", record.dig("target_allowlist", "type")
+      assert_equal ["component.hero.copy"], record.dig("target_allowlist", "data_aiweb_ids")
+      assert_equal ["src/components/Hero.astro"], record.dig("target_allowlist", "source_paths")
+      assert_equal false, record.dig("target_allowlist", "full_page_regeneration_allowed")
+      assert_equal "src/components/Hero.astro", record.dig("target_allowlist", "selected_component", "source_path")
       assert_match(/selected region|source auto-patch|no source/i, JSON.generate(record.fetch("guardrails")))
-      refute_includes File.read(task_path), "do-not-touch"
+      task_markdown = File.read(task_path)
+      assert_includes task_markdown, "Target Source Allowlist"
+      assert_includes task_markdown, "visual_edit_target_allowlist"
+      assert_includes task_markdown, "Do not regenerate the full page"
+      assert_includes task_markdown, "src/components/Hero.astro"
+      refute_includes task_markdown, "do-not-touch"
       refute_includes JSON.generate(record), "do-not-touch"
+    end
+  end
+
+  def test_visual_edit_blocks_ambiguous_target_component_map_without_writes
+    in_tmp do
+      prepare_profile_d_scaffold_flow
+      _map_payload, map_code = json_cmd("component-map")
+      assert_equal 0, map_code
+      map = JSON.parse(File.read(".ai-web/component-map.json"))
+      duplicate = map.fetch("components").find { |component| component["data_aiweb_id"] == "component.hero.copy" }.dup
+      duplicate["line"] = duplicate.fetch("line").to_i + 1
+      map.fetch("components") << duplicate
+      File.write(".ai-web/component-map.json", JSON.pretty_generate(map))
+      before_entries = project_entries
+      before_state = File.read(".ai-web/state.yaml")
+
+      stdout, stderr, code = run_aiweb("visual-edit", "--target", "component.hero.copy", "--prompt", "수정", "--json")
+      payload = JSON.parse(stdout)
+
+      assert_equal 1, code
+      assert_equal "", stderr
+      assert_equal "blocked", payload.dig("visual_edit", "status")
+      assert_match(/ambiguous|component\.hero\.copy/i, [payload.dig("error", "message"), payload["blocking_issues"], payload.dig("visual_edit", "blocking_issues")].flatten.compact.join("\n"))
+      assert_equal before_entries, project_entries, "ambiguous visual-edit must not write task or record artifacts"
+      assert_equal before_state, File.read(".ai-web/state.yaml"), "ambiguous visual-edit must not mutate state"
+    end
+  end
+
+  def test_visual_edit_blocks_unsafe_target_source_path_without_leaking_or_writing
+    in_tmp do
+      prepare_profile_d_scaffold_flow
+      json_cmd("component-map")
+      secret = "SECRET=pr24-visual-target-do-not-leak"
+      File.write(".env", "#{secret}\n")
+      map = JSON.parse(File.read(".ai-web/component-map.json"))
+      target = map.fetch("components").find { |component| component["data_aiweb_id"] == "component.hero.copy" }
+      target["source_path"] = ".env"
+      File.write(".ai-web/component-map.json", JSON.pretty_generate(map))
+      before_entries = project_entries
+      before_state = File.read(".ai-web/state.yaml")
+      env_size = File.size(".env")
+      env_mtime = File.mtime(".env")
+
+      stdout, stderr, code = run_aiweb("visual-edit", "--target", "component.hero.copy", "--prompt", "수정", "--json")
+      payload = JSON.parse(stdout)
+
+      assert_equal 1, code
+      assert_equal "", stderr
+      assert_equal "blocked", payload.dig("visual_edit", "status")
+      assert_match(/unsafe|\.env|source path/i, [payload.dig("error", "message"), payload["blocking_issues"], payload.dig("visual_edit", "blocking_issues")].flatten.compact.join("\n"))
+      assert_equal before_entries, project_entries, "unsafe source visual-edit must not write artifacts"
+      assert_equal before_state, File.read(".ai-web/state.yaml"), "unsafe source visual-edit must not mutate state"
+      assert_equal env_size, File.size(".env")
+      assert_equal env_mtime, File.mtime(".env")
+      refute_includes stdout, secret
     end
   end
 

@@ -1582,8 +1582,9 @@ module Aiweb
       state = load_state
       source = resolve_component_map_source(from_map)
       component_map = source["path"] ? load_component_map_for_visual_edit(source["path"]) : nil
-      component = component_map ? component_map_component(component_map, target) : nil
-      blockers = visual_edit_blockers(source, component_map, component, target, force: force)
+      components = component_map ? component_map_components(component_map, target) : []
+      component = components.length == 1 ? components.first : nil
+      blockers = visual_edit_blockers(source, component_map, component, target, components: components, force: force)
 
       timestamp = Time.now.utc.strftime("%Y%m%dT%H%M%SZ")
       edit_id = "visual-edit-#{timestamp}-#{slug(target)}"
@@ -1678,12 +1679,14 @@ module Aiweb
       rescue SystemCallError => e
         blockers << "agent-run cannot read component-map.json: #{e.message}"
       end
-      source_paths = agent_run_source_paths(task_text, component_map)
+      target_allowlist = agent_run_target_allowlist(task_text)
+      source_paths = agent_run_source_paths(task_text, component_map, target_allowlist: target_allowlist)
       context = agent_run_context_manifest(
         task_source: task_source,
         design_text: design_text,
         component_map_text: component_map_text,
-        source_paths: source_paths
+        source_paths: source_paths,
+        target_allowlist: target_allowlist
       )
       blockers << task_source["reason"] if task_source["path"].nil?
       blockers << "agent-run task packet does not identify any safe source targets" if source_paths.empty?
@@ -1691,6 +1694,7 @@ module Aiweb
       blockers << "agent-run requires --approved for real command execution" if !dry_run && !approved
       blockers << "codex executable is missing from PATH" if !dry_run && approved && executable_path(agent_name).nil?
       blockers.concat(agent_run_forbidden_path_blockers(task_text, component_map_text))
+      blockers.concat(agent_run_target_allowlist_blockers(target_allowlist, component_map))
 
       planned_changes = [
         relative(run_dir),
@@ -6679,18 +6683,111 @@ module Aiweb
       load_component_map_for_visual_edit(path)
     end
 
-    def agent_run_source_paths(task_text, component_map)
+    def agent_run_source_paths(task_text, component_map, target_allowlist: nil)
+      allowlist_paths = agent_run_target_allowlist_source_paths(target_allowlist)
+      unless allowlist_paths.empty?
+        return allowlist_paths.uniq.select { |path| agent_run_source_path_allowed?(path) }.first(10)
+      end
+
       paths = []
       paths.concat(agent_run_paths_from_text(task_text))
       paths.concat(agent_run_component_map_source_paths(component_map)) if component_map
       paths.uniq.select { |path| agent_run_source_path_allowed?(path) }.first(10)
     end
 
+    def agent_run_target_allowlist(task_text)
+      candidates = agent_run_json_blocks(task_text)
+      candidates.find { |candidate| agent_run_target_allowlist?(candidate) }
+    end
+
+    def agent_run_json_blocks(text)
+      return [] if text.to_s.strip.empty?
+
+      blocks = []
+      text.to_s.scan(/```(?:json)?\s*(.*?)```/m) do |match|
+        raw = match.first.to_s.strip
+        next if raw.empty?
+
+        begin
+          parsed = JSON.parse(raw)
+          blocks << parsed if parsed.is_a?(Hash)
+        rescue JSON::ParserError
+          next
+        end
+      end
+      blocks
+    end
+
+    def agent_run_target_allowlist?(value)
+      return false unless value.is_a?(Hash)
+
+      value["type"].to_s == "visual_edit_target_allowlist" ||
+        (value["strict"] == true && (value.key?("source_paths") || value.key?("data_aiweb_ids") || value.key?("data_aiweb_id")))
+    end
+
+    def agent_run_target_allowlist_source_paths(target_allowlist)
+      return [] unless target_allowlist.is_a?(Hash)
+
+      Array(target_allowlist["source_paths"]).map { |path| agent_run_normalized_relative_path(path) }.reject(&:empty?)
+    end
+
+    def agent_run_target_allowlist_ids(target_allowlist)
+      return [] unless target_allowlist.is_a?(Hash)
+
+      ids = Array(target_allowlist["data_aiweb_ids"])
+      ids << target_allowlist["data_aiweb_id"] if target_allowlist["data_aiweb_id"]
+      ids.map { |id| id.to_s.strip }.reject(&:empty?).uniq
+    end
+
+    def agent_run_target_allowlist_blockers(target_allowlist, component_map)
+      return [] unless target_allowlist
+
+      blockers = []
+      blockers << "target allowlist must be strict for visual-edit agent-run handoffs" unless target_allowlist["strict"] == true
+      ids = agent_run_target_allowlist_ids(target_allowlist)
+      blockers << "target allowlist must identify exactly one data-aiweb-id" unless ids.length == 1
+      paths = agent_run_target_allowlist_source_paths(target_allowlist)
+      blockers << "target allowlist must include at least one source_path" if paths.empty?
+
+      paths.each do |path|
+        blockers << "target allowlist source path is unsafe or not editable: #{path}" unless agent_run_source_path_allowed?(path)
+      end
+
+      return blockers unless ids.length == 1
+
+      unless component_map
+        blockers << "target allowlist requires a component map"
+        return blockers
+      end
+
+      matches = component_map_components(component_map, ids.first)
+      blockers << "target data-aiweb-id not found in component map: #{ids.first}" if matches.empty?
+      blockers << "target data-aiweb-id is ambiguous in component map: #{ids.first}" if matches.length > 1
+      return blockers unless matches.length == 1
+
+      component = matches.first
+      blockers << "target data-aiweb-id is not editable: #{ids.first}" if component["editable"] == false
+      component_path = agent_run_normalized_relative_path(component["source_path"])
+      if component_path.empty?
+        blockers << "target component source path is missing for data-aiweb-id: #{ids.first}"
+      elsif !agent_run_source_path_allowed?(component_path)
+        blockers << "target component source path is unsafe or not editable: #{component_path}"
+      elsif !paths.include?(component_path)
+        blockers << "target allowlist does not include selected component source path: #{component_path}"
+      end
+
+      blockers
+    end
+
+    def agent_run_normalized_relative_path(path)
+      path.to_s.tr("\\", "/").sub(%r{\A(?:\./)+}, "").strip
+    end
+
     def agent_run_paths_from_text(text)
       return [] if text.to_s.strip.empty?
 
       text.scan(%r{(?<![\w.-])(?:\.{1,2}/)?(?:[\w.-]+/)*[\w.-]+\.[A-Za-z0-9]+}).flatten.map do |path|
-        path.sub(/[),.;:]+$/, "")
+        agent_run_normalized_relative_path(path.sub(/[),.;:]+$/, ""))
       end.uniq.select { |path| File.exist?(File.join(root, path)) }
     end
 
@@ -6709,7 +6806,7 @@ module Aiweb
     end
 
     def agent_run_source_path_allowed?(path)
-      normalized = path.to_s.tr("\\", "/").sub(%r{\A(?:\./)+}, "")
+      normalized = agent_run_normalized_relative_path(path)
       parts = normalized.split("/")
       return false if normalized.empty? || normalized.start_with?("/") || parts.any? { |part| part == ".." }
       return false if parts.any? { |part| part.start_with?(".env") }
@@ -6746,7 +6843,7 @@ module Aiweb
       normalized.match?(/\b(do not|don't|dont|no)\b.*\.env/) || normalized.match?(/\.env.*\b(not allowed|forbidden|must not|never)\b/)
     end
 
-    def agent_run_context_manifest(task_source:, design_text:, component_map_text:, source_paths:)
+    def agent_run_context_manifest(task_source:, design_text:, component_map_text:, source_paths:, target_allowlist: nil)
       context_files = []
 
       if task_source["path"]
@@ -6771,6 +6868,8 @@ module Aiweb
         "source_files" => source_files,
         "context_files" => context_files.compact,
         "source_paths" => source_paths,
+        "target_allowlist" => target_allowlist,
+        "targeted_edit" => !!target_allowlist,
         "safe_context_only" => true
       }
     end
@@ -6813,6 +6912,11 @@ module Aiweb
         lines << "## component-map.json"
         lines << context["component_map"]["content"].to_s
       end
+      if context["target_allowlist"]
+        lines << ""
+        lines << "## Targeted visual edit allowlist"
+        lines << JSON.pretty_generate(context["target_allowlist"])
+      end
       Array(context["source_files"]).each do |file|
         lines << ""
         lines << "## #{file["path"]}"
@@ -6821,6 +6925,11 @@ module Aiweb
       lines << ""
       lines << "## Instructions"
       lines << "- Make the minimal safe source patch needed for the task."
+      if context["target_allowlist"]
+        lines << "- Patch only the strict source_paths listed in the targeted visual edit allowlist."
+        lines << "- Do not regenerate the full page."
+        lines << "- Do not edit unrelated components or pages even if they appear in component-map.json."
+      end
       lines << "- Leave .ai-web run artifacts, logs, and diff evidence to the wrapper."
       lines << "- Return by exiting after the patch is complete."
       lines.join("\n")
@@ -6877,7 +6986,9 @@ module Aiweb
         "context" => {
           "safe_context_only" => context["safe_context_only"] == true,
           "context_files" => context["context_files"],
-          "source_paths" => source_paths
+          "source_paths" => source_paths,
+          "targeted_edit" => context["targeted_edit"] == true,
+          "target_allowlist" => context["target_allowlist"]
         },
         "source_paths" => source_paths,
         "changed_source_files" => changed_source_files,
@@ -8057,17 +8168,31 @@ module Aiweb
     end
 
     def component_map_component(component_map, target)
-      Array(component_map["components"]).find { |component| component.is_a?(Hash) && component["data_aiweb_id"].to_s == target }
+      matches = component_map_components(component_map, target)
+      matches.length == 1 ? matches.first : nil
     end
 
-    def visual_edit_blockers(source, component_map, component, target, force:)
+    def component_map_components(component_map, target)
+      Array(component_map["components"]).select { |component| component.is_a?(Hash) && component["data_aiweb_id"].to_s == target }
+    end
+
+    def visual_edit_blockers(source, component_map, component, target, components:, force:)
       blockers = []
       blockers << source["error"] if source["error"]
       return blockers unless source["error"].nil?
 
       blockers << "component map not found: #{source["relative"]}" unless component_map
-      blockers << "target data-aiweb-id not found in component map: #{target}" if component_map && component.nil?
+      blockers << "target data-aiweb-id not found in component map: #{target}" if component_map && components.empty?
+      blockers << "target data-aiweb-id is ambiguous in component map: #{target}" if component_map && components.length > 1
       blockers << "target data-aiweb-id is not editable: #{target}" if component && component["editable"] == false
+      if component
+        source_path = agent_run_normalized_relative_path(component["source_path"])
+        if source_path.empty?
+          blockers << "target component source path is missing for data-aiweb-id: #{target}"
+        elsif !agent_run_source_path_allowed?(source_path)
+          blockers << "target component source path is unsafe or not editable: #{source_path}"
+        end
+      end
       blockers
     end
 
@@ -8087,10 +8212,13 @@ module Aiweb
           "route" => component && component["route"],
           "editable" => component ? component["editable"] : nil
         },
+        "target_allowlist" => visual_edit_target_allowlist(target, source_map, component),
         "prompt_summary" => visual_edit_prompt_summary(prompt),
         "prompt_sha256" => Digest::SHA256.hexdigest(prompt),
         "guardrails" => [
           "Target only the selected region identified by data-aiweb-id.",
+          "Strict source allowlist: patch only the mapped target source path.",
+          "Do not regenerate the full page or unrelated components.",
           "No source auto-patch from this visual-edit command.",
           "Run smoke QA before any later source edit is accepted.",
           "Do not read or include .env or .env.* contents."
@@ -8104,6 +8232,26 @@ module Aiweb
         record["planned_record_path"] = record["record_path"]
       end
       record
+    end
+
+    def visual_edit_target_allowlist(target, source_map, component)
+      source_paths = [component && component["source_path"]].compact.map { |path| agent_run_normalized_relative_path(path) }.reject(&:empty?)
+      {
+        "type" => "visual_edit_target_allowlist",
+        "strict" => true,
+        "data_aiweb_ids" => [target],
+        "source_paths" => source_paths,
+        "component_map_path" => source_map,
+        "selected_component" => component ? {
+          "data_aiweb_id" => target,
+          "source_path" => component["source_path"],
+          "line" => component["line"],
+          "kind" => component["kind"],
+          "route" => component["route"],
+          "editable" => component["editable"]
+        } : nil,
+        "full_page_regeneration_allowed" => false
+      }
     end
 
     def visual_edit_prompt_summary(prompt)
@@ -8139,6 +8287,13 @@ module Aiweb
 
         ## Guardrails
         #{record.fetch("guardrails").map { |guardrail| "- #{guardrail}" }.join("\n")}
+
+        ## Target Source Allowlist
+        Patch only these strict source paths and data-aiweb-id targets. Do not regenerate the full page or unrelated components.
+
+        ```json
+        #{JSON.pretty_generate(record.fetch("target_allowlist"))}
+        ```
 
         ## Next step
         A later implementation pass may patch only this mapped source region after smoke QA evidence is available. This command intentionally created a handoff record only.
