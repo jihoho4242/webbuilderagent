@@ -1092,3 +1092,34 @@ type CodexAgentRunInput = {
 | 5 | B3 기능별 UI 매핑 구현 요약 + 5장 전체 표 | backend command 누락을 최종 점검한다. |
 | 6 | B8 API와 UI 연결표 | 구현자가 mock/API client를 바로 연결할 수 있다. |
 | 7 | B10 체크리스트 | Claude Design 투입 직전/결과 검토 시 gate로 사용한다. |
+
+## B12. Claude Design / 구현 전달 파일 패킷
+
+이 섹션은 파일 전달 시 혼선을 막기 위한 패킷 정의다. 새 source of truth를 만들지 않고, 기존 파일의 역할만 구분한다.
+
+| 우선순위 | 파일/범위 | 전달 대상 | 역할 | 해석 규칙 |
+|---|---|---|---|---|
+| 필수 1 | `docs/frontend-design-plan.md` 전체 | Claude Design, 구현자 | 최상위 source of truth | 제품 방향, 페이지 수, 기능 범위, API 연결, 상태 규칙은 이 문서를 따른다. |
+| 필수 1-A | `docs/frontend-design-plan.md` B2 | Claude Design | 디자인 브리프 | Claude Design은 이 범위를 벗어난 기능/페이지/톤을 만들지 않는다. |
+| 필수 1-B | `docs/frontend-design-plan.md` B6 | Claude Design, 구현자 | 화면별 구조 명세 | `/`, `/workspace`, `/settings` 구조를 고정한다. |
+| 필수 1-C | `docs/frontend-design-plan.md` B4, B9 | Claude Design, 구현자 | CTA/state 규칙 | 카드, 버튼, 확인 모달, 로딩/오류/권한 상태를 그대로 반영한다. |
+| 필수 1-D | `docs/frontend-design-plan.md` B3, 5장, B8 | 구현자 | 기능/API 연결 기준 | backend command와 daemon API 매핑 누락 방지용 기준이다. |
+| 보조 | `AGENTS.md` | 구현자 | 작업/안전 지침 | 구현 시 프로젝트 지침과 금지사항을 따른다. |
+| 보조 | `.ai-web/product.md`, `.ai-web/brand.md`, `.ai-web/content.md`, `.ai-web/ia.md` | Claude Design, 구현자 | 프로젝트 문맥 | 내용이 비어 있거나 약하면 임의 보강하지 말고 `확인 필요`로 둔다. |
+| 보조 | `DESIGN.md`, `.ai-web/DESIGN.md` | Claude Design, 구현자 | 디자인 시스템 계약 placeholder | 현재 상세 색상/타이포/컴포넌트 토큰은 확정되지 않았다. Claude Design 결과를 반영하기 전까지 최종 visual spec으로 오해하지 않는다. |
+| 보조 | `.ai-web/quality.yaml`, `.ai-web/stack.md` | 구현자 | 품질/스택 문맥 | 기존 값과 충돌하면 확인 필요로 표시한다. |
+
+### 구현자가 이 패킷을 기반으로 시작하는 순서
+
+| 순서 | 작업 | 기준 |
+|---|---|---|
+| 1 | `docs/frontend-design-plan.md` 1~10장, 부록 A/B를 읽고 기능 범위 고정 | source of truth |
+| 2 | 프론트 앱 위치/스택 확정 여부 확인 | `apps/workbench/` React/Vite SPA는 권장, 최종 확정은 확인 필요 |
+| 3 | `/`, `/workspace`, `/settings` route skeleton 생성 | 3장, B6 |
+| 4 | daemon API client 작성 | 7.2, B8 |
+| 5 | connection/status/workbench/runs read flow 구현 | 1.1, B8 |
+| 6 | Chat / ActionCard / DynamicForm / Confirmation / ResultPanel 기본 컴포넌트 구현 | 4장, 6장, B4, B7, B9 |
+| 7 | Design → Build/Preview → QA/Repair → Visual/Edit → Agent-run → Release tab 순으로 기능군 연결 | B3, 5장 |
+| 8 | 위험 작업에 dry-run/approval/secret-path guard UI 적용 | 4.6, 7.3, B9 |
+| 9 | 반응형/접근성/테스트 기준 적용 | 4.11, 9장 |
+| 10 | 플랜에 없는 기능, route, 실제 deploy, raw shell UI는 추가하지 않음 | B10 |
