@@ -30,6 +30,7 @@ Today the CLI manages the project director workspace: `.ai-web` state, phase gat
 - Expose the PR20 approved dependency setup surface through `aiweb setup --install --approved` / `웹빌더 setup --install --approved`: `--dry-run` writes nothing and reports the planned install/log paths; a real install requires `--approved`, records stdout/stderr/setup metadata under `.ai-web/runs/setup-<timestamp>/`, warns about package lifecycle scripts, updates only safe setup state, and never builds, previews, runs QA, repairs, deploys, calls provider CLIs, or reads/prints `.env` / `.env.*`.
 - Expose the local backend bridge through `aiweb daemon` / `aiweb backend`: it binds only to localhost-class hosts by default, allows only local browser origins, requires `X-Aiweb-Token` for every `/api/*` request, exposes JSON endpoints for the future web Workbench, invokes this repository's `bin/aiweb` by absolute path instead of shell interpolation, keeps approved Codex/setup execution behind `X-Aiweb-Approval-Token`, and blocks raw shell, frontend-supplied backend flags, missing project paths, unsafe deploy, and `.env` / `.env.*` paths.
 - Expose the PR29 local run lifecycle control plane through `aiweb run-status`, `aiweb run-cancel`, and `aiweb run-resume` / matching `웹빌더` commands: active runs are locked through `.ai-web/runs/active-run.json`, per-run `lifecycle.json` evidence records status transitions, cancellation writes `cancel-request.json` and is observed at lifecycle checkpoints, and resume records `resume-plan.json` descriptors without launching provider, agent, build, preview, or network commands.
+- Expose the PR30 observability surface through `aiweb run-timeline` / `aiweb timeline` and `aiweb observability-summary` / `aiweb summary`: both are read-only views over safe `.ai-web/runs` JSON evidence, cap `--limit` at 50, redact secret-like keys and `.env` paths, and launch no processes.
 
 ## Upgrade direction
 
@@ -49,6 +50,7 @@ The intended product direction is a design-first, natural-language webbuilder: t
 12. Run `setup --install --dry-run` to inspect the planned dependency install, then `setup --install --approved` only when you explicitly approve local package installation.
 13. Repair implementation manually or through later approved automation, then deploy later once gates pass and evidence is recorded.
 14. Use `run-status`, `run-cancel`, and `run-resume` to inspect, request cancellation, or record a safe resume descriptor for long local runs.
+15. Use `run-timeline` and `observability-summary` to audit recent local evidence before deciding the next supervised action.
 
 The current Director CLI is the foundation for that loop: state, gates, QA contracts, snapshots, local preview evidence, bounded repair-loop records, visual polish records/tasks/snapshots, component maps, targeted visual edit handoff records, local-only Profile S Supabase scaffold/secret-QA records, verify-loop evidence, and gated deploy-adapter boundaries are in place before the system grows into richer end-to-end generation and source repair automation. It is not yet a full app generator.
 
@@ -210,6 +212,19 @@ PR29 adds a local run lifecycle control plane:
 
 `run-status` is read-only and reports `.ai-web/runs/active-run.json` plus recent per-run lifecycle summaries. Real long-running commands such as `verify-loop`, approved deploy adapters, and `workbench --serve --approved` create an active-run lock before local execution so another real run cannot silently overlap it. `run-cancel --dry-run` plans the cancel request without writes; a real `run-cancel` writes `.ai-web/runs/<run-id>/cancel-request.json` and updates `<run-id>/lifecycle.json`. `verify-loop` observes cancellation between lifecycle checkpoints and records `status: cancelled`; `workbench --serve` cancellation also sends a local TERM to the recorded localhost server pid. `run-resume` records only `.ai-web/runs/<run-id>/resume-plan.json` with the suggested next command; it does not launch agents, builds, provider CLIs, deploys, or network calls.
 
+PR30 adds read-only timeline and observability summaries:
+
+```bash
+./bin/aiweb --path ~/Desktop/aiweb-premium-service-site run-timeline --limit 20 --json
+./bin/aiweb --path ~/Desktop/aiweb-premium-service-site timeline --limit 10 --json
+./bin/aiweb --path ~/Desktop/aiweb-premium-service-site observability-summary --limit 20 --json
+./bin/aiweb --path ~/Desktop/aiweb-premium-service-site summary --limit 10 --json
+웹빌더 --path ~/Desktop/aiweb-premium-service-site run-timeline --limit 20
+웹빌더 --path ~/Desktop/aiweb-premium-service-site observability-summary --limit 20
+```
+
+`run-timeline` returns recent safe `.ai-web/runs/*/*.json` evidence summaries using the same redaction rules as the Workbench run timeline. `observability-summary` adds active-run state, latest verify-loop, latest deploy, recent status counts, and recent blockers. Both commands are read-only, cap `--limit` at 50, exclude `.env` / `.env.*`, and do not mutate `.ai-web/state.yaml`, launch processes, deploy, install, or call network services.
+
 PR18 adds the local-only Profile S Supabase scaffold and secret QA surface:
 
 ```bash
@@ -301,6 +316,8 @@ Phase-sensitive commands are guarded by the Director state machine:
 ./bin/aiweb agent-run --task latest --agent codex --dry-run
 ./bin/aiweb verify-loop --max-cycles 3 --dry-run
 ./bin/aiweb run-status --json
+./bin/aiweb run-timeline --limit 20 --json
+./bin/aiweb observability-summary --limit 20 --json
 ./bin/aiweb run-cancel --run-id active --dry-run
 ./bin/aiweb run-resume --run-id latest --dry-run
 ./bin/aiweb workbench --dry-run

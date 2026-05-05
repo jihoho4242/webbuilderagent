@@ -980,6 +980,59 @@ module Aiweb
       payload
     end
 
+    def run_timeline(limit: 20)
+      assert_initialized!
+      state = load_state
+      bounded_limit = bounded_observability_limit(limit)
+      timeline = workbench_run_timeline(bounded_limit)
+      payload = status_hash(state: state, changed_files: [])
+      payload["action_taken"] = "reported run timeline"
+      payload["run_timeline"] = {
+        "schema_version" => 1,
+        "status" => timeline.empty? ? "empty" : "ready",
+        "generated_at" => now,
+        "limit" => bounded_limit,
+        "active_run" => read_active_run_lock,
+        "active_run_live" => active_run_live?(read_active_run_lock),
+        "runs" => timeline,
+        "blocking_issues" => []
+      }
+      payload["next_action"] = timeline.empty? ? "run a local command that records .ai-web/runs evidence, then rerun aiweb run-timeline" : "inspect the timeline entries or run aiweb observability-summary for a compact status rollup"
+      payload
+    end
+
+    def observability_summary(limit: 20)
+      assert_initialized!
+      state = load_state
+      bounded_limit = bounded_observability_limit(limit)
+      timeline = workbench_run_timeline(bounded_limit)
+      active = read_active_run_lock
+      latest_deploy_path = state.dig("deploy", "latest_deploy")
+      latest_deploy = latest_deploy_path && !unsafe_env_path?(latest_deploy_path) ? workbench_json_summary(latest_deploy_path, allow_runs: true) : nil
+      statuses = timeline.map { |entry| entry["status"].to_s.empty? ? "unknown" : entry["status"].to_s }
+      recent_blockers = timeline.flat_map { |entry| Array(entry["blocking_issues"]) }.compact.map(&:to_s).reject(&:empty?).first(10)
+      summary = {
+        "schema_version" => 1,
+        "status" => active_run_live?(active) ? "running" : (timeline.empty? ? "empty" : "ready"),
+        "generated_at" => now,
+        "limit" => bounded_limit,
+        "active_run" => active,
+        "active_run_live" => active_run_live?(active),
+        "latest_verify_loop" => workbench_verify_loop_status(state),
+        "latest_deploy" => latest_deploy,
+        "recent_run_count" => timeline.length,
+        "recent_status_counts" => statuses.each_with_object(Hash.new(0)) { |status, memo| memo[status] += 1 },
+        "recent_blockers" => recent_blockers,
+        "recent_runs" => timeline,
+        "blocking_issues" => []
+      }
+      payload = status_hash(state: state, changed_files: [])
+      payload["action_taken"] = "reported observability summary"
+      payload["observability_summary"] = summary
+      payload["next_action"] = active ? "inspect active run with aiweb run-status --run-id active or request cancellation with aiweb run-cancel --run-id active" : "continue with aiweb verify-loop --max-cycles 3 --dry-run or inspect aiweb run-timeline"
+      payload
+    end
+
     def run_cancel(run_id: "active", dry_run: false, force: false)
       assert_initialized!
       state = load_state
@@ -4525,16 +4578,27 @@ module Aiweb
       entries
     end
 
-    def workbench_run_timeline
-      Dir.glob(File.join(aiweb_dir, "runs", "*", "*.json")).sort.last(20).map do |path|
-        workbench_json_summary(relative(path))
+    def bounded_observability_limit(limit)
+      value = limit.to_i
+      value = 20 unless value.positive?
+      [[value, 1].max, 50].min
+    end
+
+    def workbench_run_timeline(limit = 20)
+      bounded_limit = bounded_observability_limit(limit)
+      Dir.glob(File.join(aiweb_dir, "runs", "*", "*.json"))
+         .reject { |path| unsafe_env_path?(relative(path)) }
+         .sort_by { |path| [File.mtime(path), path] }
+         .last(bounded_limit)
+         .map do |path|
+        workbench_json_summary(relative(path), allow_runs: true)
       end.compact
     end
 
     def workbench_verify_loop_status(state)
       implementation = state&.dig("implementation").is_a?(Hash) ? state.dig("implementation") : {}
       latest_path = implementation["latest_verify_loop"]
-      latest = latest_path && !workbench_excluded_path?(latest_path) ? workbench_json_summary(latest_path) : nil
+      latest = latest_path && !unsafe_env_path?(latest_path) ? workbench_json_summary(latest_path, allow_runs: true) : nil
       {
         "status" => implementation["verify_loop_status"] || (latest ? latest["status"] : "empty"),
         "latest_verify_loop" => latest_path,
@@ -4549,8 +4613,8 @@ module Aiweb
       path ? workbench_json_summary(relative(path)) : nil
     end
 
-    def workbench_json_summary(path)
-      return nil if workbench_excluded_path?(path)
+    def workbench_json_summary(path, allow_runs: false)
+      return nil if workbench_excluded_path?(path) && !(allow_runs && path.to_s.start_with?(".ai-web/runs/"))
 
       full = File.expand_path(path, root)
       data = JSON.parse(File.read(full))

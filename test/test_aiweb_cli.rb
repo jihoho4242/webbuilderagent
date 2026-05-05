@@ -3718,6 +3718,8 @@ class AiwebCliTest < Minitest::Test
     assert_includes stdout, "run-status"
     assert_includes stdout, "run-cancel"
     assert_includes stdout, "run-resume"
+    assert_includes stdout, "run-timeline"
+    assert_includes stdout, "observability-summary"
     assert_match(/verify-loop: runs the local build -> preview -> QA -> critique -> task -> agent-run loop/i, stdout)
 
     help_stdout, help_stderr, help_code = run_webbuilder("--help")
@@ -3764,6 +3766,117 @@ class AiwebCliTest < Minitest::Test
       assert_equal [], payload.fetch("changed_files")
       assert_equal before_entries, project_entries, "run-status must not write lifecycle artifacts"
       assert_equal before_state, File.read(".ai-web/state.yaml"), "run-status must not mutate state"
+    end
+  end
+
+  def test_run_timeline_is_read_only_and_redacts_sensitive_metadata
+    in_tmp do
+      prepare_profile_d_scaffold_flow
+      run_dir = File.join(".ai-web", "runs", "verify-loop-redacted")
+      FileUtils.mkdir_p(run_dir)
+      File.write(
+        File.join(run_dir, "verify-loop.json"),
+        JSON.pretty_generate(
+          "schema_version" => 1,
+          "run_id" => "verify-loop-redacted",
+          "status" => "blocked",
+          "api_token" => "SECRET-TOKEN-SHOULD-NOT-APPEAR",
+          "env_path" => ".env.local",
+          "blocking_issues" => ["sample blocker"]
+        ) + "\n"
+      )
+      before_entries = project_entries
+      before_state = File.read(".ai-web/state.yaml")
+
+      stdout, stderr, code = run_aiweb("run-timeline", "--limit", "5", "--json")
+      payload = JSON.parse(stdout)
+      timeline = payload.fetch("run_timeline")
+
+      assert_equal 0, code
+      assert_equal "", stderr
+      assert_equal "ready", timeline.fetch("status")
+      assert_equal 5, timeline.fetch("limit")
+      assert_equal 1, timeline.fetch("runs").length
+      assert_equal "blocked", timeline.dig("runs", 0, "status")
+      assert_includes timeline.dig("runs", 0, "blocking_issues"), "sample blocker"
+      refute_includes stdout, "SECRET-TOKEN-SHOULD-NOT-APPEAR"
+      refute_includes stdout, ".env.local"
+      assert_equal before_entries, project_entries, "run-timeline must not write artifacts"
+      assert_equal before_state, File.read(".ai-web/state.yaml"), "run-timeline must not mutate state"
+
+      web_stdout, web_stderr, web_code = run_webbuilder("--path", Dir.pwd, "timeline", "--limit", "1", "--json")
+      web_payload = JSON.parse(web_stdout)
+      assert_equal 0, web_code
+      assert_equal "", web_stderr
+      assert_equal 1, web_payload.dig("run_timeline", "limit")
+      assert_equal 1, web_payload.dig("run_timeline", "runs").length
+    end
+  end
+
+  def test_observability_summary_rolls_up_latest_runs_without_writes
+    in_tmp do
+      prepare_profile_d_scaffold_flow
+      verify_dir = File.join(".ai-web", "runs", "verify-loop-observe")
+      deploy_dir = File.join(".ai-web", "runs", "deploy-observe-vercel")
+      FileUtils.mkdir_p(verify_dir)
+      FileUtils.mkdir_p(deploy_dir)
+      verify_path = File.join(verify_dir, "verify-loop.json")
+      deploy_path = File.join(deploy_dir, "deploy.json")
+      File.write(
+        verify_path,
+        JSON.pretty_generate(
+          "schema_version" => 1,
+          "run_id" => "verify-loop-observe",
+          "status" => "passed",
+          "cycle_count" => 1,
+          "metadata_path" => verify_path,
+          "blocking_issues" => []
+        ) + "\n"
+      )
+      File.write(
+        deploy_path,
+        JSON.pretty_generate(
+          "schema_version" => 1,
+          "run_id" => "deploy-observe-vercel",
+          "status" => "failed",
+          "target" => "vercel",
+          "metadata_path" => deploy_path,
+          "blocking_issues" => ["fake deploy failed"]
+        ) + "\n"
+      )
+      state = load_state
+      state["implementation"]["latest_verify_loop"] = verify_path
+      state["implementation"]["verify_loop_status"] = "passed"
+      state["implementation"]["verify_loop_cycle_count"] = 1
+      state["deploy"] ||= {}
+      state["deploy"]["latest_deploy"] = deploy_path
+      state["deploy"]["latest_deploy_status"] = "failed"
+      write_state(state)
+      before_entries = project_entries
+      before_state = File.read(".ai-web/state.yaml")
+
+      stdout, stderr, code = run_aiweb("observability-summary", "--limit", "10", "--json")
+      payload = JSON.parse(stdout)
+      summary = payload.fetch("observability_summary")
+
+      assert_equal 0, code
+      assert_equal "", stderr
+      assert_equal "ready", summary.fetch("status")
+      assert_equal 2, summary.fetch("recent_run_count")
+      assert_equal 1, summary.dig("recent_status_counts", "passed")
+      assert_equal 1, summary.dig("recent_status_counts", "failed")
+      assert_equal "passed", summary.dig("latest_verify_loop", "status")
+      assert_equal "failed", summary.dig("latest_deploy", "status")
+      assert_includes summary.fetch("recent_blockers"), "fake deploy failed"
+      assert_equal before_entries, project_entries, "observability-summary must not write artifacts"
+      assert_equal before_state, File.read(".ai-web/state.yaml"), "observability-summary must not mutate state"
+
+      alias_stdout, alias_stderr, alias_code = run_aiweb("summary", "--limit", "1", "--json")
+      alias_payload = JSON.parse(alias_stdout)
+      assert_equal 0, alias_code
+      assert_equal "", alias_stderr
+      assert_equal 1, alias_payload.dig("observability_summary", "limit")
+      assert_equal 1, alias_payload.dig("observability_summary", "recent_run_count")
     end
   end
 

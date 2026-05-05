@@ -9,7 +9,7 @@ require "time"
 class WebbuilderLauncher
   KNOWN_COMMANDS = %w[
     help --help -h version --version
-    start init status runtime-plan scaffold-status setup build preview interview run design-brief design-system design-prompt design select-design scaffold supabase-secret-qa supabase-local-verify ingest-design next-task
+    start init status runtime-plan scaffold-status setup build preview interview run run-status run-timeline timeline observability-summary summary run-cancel run-resume design-brief design-system design-prompt design select-design scaffold supabase-secret-qa supabase-local-verify ingest-design next-task
     agent-run verify-loop qa-checklist qa-report repair qa-playwright qa-screenshot qa-a11y qa-lighthouse visual-critique visual-polish advance rollback resolve-blocker snapshot
     workbench component-map visual-edit github-sync deploy-plan deploy design-systems skills craft intent
   ].freeze
@@ -65,6 +65,11 @@ class WebbuilderLauncher
         웹빌더 --path ~/Desktop/my-site agent-run --task latest --agent codex --approved
         웹빌더 --path ~/Desktop/my-site verify-loop --max-cycles 3 --dry-run
         웹빌더 --path ~/Desktop/my-site verify-loop --max-cycles 3 --approved
+        웹빌더 --path ~/Desktop/my-site run-status
+        웹빌더 --path ~/Desktop/my-site run-timeline --limit 20
+        웹빌더 --path ~/Desktop/my-site observability-summary --limit 20
+        웹빌더 --path ~/Desktop/my-site run-cancel --run-id active --dry-run
+        웹빌더 --path ~/Desktop/my-site run-resume --run-id latest --dry-run
         웹빌더 --path ~/Desktop/my-site runtime-plan
         웹빌더 --path ~/Desktop/my-site setup --install --dry-run
         웹빌더 --path ~/Desktop/my-site setup --install --approved
@@ -113,6 +118,8 @@ class WebbuilderLauncher
       setup은 build, preview, QA, repair, deploy, provider CLI, .env/.env.* 읽기/출력을 수행하지 않는다.
       verify-loop는 build → preview → qa-playwright → qa-a11y → qa-lighthouse → qa-screenshot → visual-critique → repair/visual-polish → agent-run을 승인된 로컬 루프로 연결한다.
       verify-loop --dry-run은 파일 쓰기와 프로세스 실행 없이 계획만 보여주며, 실제 루프는 --approved가 필요하고 패키지 설치/배포/provider CLI/.env 접근은 수행하지 않는다.
+      run-status, run-cancel, run-resume은 .ai-web/runs/active-run.json과 per-run lifecycle/cancel/resume descriptor를 사용하는 로컬 실행 lifecycle control plane이다.
+      run-timeline/timeline과 observability-summary/summary는 안전한 .ai-web/runs JSON 증거를 읽기 전용으로 요약하며 --limit은 최대 50이고 .env/.env.* 및 secret-like key를 노출하지 않는다.
       빌드와 로컬 프리뷰는 runtime-plan 준비 상태가 ready일 때만 웹빌더 build/preview 또는 aiweb build/preview로 실행한다.
       preview는 scaffold dev 명령을 로컬에서 띄우는 PR10 경로이며 설치, .env 접근, Playwright/axe/repair/deploy를 수행하지 않는다.
       preview --dry-run은 설치/쓰기/프로세스 실행 없이 예정 URL, 명령, 로그/메타데이터 경로만 확인한다.
