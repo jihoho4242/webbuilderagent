@@ -9,7 +9,7 @@ require "time"
 class WebbuilderLauncher
   KNOWN_COMMANDS = %w[
     help --help -h version --version
-    start init status runtime-plan scaffold-status setup build preview interview run design-brief design-system design-prompt design select-design scaffold supabase-secret-qa ingest-design next-task
+    start init status runtime-plan scaffold-status setup build preview interview run design-brief design-system design-prompt design select-design scaffold supabase-secret-qa supabase-local-verify ingest-design next-task
     agent-run verify-loop qa-checklist qa-report repair qa-playwright qa-screenshot qa-a11y qa-lighthouse visual-critique visual-polish advance rollback resolve-blocker snapshot
     workbench component-map visual-edit github-sync deploy-plan deploy design-systems skills craft intent
   ].freeze
@@ -60,6 +60,7 @@ class WebbuilderLauncher
         웹빌더 --path ~/Desktop/my-site scaffold --profile D
         웹빌더 --path ~/Desktop/my-site scaffold --profile S --dry-run
         웹빌더 --path ~/Desktop/my-site supabase-secret-qa --dry-run
+        웹빌더 --path ~/Desktop/my-site supabase-local-verify --dry-run
         웹빌더 --path ~/Desktop/my-site agent-run --task latest --agent codex --dry-run
         웹빌더 --path ~/Desktop/my-site agent-run --task latest --agent codex --approved
         웹빌더 --path ~/Desktop/my-site verify-loop --max-cycles 3 --dry-run
@@ -103,6 +104,7 @@ class WebbuilderLauncher
       Profile S는 로컬 scaffold/QA 전용이다. Supabase 프로젝트 생성, 네트워크, deploy, install, build, preview를 수행하지 않는다.
       Profile S의 안전 템플릿은 supabase/env.example.template이며 NEXT_PUBLIC_SUPABASE_URL, NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY placeholder만 포함한다.
       활성 no-.env guardrail 때문에 .env.example은 의도적으로 생성하지 않으며, supabase-secret-qa는 .env/.env.*를 읽지 않고 안전 경로만 점검해 .ai-web/qa/supabase-secret-qa.json에 기록한다.
+      supabase-local-verify는 생성된 Profile S 파일, safe template, migrations/RLS/storage 문서, SSR client/server stub을 로컬에서만 검증해 .ai-web/qa/supabase-local-verify.json에 기록하며 Supabase hosted project 생성, provider CLI/network, deploy/install/build/preview, .env 접근을 수행하지 않는다.
       런타임 준비 확인은 runtime-plan 또는 scaffold-status로 패키지 설치/Node 실행 없이 읽기 전용으로 점검한다.
       setup --install --dry-run은 쓰기/프로세스 실행 없이 예정 pnpm install 명령과 setup 로그/메타데이터 경로만 보여준다.
       setup --install의 실제 패키지 설치는 --approved가 있을 때만 로컬에서 실행하고 .ai-web/runs/setup-<timestamp>/stdout.log, stderr.log, setup.json 증거를 기록한다.

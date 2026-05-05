@@ -2324,7 +2324,7 @@ class AiwebCliTest < Minitest::Test
   end
 
   def profile_s_generated_text
-    Dir.glob("{package.json,next.config.mjs,tsconfig.json,src/**/*,supabase/**/*,.ai-web/scaffold-profile-S.json,.ai-web/qa/supabase-secret-qa.json}", File::FNM_DOTMATCH)
+    Dir.glob("{package.json,next.config.mjs,tsconfig.json,src/**/*,supabase/**/*,.ai-web/scaffold-profile-S.json,.ai-web/qa/supabase-secret-qa.json,.ai-web/qa/supabase-local-verify.json}", File::FNM_DOTMATCH)
        .select { |path| File.file?(path) }
        .map { |path| "#{path}\n#{File.read(path)}" }
        .join("\n")
@@ -2510,6 +2510,7 @@ class AiwebCliTest < Minitest::Test
     assert_equal 0, code
     assert_equal "", stderr
     assert_includes stdout, "scaffold --profile D [--force]"
+    assert_includes stdout, "supabase-local-verify [--force]"
 
     in_tmp do |dir|
       target = File.join(dir, "passthrough-scaffold")
@@ -2573,6 +2574,7 @@ class AiwebCliTest < Minitest::Test
         supabase/env.example.template
         .ai-web/scaffold-profile-S.json
         .ai-web/qa/supabase-secret-qa.json
+        .ai-web/qa/supabase-local-verify.json
       ].each do |path|
         assert File.exist?(path), "expected Profile S scaffold to create #{path}"
         assert_includes payload["changed_files"], path
@@ -2626,11 +2628,23 @@ class AiwebCliTest < Minitest::Test
       assert_includes secret_qa["scanned_paths"], "supabase/env.example.template"
       refute secret_qa["scanned_paths"].any? { |path| File.basename(path).match?(/\A\.env(?:\.|\z)/) }
 
+      local_verify = JSON.parse(File.read(".ai-web/qa/supabase-local-verify.json"))
+      assert_equal "passed", local_verify["status"]
+      assert_equal true, local_verify["local_only"]
+      assert_equal false, local_verify["read_dot_env"]
+      assert_equal false, local_verify["external_actions_performed"]
+      assert_equal false, local_verify["provider_cli_invoked"]
+      assert_includes local_verify["scanned_paths"], "supabase/migrations/0001_initial_schema.sql"
+      assert_includes local_verify["scanned_paths"], "src/lib/supabase/server.ts"
+      assert_equal "passed", local_verify.dig("checks", "migrations_rls", "status")
+      assert_equal "passed", local_verify.dig("checks", "ssr_stubs", "status")
+
       state = load_state
       assert_equal true, state.dig("implementation", "scaffold_created")
       assert_equal "S", state.dig("implementation", "scaffold_profile")
       assert_equal "Next.js", state.dig("implementation", "scaffold_framework")
       assert_equal ".ai-web/scaffold-profile-S.json", state.dig("implementation", "scaffold_metadata_path")
+      assert_equal ".ai-web/qa/supabase-local-verify.json", state.dig("qa", "supabase_local_verify")
     end
   end
 
@@ -2646,6 +2660,66 @@ class AiwebCliTest < Minitest::Test
       assert_match(/existing files.*src\/app\/page\.tsx/, payload.dig("error", "message"))
       assert_equal "// local user edit\n", File.read("src/app/page.tsx")
       assert_no_dot_env_files_created
+    end
+  end
+
+  def test_supabase_local_verify_dry_run_and_real_run_are_local_only_without_env_reads
+    in_tmp do
+      prepare_profile_s_design_flow
+      json_cmd("scaffold", "--profile", "S")
+      env_body = "SECRET=profile-s-local-verify-do-not-read\n"
+      File.write(".env", env_body)
+      before_state = File.read(".ai-web/state.yaml")
+      before_artifact = File.read(".ai-web/qa/supabase-local-verify.json")
+
+      stdout, stderr, code = run_aiweb("supabase-local-verify", "--dry-run", "--json")
+      payload = JSON.parse(stdout)
+
+      assert_equal 0, code
+      assert_equal "", stderr
+      assert_equal "passed", payload.dig("supabase_local_verify", "status")
+      assert_equal true, payload.dig("supabase_local_verify", "dry_run")
+      assert_equal false, payload.dig("supabase_local_verify", "read_dot_env")
+      assert_equal false, payload.dig("supabase_local_verify", "external_actions_performed")
+      assert_equal before_artifact, File.read(".ai-web/qa/supabase-local-verify.json"), "dry-run must not rewrite local verify artifact"
+      assert_equal before_state, File.read(".ai-web/state.yaml"), "dry-run must not mutate state"
+      assert_equal env_body, File.read(".env"), "dry-run must not mutate .env"
+      refute_includes stdout, "profile-s-local-verify-do-not-read"
+
+      FileUtils.rm_f(".ai-web/qa/supabase-local-verify.json")
+      real_payload, real_code = json_cmd("supabase-local-verify")
+      assert_equal 0, real_code
+      assert_equal "passed", real_payload.dig("supabase_local_verify", "status")
+      assert_equal [".ai-web/qa/supabase-local-verify.json", ".ai-web/state.yaml"], real_payload["changed_files"]
+      assert_equal false, real_payload.dig("supabase_local_verify", "read_dot_env")
+      assert_equal false, real_payload.dig("supabase_local_verify", "external_actions_performed")
+      assert File.exist?(".ai-web/qa/supabase-local-verify.json")
+      assert_equal env_body, File.read(".env"), "real local verify must not mutate .env"
+      refute_includes JSON.generate(real_payload), "profile-s-local-verify-do-not-read"
+
+      web_stdout, web_stderr, web_code = run_webbuilder("supabase-local-verify", "--dry-run", "--json")
+      web_payload = JSON.parse(web_stdout)
+      assert_equal 0, web_code
+      assert_equal "", web_stderr
+      assert_equal "passed", web_payload.dig("supabase_local_verify", "status")
+      assert_equal true, web_payload.dig("supabase_local_verify", "dry_run")
+    end
+  end
+
+  def test_supabase_local_verify_fails_when_profile_s_file_is_missing
+    in_tmp do
+      prepare_profile_s_design_flow
+      json_cmd("scaffold", "--profile", "S")
+      FileUtils.rm_f("src/lib/supabase/server.ts")
+
+      payload, code = json_cmd("supabase-local-verify")
+
+      assert_equal 1, code
+      assert_equal "failed", payload.dig("supabase_local_verify", "status")
+      messages = payload.dig("supabase_local_verify", "findings").map { |finding| finding["message"] }.join("\n")
+      assert_match(/required Profile S file is missing|createServerClient|cookies/, messages)
+      assert_equal false, payload.dig("supabase_local_verify", "read_dot_env")
+      assert_equal false, payload.dig("supabase_local_verify", "external_actions_performed")
     end
   end
 

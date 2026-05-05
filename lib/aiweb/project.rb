@@ -67,6 +67,7 @@ module Aiweb
     SCAFFOLD_PROFILE_D_METADATA_PATH = ".ai-web/scaffold-profile-D.json".freeze
     SCAFFOLD_PROFILE_S_METADATA_PATH = ".ai-web/scaffold-profile-S.json".freeze
     SCAFFOLD_PROFILE_S_SECRET_QA_PATH = ".ai-web/qa/supabase-secret-qa.json".freeze
+    SCAFFOLD_PROFILE_S_LOCAL_VERIFY_PATH = ".ai-web/qa/supabase-local-verify.json".freeze
     GITHUB_SYNC_PLAN_PATH = ".ai-web/github-sync.json".freeze
     DEPLOY_PLAN_PATH = ".ai-web/deploy-plan.json".freeze
     DEPLOY_PROVIDER_CONFIG_PATHS = {
@@ -614,9 +615,11 @@ module Aiweb
         files = scaffold_profile_s_files(state)
         scaffold_metadata_path = File.join(aiweb_dir, "scaffold-profile-S.json")
         secret_qa_path = File.join(aiweb_dir, "qa", "supabase-secret-qa.json")
+        local_verify_path = File.join(aiweb_dir, "qa", "supabase-local-verify.json")
         conflicts = scaffold_conflicts(files, force: force)
         preflight_scaffold_targets!(files, metadata_path: scaffold_metadata_path, force: force, profile: "S")
         preflight_scaffold_targets!({}, metadata_path: secret_qa_path, force: force, profile: "S")
+        preflight_scaffold_targets!({}, metadata_path: local_verify_path, force: force, profile: "S")
 
         unless conflicts.empty?
           raise UserError.new(
@@ -634,10 +637,16 @@ module Aiweb
 
         metadata = scaffold_profile_s_metadata(files, profile_data)
         changes << write_json(scaffold_metadata_path, metadata, dry_run)
-        secret_qa = scaffold_profile_s_secret_qa(files.merge(SCAFFOLD_PROFILE_S_METADATA_PATH => JSON.pretty_generate(metadata) + "\n"))
+        scaffold_files_with_metadata = files.merge(SCAFFOLD_PROFILE_S_METADATA_PATH => JSON.pretty_generate(metadata) + "\n")
+        secret_qa = scaffold_profile_s_secret_qa(scaffold_files_with_metadata)
         changes << write_json(secret_qa_path, secret_qa, dry_run)
+        local_verify = scaffold_profile_s_local_verify(scaffold_files_with_metadata.merge(SCAFFOLD_PROFILE_S_SECRET_QA_PATH => JSON.pretty_generate(secret_qa) + "\n"))
+        changes << write_json(local_verify_path, local_verify, dry_run)
         apply_scaffold_state!(state, metadata)
-        add_decision!(state, "scaffold_profile_s", "Generated local-only Profile S Next.js + Supabase scaffold with safe non-dot env template and secret QA artifact")
+        state["qa"] ||= {}
+        state["qa"]["supabase_secret_qa"] = SCAFFOLD_PROFILE_S_SECRET_QA_PATH
+        state["qa"]["supabase_local_verify"] = SCAFFOLD_PROFILE_S_LOCAL_VERIFY_PATH
+        add_decision!(state, "scaffold_profile_s", "Generated local-only Profile S Next.js + Supabase scaffold with safe non-dot env template, secret QA artifact, and local Supabase verification")
         state["project"]["updated_at"] = now
         changes << write_yaml(state_path, state, dry_run)
 
@@ -645,7 +654,8 @@ module Aiweb
         payload["action_taken"] = force ? "regenerated scaffold profile S" : "generated scaffold profile S"
         payload["scaffold"] = metadata.reject { |key, _| key == "files" }
         payload["secret_qa"] = secret_qa.reject { |key, _| key == "files" }
-        payload["next_action"] = "review generated local-only Next.js/Supabase files; copy supabase/env.example.template manually into an untracked local env file only when ready"
+        payload["supabase_local_verify"] = local_verify.reject { |key, _| key == "files" }
+        payload["next_action"] = "review generated local-only Next.js/Supabase files and .ai-web/qa/supabase-local-verify.json; copy supabase/env.example.template manually into an untracked local env file only when ready"
       end
       payload
     end
@@ -689,6 +699,47 @@ module Aiweb
       payload
     rescue JSON::ParserError
       raise UserError.new("Supabase secret QA artifact is malformed; review #{SCAFFOLD_PROFILE_S_SECRET_QA_PATH} or rerun with force", 1)
+    end
+
+    def supabase_local_verify(dry_run: false, force: false)
+      assert_initialized!
+      state = load_state
+      files = supabase_local_verify_scan_files
+      artifact_path = File.join(root, SCAFFOLD_PROFILE_S_LOCAL_VERIFY_PATH)
+      verify = scaffold_profile_s_local_verify(files)
+      verify["artifact_path"] = SCAFFOLD_PROFILE_S_LOCAL_VERIFY_PATH
+      verify["profile"] = "S"
+      planned_changes = [SCAFFOLD_PROFILE_S_LOCAL_VERIFY_PATH]
+
+      if dry_run
+        payload = status_hash(state: state, changed_files: [])
+        payload["action_taken"] = "planned Supabase local verification"
+        payload["planned_changes"] = planned_changes
+        payload["supabase_local_verify"] = verify.merge("dry_run" => true)
+        payload["next_action"] = "rerun supabase-local-verify without --dry-run to write #{SCAFFOLD_PROFILE_S_LOCAL_VERIFY_PATH}"
+        return payload
+      end
+
+      changes = []
+      payload = nil
+      mutation(dry_run: false) do
+        existing_conflict = File.file?(artifact_path) && !force && JSON.parse(File.read(artifact_path)).is_a?(Hash) == false
+        raise UserError.new("Supabase local verification artifact is malformed; review #{SCAFFOLD_PROFILE_S_LOCAL_VERIFY_PATH} or rerun with force", 1) if existing_conflict
+
+        changes << write_json(artifact_path, verify, false)
+        state["qa"] ||= {}
+        state["qa"]["supabase_local_verify"] = SCAFFOLD_PROFILE_S_LOCAL_VERIFY_PATH
+        add_decision!(state, "supabase_local_verify", "Verified generated Profile S files locally without reading dot-env paths or contacting Supabase")
+        state["project"]["updated_at"] = now if state["project"].is_a?(Hash)
+        changes << write_yaml(state_path, state, false)
+        payload = status_hash(state: state, changed_files: compact_changes(changes))
+        payload["action_taken"] = "recorded Supabase local verification"
+        payload["supabase_local_verify"] = verify
+        payload["next_action"] = verify["status"] == "passed" ? "run aiweb setup --install --dry-run only after reviewing generated Profile S files" : "repair generated Profile S safe files, then rerun aiweb supabase-local-verify"
+      end
+      payload
+    rescue JSON::ParserError
+      raise UserError.new("Supabase local verification artifact is malformed; review #{SCAFFOLD_PROFILE_S_LOCAL_VERIFY_PATH} or rerun with force", 1)
     end
 
 
@@ -5899,6 +5950,7 @@ module Aiweb
         "scaffold_target" => profile_data.fetch(:scaffold_target),
         "metadata_path" => SCAFFOLD_PROFILE_S_METADATA_PATH,
         "secret_qa_path" => SCAFFOLD_PROFILE_S_SECRET_QA_PATH,
+        "local_verify_path" => SCAFFOLD_PROFILE_S_LOCAL_VERIFY_PATH,
         "local_only" => true,
         "external_actions_allowed" => false,
         "env_template_path" => "supabase/env.example.template",
@@ -5947,6 +5999,15 @@ module Aiweb
       end
     end
 
+    def supabase_local_verify_scan_files
+      SCAFFOLD_PROFILE_S_REQUIRED_FILES.each_with_object({}) do |relative_path, memo|
+        next if unsafe_env_path?(relative_path)
+
+        path = File.join(root, relative_path)
+        memo[relative_path] = File.read(path) if File.file?(path)
+      end
+    end
+
     def scaffold_profile_s_secret_qa(files)
       scanned = files.keys.reject { |path| unsafe_env_path?(path) }.sort
       findings = scanned.flat_map do |relative_path|
@@ -5973,6 +6034,131 @@ module Aiweb
         "files" => scanned.map { |relative_path| { "path" => relative_path, "sha256" => Digest::SHA256.hexdigest(files.fetch(relative_path)) } },
         "findings" => findings
       }
+    end
+
+    def scaffold_profile_s_local_verify(files)
+      scanned = files.keys.reject { |path| unsafe_env_path?(path) }.sort
+      required_paths = SCAFFOLD_PROFILE_S_REQUIRED_FILES
+      missing_paths = required_paths.reject { |path| files.key?(path) }
+      checks = {
+        "required_files" => supabase_local_required_files_check(missing_paths),
+        "safe_env_template" => supabase_local_env_template_check(files["supabase/env.example.template"]),
+        "ssr_stubs" => supabase_local_ssr_stubs_check(files),
+        "migrations_rls" => supabase_local_migrations_check(files["supabase/migrations/0001_initial_schema.sql"]),
+        "storage_docs" => supabase_local_storage_docs_check(files["supabase/storage.md"]),
+        "metadata" => supabase_local_metadata_check(files[SCAFFOLD_PROFILE_S_METADATA_PATH]),
+        "secret_qa" => supabase_local_secret_qa_check(files[SCAFFOLD_PROFILE_S_SECRET_QA_PATH]),
+        "external_actions" => supabase_local_external_actions_check(files)
+      }
+      findings = checks.flat_map { |name, check| Array(check["findings"]).map { |finding| finding.merge("check" => name) } }
+      {
+        "schema_version" => 1,
+        "status" => findings.empty? ? "passed" : "failed",
+        "created_at" => now,
+        "local_only" => true,
+        "external_actions_performed" => false,
+        "provider_cli_invoked" => false,
+        "read_dot_env" => false,
+        "scanned_paths" => scanned,
+        "required_paths" => required_paths,
+        "checks" => checks,
+        "files" => scanned.map { |relative_path| { "path" => relative_path, "sha256" => Digest::SHA256.hexdigest(files.fetch(relative_path)) } },
+        "findings" => findings
+      }
+    end
+
+    def supabase_local_required_files_check(missing_paths)
+      findings = missing_paths.map { |path| { "path" => path, "message" => "required Profile S file is missing" } }
+      { "status" => findings.empty? ? "passed" : "failed", "missing_paths" => missing_paths, "findings" => findings }
+    end
+
+    def supabase_local_env_template_check(body)
+      findings = []
+      if body.to_s.empty?
+        findings << { "path" => "supabase/env.example.template", "message" => "safe Supabase env template is missing" }
+      else
+        findings << { "path" => "supabase/env.example.template", "message" => "NEXT_PUBLIC_SUPABASE_URL placeholder is missing" } unless body.match?(/NEXT_PUBLIC_SUPABASE_URL=/)
+        findings << { "path" => "supabase/env.example.template", "message" => "NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY placeholder is missing" } unless body.match?(/NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=/)
+        PROFILE_S_SECRET_EXPOSURE_PATTERNS.each do |pattern|
+          findings << { "path" => "supabase/env.example.template", "message" => "unsafe secret placeholder pattern found", "pattern" => pattern.source } if body.match?(pattern)
+        end
+      end
+      { "status" => findings.empty? ? "passed" : "failed", "allowed_public_env" => %w[NEXT_PUBLIC_SUPABASE_URL NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY], "dot_env_created" => false, "findings" => findings }
+    end
+
+    def supabase_local_ssr_stubs_check(files)
+      client = files["src/lib/supabase/client.ts"].to_s
+      server = files["src/lib/supabase/server.ts"].to_s
+      findings = []
+      findings << { "path" => "src/lib/supabase/client.ts", "message" => "browser Supabase SSR client stub is missing createBrowserClient" } unless client.match?(/createBrowserClient/)
+      findings << { "path" => "src/lib/supabase/server.ts", "message" => "server Supabase SSR client stub is missing createServerClient" } unless server.match?(/createServerClient/)
+      findings << { "path" => "src/lib/supabase/server.ts", "message" => "server Supabase SSR client stub is missing cookies integration" } unless server.match?(/cookies/)
+      %w[NEXT_PUBLIC_SUPABASE_URL NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY].each do |key|
+        findings << { "path" => "src/lib/supabase/client.ts", "message" => "#{key} is missing from browser client stub" } unless client.include?(key)
+        findings << { "path" => "src/lib/supabase/server.ts", "message" => "#{key} is missing from server client stub" } unless server.include?(key)
+      end
+      { "status" => findings.empty? ? "passed" : "failed", "client_path" => "src/lib/supabase/client.ts", "server_path" => "src/lib/supabase/server.ts", "findings" => findings }
+    end
+
+    def supabase_local_migrations_check(body)
+      findings = []
+      text = body.to_s
+      findings << { "path" => "supabase/migrations/0001_initial_schema.sql", "message" => "migration is missing enable row level security" } unless text.match?(/enable row level security/i)
+      findings << { "path" => "supabase/migrations/0001_initial_schema.sql", "message" => "migration is missing create policy statements" } unless text.match?(/create policy/i)
+      findings << { "path" => "supabase/migrations/0001_initial_schema.sql", "message" => "migration is missing auth.uid ownership guard" } unless text.match?(/auth\.uid\(\)/i)
+      { "status" => findings.empty? ? "passed" : "failed", "path" => "supabase/migrations/0001_initial_schema.sql", "findings" => findings }
+    end
+
+    def supabase_local_storage_docs_check(body)
+      findings = []
+      text = body.to_s
+      findings << { "path" => "supabase/storage.md", "message" => "storage planning doc is missing" } if text.empty?
+      findings << { "path" => "supabase/storage.md", "message" => "storage planning doc must describe storage options" } unless text.match?(/storage|bucket/i)
+      findings << { "path" => "supabase/storage.md", "message" => "storage planning doc must retain external-action guardrails" } unless text.match?(/does not run Supabase CLI commands|no buckets are created/i)
+      { "status" => findings.empty? ? "passed" : "failed", "path" => "supabase/storage.md", "findings" => findings }
+    end
+
+    def supabase_local_metadata_check(body)
+      findings = []
+      metadata = body.to_s.empty? ? nil : JSON.parse(body)
+      unless metadata.is_a?(Hash)
+        findings << { "path" => SCAFFOLD_PROFILE_S_METADATA_PATH, "message" => "Profile S metadata is missing or malformed" }
+      else
+        findings << { "path" => SCAFFOLD_PROFILE_S_METADATA_PATH, "message" => "metadata profile must be S" } unless metadata["profile"] == "S"
+        findings << { "path" => SCAFFOLD_PROFILE_S_METADATA_PATH, "message" => "metadata must stay local-only" } unless metadata["local_only"] == true
+        findings << { "path" => SCAFFOLD_PROFILE_S_METADATA_PATH, "message" => "metadata must disallow external actions" } unless metadata["external_actions_allowed"] == false
+      end
+      { "status" => findings.empty? ? "passed" : "failed", "path" => SCAFFOLD_PROFILE_S_METADATA_PATH, "findings" => findings }
+    rescue JSON::ParserError
+      { "status" => "failed", "path" => SCAFFOLD_PROFILE_S_METADATA_PATH, "findings" => [{ "path" => SCAFFOLD_PROFILE_S_METADATA_PATH, "message" => "Profile S metadata is malformed" }] }
+    end
+
+    def supabase_local_secret_qa_check(body)
+      findings = []
+      qa = body.to_s.empty? ? nil : JSON.parse(body)
+      unless qa.is_a?(Hash)
+        findings << { "path" => SCAFFOLD_PROFILE_S_SECRET_QA_PATH, "message" => "Supabase secret QA artifact is missing or malformed" }
+      else
+        findings << { "path" => SCAFFOLD_PROFILE_S_SECRET_QA_PATH, "message" => "Supabase secret QA must pass before local verification passes" } unless qa["status"] == "passed"
+        findings << { "path" => SCAFFOLD_PROFILE_S_SECRET_QA_PATH, "message" => "Supabase secret QA must not read dot-env files" } unless qa["read_dot_env"] == false
+      end
+      { "status" => findings.empty? ? "passed" : "failed", "path" => SCAFFOLD_PROFILE_S_SECRET_QA_PATH, "findings" => findings }
+    rescue JSON::ParserError
+      { "status" => "failed", "path" => SCAFFOLD_PROFILE_S_SECRET_QA_PATH, "findings" => [{ "path" => SCAFFOLD_PROFILE_S_SECRET_QA_PATH, "message" => "Supabase secret QA artifact is malformed" }] }
+    end
+
+    def supabase_local_external_actions_check(files)
+      patterns = {
+        "supabase_provider_cli" => /supabase\s+(login|link|projects\s+create|init|start|db\s+push)/i,
+        "deploy_cli" => /\b(vercel|netlify|cloudflare)\s+deploy\b/i,
+        "network_curl" => /\bcurl\s+https?:\/\//i
+      }
+      findings = files.reject { |path, _| path.start_with?(".ai-web/qa/") }.flat_map do |relative_path, body|
+        patterns.each_with_object([]) do |(name, pattern), memo|
+          memo << { "path" => relative_path, "message" => "external action command pattern found", "pattern" => name } if body.to_s.match?(pattern)
+        end
+      end
+      { "status" => findings.empty? ? "passed" : "failed", "performed" => false, "network" => false, "provider_cli" => false, "findings" => findings }
     end
 
     def unsafe_env_path?(relative_path)
