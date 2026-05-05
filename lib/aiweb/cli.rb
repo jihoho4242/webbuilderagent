@@ -17,7 +17,7 @@ module Aiweb
     EXIT_UNSAFE_EXTERNAL_ACTION = 5
     EXIT_INTERNAL_ERROR = 10
 
-    MUTATION_COMMANDS = %w[start init interview run agent-run ingest-design next-task qa-checklist qa-report repair advance rollback resolve-blocker snapshot design-brief design-research design-system design-prompt design select-design scaffold setup build preview qa-playwright browser-qa qa-screenshot screenshot-qa qa-a11y a11y-qa qa-lighthouse lighthouse-qa visual-critique visual-polish workbench component-map visual-edit supabase-secret-qa github-sync deploy-plan deploy daemon backend].freeze
+    MUTATION_COMMANDS = %w[start init interview run agent-run verify-loop ingest-design next-task qa-checklist qa-report repair advance rollback resolve-blocker snapshot design-brief design-research design-system design-prompt design select-design scaffold setup build preview qa-playwright browser-qa qa-screenshot screenshot-qa qa-a11y a11y-qa qa-lighthouse lighthouse-qa visual-critique visual-polish workbench component-map visual-edit supabase-secret-qa github-sync deploy-plan deploy daemon backend].freeze
     RUNTIME_PLAN_COMMANDS = %w[runtime-plan scaffold-status].freeze
     REGISTRY_COMMANDS = %w[design-systems skills craft].freeze
 
@@ -130,6 +130,16 @@ module Aiweb
         project.run(dry_run: @dry_run)
       when "agent-run"
         dispatch_agent_run
+      when "verify-loop"
+        opts = parse_options do |o, options|
+          o.on("--max-cycles N") { |v| options[:max_cycles] = parse_positive_integer(v, "--max-cycles") }
+          o.on("--approved") { options[:approved] = true }
+          o.on("--force") { options[:force] = true }
+        end
+        unless @argv.empty?
+          raise UserError.new("verify-loop does not accept extra positional arguments: #{@argv.join(", ")}", EXIT_VALIDATION_FAILED)
+        end
+        project.verify_loop(max_cycles: opts[:max_cycles] || 3, approved: !!opts[:approved], force: opts[:force], dry_run: @dry_run)
       when "design-brief"
         opts = parse_options do |o, options|
           o.on("--force") { options[:force] = true }
@@ -1088,6 +1098,9 @@ module Aiweb
           qa-checklist [--force]
           qa-report [--from PATH] [--status passed|failed|blocked] [--duration-minutes N] [--timed-out] [--force]
           repair [--from-qa PATH|latest] [--max-cycles N] [--force]
+          verify-loop [--max-cycles N] [--approved] [--force]
+          verify-loop --max-cycles 3 --dry-run
+          verify-loop --max-cycles 3 --approved
           qa-playwright [--url URL] [--task-id ID] [--force]
           qa-screenshot [--url URL] [--task-id ID] [--force]
           qa-a11y [--url URL] [--task-id ID] [--force]
@@ -1131,6 +1144,7 @@ module Aiweb
           qa-a11y: runs safe local axe accessibility QA against localhost/127.0.0.1 preview; --dry-run does not write files or launch Node
           qa-lighthouse: runs safe local Lighthouse QA against localhost/127.0.0.1 preview; --dry-run does not write files or launch Node
           visual-critique: records safe local visual critique from explicit screenshot/metadata evidence or --from-screenshots latest only; --dry-run plans .ai-web/visual artifacts without writes, browser launch, installs, repair, deploy, network, or .env access
+          verify-loop: runs the local build -> preview -> QA -> critique -> task -> agent-run loop; --dry-run writes nothing and plans build -> preview -> QA -> screenshot -> visual critique -> repair/visual-polish -> agent-run cycles, while real execution requires --approved, uses existing local adapters, records .ai-web/runs/verify-loop-<timestamp>/verify-loop.json plus per-cycle evidence, never installs packages, never deploys, and stops on pass, max cycles, blockers, unsafe action, or agent-run failure
           agent-run --task latest --agent codex --dry-run
           agent-run --task latest --agent codex --approved
           workbench: plans or exports a static local UI manifest under .ai-web/workbench using declarative CLI controls only; requires initialized .ai-web/state.yaml, --dry-run writes nothing, export writes only workbench artifacts, executes no controls, and never mutates state.yaml
@@ -1196,6 +1210,7 @@ module Aiweb
       return human_registry_result(result) if result["registry"]
       return human_intent_result(result) if result["intent"]
       return human_runtime_plan_result(result) if result["runtime_plan"]
+      return human_verify_loop_result(result) if result["verify_loop"]
       return human_agent_run_result(result) if result["agent_run"]
       return human_repair_result(result) if result["repair_loop"]
       return human_qa_screenshot_result(result) if result["screenshot_qa"]
@@ -1461,6 +1476,26 @@ module Aiweb
       ].join("\n")
     end
 
+    def human_verify_loop_result(result)
+      loop = result.fetch("verify_loop")
+      changed = result["changed_files"] || result["artifacts_changed"] || []
+      blockers = loop["blocking_issues"] || result["blocking_issues"] || []
+      steps = Array(loop["planned_steps"]).empty? ? Array(loop["cycles"]).flat_map { |cycle| Array(cycle["steps"]).map { |step| step["name"] } }.uniq : Array(loop["planned_steps"]).flat_map { |cycle| cycle["steps"] }.uniq
+      [
+        "Verify loop: #{loop["status"] || "n/a"}",
+        "Max cycles: #{loop["max_cycles"] || "n/a"}",
+        "Cycles run: #{loop["cycle_count"] || 0}",
+        "Dry run: #{loop.key?("dry_run") ? loop["dry_run"] : "n/a"}",
+        "Approved: #{loop.key?("approved") ? loop["approved"] : "n/a"}",
+        "Metadata: #{loop["metadata_path"] || "n/a"}",
+        "Run dir: #{loop["run_dir"] || "n/a"}",
+        "Steps: #{steps.empty? ? "none" : steps.join(", ")}",
+        "Artifacts changed: #{changed.empty? ? "none" : changed.join(", ")}",
+        "Blocking issues: #{blockers.empty? ? "none" : blockers.join("; ")}",
+        "Next command: #{result["next_action"] || "n/a"}"
+      ].join("\n")
+    end
+
     def human_registry_result(result)
       registry_payload = result.fetch("registry")
       items = registry_payload.fetch("items")
@@ -1569,6 +1604,20 @@ module Aiweb
       EXIT_VALIDATION_FAILED
     end
 
+    def verify_loop_exit_code(result)
+      status = result.dig("verify_loop", "status").to_s
+      return EXIT_SUCCESS if %w[dry_run planned passed].include?(status)
+      return EXIT_BUDGET_BLOCKED if status == "max_cycles"
+      if status == "blocked"
+        issues = ((result.dig("verify_loop", "blocking_issues") || []) + (result["blocking_issues"] || [])).join(" ")
+        return EXIT_UNSAFE_EXTERNAL_ACTION if issues.match?(/approved|approval|unsafe|\.env|deploy|provider/i)
+        return EXIT_PHASE_BLOCKED if issues.match?(/phase|runtime-plan|scaffold|initialized/i)
+      end
+      return EXIT_VALIDATION_FAILED if status == "agent_run_failed"
+
+      EXIT_VALIDATION_FAILED
+    end
+
     def component_map_exit_code(result)
       status = result.dig("component_map", "status").to_s
       return EXIT_ADAPTER_UNAVAILABLE if status == "blocked" && (result["action_taken"].to_s =~ /unavailable/)
@@ -1636,6 +1685,7 @@ module Aiweb
       return visual_critique_exit_code(result) if command == "visual-critique"
       return repair_exit_code(result) if command == "repair"
       return visual_polish_exit_code(result) if command == "visual-polish"
+      return verify_loop_exit_code(result) if command == "verify-loop"
       return workbench_exit_code(result) if command == "workbench"
       return component_map_exit_code(result) if command == "component-map"
       return visual_edit_exit_code(result) if command == "visual-edit"
@@ -1643,7 +1693,7 @@ module Aiweb
       return deploy_plan_exit_code(result) if command == "deploy-plan"
       return deploy_exit_code(result) if command == "deploy"
       return supabase_secret_qa_exit_code(result) if command == "supabase-secret-qa"
-      return EXIT_SUCCESS if %w[help version status start init interview run agent-run design-brief design-research design-system design-prompt design select-design scaffold ingest-design next-task qa-checklist qa-report rollback resolve-blocker snapshot visual-critique visual-polish component-map visual-edit].include?(command)
+      return EXIT_SUCCESS if %w[help version status start init interview run agent-run verify-loop design-brief design-research design-system design-prompt design select-design scaffold ingest-design next-task qa-checklist qa-report rollback resolve-blocker snapshot visual-critique visual-polish component-map visual-edit].include?(command)
       if command == "advance" && result["action_taken"] == "advance blocked"
         issue = result["blocking_issues"].join(" ")
         return EXIT_BUDGET_BLOCKED if issue =~ /budget|candidate cap|design generation cap/i

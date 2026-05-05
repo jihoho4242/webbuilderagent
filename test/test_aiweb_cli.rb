@@ -2687,6 +2687,111 @@ class AiwebCliTest < Minitest::Test
     bin_dir
   end
 
+  def write_fake_verify_loop_tooling(root)
+    FileUtils.mkdir_p(File.join(root, "node_modules", ".bin"))
+    %w[playwright axe lighthouse].each do |name|
+      write_fake_executable(File.join(root, "node_modules", ".bin"), name, "exit 0")
+    end
+
+    bin_dir = File.join(root, "fake-verify-loop-bin")
+    FileUtils.mkdir_p(bin_dir)
+    write_fake_executable(
+      bin_dir,
+      "pnpm",
+      <<~'SH'
+        case "$1" in
+          build)
+            mkdir -p dist
+            echo 'fake verify-loop build pass'
+            exit "${BUILD_FAKE_EXIT_STATUS:-0}"
+            ;;
+          dev)
+            echo 'fake verify-loop preview start'
+            exit 0
+            ;;
+          exec)
+            tool="$2"
+            shift 2
+            case "$tool" in
+              playwright)
+                subcommand="$1"
+                if [ "$subcommand" = "test" ]; then
+                  if [ "${PLAYWRIGHT_FAKE_STATUS:-passed}" = "failed" ]; then
+                    echo '{"status":"failed","suites":[],"stats":{"unexpected":1}}'
+                    echo 'fake verify-loop playwright failure' >&2
+                    exit 1
+                  fi
+                  echo '{"status":"passed","suites":[],"stats":{"expected":1}}'
+                  echo 'fake verify-loop playwright pass' >&2
+                  exit 0
+                fi
+                if [ "$subcommand" = "screenshot" ]; then
+                  wrote=0
+                  for arg in "$@"; do
+                    case "$arg" in
+                      *.png)
+                        mkdir -p "$(dirname "$arg")"
+                        printf 'fake verify-loop screenshot for %s\n' "$arg" > "$arg"
+                        wrote=1
+                        ;;
+                    esac
+                  done
+                  if [ "${QA_SCREENSHOT_FAKE_STATUS:-passed}" = "failed" ]; then
+                    echo 'fake verify-loop screenshot failure' >&2
+                    exit 1
+                  fi
+                  [ "$wrote" = 1 ] || { echo 'missing screenshot output' >&2; exit 64; }
+                  echo 'fake verify-loop screenshot pass' >&2
+                  exit 0
+                fi
+                ;;
+              axe|lighthouse)
+                status="${AIWEB_STATIC_QA_STATUS:-passed}"
+                [ "$tool" = "axe" ] && status="${A11Y_FAKE_STATUS:-$status}"
+                [ "$tool" = "lighthouse" ] && status="${LIGHTHOUSE_FAKE_STATUS:-$status}"
+                for arg in "$@"; do
+                  case "$arg" in
+                    --output-path=*)
+                      report="${arg#--output-path=}"
+                      mkdir -p "$(dirname "$report")"
+                      echo "{\"tool\":\"$tool\",\"status\":\"$status\"}" > "$report"
+                      ;;
+                  esac
+                done
+                if [ "$status" = "failed" ]; then
+                  echo "{\"tool\":\"$tool\",\"status\":\"failed\"}"
+                  echo "fake verify-loop $tool failure" >&2
+                  exit 1
+                fi
+                echo "{\"tool\":\"$tool\",\"status\":\"passed\"}"
+                echo "fake verify-loop $tool pass" >&2
+                exit 0
+                ;;
+            esac
+            ;;
+        esac
+        echo "unexpected fake verify-loop pnpm command: $*" >&2
+        exit 64
+      SH
+    )
+    write_fake_executable(
+      bin_dir,
+      "codex",
+      <<~'SH'
+        echo "${FAKE_CODEX_STDOUT:-fake verify-loop codex stdout}"
+        echo "${FAKE_CODEX_STDERR:-fake verify-loop codex stderr}" >&2
+        if [ -n "${FAKE_CODEX_PATCH_PATH:-}" ] && [ -f "${FAKE_CODEX_PATCH_PATH}" ]; then
+          printf '\n<!-- patched by fake verify-loop codex -->\n' >> "${FAKE_CODEX_PATCH_PATH}"
+        fi
+        if [ -n "${FAKE_CODEX_MARKER:-}" ]; then
+          echo run >> "${FAKE_CODEX_MARKER}"
+        fi
+        exit "${FAKE_CODEX_EXIT_STATUS:-0}"
+      SH
+    )
+    bin_dir
+  end
+
   def assert_no_setup_side_effects(before_entries:, before_state:, env_path: ".env", env_size: nil, env_mtime: nil)
     assert_equal before_entries, project_entries
     assert_equal before_state, File.read(".ai-web/state.yaml")
@@ -3283,6 +3388,205 @@ class AiwebCliTest < Minitest::Test
       assert Dir.glob(File.join(target, ".ai-web", "runs", "agent-run-*")).empty?, "webbuilder agent-run --dry-run must not write run artifacts"
       assert Dir.glob(File.join(target, ".ai-web", "diffs", "agent-run-*.patch")).empty?, "webbuilder agent-run --dry-run must not write diff artifacts"
       refute File.exist?(File.join(target, ".ai-web", "runs", "agent-run-was-run"))
+    end
+  end
+
+  def test_verify_loop_dry_run_plans_closed_loop_without_writes_or_process_execution
+    in_tmp do |dir|
+      prepare_profile_d_scaffold_flow
+      secret = "SECRET=pr23-verify-loop-dry-run-do-not-leak"
+      File.write(".env", "#{secret}\n")
+      bin_dir = File.join(dir, "fake-verify-loop-bin")
+      FileUtils.mkdir_p(bin_dir)
+      marker = File.join(dir, "verify-loop-tool-was-run")
+      write_fake_executable(bin_dir, "pnpm", "touch #{marker.shellescape}; echo should-not-run >&2; exit 99")
+      write_fake_executable(bin_dir, "codex", "touch #{marker.shellescape}; echo should-not-run >&2; exit 99")
+      before_entries = project_entries
+      before_state = File.read(".ai-web/state.yaml")
+
+      stdout, stderr, code = run_aiweb_env(
+        { "PATH" => [bin_dir, "/usr/bin", "/bin", "/usr/sbin", "/sbin"].join(File::PATH_SEPARATOR) },
+        "verify-loop", "--max-cycles", "3", "--dry-run", "--json"
+      )
+      payload = JSON.parse(stdout)
+      loop = payload.fetch("verify_loop")
+      steps = loop.fetch("steps").map { |step| step.fetch("command") || step.fetch("name") }
+
+      assert_equal 0, code
+      assert_equal "", stderr
+      assert_equal true, payload["dry_run"]
+      assert_equal true, loop["dry_run"]
+      assert_includes %w[planned dry_run], loop["status"]
+      assert_equal 3, loop["max_cycles"]
+      %w[build preview qa-playwright qa-screenshot visual-critique visual-polish agent-run].each do |expected_step|
+        assert steps.any? { |step| step.to_s.include?(expected_step) }, "verify-loop dry run should plan #{expected_step}"
+      end
+      assert_match(%r{\A\.ai-web/runs/verify-loop-\d{8}T\d{6}Z/verify-loop\.json\z}, loop["metadata_path"])
+      assert_equal before_entries, project_entries, "verify-loop --dry-run must not write artifacts, generated output, or task packets"
+      assert_equal before_state, File.read(".ai-web/state.yaml"), "verify-loop --dry-run must not mutate state"
+      assert_equal "#{secret}\n", File.read(".env"), "verify-loop --dry-run must not mutate .env"
+      refute File.exist?(marker), "verify-loop --dry-run must not execute pnpm or codex"
+      refute Dir.exist?("dist"), "verify-loop --dry-run must not build"
+      refute_includes stdout, secret
+    end
+  end
+
+  def test_verify_loop_requires_approval_for_real_closed_loop_before_writes_or_processes
+    in_tmp do |dir|
+      prepare_profile_d_scaffold_flow
+      secret = "SECRET=pr23-no-approval-do-not-leak"
+      File.write(".env", "#{secret}\n")
+      FileUtils.mkdir_p("node_modules")
+      bin_dir = File.join(dir, "fake-verify-loop-bin")
+      FileUtils.mkdir_p(bin_dir)
+      marker = File.join(dir, "verify-loop-tool-was-run")
+      write_fake_executable(bin_dir, "pnpm", "touch #{marker.shellescape}; echo should-not-run >&2; exit 99")
+      write_fake_executable(bin_dir, "codex", "touch #{marker.shellescape}; echo should-not-run >&2; exit 99")
+      before_entries = project_entries
+      before_state = File.read(".ai-web/state.yaml")
+
+      stdout, stderr, code = run_aiweb_env(
+        { "PATH" => [bin_dir, "/usr/bin", "/bin", "/usr/sbin", "/sbin"].join(File::PATH_SEPARATOR) },
+        "verify-loop", "--max-cycles", "3", "--json"
+      )
+      payload = JSON.parse(stdout)
+
+      assert_equal 5, code
+      assert_equal "", stderr
+      assert_equal "blocked", payload.dig("verify_loop", "status")
+      assert_equal false, payload.dig("verify_loop", "dry_run")
+      assert_match(/approved|approval/i, [payload.dig("error", "message"), payload["blocking_issues"], payload.dig("verify_loop", "blocking_issues")].flatten.compact.join("\n"))
+      assert_equal before_entries, project_entries, "unapproved verify-loop must not write build, preview, QA, critique, task, or agent-run artifacts"
+      assert_equal before_state, File.read(".ai-web/state.yaml"), "unapproved verify-loop must not mutate state"
+      assert_equal "#{secret}\n", File.read(".env"), "unapproved verify-loop must not mutate .env"
+      refute File.exist?(marker), "unapproved verify-loop must not execute pnpm or codex"
+      refute Dir.exist?("dist"), "unapproved verify-loop must not build"
+      refute_includes stdout, secret
+    end
+  end
+
+  def test_verify_loop_help_and_webbuilder_dry_run_passthrough
+    stdout, stderr, code = run_aiweb("help")
+    assert_equal 0, code
+    assert_equal "", stderr
+    assert_includes stdout, "verify-loop --max-cycles 3"
+    assert_match(/verify-loop: runs the local build -> preview -> QA -> critique -> task -> agent-run loop/i, stdout)
+
+    help_stdout, help_stderr, help_code = run_webbuilder("--help")
+    assert_equal 0, help_code
+    assert_equal "", help_stderr
+    assert_match(/verify-loop/, help_stdout)
+
+    in_tmp do |dir|
+      target = File.join(dir, "passthrough-verify-loop")
+      Dir.mkdir(target)
+      Dir.chdir(target) do
+        prepare_profile_d_scaffold_flow
+        File.write(".env", "SECRET=pr23-webbuilder-do-not-leak\n")
+      end
+
+      web_stdout, web_stderr, web_code = run_webbuilder("--path", target, "verify-loop", "--max-cycles", "2", "--dry-run", "--json")
+      web_payload = JSON.parse(web_stdout)
+
+      assert_equal 0, web_code
+      assert_equal "", web_stderr
+      assert_equal true, web_payload["dry_run"]
+      assert_equal 2, web_payload.dig("verify_loop", "max_cycles")
+      assert_includes %w[planned dry_run], web_payload.dig("verify_loop", "status")
+      assert_empty Dir.glob(File.join(target, ".ai-web", "runs", "verify-loop-*")), "webbuilder verify-loop --dry-run must not write run artifacts"
+      refute Dir.exist?(File.join(target, "dist")), "webbuilder verify-loop --dry-run must not build"
+      refute_includes web_stdout, "pr23-webbuilder-do-not-leak"
+    end
+  end
+
+  def test_verify_loop_fake_success_records_cycle_evidence_and_safe_state
+    in_tmp do |dir|
+      prepare_profile_d_scaffold_flow
+      File.write(".env", "SECRET=pr23-success-do-not-leak\n")
+      bin_dir = write_fake_verify_loop_tooling(dir)
+      env = {
+        "PATH" => [bin_dir, "/usr/bin", "/bin", "/usr/sbin", "/sbin"].join(File::PATH_SEPARATOR),
+        "FAKE_CODEX_PATCH_PATH" => "src/components/Hero.astro"
+      }
+
+      stdout, stderr, code = run_aiweb_env(env, "verify-loop", "--max-cycles", "3", "--approved", "--json")
+      payload = JSON.parse(stdout)
+      loop = payload.fetch("verify_loop")
+
+      assert_equal 0, code, stdout
+      assert_equal "", stderr
+      assert_equal "passed", loop["status"]
+      assert_equal 1, loop["cycle_count"]
+      assert_equal "verify loop passed", payload["action_taken"]
+      assert File.file?(loop.fetch("metadata_path"))
+      assert_equal loop, JSON.parse(File.read(loop.fetch("metadata_path")))
+      %w[build preview qa-playwright qa-a11y qa-lighthouse qa-screenshot visual-critique].each do |step|
+        assert File.file?(File.join(loop.fetch("run_dir"), "cycle-1", "#{step}.json")), "expected verify-loop evidence for #{step}"
+      end
+      state = load_state
+      assert_equal loop.fetch("metadata_path"), state.dig("implementation", "latest_verify_loop")
+      assert_equal "passed", state.dig("implementation", "verify_loop_status")
+      assert_equal 1, state.dig("implementation", "verify_loop_cycle_count")
+      assert_equal "SECRET=pr23-success-do-not-leak\n", File.read(".env")
+      refute_includes stdout, "pr23-success-do-not-leak"
+      refute Dir.exist?(".ai-web/runs/deploy-*"), "verify-loop must not deploy"
+    end
+  end
+
+  def test_verify_loop_fake_qa_failure_creates_repair_task_and_runs_agent_once
+    in_tmp do |dir|
+      prepare_profile_d_scaffold_flow
+      File.write(".env", "SECRET=pr23-repair-do-not-leak\n")
+      bin_dir = write_fake_verify_loop_tooling(dir)
+      marker = File.join(dir, "codex-runs.log")
+      env = {
+        "PATH" => [bin_dir, "/usr/bin", "/bin", "/usr/sbin", "/sbin"].join(File::PATH_SEPARATOR),
+        "PLAYWRIGHT_FAKE_STATUS" => "failed",
+        "FAKE_CODEX_PATCH_PATH" => "src/components/Hero.astro",
+        "FAKE_CODEX_MARKER" => marker
+      }
+
+      stdout, stderr, code = run_aiweb_env(env, "verify-loop", "--max-cycles", "1", "--approved", "--json")
+      payload = JSON.parse(stdout)
+      loop = payload.fetch("verify_loop")
+
+      assert_equal 3, code, stdout
+      assert_equal "", stderr
+      assert_equal "max_cycles", loop["status"]
+      assert_equal 1, loop["cycle_count"]
+      cycle_steps = loop.fetch("cycles").first.fetch("steps").map { |step| step.fetch("name") }
+      assert_includes cycle_steps, "repair"
+      assert_includes cycle_steps, "agent-run"
+      assert_equal 1, File.readlines(marker).length, "fake codex should run exactly once for one failed cycle"
+      assert_match(/patched by fake verify-loop codex/, File.read("src/components/Hero.astro"))
+      assert Dir.glob(".ai-web/tasks/fix-*.md").any?, "verify-loop QA failure should create a repair task"
+      assert Dir.glob(".ai-web/runs/agent-run-*").any?, "verify-loop should record the approved agent-run evidence"
+      assert_equal "SECRET=pr23-repair-do-not-leak\n", File.read(".env")
+      refute_includes stdout, "pr23-repair-do-not-leak"
+    end
+  end
+
+  def test_verify_loop_max_cycle_cap_stops_deterministically_after_repair_agent_run
+    in_tmp do |dir|
+      prepare_profile_d_scaffold_flow
+      bin_dir = write_fake_verify_loop_tooling(dir)
+      marker = File.join(dir, "codex-runs.log")
+      env = {
+        "PATH" => [bin_dir, "/usr/bin", "/bin", "/usr/sbin", "/sbin"].join(File::PATH_SEPARATOR),
+        "PLAYWRIGHT_FAKE_STATUS" => "failed",
+        "FAKE_CODEX_PATCH_PATH" => "src/components/Hero.astro",
+        "FAKE_CODEX_MARKER" => marker
+      }
+
+      stdout, stderr, code = run_aiweb_env(env, "verify-loop", "--max-cycles", "1", "--approved", "--json")
+      payload = JSON.parse(stdout)
+
+      assert_equal 3, code, stdout
+      assert_equal "", stderr
+      assert_equal "max_cycles", payload.dig("verify_loop", "status")
+      assert_equal 1, payload.dig("verify_loop", "cycle_count")
+      assert_match(/max cycles/i, payload.dig("verify_loop", "latest_blocker"))
+      assert_equal 1, File.readlines(marker).length
     end
   end
 

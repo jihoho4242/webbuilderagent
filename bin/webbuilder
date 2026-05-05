@@ -10,7 +10,7 @@ class WebbuilderLauncher
   KNOWN_COMMANDS = %w[
     help --help -h version --version
     start init status runtime-plan scaffold-status setup build preview interview run design-brief design-system design-prompt design select-design scaffold supabase-secret-qa ingest-design next-task
-    agent-run qa-checklist qa-report repair qa-playwright qa-screenshot qa-a11y qa-lighthouse visual-critique visual-polish advance rollback resolve-blocker snapshot
+    agent-run verify-loop qa-checklist qa-report repair qa-playwright qa-screenshot qa-a11y qa-lighthouse visual-critique visual-polish advance rollback resolve-blocker snapshot
     workbench component-map visual-edit github-sync deploy-plan deploy design-systems skills craft intent
   ].freeze
 
@@ -62,6 +62,8 @@ class WebbuilderLauncher
         웹빌더 --path ~/Desktop/my-site supabase-secret-qa --dry-run
         웹빌더 --path ~/Desktop/my-site agent-run --task latest --agent codex --dry-run
         웹빌더 --path ~/Desktop/my-site agent-run --task latest --agent codex --approved
+        웹빌더 --path ~/Desktop/my-site verify-loop --max-cycles 3 --dry-run
+        웹빌더 --path ~/Desktop/my-site verify-loop --max-cycles 3 --approved
         웹빌더 --path ~/Desktop/my-site runtime-plan
         웹빌더 --path ~/Desktop/my-site setup --install --dry-run
         웹빌더 --path ~/Desktop/my-site setup --install --approved
@@ -103,6 +105,8 @@ class WebbuilderLauncher
       setup --install --dry-run은 쓰기/프로세스 실행 없이 예정 pnpm install 명령과 setup 로그/메타데이터 경로만 보여준다.
       setup --install의 실제 패키지 설치는 --approved가 있을 때만 로컬에서 실행하고 .ai-web/runs/setup-<timestamp>/stdout.log, stderr.log, setup.json 증거를 기록한다.
       setup은 build, preview, QA, repair, deploy, provider CLI, .env/.env.* 읽기/출력을 수행하지 않는다.
+      verify-loop는 build → preview → qa-playwright → qa-a11y → qa-lighthouse → qa-screenshot → visual-critique → repair/visual-polish → agent-run을 승인된 로컬 루프로 연결한다.
+      verify-loop --dry-run은 파일 쓰기와 프로세스 실행 없이 계획만 보여주며, 실제 루프는 --approved가 필요하고 패키지 설치/배포/provider CLI/.env 접근은 수행하지 않는다.
       빌드와 로컬 프리뷰는 runtime-plan 준비 상태가 ready일 때만 웹빌더 build/preview 또는 aiweb build/preview로 실행한다.
       preview는 scaffold dev 명령을 로컬에서 띄우는 PR10 경로이며 설치, .env 접근, Playwright/axe/repair/deploy를 수행하지 않는다.
       preview --dry-run은 설치/쓰기/프로세스 실행 없이 예정 URL, 명령, 로그/메타데이터 경로만 확인한다.
