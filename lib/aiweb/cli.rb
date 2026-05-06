@@ -17,7 +17,7 @@ module Aiweb
     EXIT_UNSAFE_EXTERNAL_ACTION = 5
     EXIT_INTERNAL_ERROR = 10
 
-    MUTATION_COMMANDS = %w[start init interview run run-cancel run-resume agent-run verify-loop ingest-design next-task qa-checklist qa-report repair advance rollback resolve-blocker snapshot design-brief design-research design-system design-prompt design select-design scaffold setup build preview qa-playwright browser-qa qa-screenshot screenshot-qa qa-a11y a11y-qa qa-lighthouse lighthouse-qa visual-critique visual-polish workbench component-map visual-edit supabase-secret-qa supabase-local-verify github-sync deploy-plan deploy daemon backend].freeze
+    MUTATION_COMMANDS = %w[start init interview run run-cancel run-resume agent-run verify-loop ingest-reference ingest-design next-task qa-checklist qa-report repair advance rollback resolve-blocker snapshot design-brief design-research design-system design-prompt design select-design scaffold setup build preview qa-playwright browser-qa qa-screenshot screenshot-qa qa-a11y a11y-qa qa-lighthouse lighthouse-qa visual-critique visual-polish workbench component-map visual-edit supabase-secret-qa supabase-local-verify github-sync deploy-plan deploy daemon backend].freeze
     RUNTIME_PLAN_COMMANDS = %w[runtime-plan scaffold-status].freeze
     REGISTRY_COMMANDS = %w[design-systems skills craft].freeze
 
@@ -449,6 +449,18 @@ module Aiweb
           o.on("--force") { options[:force] = true }
         end
         project.ingest_design(id: opts[:id], title: opts[:title], source: opts[:source], notes: opts[:notes], selected: opts[:selected], dry_run: @dry_run, force: opts[:force])
+      when "ingest-reference"
+        opts = parse_options do |o, options|
+          o.on("--type TYPE") { |v| options[:type] = v }
+          o.on("--title TITLE") { |v| options[:title] = v }
+          o.on("--source SOURCE") { |v| options[:source] = v }
+          o.on("--notes NOTES") { |v| options[:notes] = v }
+          o.on("--force") { options[:force] = true }
+        end
+        unless @argv.empty?
+          raise UserError.new("ingest-reference does not accept extra positional arguments: #{@argv.join(", ")}", EXIT_VALIDATION_FAILED)
+        end
+        project.ingest_reference(type: opts[:type], title: opts[:title], source: opts[:source], notes: opts[:notes], dry_run: @dry_run, force: opts[:force])
       when "next-task"
         opts = parse_options do |o, options|
           o.on("--type TYPE") { |v| options[:type] = v }
@@ -661,7 +673,6 @@ module Aiweb
 
       approved = !!opts[:approved]
       return agent_run_approval_blocked_payload(task: task, agent: agent) if !@dry_run && !approved
-      return agent_run_dry_run_payload(task: task, agent: agent, approved: approved) if @dry_run
       return agent_run_adapter_unavailable_payload(task: task, agent: agent, approved: approved) unless project.respond_to?(:agent_run)
 
       call_project_adapter(:agent_run, { task: task, agent: agent, approved: approved, dry_run: @dry_run }).tap do |result|
@@ -1186,6 +1197,7 @@ module Aiweb
           supabase-local-verify [--force]
           runtime-plan (alias: scaffold-status)
           build
+          ingest-reference [--type manual|image|gpt-image-2|remote|lazyweb] [--title TITLE] [--source SOURCE] [--notes NOTES] [--force]
           ingest-design [--id ID] [--title TITLE] [--source SOURCE] [--notes NOTES] [--selected] [--force]
           next-task [--type TYPE] [--force]
           qa-checklist [--force]
@@ -1248,6 +1260,7 @@ module Aiweb
           agent-run --task latest --agent codex --approved
           workbench: plans, exports, or serves a local UI manifest under .ai-web/workbench using declarative CLI controls only; requires initialized .ai-web/state.yaml, --dry-run writes nothing, export writes only workbench artifacts, serve binds only localhost/127.0.0.1 and requires --approved for real process launch, executes no controls, and never mutates state.yaml
           daemon: starts the local backend API bridge for the future web Workbench; --dry-run reports endpoints and guardrails without binding a port
+          ingest-reference: phase-3 or phase-3.5; writes only .ai-web/design-reference-brief.md pattern constraints, never implementation source, and rejects .env/.env.* or secret-looking reference paths
           component-map: scans stable data-aiweb-id regions into .ai-web/component-map.json; --dry-run writes nothing and never reads .env/.env.*
           visual-edit: validates a selected data-aiweb-id target and writes only local handoff artifacts; --dry-run writes nothing and never patches source, runs QA/browser/build, deploys, or calls network/AI
           github-sync: local-only GitHub sync planning surface; never runs git push, provider CLIs, network, build/preview/install, or reads .env/.env.*
@@ -1865,7 +1878,11 @@ module Aiweb
     end
 
     def exit_code_for(command, result)
-      return EXIT_VALIDATION_FAILED if result["validation_errors"] && !result["validation_errors"].empty?
+      if result["validation_errors"] && !result["validation_errors"].empty?
+        return EXIT_UNSAFE_EXTERNAL_ACTION if command == "design-systems"
+
+        return EXIT_VALIDATION_FAILED
+      end
       return result.dig("runtime_plan", "readiness") == "ready" ? EXIT_SUCCESS : EXIT_VALIDATION_FAILED if RUNTIME_PLAN_COMMANDS.include?(command)
       return EXIT_SUCCESS if REGISTRY_COMMANDS.include?(command) || command == "intent"
       return run_lifecycle_exit_code(result) if %w[run-status run-cancel run-resume].include?(command)
@@ -1890,7 +1907,7 @@ module Aiweb
       return deploy_exit_code(result) if command == "deploy"
       return supabase_secret_qa_exit_code(result) if command == "supabase-secret-qa"
       return supabase_local_verify_exit_code(result) if command == "supabase-local-verify"
-      return EXIT_SUCCESS if %w[help version status start init interview run run-status run-timeline timeline observability-summary summary run-cancel run-resume agent-run verify-loop design-brief design-research design-system design-prompt design select-design scaffold ingest-design next-task qa-checklist qa-report rollback resolve-blocker snapshot visual-critique visual-polish component-map visual-edit].include?(command)
+      return EXIT_SUCCESS if %w[help version status start init interview run run-status run-timeline timeline observability-summary summary run-cancel run-resume agent-run verify-loop design-brief design-research design-system design-prompt design select-design scaffold ingest-reference ingest-design next-task qa-checklist qa-report rollback resolve-blocker snapshot visual-critique visual-polish component-map visual-edit].include?(command)
       if command == "advance" && result["action_taken"] == "advance blocked"
         issue = result["blocking_issues"].join(" ")
         return EXIT_BUDGET_BLOCKED if issue =~ /budget|candidate cap|design generation cap/i

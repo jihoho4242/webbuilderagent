@@ -640,7 +640,7 @@ class AiwebCliTest < Minitest::Test
       File.write(File.join(dir, "design-systems", "broken-json", "metadata.json"), "{ broken json")
 
       payload, code = json_cmd("--path", dir, "design-systems", "list")
-      assert_equal 1, code
+      assert_equal 5, code
       assert payload["validation_errors"].any? { |error| error.include?("design-systems/broken-json/metadata.json") && error.include?("invalid JSON") }
       assert payload["warnings"].any? { |warning| warning.include?("metadata could not be loaded") }
       assert_match(/registry metadata validation failed/, payload["blocking_issues"].join("\n"))
@@ -1008,6 +1008,69 @@ class AiwebCliTest < Minitest::Test
       custom_payload, custom_code = json_cmd("ingest-design", "--id", "custom-11", "--title", "Custom 11")
       assert_equal 3, custom_code
       assert_match(/candidate cap reached/, custom_payload.dig("error", "message"))
+    end
+  end
+
+  def test_ingest_reference_dry_run_plans_reference_brief_without_writing
+    in_tmp do
+      json_cmd("init", "--profile", "D")
+      set_phase("phase-3")
+
+      payload, code = json_cmd("ingest-reference", "--type", "gpt-image-2", "--title", "Moody hero", "--source", "gpt-image-2://local-output", "--notes", "large editorial hero with layered cards", "--dry-run")
+
+      assert_equal 0, code
+      assert_equal true, payload["dry_run"]
+      assert_equal "ingested gpt-image-2 reference", payload["action_taken"]
+      assert_includes payload["changed_files"], ".ai-web/design-reference-brief.md"
+      refute File.exist?(".ai-web/design-reference-brief.md")
+      assert_equal true, payload.dig("reference_ingestion", "pattern_constraints_only")
+      assert payload.dig("reference_ingestion", "no_copy_guardrails").any? { |guardrail| guardrail.match?(/Do not reproduce exact screenshot layout/i) }
+    end
+  end
+
+  def test_ingest_reference_writes_pattern_only_no_copy_brief_and_state
+    in_tmp do
+      json_cmd("init", "--profile", "D")
+      set_phase("phase-3.5")
+
+      payload, code = json_cmd("ingest-reference", "--type", "image", "--title", "Reference dashboard", "--source", "references/dashboard.png", "--notes", "Dense KPI header\nCard grid rhythm")
+
+      assert_equal 0, code
+      assert_includes payload["changed_files"], ".ai-web/design-reference-brief.md"
+      assert_includes payload["changed_files"], ".ai-web/state.yaml"
+
+      brief = File.read(".ai-web/design-reference-brief.md")
+      assert_match(/Reference dashboard/, brief)
+      assert_match(/Interpret as pattern constraint: Dense KPI header/, brief)
+      assert_match(/pattern evidence only/i, brief)
+      assert_match(/not implementation source/i, brief)
+      assert_match(/Do not reproduce exact screenshot layout, visual asset, copy, prices, logos, trademarks/i, brief)
+
+      state = load_state
+      assert_equal "lazyweb", state.dig("research", "design_research", "provider"), "manual reference ingestion must not disable the Lazyweb research adapter"
+      assert_equal "ready", state.dig("research", "design_research", "status")
+      refute state.dig("research", "reference_ingestion"), "manual reference metadata must stay schema-compatible"
+      assert_equal "draft", state.dig("artifacts", "design_reference_brief", "status")
+    end
+  end
+
+  def test_ingest_reference_rejects_env_and_secret_paths_without_reading_secret
+    [".env", "nested/.env.local/ref.png", "secrets/reference.png", "config/credentials.yml"].each do |forbidden_path|
+      in_tmp do
+        json_cmd("init", "--profile", "D")
+        set_phase("phase-3")
+        File.write(".env", "SECRET=do-not-print\n")
+
+        stdout, stderr, code = run_aiweb("ingest-reference", "--source", forbidden_path, "--notes", "safe notes", "--json")
+        payload = JSON.parse(stdout)
+
+        assert_equal 1, code, forbidden_path
+        assert_equal "", stderr, forbidden_path
+        assert_match(/\.env|secret/i, payload.dig("error", "message"), forbidden_path)
+        refute_includes stdout, "do-not-print", forbidden_path
+        refute File.exist?(".ai-web/design-reference-brief.md"), forbidden_path
+        assert_equal "SECRET=do-not-print\n", File.read(".env"), forbidden_path
+      end
     end
   end
 
@@ -2986,6 +3049,41 @@ class AiwebCliTest < Minitest::Test
     refute_includes text, secret
   end
 
+  def test_next_task_generates_schema_complete_machine_constrained_packet
+    in_tmp do
+      prepare_profile_d_scaffold_flow
+      set_phase("phase-6")
+
+      payload, code = json_cmd("next-task", "--type", "implementation")
+      task_path = payload.fetch("changed_files").find { |path| path.match?(%r{\A\.ai-web/tasks/task-.+-implementation\.md\z}) }
+
+      assert_equal 0, code
+      assert task_path, "next-task must write a task packet path"
+      assert_equal task_path, load_state.dig("implementation", "current_task")
+      body = File.read(task_path)
+      assert_includes body, "# Task Packet"
+      assert_match(/Task ID: task-.+-implementation/, body)
+      assert_includes body, "Phase: phase-6"
+      assert_includes body, "## Goal"
+      assert_includes body, "## Inputs"
+      assert_includes body, "## Constraints"
+      assert_includes body, "## Machine Constraints"
+      assert_includes body, "## Acceptance Criteria"
+      assert_includes body, "## Verification"
+      assert_includes body, ".ai-web/state.yaml"
+      assert_includes body, ".ai-web/DESIGN.md"
+      assert_includes body, ".ai-web/design-candidates/candidate-02.html"
+      assert_includes body, "Do not read `.env` or `.env.*`"
+      assert_includes body, "Do not call external Lazyweb/design-research"
+      assert_includes body, "Do not copy exact reference"
+      assert_includes body, "shell_allowed: false"
+      assert_includes body, "network_allowed: false"
+      assert_includes body, "env_access_allowed: false"
+      assert_includes body, "allowed_source_paths:"
+      assert_includes body, "src/components/Hero.astro"
+    end
+  end
+
 
   def test_setup_install_without_approval_blocks_without_writes_or_env_access
     in_tmp do
@@ -3184,6 +3282,14 @@ class AiwebCliTest < Minitest::Test
         - Do not read `.env` or `.env.*`
         - Keep changes local and reversible
 
+        ## Machine Constraints
+        shell_allowed: false
+        network_allowed: false
+        env_access_allowed: false
+        requires_selected_design: true
+        allowed_source_paths:
+        - src/components/Hero.astro
+
         ## Acceptance Criteria
         - Source patch evidence is recorded.
         - Logs and diff artifacts are written only on approved runs.
@@ -3220,6 +3326,200 @@ class AiwebCliTest < Minitest::Test
     end
   end
 
+  def test_agent_run_source_patch_requires_selected_design_gate_before_planning
+    in_tmp do |dir|
+      json_cmd("init", "--profile", "D")
+      FileUtils.mkdir_p("src/components")
+      File.write("src/components/Hero.astro", "<section data-aiweb-id=\"hero\">Draft</section>\n")
+      File.write(".ai-web/DESIGN.md", "# Agent Run Design System\n\nUse source-safe patching.\n")
+      FileUtils.mkdir_p(".ai-web/tasks")
+      task_path = ".ai-web/tasks/agent-run-latest.md"
+      File.write(task_path, <<~MD)
+        # Task Packet — implementation
+
+        ## Goal
+        Patch the visible hero.
+
+        ## Inputs
+        - `.ai-web/DESIGN.md`
+        - `src/components/Hero.astro`
+
+        ## Constraints
+        - Do not read `.env` or `.env.*`
+        - Keep changes local and reversible
+
+        ## Machine Constraints
+        shell_allowed: false
+        network_allowed: false
+        env_access_allowed: false
+        requires_selected_design: true
+        allowed_source_paths:
+        - src/components/Hero.astro
+      MD
+      state = load_state
+      state["implementation"] ||= {}
+      state["implementation"]["current_task"] = task_path
+      write_state(state)
+
+      bin_dir = write_fake_codex_tooling(dir)
+      marker = File.join(dir, "codex-was-run")
+      before_entries = project_entries
+      before_state = File.read(".ai-web/state.yaml")
+
+      stdout, stderr, code = run_aiweb_env(
+        {
+          "PATH" => [bin_dir, "/usr/bin", "/bin", "/usr/sbin", "/sbin"].join(File::PATH_SEPARATOR),
+          "FAKE_CODEX_MARKER" => marker
+        },
+        "agent-run", "--task", "latest", "--agent", "codex", "--dry-run", "--json"
+      )
+      payload = JSON.parse(stdout)
+
+      assert_equal 1, code
+      assert_equal "", stderr
+      assert_equal "blocked", payload.dig("agent_run", "status")
+      assert_match(/selected design candidate/i, [payload["blocking_issues"], payload.dig("agent_run", "blocking_issues")].flatten.compact.join("\n"))
+      assert_no_agent_run_side_effects(before_entries: before_entries, before_state: before_state)
+      refute File.exist?(marker), "selected-design-gated dry-run must not execute codex"
+    end
+  end
+
+  def test_agent_run_source_patch_blocks_when_selected_design_artifact_is_missing
+    in_tmp do |dir|
+      json_cmd("init", "--profile", "D")
+      FileUtils.mkdir_p("src/components")
+      File.write("src/components/Hero.astro", "<section data-aiweb-id=\"hero\">Draft</section>\n")
+      File.write(".ai-web/DESIGN.md", "# Agent Run Design System\n\nUse source-safe patching.\n")
+      FileUtils.mkdir_p(".ai-web/tasks")
+      task_path = ".ai-web/tasks/agent-run-latest.md"
+      File.write(task_path, <<~MD)
+        # Task Packet — implementation
+
+        ## Goal
+        Patch the visible hero.
+
+        ## Inputs
+        - `.ai-web/DESIGN.md`
+        - `src/components/Hero.astro`
+
+        ## Constraints
+        - Do not read `.env` or `.env.*`
+        - Keep changes local and reversible
+
+        ## Machine Constraints
+        shell_allowed: false
+        network_allowed: false
+        env_access_allowed: false
+        requires_selected_design: true
+        allowed_source_paths:
+        - src/components/Hero.astro
+      MD
+      state = load_state
+      state["implementation"] ||= {}
+      state["implementation"]["current_task"] = task_path
+      state["design_candidates"] ||= {}
+      state["design_candidates"]["selected_candidate"] = "candidate-02"
+      state["design_candidates"]["candidates"] = [{ "id" => "candidate-02", "path" => ".ai-web/design-candidates/candidate-02.html" }]
+      write_state(state)
+
+      bin_dir = write_fake_codex_tooling(dir)
+      marker = File.join(dir, "codex-was-run")
+
+      stdout, stderr, code = run_aiweb_env(
+        {
+          "PATH" => [bin_dir, "/usr/bin", "/bin", "/usr/sbin", "/sbin"].join(File::PATH_SEPARATOR),
+          "FAKE_CODEX_MARKER" => marker
+        },
+        "agent-run", "--task", "latest", "--agent", "codex", "--dry-run", "--json"
+      )
+      payload = JSON.parse(stdout)
+
+      assert_equal 1, code
+      assert_equal "", stderr
+      assert_equal "blocked", payload.dig("agent_run", "status")
+      assert_match(/selected design artifact/i, [payload["blocking_issues"], payload.dig("agent_run", "blocking_issues")].flatten.compact.join("\n"))
+      refute File.exist?(marker), "missing selected design artifact must block before codex execution"
+    end
+  end
+
+  def test_agent_run_dry_run_context_includes_selected_design_files
+    in_tmp do |dir|
+      task_markdown = <<~MD
+        # Task Packet — repair
+
+        Task ID: agent-run-latest
+        Phase: phase-7
+        Created at: 2026-05-03T00:00:00Z
+
+        ## Goal
+        Improve the hero copy using a local source patch.
+
+        ## Inputs
+        - `.ai-web/state.yaml`
+        - `.ai-web/DESIGN.md`
+        - `.ai-web/component-map.json`
+        - `src/components/Hero.astro`
+
+        ## Constraints
+        - Do not read `.env` or `.env.*`
+        - Keep changes local and reversible
+
+        ## Machine Constraints
+        shell_allowed: false
+        network_allowed: false
+        env_access_allowed: false
+        requires_selected_design: true
+        allowed_source_paths:
+        - src/components/Hero.astro
+      MD
+      prepare_agent_run_fixture(task_markdown: task_markdown)
+      bin_dir = write_fake_codex_tooling(dir)
+
+      stdout, stderr, code = run_aiweb_env(
+        { "PATH" => [bin_dir, "/usr/bin", "/bin", "/usr/sbin", "/sbin"].join(File::PATH_SEPARATOR) },
+        "agent-run", "--task", "latest", "--agent", "codex", "--dry-run", "--json"
+      )
+      payload = JSON.parse(stdout)
+      selected_files = payload.dig("agent_run", "context", "selected_design_files")
+
+      assert_equal 0, code
+      assert_equal "", stderr
+      assert_equal "candidate-02", payload.dig("agent_run", "context", "selected_candidate")
+      assert_kind_of Array, selected_files
+      assert selected_files.any? { |file| file["path"] == ".ai-web/design-candidates/selected.md" }
+      assert selected_files.any? { |file| file["path"] == ".ai-web/design-candidates/candidate-02.html" }
+    end
+  end
+
+  def test_agent_run_blocks_malformed_task_packet_schema
+    in_tmp do
+      prepare_profile_d_scaffold_flow
+      json_cmd("component-map")
+      FileUtils.mkdir_p(".ai-web/tasks")
+      task_path = ".ai-web/tasks/agent-run-malformed.md"
+      File.write(task_path, <<~MD)
+        # Task Packet — repair
+
+        ## Goal
+        Patch the hero.
+
+        ## Inputs
+        - `src/components/Hero.astro`
+      MD
+      state = load_state
+      state["implementation"]["current_task"] = task_path
+      write_state(state)
+
+      stdout, stderr, code = run_aiweb("agent-run", "--task", "latest", "--agent", "codex", "--dry-run", "--json")
+      payload = JSON.parse(stdout)
+
+      assert_equal 5, code
+      assert_equal "", stderr
+      assert_equal "blocked", payload.dig("agent_run", "status")
+      assert_match(/schema missing|machine constraint|DESIGN\.md|\.env/i, payload.dig("agent_run", "blocking_issues").join("\n"))
+    end
+  end
+
   def test_agent_run_without_approval_blocks_without_writes_or_process_execution
     in_tmp do |dir|
       task_markdown = <<~MD
@@ -3241,6 +3541,14 @@ class AiwebCliTest < Minitest::Test
         ## Constraints
         - Do not read `.env` or `.env.*`
         - Keep changes local and reversible
+
+        ## Machine Constraints
+        shell_allowed: false
+        network_allowed: false
+        env_access_allowed: false
+        requires_selected_design: true
+        allowed_source_paths:
+        - src/components/Hero.astro
       MD
       prepare_agent_run_fixture(task_markdown: task_markdown)
       bin_dir = write_fake_codex_tooling(dir)
@@ -3294,13 +3602,20 @@ class AiwebCliTest < Minitest::Test
         - Do not read `.env` or `.env.*`
         - Keep changes local and reversible
 
+        ## Machine Constraints
+        shell_allowed: false
+        network_allowed: false
+        env_access_allowed: false
+        requires_selected_design: true
+        allowed_source_paths:
+        - src/components/Hero.astro
+
         ## Acceptance Criteria
         - Source patch evidence is recorded.
         - Logs, metadata, and diff evidence are written.
       MD
       prepare_agent_run_fixture(task_markdown: task_markdown, secret: secret)
       bin_dir = write_fake_codex_tooling(dir)
-      marker = File.join(dir, "codex-was-run")
       before_entries = project_entries
       before_state = File.read(".ai-web/state.yaml")
       before_source = File.read("src/components/Hero.astro")
@@ -3310,7 +3625,6 @@ class AiwebCliTest < Minitest::Test
       stdout, stderr, code = run_aiweb_env(
         {
           "PATH" => [bin_dir, "/usr/bin", "/bin", "/usr/sbin", "/sbin"].join(File::PATH_SEPARATOR),
-          "FAKE_CODEX_MARKER" => marker,
           "FAKE_CODEX_PATCH_PATH" => File.join(dir, "src/components/Hero.astro"),
           "FAKE_CODEX_STDOUT" => "fake codex approved stdout",
           "FAKE_CODEX_STDERR" => "fake codex approved stderr"
@@ -3346,7 +3660,6 @@ class AiwebCliTest < Minitest::Test
       assert_match(%r{\A\.ai-web/runs/agent-run-.+/agent-run\.json\z}, state.dig("implementation", "latest_agent_run"))
       refute_nil state.dig("implementation", "last_diff")
       assert_match(%r{\A\.ai-web/diffs/agent-run-.+\.patch\z}, state.dig("implementation", "last_diff"))
-      assert File.exist?(marker), "approved agent-run must execute the fake codex command"
     end
   end
 
@@ -3364,7 +3677,8 @@ class AiwebCliTest < Minitest::Test
       write_state(state)
 
       bin_dir = write_fake_codex_tooling(dir)
-      prompt_path = File.join(dir, "captured-codex-prompt.txt")
+      prompt_path = File.join(dir, ".ai-web", "runs", "captured-codex-prompt.txt")
+      FileUtils.mkdir_p(File.dirname(prompt_path))
       stdout, stderr, code = run_aiweb_env(
         {
           "PATH" => [bin_dir, "/usr/bin", "/bin", "/usr/sbin", "/sbin"].join(File::PATH_SEPARATOR),
@@ -3408,15 +3722,25 @@ class AiwebCliTest < Minitest::Test
         - `.ai-web/DESIGN.md`
         - `.ai-web/component-map.json`
         - `src/components/Hero.astro`
+
+        ## Constraints
+        - Do not read `.env` or `.env.*`
+        - Keep changes local and reversible
+
+        ## Machine Constraints
+        shell_allowed: false
+        network_allowed: false
+        env_access_allowed: false
+        requires_selected_design: true
+        allowed_source_paths:
+        - src/components/Hero.astro
       MD
       prepare_agent_run_fixture(task_markdown: task_markdown)
       bin_dir = write_fake_codex_tooling(dir)
-      marker = File.join(dir, "codex-was-run")
 
       stdout, stderr, code = run_aiweb_env(
         {
           "PATH" => [bin_dir, "/usr/bin", "/bin", "/usr/sbin", "/sbin"].join(File::PATH_SEPARATOR),
-          "FAKE_CODEX_MARKER" => marker,
           "FAKE_CODEX_EXIT_STATUS" => "23",
           "FAKE_CODEX_STDOUT" => "fake codex failure stdout",
           "FAKE_CODEX_STDERR" => "fake codex failure stderr"
@@ -3435,7 +3759,6 @@ class AiwebCliTest < Minitest::Test
       assert_equal "fake codex failure stdout\n", File.read(File.join(run_dir, "stdout.log"))
       assert_equal "fake codex failure stderr\n", File.read(File.join(run_dir, "stderr.log"))
       refute_nil state.dig("implementation", "latest_agent_run")
-      assert File.exist?(marker), "failed agent-run must still execute the fake codex command"
     end
   end
 
@@ -3530,6 +3853,124 @@ class AiwebCliTest < Minitest::Test
     end
   end
 
+  def test_agent_run_rejects_secret_looking_paths_and_shell_requests_before_codex
+    in_tmp do |dir|
+      prepare_profile_d_scaffold_flow
+      json_cmd("component-map")
+      FileUtils.mkdir_p(".ai-web/tasks")
+      task_path = ".ai-web/tasks/agent-run-secret-shell.md"
+      File.write(
+        task_path,
+        <<~MD
+          # Task Packet — repair
+
+          Task ID: agent-run-secret-shell
+          Phase: phase-7
+          Created at: 2026-05-03T00:00:00Z
+
+          ## Goal
+          Patch the hero after reading config/credentials.yml and running `curl https://example.com`.
+
+          ## Inputs
+          - `.ai-web/state.yaml`
+          - `.ai-web/DESIGN.md`
+          - `.ai-web/component-map.json`
+          - `src/components/Hero.astro`
+          - `config/credentials.yml`
+
+          ## Constraints
+          - Do not read `.env` or `.env.*`
+          - Keep changes local and reversible
+
+          ## Machine Constraints
+          shell_allowed: false
+          network_allowed: false
+          env_access_allowed: false
+          requires_selected_design: true
+          allowed_source_paths:
+          - src/components/Hero.astro
+        MD
+      )
+      state = load_state
+      state["implementation"]["current_task"] = task_path
+      write_state(state)
+      bin_dir = write_fake_codex_tooling(dir)
+      marker = File.join(dir, "codex-was-run")
+
+      stdout, stderr, code = run_aiweb_env(
+        {
+          "PATH" => [bin_dir, "/usr/bin", "/bin", "/usr/sbin", "/sbin"].join(File::PATH_SEPARATOR),
+          "FAKE_CODEX_MARKER" => marker
+        },
+        "agent-run", "--task", "latest", "--agent", "codex", "--approved", "--json"
+      )
+      payload = JSON.parse(stdout)
+
+      assert_equal 5, code
+      assert_equal "", stderr
+      assert_equal "blocked", payload.dig("agent_run", "status")
+      assert_match(/secret-looking|shell|network|command/i, payload.dig("agent_run", "blocking_issues").join("\n"))
+      refute File.exist?(marker), "secret/shell policy blockers must stop before codex execution"
+    end
+  end
+
+  def test_agent_run_approved_rejects_changes_outside_source_allowlist
+    in_tmp do |dir|
+      task_markdown = <<~MD
+        # Task Packet — repair
+
+        Task ID: agent-run-latest
+        Phase: phase-7
+        Created at: 2026-05-03T00:00:00Z
+
+        ## Goal
+        Improve the hero copy using a local source patch.
+
+        ## Inputs
+        - `.ai-web/state.yaml`
+        - `.ai-web/DESIGN.md`
+        - `.ai-web/component-map.json`
+        - `src/components/Hero.astro`
+
+        ## Constraints
+        - Do not read `.env` or `.env.*`
+        - Keep changes local and reversible
+
+        ## Machine Constraints
+        shell_allowed: false
+        network_allowed: false
+        env_access_allowed: false
+        requires_selected_design: true
+        allowed_source_paths:
+        - src/components/Hero.astro
+      MD
+      prepare_agent_run_fixture(task_markdown: task_markdown)
+      bin_dir = write_fake_codex_tooling(dir)
+      marker = File.join(dir, "codex-was-run")
+
+      stdout, stderr, code = run_aiweb_env(
+        {
+          "PATH" => [bin_dir, "/usr/bin", "/bin", "/usr/sbin", "/sbin"].join(File::PATH_SEPARATOR),
+          "FAKE_CODEX_MARKER" => marker,
+          "FAKE_CODEX_PATCH_PATH" => File.join(dir, "src/components/Hero.astro"),
+          "FAKE_CODEX_STDOUT" => "fake codex unauthorized stdout"
+        },
+        "agent-run", "--task", "latest", "--agent", "codex", "--approved", "--json"
+      )
+      payload = JSON.parse(stdout)
+      run_dir = Dir.glob(".ai-web/runs/agent-run-*").sort.last
+
+      assert_equal 1, code
+      assert_equal "", stderr
+      assert_equal "failed", payload.dig("agent_run", "status")
+      assert_match(/outside allowed source paths/i, payload.dig("agent_run", "blocking_issues").join("\n"))
+      assert_includes payload.dig("agent_run", "blocking_issues").join("\n"), "codex-was-run"
+      assert File.exist?(marker), "fake codex marker proves the wrapper detected and rejected an out-of-allowlist mutation"
+      assert run_dir, "rejected approved run still writes audit metadata"
+      assert_equal "fake codex unauthorized stdout\n", File.read(File.join(run_dir, "stdout.log"))
+    end
+  end
+
   def test_agent_run_blocks_without_safe_target_or_task_artifact
     in_tmp do
       prepare_profile_d_scaffold_flow
@@ -3587,6 +4028,18 @@ class AiwebCliTest < Minitest::Test
           - `.ai-web/DESIGN.md`
           - `.ai-web/component-map.json`
           - `src/components/Hero.astro`
+
+          ## Constraints
+          - Do not read `.env` or `.env.*`
+          - Keep changes local and reversible
+
+          ## Machine Constraints
+          shell_allowed: false
+          network_allowed: false
+          env_access_allowed: false
+          requires_selected_design: true
+          allowed_source_paths:
+          - src/components/Hero.astro
         MD
       )
       state_path = File.join(target, ".ai-web", "state.yaml")
@@ -4038,7 +4491,8 @@ class AiwebCliTest < Minitest::Test
       prepare_profile_d_scaffold_flow
       File.write(".env", "SECRET=pr23-repair-do-not-leak\n")
       bin_dir = write_fake_verify_loop_tooling(dir)
-      marker = File.join(dir, "codex-runs.log")
+      marker = File.join(dir, ".ai-web", "runs", "codex-runs.log")
+      FileUtils.mkdir_p(File.dirname(marker))
       env = {
         "PATH" => [bin_dir, "/usr/bin", "/bin", "/usr/sbin", "/sbin"].join(File::PATH_SEPARATOR),
         "PLAYWRIGHT_FAKE_STATUS" => "failed",
@@ -4070,7 +4524,8 @@ class AiwebCliTest < Minitest::Test
     in_tmp do |dir|
       prepare_profile_d_scaffold_flow
       bin_dir = write_fake_verify_loop_tooling(dir)
-      marker = File.join(dir, "codex-runs.log")
+      marker = File.join(dir, ".ai-web", "runs", "codex-runs.log")
+      FileUtils.mkdir_p(File.dirname(marker))
       env = {
         "PATH" => [bin_dir, "/usr/bin", "/bin", "/usr/sbin", "/sbin"].join(File::PATH_SEPARATOR),
         "PLAYWRIGHT_FAKE_STATUS" => "failed",
@@ -6192,8 +6647,40 @@ class AiwebCliTest < Minitest::Test
       assert_equal polish_loop["source_critique"], polish_record["source_critique"]
       assert_equal polish_loop["polish_task"], polish_record["polish_task"]
       assert_equal true, polish_record.fetch("guardrails").any? { |guardrail| guardrail =~ /no source auto-patch/i }
+      assert_equal true, polish_record.fetch("guardrails").any? { |guardrail| guardrail =~ /no exact reference/i }
+      assert_kind_of Hash, polish_record.fetch("design_contract")
+      task_body = File.read(polish_loop["polish_task"])
+      assert_includes task_body, "# Task Packet"
+      assert_includes task_body, ".ai-web/DESIGN.md"
+      assert_includes task_body, "shell_allowed: false"
+      assert_includes task_body, "network_allowed: false"
+      assert_includes task_body, "env_access_allowed: false"
+      assert_match(/Do not copy exact reference/i, task_body)
       refute Dir.exist?("dist"), "visual-polish must not build or deploy"
       refute Dir.exist?(".ai-web/runs"), "visual-polish must not launch browser or QA"
+    end
+  end
+
+  def test_visual_polish_rejects_malformed_critique_without_writes
+    in_tmp do
+      json_cmd("init", "--profile", "D")
+      set_phase("phase-10")
+      FileUtils.mkdir_p(".ai-web/visual")
+      malformed_path = ".ai-web/visual/visual-critique-bad.json"
+      File.write(malformed_path, JSON.pretty_generate("schema_version" => 1, "type" => "visual_critique"))
+      before_state = File.read(".ai-web/state.yaml")
+
+      stdout, stderr, code = run_aiweb("visual-polish", "--repair", "--from-critique", malformed_path, "--json")
+      payload = JSON.parse(stdout)
+
+      assert_equal 1, code
+      assert_equal "", stderr
+      assert_equal "error", payload["status"]
+      assert_match(/malformed|id is required|evidence/i, payload.dig("error", "message"))
+      assert_equal before_state, File.read(".ai-web/state.yaml")
+      assert_empty Dir.glob(".ai-web/visual/polish-*.json")
+      assert_empty Dir.glob(".ai-web/snapshots/*")
+      assert_empty Dir.glob(".ai-web/tasks/*")
     end
   end
 

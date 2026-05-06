@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "json"
+require "digest"
 require "open3"
 require "rbconfig"
 require "securerandom"
@@ -13,7 +14,7 @@ module Aiweb
   class CodexCliBridge
     DEFAULT_ALLOWED_COMMANDS = %w[
       status runtime-plan scaffold-status intent init start interview run design-brief design-research
-      design-system design-prompt design select-design scaffold setup build preview qa-playwright
+      design-system design-prompt design select-design ingest-reference scaffold setup build preview qa-playwright
       qa-screenshot qa-a11y qa-lighthouse visual-critique repair visual-polish workbench
       component-map visual-edit agent-run github-sync deploy-plan deploy qa-checklist qa-report
       next-task advance rollback resolve-blocker snapshot supabase-secret-qa
@@ -229,6 +230,21 @@ module Aiweb
       (?:\b(?:sk|rk)_(?:live|test|proj)_[A-Za-z0-9_-]{10,}\b)|
       (?:\beyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\b)
     /x.freeze
+    SAFE_METADATA_DENY_KEY_PATTERN = /\A(?:context|context_files|content|stdout|stderr|diff|patch)\z/i.freeze
+    SAFE_ARTIFACT_BYTES = 256 * 1024
+    SAFE_ARTIFACT_PATTERN = %r{\A\.ai-web/(?:
+      design-brief\.md|
+      design-reference-brief\.md|
+      DESIGN\.md|
+      component-map\.json|
+      workbench/(?:index\.html|workbench\.json)|
+      design-candidates/[A-Za-z0-9_.-]+\.(?:md|html)|
+      qa/results/[A-Za-z0-9_.-]+\.json|
+      qa/screenshots/metadata\.json|
+      visual/[A-Za-z0-9_.-]+\.(?:json|md)|
+      tasks/[A-Za-z0-9_.-]+\.md|
+      runs/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+\.json
+    )\z}x.freeze
 
     attr_reader :bridge, :api_token, :approval_token
 
@@ -310,6 +326,7 @@ module Aiweb
         "GET /api/project/status?path=PROJECT_PATH",
         "GET /api/project/workbench?path=PROJECT_PATH",
         "GET /api/project/runs?path=PROJECT_PATH",
+        "GET /api/project/artifact?path=PROJECT_PATH&artifact=ARTIFACT_PATH",
         "POST /api/project/command",
         "POST /api/codex/agent-run"
       ]
@@ -333,6 +350,8 @@ module Aiweb
         json(200, bridge_run(project_path: required_project_path!(query["path"]), command: "workbench", args: [], dry_run: true))
       when ["GET", "/api/project/runs"]
         json(200, runs_payload(query.fetch("path", "")))
+      when ["GET", "/api/project/artifact"]
+        json(200, artifact_payload(query.fetch("path", ""), query["artifact"] || query["file"] || query["artifact_path"]))
       when ["POST", "/api/project/command"]
         json(200, command_payload(parse_body(body), headers))
       when ["POST", "/api/codex/agent-run"]
@@ -454,6 +473,99 @@ module Aiweb
       }
     end
 
+    def artifact_payload(path, artifact)
+      root = safe_project_path(path)
+      relative = safe_artifact_path!(root, artifact)
+      full = File.join(root, relative)
+      raise UserError.new("artifact does not exist: #{relative}", 1) unless File.file?(full)
+      safe_artifact_realpath!(root, full, relative)
+
+      size = File.size(full)
+      raise UserError.new("artifact is too large for safe read: #{relative}", 5) if size > SAFE_ARTIFACT_BYTES
+
+      raw = File.read(full)
+      redacted = redact_text(raw)
+      parsed = safe_artifact_json(relative, raw)
+      content = artifact_media_type(relative) == "application/json" && parsed ? JSON.pretty_generate(parsed) : redacted
+      {
+        "schema_version" => 1,
+        "status" => "ready",
+        "project_path" => root,
+        "artifact" => {
+          "path" => relative,
+          "size_bytes" => size,
+          "sha256" => Digest::SHA256.file(full).hexdigest,
+          "media_type" => artifact_media_type(relative),
+          "redacted" => redacted != raw || content != raw,
+          "content" => content,
+          "json" => parsed
+        }.compact
+      }
+    end
+
+    def safe_artifact_path!(root, artifact)
+      text = artifact.to_s.strip
+      raise UserError.new("artifact path is required", 1) if text.empty?
+      raise UserError.new("artifact path must be relative", 5) if text.start_with?("/") || text.match?(/\A[a-z][a-z0-9+.-]*:\/\//i)
+      raise UserError.new("unsafe artifact path blocked: null bytes are not allowed", 5) if text.include?("\x00")
+      raise UserError.new("unsafe artifact path blocked: .env/.env.* paths are not allowed", 5) if unsafe_env_path?(text)
+
+      normalized = text.tr("\\", "/").sub(%r{\A(?:\./)+}, "")
+      parts = normalized.split("/")
+      if normalized.empty? || parts.any? { |part| part.empty? || part == ".." }
+        raise UserError.new("unsafe artifact path blocked: path traversal is not allowed", 5)
+      end
+      unless normalized.match?(SAFE_ARTIFACT_PATTERN)
+        raise UserError.new("artifact path is not on the safe read allowlist: #{normalized}", 5)
+      end
+
+      full = File.expand_path(normalized, root)
+      aiweb_root = File.expand_path(File.join(root, ".ai-web"))
+      unless full == aiweb_root || full.start_with?("#{aiweb_root}#{File::SEPARATOR}")
+        raise UserError.new("unsafe artifact path blocked: artifact must stay under .ai-web", 5)
+      end
+
+      normalized
+    end
+
+    def safe_artifact_realpath!(root, full, relative)
+      raise UserError.new("artifact symlinks are not readable: #{relative}", 5) if File.lstat(full).symlink?
+
+      real = File.realpath(full)
+      aiweb_root = File.realpath(File.join(root, ".ai-web"))
+      unless real.start_with?("#{aiweb_root}#{File::SEPARATOR}")
+        raise UserError.new("unsafe artifact path blocked: artifact must stay under .ai-web", 5)
+      end
+
+      true
+    rescue Errno::ENOENT
+      raise UserError.new("artifact does not exist: #{relative}", 1)
+    end
+
+    def artifact_media_type(path)
+      case File.extname(path).downcase
+      when ".json" then "application/json"
+      when ".html" then "text/html"
+      when ".md" then "text/markdown"
+      when ".yml", ".yaml" then "application/yaml"
+      else "text/plain"
+      end
+    end
+
+    def safe_artifact_json(path, content)
+      return nil unless File.extname(path).downcase == ".json"
+
+      safe_metadata(JSON.parse(content))
+    rescue JSON::ParserError
+      nil
+    end
+
+    def redact_text(text)
+      text.to_s.gsub(SECRET_VALUE_PATTERN, "[redacted]").lines.map do |line|
+        unsafe_env_path?(line) ? "[excluded unsafe .env reference]\n" : line
+      end.join
+    end
+
     def safe_json_summary(root, file)
       relative = file.sub(%r{\A#{Regexp.escape(root)}/?}, "")
       return nil if unsafe_env_path?(relative)
@@ -469,6 +581,7 @@ module Aiweb
       when Hash
         value.each_with_object({}) do |(key, item), memo|
           key = key.to_s
+          next if key.match?(SAFE_METADATA_DENY_KEY_PATTERN)
           next if key.match?(/secret|token|password|api[_-]?key|credential/i)
           next if unsafe_env_path?(item.to_s)
 
