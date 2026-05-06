@@ -9,7 +9,9 @@ Today the CLI manages the project director workspace: `.ai-web` state, phase gat
 - Initialize a Director workspace with `.ai-web` state and templates.
 - Move through guarded phases with explicit quality gates.
 - Produce design prompts and ingest selected design candidates.
+- Ingest GPT Image 2/reference-image/manual reference evidence through `ingest-reference` as `.ai-web/design-reference-brief.md` pattern constraints only; raw images/references are never implementation source.
 - Emit implementation task packets for later build work.
+- Gate source-patch `agent-run` implementation work behind a selected design candidate when the task touches app/UI source files.
 - Record QA checklists/results and gate advancement on blocking failures.
 - Capture snapshots and rollback/blocker recovery evidence.
 - Provide a friendly Korean entry point, `웹빌더`, over the lower-level `aiweb` CLI.
@@ -34,27 +36,36 @@ Today the CLI manages the project director workspace: `.ai-web` state, phase gat
 
 ## Upgrade direction
 
-The intended product direction is a design-first, natural-language webbuilder: turn a plain-language command into clean, high-quality web output.
+The intended product direction is a design-first, natural-language webbuilder: turn a plain-language command into clean, high-quality web output. The core rule is:
+
+```text
+idea/reference/image -> brief/reference constraints -> DESIGN.md -> 3 candidates -> selected design -> implementation -> QA/polish
+```
+
+Do **not** use GPT Image 2/reference images as direct Codex implementation input. They must be translated into persisted pattern constraints first.
 
 1. Describe the business or service website in natural language.
-2. Generate and compare premium, design-first candidates.
-3. Preview the selected direction in a browser.
-4. Run automated browser QA against visual, content, accessibility, and interaction expectations.
-5. Convert failed/blocked QA evidence into bounded local repair tasks and records.
-6. Review deterministic visual critique scores/patch plans from local evidence before repair decisions.
-7. Convert failed visual critique evidence into bounded local visual polish tasks and records.
-8. Review the local Workbench UI panels for chat, artifacts, design, preview, file tree, QA, critique, and run timeline status.
-9. Select a mapped `data-aiweb-id` region and create a bounded visual edit handoff instead of regenerating the full page.
-10. For Supabase-backed work, scaffold Profile S locally with safe SSR placeholders and rerun `supabase-secret-qa` before copying values into a private local env file outside the generator guardrail.
-11. Review local-only GitHub sync and Cloudflare Pages/Vercel deploy dry-run plans; approved deploy adapters require passing verify-loop evidence with matching current workspace/output provenance and provider readiness before any external release work.
-12. Run `setup --install --dry-run` to inspect the planned dependency install, then `setup --install --approved` only when you explicitly approve local package installation.
-13. Repair implementation manually or through later approved automation, then deploy later once gates pass and evidence is recorded.
-14. Use `run-status`, `run-cancel`, and `run-resume` to inspect, request cancellation, or record a safe resume descriptor for long local runs.
-15. Use `run-timeline` and `observability-summary` to audit recent local evidence before deciding the next supervised action.
+2. Ingest GPT Image 2/reference/manual observations as pattern-only reference constraints.
+3. Resolve `.ai-web/DESIGN.md` as the deterministic design source of truth.
+4. Generate and compare exactly three premium, design-first candidates.
+5. Select one candidate before implementation.
+6. Preview the selected direction in a browser.
+7. Run automated browser QA against visual, content, accessibility, and interaction expectations.
+8. Convert failed/blocked QA evidence into bounded local repair tasks and records.
+9. Review deterministic visual critique scores/patch plans from local evidence before repair decisions.
+10. Convert failed visual critique evidence into bounded local visual polish tasks and records.
+11. Review the local Workbench UI panels for chat, artifacts, design, preview, file tree, QA, critique, and run timeline status.
+12. Select a mapped `data-aiweb-id` region and create a bounded visual edit handoff instead of regenerating the full page.
+13. For Supabase-backed work, scaffold Profile S locally with safe SSR placeholders and rerun `supabase-secret-qa` before copying values into a private local env file outside the generator guardrail.
+14. Review local-only GitHub sync and Cloudflare Pages/Vercel deploy dry-run plans; approved deploy adapters require passing verify-loop evidence with matching current workspace/output provenance and provider readiness before any external release work.
+15. Run `setup --install --dry-run` to inspect the planned dependency install, then `setup --install --approved` only when you explicitly approve local package installation.
+16. Repair implementation manually or through later approved automation, then deploy later once gates pass and evidence is recorded.
+17. Use `run-status`, `run-cancel`, and `run-resume` to inspect, request cancellation, or record a safe resume descriptor for long local runs.
+18. Use `run-timeline` and `observability-summary` to audit recent local evidence before deciding the next supervised action.
 
 The current Director CLI is the foundation for that loop: state, gates, QA contracts, snapshots, local preview evidence, bounded repair-loop records, visual polish records/tasks/snapshots, component maps, targeted visual edit handoff records, local-only Profile S Supabase scaffold/secret-QA records, verify-loop evidence, and gated deploy-adapter boundaries are in place before the system grows into richer end-to-end generation and source repair automation. It is not yet a full app generator.
 
-The intended product surface is now a browser Workbench, not terminal UX. Until a frontend exists, `aiweb daemon --dry-run --json` exposes the backend/API contract that the frontend should call later. The daemon keeps the Ruby Director engine as the backend source of truth and uses a guarded Codex CLI bridge only through approved `agent-run` jobs.
+The intended product surface is eventually a browser Workbench, not terminal UX. This repository is intentionally backend-first right now: `aiweb daemon --dry-run --json` exposes the backend/API contract that a later design-approved frontend should call. The daemon keeps the Ruby Director engine as the backend source of truth and uses a guarded Codex CLI bridge only through approved `agent-run` jobs.
 
 ## Quick start
 
@@ -107,7 +118,7 @@ AIWEB_DAEMON_TOKEN="$(ruby -rsecurerandom -e 'print SecureRandom.hex(24)')" \
   ./bin/aiweb daemon --host 127.0.0.1 --port 4242
 ```
 
-`daemon --dry-run` writes nothing and reports the local API contract. A real daemon exposes `GET /health`, `GET /api/engine`, `GET /api/project/status`, `GET /api/project/workbench`, `GET /api/project/runs`, `POST /api/project/command`, and `POST /api/codex/agent-run`. The frontend must send structured JSON only; the daemon never accepts raw shell commands, rejects non-local `Origin` headers, requires `X-Aiweb-Token` for every `/api/*` request, requires an explicit project `path` for project/Codex operations, rejects `.env` / `.env.*` paths, owns backend flags (`--path`, `--json`, `--dry-run`, `--approved`), calls this repository's `bin/aiweb` by absolute path, serializes command execution, caps request bodies at 1 MiB, limits request/header reads, times out long bridge commands, redacts secret-looking run summary values, and keeps real Codex source patching behind both `agent-run --approved` and a matching `X-Aiweb-Approval-Token` header.
+`daemon --dry-run` writes nothing and reports the local API contract. A real daemon exposes `GET /health`, `GET /api/engine`, `GET /api/project/status`, `GET /api/project/workbench`, `GET /api/project/runs`, `GET /api/project/artifact`, `POST /api/project/command`, and `POST /api/codex/agent-run`. The frontend must send structured JSON only; the daemon never accepts raw shell commands, rejects non-local `Origin` headers, requires `X-Aiweb-Token` for every `/api/*` request, requires an explicit project `path` for project/Codex operations, rejects `.env` / `.env.*` paths, owns backend flags (`--path`, `--json`, `--dry-run`, `--approved`), calls this repository's `bin/aiweb` by absolute path, serializes command execution, caps request bodies at 1 MiB, limits request/header reads, times out long bridge commands, redacts secret-looking run summary values, and keeps real Codex source patching behind both `agent-run --approved` and a matching `X-Aiweb-Approval-Token` header. `GET /api/project/artifact` is a safe, allowlisted `.ai-web` artifact reader for DESIGN/reference/candidate/task/QA/visual/run summaries; it rejects traversal, symlinks, oversize files, and `.env` paths, and summarizes JSON content instead of returning raw agent context.
 
 If `AIWEB_DAEMON_TOKEN` is omitted, the real daemon generates and prints a one-session local token. The future frontend should store that token only in local session state and send it as `X-Aiweb-Token`. For any future frontend control that sets `"approved": true`, either reuse the same token or set a stronger `AIWEB_DAEMON_APPROVAL_TOKEN` and send it as `X-Aiweb-Approval-Token`:
 
@@ -282,7 +293,7 @@ PR22 adds the local source-patch agent-run surface for repair / visual-polish / 
 웹빌더 --path ~/Desktop/aiweb-premium-service-site agent-run --task latest --agent codex --approved
 ```
 
-`agent-run --dry-run` is a no-write / no-process preflight: it reports the planned `.ai-web/runs/agent-run-<timestamp>/agent-run.json`, `stdout.log`, `stderr.log`, and `.ai-web/diffs/agent-run-<timestamp>.patch` paths without executing a local agent. A real `agent-run` requires `--approved`; omitting `--approved` blocks execution with approval-required semantics and writes nothing. The command is limited to task packets with safe task/source hints, reads only task/design/component-map/source context that is already allowed by the task packet, refuses `.env` / `.env.*` paths, captures stdout/stderr and a git/source diff patch when it runs, and records the latest run metadata in `.ai-web` safe state. PR22 does not run build/preview/QA/deploy/provider CLIs and does not treat `--force` as approval.
+`agent-run --dry-run` is a no-write / no-process preflight: it reports the planned `.ai-web/runs/agent-run-<timestamp>/agent-run.json`, `stdout.log`, `stderr.log`, and `.ai-web/diffs/agent-run-<timestamp>.patch` paths without executing a local agent. A real `agent-run` requires `--approved`; omitting `--approved` blocks execution with approval-required semantics and writes nothing. The command is limited to `.ai-web/tasks/*.md` task packets with `Goal`, `Inputs`, `Constraints`, and machine constraints (`shell_allowed: false`, `network_allowed: false`, `env_access_allowed: false`, `allowed_source_paths:`). It reads only task/design/component-map/selected-design/source context that is already allowed by the task packet, refuses `.env` / `.env.*`, secret-looking paths, and shell/network/package/deploy requests, rejects approved runs that mutate files outside the allowed source list, redacts secret-looking process output, captures stdout/stderr and a source diff patch when it runs, and records the latest run metadata in `.ai-web` safe state. `agent-run` itself does not run build/preview/QA/deploy/provider CLIs and does not treat `--force` as approval.
 
 PR23 adds the first approved local closed loop:
 

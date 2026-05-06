@@ -7,6 +7,7 @@ require "find"
 require "json"
 require "open3"
 require "rbconfig"
+require "set"
 require "shellwords"
 require "timeout"
 require "time"
@@ -175,6 +176,50 @@ module Aiweb
       /SUPABASE_SERVICE_ROLE_KEY/,
       /sb_secret_[A-Za-z0-9_-]+/,
       /eyJ[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]{20,}/
+    ].freeze
+    SECRET_LOOKING_PATH_PATTERN = %r{
+      (?:
+        (?:\A|/)\.ssh(?:/|\z)|
+        (?:\A|/)(?:secret|secrets|private|credentials?)(?:[._-][^/\s`"'<>]+)?(?:/|\z)|
+        (?:\A|/)[^/\s`"'<>]*(?:private[_-]?key|id_rsa|id_dsa|id_ed25519|credential|secret)[^/\s`"'<>]*\.(?:txt|json|ya?ml|pem|key|env)\z|
+        (?:\A|/)[^/\s`"'<>]*\.(?:pem|key)\z
+      )
+    }ix.freeze
+    AGENT_RUN_SHELL_REQUEST_PATTERN = /
+      \b(?:
+        rm\s+-[A-Za-z]*r|
+        cat\s+\.env|
+        printenv|
+        curl|
+        wget|
+        ssh|
+        scp|
+        sudo|
+        chmod|
+        pnpm|
+        npm|
+        yarn|
+        bun|
+        vercel|
+        netlify
+      )\b
+    /ix.freeze
+    AGENT_RUN_SECRET_VALUE_PATTERN = /
+      (?:\b[A-Z0-9_]*(?:SECRET|TOKEN|PASSWORD|PRIVATE[_-]?KEY|API[_-]?KEY)[A-Z0-9_]*=[^\s]+)|
+      (?:-----BEGIN\ [A-Z ]*PRIVATE\ KEY-----)|
+      (?:\bAKIA[0-9A-Z]{16}\b)|
+      (?:\b(?:ghp|gho|ghu|ghs|github_pat)_[A-Za-z0-9_]{10,}\b)|
+      (?:\bxox[baprs]-[A-Za-z0-9-]{10,}\b)|
+      (?:\b(?:sk|rk)_(?:live|test|proj)_[A-Za-z0-9_-]{10,}\b)
+    /ix.freeze
+    AGENT_RUN_SNAPSHOT_PRUNE_DIRS = %w[
+      .git
+      node_modules
+      dist
+      build
+      coverage
+      tmp
+      vendor
     ].freeze
 
     attr_reader :root, :templates_dir
@@ -565,6 +610,59 @@ module Aiweb
         changes << write_yaml(state_path, state, dry_run)
         payload = status_hash(state: state, changed_files: compact_changes(changes))
         payload["action_taken"] = "ingested design candidate #{candidate_id}"
+      end
+      payload
+    end
+
+    def ingest_reference(type: nil, title: nil, source: nil, notes: nil, dry_run: false, force: false)
+      assert_initialized!
+      reference_type = normalize_reference_type(type)
+      reference_title = title.to_s.strip.empty? ? default_reference_title(reference_type) : title.to_s.strip
+      reference_source = source.to_s.strip
+      reference_notes = notes.to_s.strip
+      if reference_source.empty? && reference_notes.empty?
+        raise UserError.new("ingest-reference requires --source or --notes", 1)
+      end
+      reject_reference_secret_path!(reference_source, "reference source") unless reference_source.empty?
+
+      changes = []
+      payload = nil
+      mutation(dry_run: dry_run) do
+        state = load_state
+        phase_guard!(state, "ingest-reference", %w[phase-3 phase-3.5], force)
+        ensure_design_research_state_defaults!(state)
+        paths = design_research_paths(state)
+        brief_relative_path = paths["reference_brief"]
+        brief_path = File.join(root, brief_relative_path)
+        existing_brief = File.file?(brief_path) && !stub_file?(brief_path) ? File.read(brief_path) : nil
+        changes << write_file(
+          brief_path,
+          reference_ingestion_brief(existing_brief: existing_brief, type: reference_type, title: reference_title, source: reference_source, notes: reference_notes),
+          dry_run
+        )
+
+        research = state["research"]["design_research"]
+        research["status"] = "ready"
+        research["latest_run"] = now
+        research["skipped_reason"] = nil
+        research["last_error"] = nil
+        research["reference_brief_path"] = brief_relative_path
+
+        mark_artifacts_from_files!(state)
+        add_decision!(state, "design_reference_ingested", "Recorded #{reference_type} reference as pattern-only constraints")
+        state["project"]["updated_at"] = now
+        changes << write_yaml(state_path, state, dry_run)
+        payload = status_hash(state: state, changed_files: compact_changes(changes))
+        payload["action_taken"] = "ingested #{reference_type} reference"
+        payload["reference_ingestion"] = {
+          "type" => reference_type,
+          "title" => reference_title,
+          "source" => reference_source.empty? ? nil : reference_source,
+          "reference_brief_path" => brief_relative_path,
+          "pattern_constraints_only" => true,
+          "no_copy_guardrails" => reference_no_copy_guardrails
+        }
+        payload["next_action"] = "review .ai-web/design-reference-brief.md as pattern evidence only, then continue with aiweb design-system resolve or aiweb design"
       end
       payload
     end
@@ -2119,6 +2217,16 @@ module Aiweb
       end
       target_allowlist = agent_run_target_allowlist(task_text)
       source_paths = agent_run_source_paths(task_text, component_map, target_allowlist: target_allowlist)
+      blockers.concat(agent_run_task_packet_blockers(task_source, task_text, source_paths, target_allowlist: target_allowlist))
+      selected = state.dig("design_candidates", "selected_candidate").to_s.strip
+      if agent_run_requires_selected_design?(source_paths) && selected.empty?
+        blockers << "agent-run source implementation requires a selected design candidate; run aiweb design --candidates 3 then aiweb select-design candidate-01|candidate-02|candidate-03 before source edits"
+      elsif agent_run_requires_selected_design?(source_paths)
+        selected_path = selected_candidate_artifact_path(state, selected)
+        unless selected_path && File.file?(selected_path)
+          blockers << "agent-run source implementation requires selected design artifact #{selected_path ? relative(selected_path) : ".ai-web/design-candidates/#{selected}.html"}"
+        end
+      end
       context = agent_run_context_manifest(
         task_source: task_source,
         design_text: design_text,
@@ -2181,20 +2289,29 @@ module Aiweb
         changes << relative(run_dir)
         started_at = now
         prompt = agent_run_prompt(context: context)
+        before_snapshot = agent_run_workspace_snapshot
         stdout = ""
         stderr = ""
         exit_code = nil
         status = "blocked"
 
         stdout, stderr, process_status = Open3.capture3(
-          { "AIWEB_AGENT_RUN_CONTEXT_JSON" => JSON.pretty_generate(context), "AIWEB_AGENT_RUN_TASK_PATH" => task_source["relative"].to_s, "AIWEB_AGENT_RUN_APPROVED" => "1", "AIWEB_AGENT_RUN_DRY_RUN" => "0", "AIWEB_AGENT_RUN_RUN_ID" => run_id, "AIWEB_AGENT_RUN_DIFF_PATH" => relative(diff_path), "AIWEB_AGENT_RUN_METADATA_PATH" => relative(metadata_path) },
+          { "AIWEB_AGENT_RUN_CONTEXT_JSON" => JSON.pretty_generate(context), "AIWEB_AGENT_RUN_ALLOWED_SOURCE_PATHS_JSON" => JSON.generate(source_paths), "AIWEB_AGENT_RUN_TASK_PATH" => task_source["relative"].to_s, "AIWEB_AGENT_RUN_APPROVED" => "1", "AIWEB_AGENT_RUN_DRY_RUN" => "0", "AIWEB_AGENT_RUN_RUN_ID" => run_id, "AIWEB_AGENT_RUN_DIFF_PATH" => relative(diff_path), "AIWEB_AGENT_RUN_METADATA_PATH" => relative(metadata_path) },
           agent_name,
           stdin_data: prompt,
           chdir: root
         )
+        after_snapshot = agent_run_workspace_snapshot
+        unauthorized_changes = agent_run_unauthorized_workspace_changes(before_snapshot, after_snapshot, source_paths)
+        stdout = agent_run_redact_process_output(stdout)
+        stderr = agent_run_redact_process_output(stderr)
         exit_code = process_status.exitstatus
-        status = process_status.success? ? "passed" : "failed"
-        blocking_issues = process_status.success? ? [] : ["#{agent_name} exited with status #{exit_code}"]
+        status = process_status.success? && unauthorized_changes.empty? ? "passed" : "failed"
+        blocking_issues = []
+        blocking_issues << "#{agent_name} exited with status #{exit_code}" unless process_status.success?
+        unless unauthorized_changes.empty?
+          blocking_issues << "agent-run rejected changes outside allowed source paths: #{unauthorized_changes.join(", ")}"
+        end
 
         changes << write_file(stdout_path, stdout, false)
         changes << write_file(stderr_path, stderr, false)
@@ -3149,6 +3266,7 @@ module Aiweb
         state = load_state
         source_critique = resolve_visual_polish_critique_source(from_critique, state)
         critique = source_critique["path"] ? load_visual_polish_critique(source_critique["path"]) : nil
+        validate_visual_polish_critique!(critique) if critique
 
         unless critique
           payload = visual_polish_blocked_payload(
@@ -7103,6 +7221,11 @@ module Aiweb
       relative_path.to_s.tr("\\", "/").split("/").any? { |part| part.start_with?(".env") }
     end
 
+    def secret_looking_path?(relative_path)
+      normalized = relative_path.to_s.tr("\\", "/").sub(%r{\A(?:\./)+}, "")
+      normalized.match?(SECRET_LOOKING_PATH_PATTERN)
+    end
+
     def package_json_profile_s(context)
       JSON.pretty_generate(
         "name" => npm_package_name(context.fetch(:project_id).empty? ? context.fetch(:project_name) : context.fetch(:project_id)),
@@ -7940,6 +8063,86 @@ module Aiweb
       MD
     end
 
+    def normalize_reference_type(value)
+      text = value.to_s.strip.downcase
+      text = "manual" if text.empty?
+      aliases = {
+        "gpt-image" => "gpt-image-2",
+        "gpt_image_2" => "gpt-image-2",
+        "reference-image" => "image",
+        "url" => "remote",
+        "lazyweb-reference" => "lazyweb"
+      }
+      normalized = aliases.fetch(text, text)
+      allowed = %w[manual image gpt-image-2 remote lazyweb]
+      raise UserError.new("ingest-reference --type must be one of: #{allowed.join(", ")}", 1) unless allowed.include?(normalized)
+
+      normalized
+    end
+
+    def default_reference_title(reference_type)
+      case reference_type
+      when "gpt-image-2" then "GPT Image 2 reference notes"
+      when "image" then "Reference image notes"
+      when "remote" then "Remote reference notes"
+      when "lazyweb" then "Lazyweb reference notes"
+      else "Manual reference notes"
+      end
+    end
+
+    def reference_ingestion_brief(existing_brief:, type:, title:, source:, notes:)
+      base = existing_brief.to_s.strip
+      lines = base.empty? ? ["# Design Reference Brief", "", "Provider: manual", "Generated at: #{now}"] : [base]
+      lines.concat([
+        "",
+        "## Manually Ingested Reference Evidence",
+        "",
+        "### #{title}",
+        "- Type: #{type}",
+        "- Source: #{source.to_s.empty? ? "manual notes" : source}",
+        "- Recorded at: #{now}",
+        "",
+        "#### Pattern Constraints",
+        *reference_pattern_constraints(notes),
+        "",
+        "#### No-copy Guardrails",
+        *reference_no_copy_guardrails.map { |guardrail| "- #{guardrail}" },
+        "",
+        "This reference is pattern evidence only. It is not implementation source and must not be routed directly to scaffold, source edits, copywriting, pricing, trademarks, or brand claims."
+      ])
+      lines.join("\n").rstrip + "\n"
+    end
+
+    def reference_pattern_constraints(notes)
+      text = notes.to_s.strip
+      return ["- Preserve approved product, brand, IA, and `.ai-web/DESIGN.md` constraints; no additional visual constraint was supplied."] if text.empty?
+
+      text.lines.map(&:strip).reject(&:empty?).first(20).map do |line|
+        normalized = line.sub(/\A[-*]\s*/, "")
+        "- Interpret as pattern constraint: #{normalized}"
+      end
+    end
+
+    def reference_no_copy_guardrails
+      [
+        "Borrow only abstract interaction, hierarchy, mood, spacing, composition, and accessibility patterns.",
+        "Do not reproduce exact screenshot layout, visual asset, copy, prices, logos, trademarks, brand marks, signed URLs, or brand-specific claims.",
+        "Do not treat GPT Image 2 output or reference images as source assets; convert them into design constraints before implementation.",
+        "Implementation agents must use this brief as read-only pattern evidence and must not call external research tools during source edits."
+      ]
+    end
+
+    def reject_reference_secret_path!(value, label)
+      text = value.to_s.strip
+      return if text.empty?
+
+      reject_env_file_segment!(text, "ingest-reference refuses to read .env or .env.* #{label} paths")
+      path_segments = text.split(/[\\\/]+/)
+      if path_segments.any? { |part| part.match?(/\A(?:secrets?|credentials?|private[-_.]?keys?)(?:\.|\z|-|_)/i) }
+        raise UserError.new("ingest-reference refuses to read secret-looking #{label} paths", 1)
+      end
+    end
+
     def design_comparison_markdown(state)
       rows = state.dig("design_candidates", "candidates").map do |candidate|
         "| #{candidate["id"]} | TODO | TODO | TODO | TODO |"
@@ -7981,6 +8184,9 @@ module Aiweb
     end
 
     def task_packet_markdown(task_id, task_type, state)
+      source_targets = agent_run_default_source_targets
+      source_target_lines = source_targets.empty? ? "- TODO: add one safe source target before running agent-run." : source_targets.map { |path| "- `#{path}`" }.join("\n")
+      machine_source_targets = source_targets.empty? ? "- TODO" : source_targets.map { |path| "- #{path}" }.join("\n")
       <<~MD
         # Task Packet — #{task_type}
 
@@ -8001,14 +8207,24 @@ module Aiweb
         - `.ai-web/DESIGN.md`
         #{design_reference_brief_present? ? "- `.ai-web/design-reference-brief.md` (read-only pattern evidence; do not call Lazyweb or copy exact reference UI/copy)" : "- `.ai-web/design-reference-brief.md` is optional and currently absent; do not call external design research during implementation."}
         #{selected_candidate_id ? "- `.ai-web/design-candidates/#{selected_candidate_id}.html` (selected visual direction; DESIGN.md remains authoritative)" : "- Select a design candidate before implementation if Gate 2 has not recorded one."}
+        #{source_target_lines}
 
         ## Constraints
+        - Do not read `.env` or `.env.*`.
         - Do not perform external deploy/provider actions without explicit approval.
         - Do not call external Lazyweb/design-research services from implementation tasks; use persisted markdown patterns only.
         - Do not copy exact reference screenshots, layouts, copy, prices, trademarks, or brand-specific claims.
         - Keep changes small and reversible.
         - Respect design tokens and component rules.
         - QA failures must create fix packets or rollback decisions.
+
+        ## Machine Constraints
+        shell_allowed: false
+        network_allowed: false
+        env_access_allowed: false
+        requires_selected_design: true
+        allowed_source_paths:
+        #{machine_source_targets}
 
         ## Acceptance Criteria
         - The slice is implemented or clearly blocked.
@@ -8024,6 +8240,12 @@ module Aiweb
     def design_reference_brief_present?
       path = File.join(aiweb_dir, "design-reference-brief.md")
       File.file?(path) && File.read(path).to_s.strip.length >= 40
+    end
+
+    def agent_run_default_source_targets
+      component_map_source_paths.select { |path| agent_run_source_path_allowed?(path) }
+    rescue StandardError
+      []
     end
 
     def resolve_agent_run_task_source(task, state)
@@ -8191,14 +8413,63 @@ module Aiweb
       parts = normalized.split("/")
       return false if normalized.empty? || normalized.start_with?("/") || parts.any? { |part| part == ".." }
       return false if parts.any? { |part| part.start_with?(".env") }
+      return false if secret_looking_path?(normalized)
       return false if normalized.start_with?(".ai-web/")
 
       File.exist?(File.join(root, normalized))
     end
 
+    def agent_run_requires_selected_design?(source_paths)
+      Array(source_paths).any? do |path|
+        normalized = path.to_s.tr("\\", "/").sub(%r{\A(?:\./)+}, "")
+        normalized.match?(%r{\A(?:src|app|components|pages|public|styles|lib|package\.json|astro\.config|next\.config|tailwind\.config|vite\.config)})
+      end
+    end
+
+    def agent_run_task_packet_blockers(task_source, task_text, source_paths, target_allowlist: nil)
+      blockers = []
+      return blockers if task_text.to_s.strip.empty?
+
+      relative = task_source["relative"].to_s.tr("\\", "/")
+      unless relative.match?(%r{\A\.ai-web/tasks/[A-Za-z0-9_.-]+\.md\z})
+        blockers << "agent-run task packet must live under .ai-web/tasks/*.md; got #{relative.empty? ? "unknown" : relative}"
+      end
+      return blockers if target_allowlist && task_text.include?("Visual Edit Handoff")
+
+      required_markers = {
+        "# Task Packet" => "Task Packet heading",
+        "## Goal" => "Goal section",
+        "## Inputs" => "Inputs section",
+        "## Constraints" => "Constraints section",
+        "## Machine Constraints" => "Machine Constraints section"
+      }
+      required_markers.each do |marker, label|
+        blockers << "agent-run task packet schema missing #{label} (#{marker})" unless task_text.include?(marker)
+      end
+      unless task_text.include?(".ai-web/DESIGN.md")
+        blockers << "agent-run task packet schema requires .ai-web/DESIGN.md as an implementation input"
+      end
+      unless task_text.each_line.any? { |line| agent_run_negative_env_guardrail_line?(line) }
+        blockers << "agent-run task packet schema requires an explicit no .env/.env.* access constraint"
+      end
+      {
+        "shell_allowed: false" => "shell_allowed false",
+        "network_allowed: false" => "network_allowed false",
+        "env_access_allowed: false" => "env_access_allowed false",
+        "allowed_source_paths:" => "allowed_source_paths"
+      }.each do |marker, label|
+        blockers << "agent-run task packet schema missing machine constraint #{label}" unless task_text.include?(marker)
+      end
+      blockers << "agent-run task packet schema requires at least one safe source target" if Array(source_paths).empty?
+
+      blockers
+    end
+
     def agent_run_forbidden_path_blockers(task_text, component_map_text)
       blockers = []
       blockers.concat(agent_run_forbidden_paths_from_text(task_text))
+      blockers.concat(agent_run_secret_path_blockers(task_text))
+      blockers.concat(agent_run_shell_request_blockers(task_text))
       blockers.uniq
     end
 
@@ -8215,6 +8486,41 @@ module Aiweb
           blockers << normalized
         end
       end.uniq
+    end
+
+    def agent_run_secret_path_blockers(text)
+      return [] if text.to_s.strip.empty?
+
+      text.each_line.each_with_object([]) do |line, blockers|
+        next if agent_run_negative_guardrail_line?(line)
+
+        line.scan(%r{(?<![\w.-])(?:\.{1,2}/)?(?:[\w.-]+/)*[\w.-]+\.[A-Za-z0-9]+(?:/[^\s`"'<>]*)?}).flatten.each do |path|
+          normalized = path.sub(/[),.;:]+$/, "").tr("\\", "/").sub(%r{\A(?:\./)+}, "")
+          next if normalized.empty?
+
+          blockers << "agent-run refuses unsafe secret-looking task path: #{normalized}" if secret_looking_path?(normalized)
+        end
+        line.scan(%r{(?<![\w.-])(?:\.ssh|secrets?|credentials?)(?:/[^\s`"'<>]+)?}).flatten.each do |path|
+          normalized = path.sub(/[),.;:]+$/, "").tr("\\", "/").sub(%r{\A(?:\./)+}, "")
+          blockers << "agent-run refuses unsafe secret-looking task path: #{normalized}" unless normalized.empty?
+        end
+      end.uniq
+    end
+
+    def agent_run_shell_request_blockers(text)
+      return [] if text.to_s.strip.empty?
+
+      text.each_line.each_with_object([]) do |line, blockers|
+        next if agent_run_negative_guardrail_line?(line)
+        next unless line.match?(AGENT_RUN_SHELL_REQUEST_PATTERN)
+
+        blockers << "agent-run task packet requests unsafe shell/network/package/deploy command execution; agent-run only accepts source patch instructions"
+      end.uniq
+    end
+
+    def agent_run_negative_guardrail_line?(line)
+      normalized = line.to_s.downcase
+      normalized.match?(/\b(?:do not|don't|dont|must not|never|no |without|forbid|forbidden|disallow|blocked)\b/)
     end
 
     def agent_run_negative_env_guardrail_line?(line)
@@ -8241,11 +8547,28 @@ module Aiweb
         context_files << agent_run_context_file(component_map_path, "component_map")
       end
 
+      selected = selected_candidate_id
+      selected_design_files = []
+      if selected
+        selected_md = File.join(aiweb_dir, "design-candidates", "selected.md")
+        candidate_html = File.join(aiweb_dir, "design-candidates", "#{selected}.html")
+        candidate_md = File.join(aiweb_dir, "design-candidates", "#{selected}.md")
+        selected_design_files << agent_run_context_file(selected_md, "selected_design") if File.file?(selected_md)
+        if File.file?(candidate_html)
+          selected_design_files << agent_run_context_file(candidate_html, "selected_candidate")
+        elsif File.file?(candidate_md)
+          selected_design_files << agent_run_context_file(candidate_md, "selected_candidate")
+        end
+        context_files.concat(selected_design_files)
+      end
+
       source_files = source_paths.map { |path| agent_run_context_file(path, "source") }
       {
         "task" => task_source["path"] ? agent_run_context_file(task_source["path"], "task") : nil,
         "design" => design_text ? agent_run_context_file(design_path, "design") : nil,
         "component_map" => component_map_text ? agent_run_context_file(component_map_path, "component_map") : nil,
+        "selected_candidate" => selected,
+        "selected_design_files" => selected_design_files,
         "source_files" => source_files,
         "context_files" => context_files.compact,
         "source_paths" => source_paths,
@@ -8297,6 +8620,16 @@ module Aiweb
         lines << ""
         lines << "## Targeted visual edit allowlist"
         lines << JSON.pretty_generate(context["target_allowlist"])
+      end
+      if context["selected_candidate"]
+        lines << ""
+        lines << "## Selected design"
+        lines << "Selected candidate: #{context["selected_candidate"]}"
+        Array(context["selected_design_files"]).each do |file|
+          lines << ""
+          lines << "### #{file["path"]}"
+          lines << file["content"].to_s
+        end
       end
       Array(context["source_files"]).each do |file|
         lines << ""
@@ -8354,6 +8687,45 @@ module Aiweb
       changed.uniq { |entry| entry["path"] }
     end
 
+    def agent_run_workspace_snapshot
+      snapshot = {}
+      Find.find(root) do |path|
+        relative_path = relative(path)
+        if File.directory?(path)
+          parts = relative_path.split("/")
+          Find.prune if parts.any? { |part| AGENT_RUN_SNAPSHOT_PRUNE_DIRS.include?(part) } || relative_path.start_with?(".ai-web/runs", ".ai-web/diffs", ".ai-web/snapshots")
+          next
+        end
+        next unless File.file?(path) || File.symlink?(path)
+        next if relative_path.start_with?(".ai-web/runs/", ".ai-web/diffs/", ".ai-web/snapshots/")
+
+        stat = File.lstat(path)
+        snapshot[relative_path] = if unsafe_env_path?(relative_path) || secret_looking_path?(relative_path) || File.symlink?(path)
+                                    "#{stat.file? ? "file" : "other"}:#{stat.size}:#{stat.mtime.to_i}:#{stat.mode}"
+                                  else
+                                    Digest::SHA256.file(path).hexdigest
+                                  end
+      end
+      snapshot
+    end
+
+    def agent_run_unauthorized_workspace_changes(before_snapshot, after_snapshot, allowed_source_paths)
+      allowed = Array(allowed_source_paths).map { |path| path.to_s.tr("\\", "/").sub(%r{\A(?:\./)+}, "") }.to_set
+      all_paths = (before_snapshot.keys + after_snapshot.keys).uniq
+      all_paths.each_with_object([]) do |path, memo|
+        next if allowed.include?(path)
+        next if before_snapshot[path] == after_snapshot[path]
+
+        memo << path
+      end.sort
+    end
+
+    def agent_run_redact_process_output(text)
+      text.to_s.gsub(AGENT_RUN_SECRET_VALUE_PATTERN, "[redacted]").lines.map do |line|
+        unsafe_env_path?(line) ? "[excluded unsafe .env reference]\n" : line
+      end.join
+    end
+
     def agent_run_run_metadata(run_id:, agent:, task_source:, context:, command:, started_at:, finished_at:, exit_code:, stdout_log:, stderr_log:, metadata_path:, diff_path:, source_paths:, dry_run:, approved:, blocking_issues:, status:, changed_source_files: [])
       {
         "schema_version" => 1,
@@ -8367,6 +8739,8 @@ module Aiweb
         "context" => {
           "safe_context_only" => context["safe_context_only"] == true,
           "context_files" => context["context_files"],
+          "selected_candidate" => context["selected_candidate"],
+          "selected_design_files" => context["selected_design_files"],
           "source_paths" => source_paths,
           "targeted_edit" => context["targeted_edit"] == true,
           "target_allowlist" => context["target_allowlist"]
@@ -8911,6 +9285,9 @@ module Aiweb
 
     def qa_fix_task_markdown(failures, result, state)
       primary = failures.first
+      source_targets = agent_run_default_source_targets
+      source_target_lines = source_targets.empty? ? "- TODO: add one safe source target before running agent-run." : source_targets.map { |path| "- `#{path}`" }.join("\n")
+      machine_source_targets = source_targets.empty? ? "- TODO" : source_targets.map { |path| "- #{path}" }.join("\n")
       timeout = failures.any? { |failure| failure["check_id"] == "F-QA-TIMEOUT" }
       timeout_steps = if timeout
         <<~TXT
@@ -8928,10 +9305,35 @@ module Aiweb
         "- #{failure["id"]}: #{failure["check_id"]} (#{failure["severity"]})"
       end.join("\n")
       <<~MD
-        # QA Fix Packet — #{primary["id"]}
+        # Task Packet — qa-fix
 
+        Task ID: fix-#{primary["id"]}
         QA result: #{primary["source_result"]}
         Created at: #{now}
+
+        ## Goal
+        Fix the QA failure with the smallest local source patch.
+
+        ## Inputs
+        - `.ai-web/state.yaml`
+        - `.ai-web/DESIGN.md`
+        - `.ai-web/component-map.json`
+        - `#{primary["source_result"]}`
+        #{source_target_lines}
+
+        ## Constraints
+        - Do not read `.env` or `.env.*`.
+        - Patch only the allowed source paths listed below.
+        - Do not run package installs, deploys, provider CLIs, or network calls from agent-run.
+        - Keep changes minimal and reversible.
+
+        ## Machine Constraints
+        shell_allowed: false
+        network_allowed: false
+        env_access_allowed: false
+        requires_selected_design: true
+        allowed_source_paths:
+        #{machine_source_targets}
 
         ## Open failures
         #{failure_list}
@@ -8993,6 +9395,22 @@ module Aiweb
       raise UserError.new("cannot read visual critique JSON: #{e.message}", 1)
     end
 
+    def validate_visual_polish_critique!(critique)
+      unless critique.is_a?(Hash)
+        raise UserError.new("visual critique JSON must be an object", 1)
+      end
+      errors = []
+      errors << "schema_version must be 1" unless critique["schema_version"] == 1
+      errors << "type must be visual_critique" unless critique["type"].to_s == "visual_critique"
+      errors << "id is required" if critique["id"].to_s.strip.empty?
+      errors << "status is required" if critique["status"].to_s.strip.empty?
+      errors << "approval is required" if critique["approval"].to_s.strip.empty?
+      errors << "evidence must be an array" unless critique["evidence"].is_a?(Array)
+      raise UserError.new("visual critique JSON is malformed: #{errors.join("; ")}", 1) unless errors.empty?
+
+      true
+    end
+
     def visual_polish_critique_passed?(critique)
       approval = critique["approval"].to_s.downcase
       status = critique["status"].to_s.downcase
@@ -9049,12 +9467,14 @@ module Aiweb
         "critique_approval" => critique["approval"],
         "issues" => critique["issues"] || [],
         "patch_plan" => critique["patch_plan"] || [],
+        "design_contract" => critique["design_contract"] || design_contract_context,
         "cycles_used_before" => cycles_used,
         "max_cycles" => max_cycles,
         "pre_polish_snapshot" => relative(snapshot_dir),
         "polish_task" => relative(task_path),
         "guardrails" => [
           "no .env read/write",
+          "no exact reference/image/screenshot copying",
           "no source auto-patch",
           "no build execution",
           "no preview/browser/screenshot capture",
@@ -9067,6 +9487,9 @@ module Aiweb
     end
 
     def visual_polish_task_markdown(record, critique)
+      source_targets = agent_run_default_source_targets
+      source_target_lines = source_targets.empty? ? "- TODO: map critique to a safe source target before running agent-run." : source_targets.map { |path| "- `#{path}`" }.join("\n")
+      machine_source_targets = source_targets.empty? ? "- TODO" : source_targets.map { |path| "- #{path}" }.join("\n")
       issues = Array(critique["issues"]).map { |issue| "- #{issue}" }.join("\n")
       issues = "- Review #{record["source_critique"]} for non-pass visual critique details." if issues.empty?
       patch_plan = Array(critique["patch_plan"]).map do |item|
@@ -9077,16 +9500,27 @@ module Aiweb
         end
       end.join("\n")
       patch_plan = "- Make bounded local visual polish edits based on critique evidence." if patch_plan.empty?
+      design_contract = visual_polish_design_contract_markdown(record["design_contract"] || critique["design_contract"] || {})
 
       <<~MD
-        # Visual Polish Task — #{record["id"]}
+        # Task Packet — visual-polish
 
+        Task ID: #{record["id"]}
+        Phase: visual-polish
         Source critique: #{record["source_critique"]}
         Pre-polish snapshot: #{record["pre_polish_snapshot"]}
         Created at: #{record["created_at"]}
+        #{design_contract}
 
         ## Goal
         Repair or redesign the local visual issues identified by the source critique without expanding scope.
+
+        ## Inputs
+        - `.ai-web/state.yaml`
+        - `.ai-web/DESIGN.md`
+        - `.ai-web/component-map.json`
+        - `#{record["source_critique"]}`
+        #{source_target_lines}
 
         ## Issues
         #{issues}
@@ -9096,13 +9530,39 @@ module Aiweb
 
         ## Guardrails
         - Do not edit `.env` or `.env.*`.
+        - Do not copy exact reference screenshots, layouts, copy, prices, trademarks, or brand claims.
         - Do not run builds, previews, browsers, screenshot capture, package installs, deploys, network calls, or AI calls from the polish loop.
         - Keep source changes manual, reviewable, and verified outside this record-creation command.
+
+        ## Constraints
+        - Do not read `.env` or `.env.*`.
+        - Patch only the allowed source paths listed below.
+        - Keep source changes minimal and reversible.
+
+        ## Machine Constraints
+        shell_allowed: false
+        network_allowed: false
+        env_access_allowed: false
+        requires_selected_design: true
+        allowed_source_paths:
+        #{machine_source_targets}
 
         ## Acceptance Criteria
         - Visual issues are addressed in local source by a human/agent in a separate implementation step.
         - Visual critique is rerun manually and linked in `.ai-web/visual/`.
       MD
+    end
+
+    def visual_polish_design_contract_markdown(contract)
+      return "" unless contract.is_a?(Hash) && !contract.empty?
+
+      lines = ["", "## Design Contract Context"]
+      lines << "- DESIGN.md: #{contract["design_path"]}" if contract["design_path"]
+      lines << "- Design SHA256: #{contract["design_sha256"]}" if contract["design_sha256"]
+      lines << "- Reference brief: #{contract["reference_brief_path"]}" if contract["reference_brief_path"]
+      lines << "- Selected candidate: #{contract["selected_candidate"]}" if contract["selected_candidate"]
+      lines << "- Selected candidate path: #{contract["selected_candidate_path"]}" if contract["selected_candidate_path"]
+      lines.join("\n")
     end
 
     def visual_polish_blocked_payload(state:, source_critique:, reason:, dry_run:, critique: nil, cycles_used: nil, max_cycles: nil, block_type: nil)
@@ -9669,9 +10129,32 @@ module Aiweb
     def visual_edit_task_markdown(record)
       target = record.fetch("target")
       <<~MD
-        # Visual Edit Handoff — #{record.fetch("id")}
+        # Task Packet — visual-edit
 
+        Task ID: #{record.fetch("id")}
         Status: planned
+
+        ## Goal
+        Apply the requested visual edit only to the mapped target region.
+
+        ## Inputs
+        - `.ai-web/state.yaml`
+        - `.ai-web/DESIGN.md`
+        - `.ai-web/component-map.json`
+        - `#{target["source_path"]}`
+
+        ## Constraints
+        - Do not read `.env` or `.env.*`.
+        - Patch only the strict target source allowlist below.
+        - Do not regenerate the full page or unrelated components.
+
+        ## Machine Constraints
+        shell_allowed: false
+        network_allowed: false
+        env_access_allowed: false
+        requires_selected_design: true
+        allowed_source_paths:
+        - #{target["source_path"]}
 
         ## Target
         - data-aiweb-id: `#{target["data_aiweb_id"]}`
@@ -9770,6 +10253,7 @@ module Aiweb
         "artifact_path" => artifact_relative,
         "screenshot_path" => screenshot_evidence && screenshot_evidence["path"],
         "metadata_path" => metadata_evidence && metadata_evidence["path"],
+        "design_contract" => design_contract_context,
         "evidence" => evidence,
         "scores" => scores,
         "hierarchy" => scores.fetch("hierarchy"),
@@ -9782,8 +10266,33 @@ module Aiweb
         "intent_fit" => scores.fetch("intent_fit"),
         "issues" => issues,
         "patch_plan" => patch_plan,
-        "approval" => approval
+        "approval" => approval,
+        "guardrails" => [
+          "use screenshots and metadata as local evidence only",
+          "compare against .ai-web/DESIGN.md and selected candidate context when present",
+          "do not copy external references, screenshots, copy, prices, trademarks, or brand claims",
+          "do not read .env or .env.*"
+        ]
       }
+    end
+
+    def design_contract_context
+      design_path = File.join(aiweb_dir, "DESIGN.md")
+      reference_path = File.join(aiweb_dir, "design-reference-brief.md")
+      selected = selected_candidate_id
+      state = load_state_if_present
+      selected_path = selected && state && selected_candidate_artifact_path(state, selected)
+      {
+        "design_path" => File.file?(design_path) ? relative(design_path) : nil,
+        "design_sha256" => File.file?(design_path) ? Digest::SHA256.file(design_path).hexdigest : nil,
+        "reference_brief_path" => File.file?(reference_path) ? relative(reference_path) : nil,
+        "reference_brief_sha256" => File.file?(reference_path) ? Digest::SHA256.file(reference_path).hexdigest : nil,
+        "selected_candidate" => selected,
+        "selected_candidate_path" => selected_path && File.file?(selected_path) ? relative(selected_path) : nil,
+        "selected_candidate_sha256" => selected_path && File.file?(selected_path) ? Digest::SHA256.file(selected_path).hexdigest : nil
+      }.compact
+    rescue SystemCallError
+      {}
     end
 
     def visual_critique_evidence(path)

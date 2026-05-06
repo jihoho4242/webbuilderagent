@@ -16,6 +16,9 @@ Before implementation, read:
 Implementation rules:
 
 - Work from the current task packet only.
+- Treat GPT Image 2 outputs, screenshots, URLs, and reference images as input evidence only. They must pass through reference ingestion / `.ai-web/design-reference-brief.md`, `.ai-web/DESIGN.md`, candidate generation, and selected-design review before any source implementation.
+- Do not route raw images or reference screenshots directly to Codex/source patching. Codex implements from task packets, `.ai-web/DESIGN.md`, selected candidate artifacts, and persisted pattern constraints only.
+- Source implementation tasks that touch app/UI source require a recorded selected design candidate unless the task is explicitly non-implementation.
 - Do not invent new design tokens or component variants unless `DESIGN.md` is updated.
 - Do not call Lazyweb or external design-research tools during implementation; use persisted markdown pattern guidance only.
 - Do not copy exact reference screenshots, layouts, copy, prices, trademarks, or brand-specific claims.
