@@ -205,10 +205,6 @@ class AiwebCliTest < Minitest::Test
     bin_dir
   end
 
-  def write_fake_pr12_qa_tooling(root)
-    write_fake_static_qa_tooling(root)
-  end
-
   def run_webbuilder(*args, input: nil)
     stdout, stderr, status = Open3.capture3(WEBBUILDER, *args.map(&:to_s), stdin_data: input)
     [stdout, stderr, status.exitstatus]
@@ -234,6 +230,64 @@ class AiwebCliTest < Minitest::Test
     stdout, stderr, code = run_aiweb_with_env(env, *args, "--json")
     assert_equal "", stderr, "stderr should be empty for JSON command: #{stderr}"
     [JSON.parse(stdout), code]
+  end
+
+  def test_extracted_backend_modules_load_with_expected_public_boundaries
+    script = <<~'RUBY'
+      require "aiweb"
+
+      project_public = %i[
+        runtime_plan setup build preview qa_playwright browser_qa qa_screenshot
+        qa_a11y qa_lighthouse agent_run verify_loop
+      ]
+      missing_project_methods = project_public.reject { |method| Aiweb::Project.instance_methods.include?(method) }
+      raise "missing Project methods: #{missing_project_methods.inspect}" unless missing_project_methods.empty?
+
+      leaked_project_helpers = %i[setup_blocked_payload runtime_state_snapshot agent_run_source_paths]
+        .select { |method| Aiweb::Project.public_instance_methods.include?(method) }
+      raise "Project helpers leaked as public: #{leaked_project_helpers.inspect}" unless leaked_project_helpers.empty?
+
+      leaked_cli_helpers = %i[dispatch emit_result exit_code_for human_result]
+        .select { |method| Aiweb::CLI.public_instance_methods.include?(method) }
+      raise "CLI helpers leaked as public: #{leaked_cli_helpers.inspect}" unless leaked_cli_helpers.empty?
+
+      raise "missing daemon bridge" unless defined?(Aiweb::CodexCliBridge)
+      raise "missing backend app" unless defined?(Aiweb::LocalBackendApp)
+      raise "missing backend daemon" unless defined?(Aiweb::LocalBackendDaemon)
+    RUBY
+
+    stdout, stderr, status = Open3.capture3(
+      RbConfig.ruby,
+      "-I",
+      File.join(REPO_ROOT, "lib"),
+      "-e",
+      script,
+      chdir: REPO_ROOT
+    )
+
+    assert status.success?, "module load/visibility check failed\nstdout=#{stdout}\nstderr=#{stderr}"
+  end
+
+  def test_cli_dispatch_smoke_routes_extracted_runtime_and_agent_commands
+    in_tmp do |dir|
+      init_payload, init_code = json_cmd("--path", dir, "init")
+      assert_equal 0, init_code
+      assert_equal "initialized director workspace", init_payload["action_taken"]
+
+      [
+        [["runtime-plan"], "runtime_plan", "reported runtime plan", 1],
+        [["setup", "--install", "--dry-run"], "setup", "setup install blocked", 1],
+        [["build", "--dry-run"], "build", "scaffold build blocked", 1],
+        [["preview", "--dry-run"], "preview", "scaffold preview blocked", 1],
+        [["agent-run", "--task", "latest", "--agent", "codex", "--dry-run"], "agent_run", "agent run blocked", 5]
+      ].each do |args, payload_key, action_taken, expected_code|
+        payload, code = json_cmd("--path", dir, *args)
+
+        assert_equal expected_code, code, "unexpected exit code for #{args.join(" ")}"
+        assert_equal action_taken, payload["action_taken"]
+        assert payload[payload_key], "expected #{payload_key.inspect} payload for #{args.join(" ")}"
+      end
+    end
   end
 
   def path_without_executable(executable)

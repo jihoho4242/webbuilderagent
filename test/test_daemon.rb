@@ -37,6 +37,14 @@ class AiwebDaemonTest < Minitest::Test
     api_headers({ "X-Aiweb-Approval-Token" => APPROVAL_TOKEN }.merge(extra))
   end
 
+  def test_bridge_default_engine_root_points_to_repo_bin
+    bridge = Aiweb::CodexCliBridge.new
+
+    assert_equal REPO_ROOT, bridge.engine_root
+    assert_equal AIWEB, bridge.aiweb_bin
+    assert File.file?(bridge.aiweb_bin), "default bridge should execute repo bin/aiweb"
+  end
+
   def test_daemon_plan_reports_backend_contract_and_absolute_engine_path
     payload = Aiweb::LocalBackendDaemon.plan(host: "127.0.0.1", port: 4242, bridge: Aiweb::CodexCliBridge.new(engine_root: REPO_ROOT))
 
