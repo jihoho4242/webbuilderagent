@@ -3,16 +3,15 @@
 require "fileutils"
 require "digest"
 require "json"
-require "minitest/autorun"
 require "open3"
 require "rbconfig"
 require "shellwords"
 require "tmpdir"
 require "yaml"
 
+require_relative "support/test_helper"
 require_relative "support/fake_mcp_http_server"
 
-$LOAD_PATH.unshift(File.expand_path("../lib", __dir__))
 require "aiweb/project"
 
 class AiwebCliTest < Minitest::Test
@@ -22,9 +21,29 @@ class AiwebCliTest < Minitest::Test
   REPO_ROOT = File.expand_path("..", __dir__)
 
   def in_tmp
-    Dir.mktmpdir("aiweb-test-") do |dir|
+    dir = Dir.mktmpdir("aiweb-test-")
+    begin
       Dir.chdir(dir) { yield(dir) }
+    ensure
+      Dir.chdir(REPO_ROOT) if File.expand_path(Dir.pwd).start_with?(File.expand_path(dir))
+      remove_test_tmp_dir(dir)
     end
+  end
+
+  def remove_test_tmp_dir(dir)
+    return unless File.exist?(dir)
+    raise "refusing to remove non-test temp dir: #{dir}" unless File.basename(dir).start_with?("aiweb-test-")
+
+    5.times do |attempt|
+      begin
+        FileUtils.chmod_R(0o700, dir, force: true)
+        FileUtils.rm_rf(dir)
+        return unless File.exist?(dir)
+      rescue Errno::EACCES, Errno::EPERM
+        sleep(0.1 * (attempt + 1))
+      end
+    end
+    FileUtils.rm_rf(dir)
   end
 
   def with_fake_lazyweb_mcp_server
@@ -71,7 +90,7 @@ class AiwebCliTest < Minitest::Test
   end
 
   def run_aiweb(*args)
-    stdout, stderr, status = Open3.capture3(AIWEB, *args.map(&:to_s))
+    stdout, stderr, status = Open3.capture3(RbConfig.ruby, AIWEB, *args.map(&:to_s))
     [stdout, stderr, status.exitstatus]
   end
 
@@ -84,11 +103,264 @@ class AiwebCliTest < Minitest::Test
     path = File.join(dir, name)
     File.write(path, "#!/bin/sh\n#{body}\n")
     FileUtils.chmod("+x", path)
+    write_fake_windows_executable(dir, name, body) if windows?
     path
   end
 
+  def windows?
+    RbConfig::CONFIG["host_os"].match?(/mswin|mingw|cygwin/i)
+  end
+
+  def write_fake_windows_executable(dir, name, body)
+    script_path = File.join(dir, "#{name}-fake.rb")
+    cmd_path = File.join(dir, "#{name}.cmd")
+    File.write(script_path, fake_windows_executable_source(name, body))
+    File.write(cmd_path, "@echo off\r\n\"#{RbConfig.ruby}\" \"#{script_path}\" %*\r\n")
+    FileUtils.chmod("+x", script_path)
+    FileUtils.chmod("+x", cmd_path)
+    cmd_path
+  end
+
+  def fake_windows_executable_source(name, body)
+    <<~RUBY
+      # frozen_string_literal: true
+
+      require "fileutils"
+      require "shellwords"
+
+      TOOL = #{name.inspect}
+      BODY = #{body.inspect}
+
+      def env(name, default = "")
+        value = ENV[name].to_s
+        value.empty? ? default : value
+      end
+
+      def write_text(path, text, append: false)
+        return if path.to_s.empty?
+        dir = File.dirname(path)
+        FileUtils.mkdir_p(dir) unless dir == "." || Dir.exist?(dir)
+        File.open(path, append ? "a" : "w") { |file| file.write(text) }
+      end
+
+      def touch_path(path)
+        return if path.to_s.empty?
+        dir = File.dirname(path)
+        FileUtils.mkdir_p(dir) unless dir == "." || Dir.exist?(dir)
+        FileUtils.touch(path)
+      end
+
+      def parsed_exit(default = 0)
+        matches = BODY.scan(/exit\\s+(\\d+)/).flatten
+        matches.empty? ? default : matches.last.to_i
+      end
+
+      def shell_path(raw)
+        Shellwords.split(raw.to_s.strip).first.to_s
+      rescue ArgumentError
+        raw.to_s.strip.gsub(/\\A['"]|['"]\\z/, "")
+      end
+
+      def first_touched_path
+        raw = BODY[/touch\\s+(.+?)(?:\\s*;|\\n|\\z)/m, 1]
+        shell_path(raw)
+      end
+
+      def first_redirect_path
+        raw = BODY[/echo\\s+ran\\s*>\\s*(.+?)(?:\\s*;|\\n|\\z)/m, 1]
+        shell_path(raw)
+      end
+
+      def generic_fake
+        if (path = first_redirect_path) && !path.empty?
+          write_text(path, "ran\\n")
+        end
+        touch_path(first_touched_path)
+        if BODY.include?("fake vercel deploy")
+          puts "fake vercel deploy \#{ARGV.join(" ")}".rstrip
+        elsif BODY.include?("should-not-run")
+          warn "should-not-run"
+        end
+        exit parsed_exit(0)
+      end
+
+      def fake_setup_pnpm
+        unless ARGV.first == "install"
+          warn "unexpected pnpm command: \#{ARGV.join(" ")}"
+          exit 64
+        end
+        lines = BODY.lines.map(&:strip)
+        stdout_line = lines.find { |line| line.start_with?("echo ") && !line.include?(">&2") }
+        stderr_line = lines.find { |line| line.start_with?("echo ") && line.include?(">&2") }
+        stdout = stdout_line ? Shellwords.split(stdout_line.sub(/\\Aecho\\s+/, "")).first.to_s : "fake pnpm install stdout"
+        stderr = stderr_line ? Shellwords.split(stderr_line.sub(/\\Aecho\\s+/, "").sub(/\\s+>&2\\z/, "")).first.to_s : "fake pnpm install stderr"
+        puts stdout
+        warn stderr
+        exit parsed_exit(0)
+      end
+
+      def fake_build_pnpm
+        exit 64 unless ARGV.first == "build"
+        puts "fake astro build stdout"
+        warn "fake astro build stderr"
+        FileUtils.mkdir_p("dist")
+        write_text(File.join("dist", "index.html"), "built")
+        exit 0
+      end
+
+      def fake_dev_pnpm
+        exit 64 unless ARGV.first == "dev"
+        puts "fake astro dev stdout"
+        warn "fake astro dev stderr"
+        loop { sleep 1 }
+      end
+
+      def fake_playwright_pnpm
+        unless ARGV[0, 3] == %w[exec playwright test]
+          warn "expected pnpm exec playwright test"
+          exit 64
+        end
+        if env("PLAYWRIGHT_FAKE_STATUS", "passed") == "failed"
+          puts '{"status":"failed","suites":[],"stats":{"expected":0,"unexpected":1,"flaky":0,"skipped":0}}'
+          warn "fake playwright failure"
+          exit 1
+        end
+        puts '{"status":"passed","suites":[],"stats":{"expected":1,"unexpected":0,"flaky":0,"skipped":0}}'
+        warn "fake playwright pass"
+        exit 0
+      end
+
+      def fake_screenshot_pnpm(prefix = "fake screenshot")
+        unless ARGV[0, 3] == %w[exec playwright screenshot]
+          warn "expected pnpm exec playwright screenshot"
+          exit 64
+        end
+        wrote = false
+        ARGV.each do |arg|
+          next unless arg.end_with?(".png")
+          write_text(arg, "\#{prefix} for \#{arg}\\n")
+          wrote = true
+        end
+        if env("QA_SCREENSHOT_FAKE_STATUS", "passed") == "failed"
+          warn "\#{prefix} failure"
+          exit 1
+        end
+        unless wrote
+          warn "no png output path provided"
+          exit 64
+        end
+        warn "\#{prefix} pass"
+        exit 0
+      end
+
+      def fake_static_qa_pnpm(prefix = "fake")
+        unless ARGV[0] == "exec" && %w[axe lighthouse].include?(ARGV[1])
+          warn "unexpected qa tool \#{ARGV[1]}"
+          exit 64
+        end
+        tool = ARGV[1]
+        status = env("AIWEB_STATIC_QA_STATUS", "passed")
+        status = env("A11Y_FAKE_STATUS", status) if tool == "axe"
+        status = env("LIGHTHOUSE_FAKE_STATUS", status) if tool == "lighthouse"
+        ARGV.each do |arg|
+          next unless arg.start_with?("--output-path=")
+          write_text(arg.split("=", 2).last, "{\\"tool\\":\\"\#{tool}\\",\\"status\\":\\"\#{status}\\"}\\n")
+        end
+        puts "{\\"tool\\":\\"\#{tool}\\",\\"status\\":\\"\#{status}\\"}"
+        if status == "failed"
+          warn "\#{prefix} \#{tool} failure"
+          exit 1
+        end
+        warn "\#{prefix} \#{tool} pass"
+        exit 0
+      end
+
+      def fake_verify_loop_pnpm
+        case ARGV.first
+        when "build"
+          FileUtils.mkdir_p("dist")
+          write_text(File.join("dist", "index.html"), "<h1>fake verify-loop build</h1>\\n")
+          puts "fake verify-loop build pass"
+          exit env("BUILD_FAKE_EXIT_STATUS", "0").to_i
+        when "dev"
+          puts "fake verify-loop preview start"
+          exit 0
+        when "exec"
+          tool = ARGV[1]
+          if tool == "playwright" && ARGV[2] == "test"
+            if env("PLAYWRIGHT_FAKE_STATUS", "passed") == "failed"
+              puts '{"status":"failed","suites":[],"stats":{"unexpected":1}}'
+              warn "fake verify-loop playwright failure"
+              exit 1
+            end
+            puts '{"status":"passed","suites":[],"stats":{"expected":1}}'
+            warn "fake verify-loop playwright pass"
+            exit 0
+          elsif tool == "playwright" && ARGV[2] == "screenshot"
+            ARGV.drop(3).each { |arg| write_text(arg, "fake verify-loop screenshot for \#{arg}\\n") if arg.end_with?(".png") }
+            if env("QA_SCREENSHOT_FAKE_STATUS", "passed") == "failed"
+              warn "fake verify-loop screenshot failure"
+              exit 1
+            end
+            warn "fake verify-loop screenshot pass"
+            exit 0
+          elsif %w[axe lighthouse].include?(tool)
+            fake_static_qa_pnpm("fake verify-loop")
+          end
+        end
+        warn "unexpected fake verify-loop pnpm command: \#{ARGV.join(" ")}"
+        exit 64
+      end
+
+      def fake_pnpm
+        if BODY.include?("fake verify-loop")
+          fake_verify_loop_pnpm
+        elsif BODY.include?("fake astro build stdout")
+          fake_build_pnpm
+        elsif BODY.include?("fake astro dev stdout")
+          fake_dev_pnpm
+        elsif BODY.include?("unexpected pnpm command") && BODY.include?("install")
+          fake_setup_pnpm
+        elsif BODY.include?("PLAYWRIGHT_FAKE_STATUS") && BODY.include?("--reporter=json")
+          fake_playwright_pnpm
+        elsif BODY.include?("QA_SCREENSHOT_FAKE_STATUS")
+          fake_screenshot_pnpm
+        elsif BODY.include?("unexpected qa tool")
+          fake_static_qa_pnpm
+        else
+          generic_fake
+        end
+      end
+
+      def fake_codex
+        return generic_fake unless BODY.include?("FAKE_CODEX_")
+        input = STDIN.read
+        prompt_path = ENV["FAKE_CODEX_PROMPT_PATH"].to_s
+        write_text(prompt_path, input) unless prompt_path.empty?
+        verify_loop = BODY.include?("fake verify-loop codex")
+        puts env("FAKE_CODEX_STDOUT", verify_loop ? "fake verify-loop codex stdout" : "fake codex stdout")
+        warn env("FAKE_CODEX_STDERR", verify_loop ? "fake verify-loop codex stderr" : "fake codex stderr")
+        patch_path = ENV["FAKE_CODEX_PATCH_PATH"].to_s
+        if !patch_path.empty? && File.file?(patch_path)
+          write_text(patch_path, verify_loop ? "\\n<!-- patched by fake verify-loop codex -->\\n" : "\\n<!-- patched by fake codex -->\\n", append: true)
+        end
+        marker = ENV["FAKE_CODEX_MARKER"].to_s
+        if !marker.empty?
+          verify_loop ? write_text(marker, "run\\n", append: true) : touch_path(marker)
+        end
+        exit env("FAKE_CODEX_EXIT_STATUS", "0").to_i
+      end
+
+      case TOOL
+      when "pnpm" then fake_pnpm
+      when "codex" then fake_codex
+      else generic_fake
+      end
+    RUBY
+  end
+
   def run_aiweb_with_env(env, *args)
-    stdout, stderr, status = Open3.capture3(env, AIWEB, *args.map(&:to_s))
+    stdout, stderr, status = Open3.capture3(env, RbConfig.ruby, AIWEB, *args.map(&:to_s))
     [stdout, stderr, status.exitstatus]
   end
 
@@ -206,12 +478,12 @@ class AiwebCliTest < Minitest::Test
   end
 
   def run_webbuilder(*args, input: nil)
-    stdout, stderr, status = Open3.capture3(WEBBUILDER, *args.map(&:to_s), stdin_data: input)
+    stdout, stderr, status = Open3.capture3(RbConfig.ruby, WEBBUILDER, *args.map(&:to_s), stdin_data: input)
     [stdout, stderr, status.exitstatus]
   end
 
   def run_korean_webbuilder_env(env, *args)
-    stdout, stderr, status = Open3.capture3(env, KOREAN_WEBBUILDER, *args.map(&:to_s))
+    stdout, stderr, status = Open3.capture3(env, RbConfig.ruby, KOREAN_WEBBUILDER, *args.map(&:to_s))
     [stdout, stderr, status.exitstatus]
   end
 
@@ -1643,6 +1915,8 @@ class AiwebCliTest < Minitest::Test
   end
 
   def test_concurrent_mutation_lock_rejects_second_process
+    skip "fork-based mutation lock test requires a POSIX Ruby" if RbConfig::CONFIG["host_os"].match?(/mswin|mingw|cygwin/i)
+
     in_tmp do
       json_cmd("init")
       before_state = File.read(".ai-web/state.yaml")
@@ -1721,6 +1995,25 @@ class AiwebCliTest < Minitest::Test
     end
   end
 
+  def test_phase_0_25_blocks_when_design_quality_gate_is_weakened
+    in_tmp do
+      json_cmd("init")
+      json_cmd("interview", "--idea", "premium clinic website")
+      payload, code = json_cmd("advance")
+      assert_equal 0, code
+      assert_equal "phase-0.25", payload["current_phase"]
+
+      quality = YAML.load_file(".ai-web/quality.yaml")
+      quality["quality"]["approved"] = true
+      quality["quality"]["design"].delete("phase_0_gate")
+      File.write(".ai-web/quality.yaml", YAML.dump(quality))
+
+      blocked_payload, blocked_code = json_cmd("advance")
+      assert_equal 2, blocked_code
+      assert_match(/phase_0_gate|human-grade design/i, blocked_payload["blocking_issues"].join("\n"))
+    end
+  end
+
   def test_help_and_cli_spec_include_option_surface
     stdout, stderr, code = run_aiweb("help")
     assert_equal 0, code
@@ -1732,6 +2025,11 @@ class AiwebCliTest < Minitest::Test
 
     ["start [--path PATH]", "--no-advance", "--path PATH", "design-brief [--force]", "design-system resolve [--force]", "ingest-design [--id ID]", "--selected", "rollback [--to PHASE] [--failure CODE]", "qa-report [--from PATH]", "repair [--from-qa PATH|latest]", "visual-polish --repair [--from-critique PATH|latest]", "--max-cycles N", "--duration-minutes N", "--timed-out"].each do |snippet|
       assert_includes stdout, snippet
+    end
+
+    assert_equal Aiweb::CLI::WEBBUILDER_COMMANDS.uniq, Aiweb::CLI::WEBBUILDER_COMMANDS
+    %w[status qa-playwright verify-loop component-map deploy-plan intent].each do |command|
+      assert_includes Aiweb::CLI::WEBBUILDER_COMMANDS, command
     end
   end
 
@@ -2242,11 +2540,21 @@ class AiwebCliTest < Minitest::Test
       assert_match(/Strengths/, comparison)
       assert_match(/Tradeoffs/, comparison)
       assert_match(/local-service-trust/, comparison)
+      %w[editorial-premium conversion-focused trust-minimal].each do |strategy|
+        assert_match(/#{strategy}/, comparison)
+      end
 
       bodies = %w[candidate-01 candidate-02 candidate-03].map { |id| File.read(".ai-web/design-candidates/#{id}.html") }
       assert_equal 3, bodies.uniq.length, "candidate HTML files must be differentiated"
       state = load_state
       assert_equal 3, state.dig("design_candidates", "candidates").length
+      assert_equal %w[trust-minimal editorial-premium conversion-focused].sort, state.dig("design_candidates", "candidates").map { |candidate| candidate["strategy_id"] }.sort
+      state.dig("design_candidates", "candidates").each do |candidate|
+        assert_operator candidate["score"].to_i, :>=, 80
+        assert_kind_of Hash, candidate["rubric_scores"]
+        assert candidate["first_view"].to_s.length > 20
+        assert candidate["risks"].is_a?(Array) && !candidate["risks"].empty?
+      end
       assert_equal 3, state.dig("artifacts", "design_candidates", "count")
     end
   end
@@ -2370,6 +2678,9 @@ class AiwebCliTest < Minitest::Test
       selected = File.read(".ai-web/design-candidates/selected.md")
       assert_match(/Selected candidate: candidate-02/, selected)
       assert_match(/DESIGN.md remains the source of truth/, selected)
+      assert_match(/Strategy:/, selected)
+      assert_match(/Rubric score:/, selected)
+      refute_match(/TODO:/, selected)
       state = load_state
       assert_equal "candidate-02", state.dig("design_candidates", "selected_candidate")
       approved = state.dig("design_candidates", "candidates").find { |candidate| candidate["id"] == "candidate-02" }
@@ -2936,6 +3247,191 @@ class AiwebCliTest < Minitest::Test
     bin_dir
   end
 
+  def write_fake_openmanus_tooling(root, exit_status: 0, patch_workspace: true, mutate_root_path: nil)
+    bin_dir = File.join(root, "fake-openmanus-bin")
+    FileUtils.mkdir_p(bin_dir)
+    docker_script = File.join(bin_dir, "docker-openmanus-fake.rb")
+    File.write(
+      docker_script,
+      <<~RUBY
+        # frozen_string_literal: true
+        require "fileutils"
+
+        def option_value(argv, flag)
+          index = argv.index(flag)
+          return argv[index + 1].to_s if index && index + 1 < argv.length
+
+          prefix = flag + "="
+          argv.find { |value| value.start_with?(prefix) }.to_s.delete_prefix(prefix)
+        end
+
+        def option_values(argv, flag)
+          values = []
+          argv.each_with_index do |value, index|
+            values << argv[index + 1].to_s if value == flag && index + 1 < argv.length
+            values << value.delete_prefix(flag + "=") if value.start_with?(flag + "=")
+          end
+          values
+        end
+
+        def container_env(argv)
+          option_values(argv, "-e").each_with_object({}) do |entry, memo|
+            key, value = entry.split("=", 2)
+            memo[key] = value.nil? ? ENV[key].to_s : value
+          end
+        end
+
+        def workspace_path(host_workspace, container_path)
+          text = container_path.to_s
+          return text unless text.start_with?("/workspace/")
+
+          File.join(host_workspace, text.delete_prefix("/workspace/"))
+        end
+
+        if ARGV[0] == "image" && ARGV[1] == "inspect"
+          if ENV["FAKE_OPENMANUS_IMAGE_MISSING"] == "1"
+            warn "fake image missing"
+            exit 1
+          end
+          exit 0
+        end
+
+        unless ARGV[0] == "run"
+          warn "expected docker run"
+          exit 64
+        end
+        if ENV.keys.any? { |key| %w[OPENAI_API_KEY ANTHROPIC_API_KEY FAKE_OPENMANUS_SECRET].include?(key) }
+          warn "secret environment leaked to docker"
+          exit 81
+        end
+        env = container_env(ARGV)
+        unless env["AIWEB_NETWORK_ALLOWED"] == "0"
+          warn "network guard missing"
+          exit 82
+        end
+        unless env["AIWEB_MCP_ALLOWED"] == "0"
+          warn "mcp guard missing"
+          exit 83
+        end
+        unless env["AIWEB_ENV_ACCESS_ALLOWED"] == "0"
+          warn "env guard missing"
+          exit 84
+        end
+        unless option_value(ARGV, "--network") == "none"
+          warn "network none missing"
+          exit 85
+        end
+        mount = option_values(ARGV, "-v").find { |value| value.end_with?(":/workspace:rw") }.to_s
+        host_workspace = mount.sub(%r{:/workspace:rw\\z}, "")
+        if host_workspace.empty? || !Dir.exist?(host_workspace)
+          warn "workspace mount missing"
+          exit 86
+        end
+
+        STDIN.read
+        Dir.chdir(host_workspace) do
+          puts "fake openmanus stdout"
+          warn "fake openmanus stderr"
+          if #{patch_workspace ? "true" : "false"}
+            path = File.join("src", "components", "Hero.astro")
+            File.open(path, "a") { |file| file.write("\\n<!-- patched by fake openmanus -->\\n") } if File.file?(path)
+          end
+          result_path = workspace_path(host_workspace, env["AIWEB_OPENMANUS_RESULT_PATH"])
+          FileUtils.mkdir_p(File.dirname(result_path)) unless result_path.empty?
+          File.write(result_path, "{\\"schema_version\\":1,\\"status\\":\\"patched\\",\\"sandbox_mode\\":\\"docker\\"}\\n") unless result_path.empty?
+        end
+        root_mutation_path = #{mutate_root_path.inspect}
+        if root_mutation_path && !root_mutation_path.empty?
+          File.open(root_mutation_path, "a") { |file| file.write("\\n<!-- root mutation by fake openmanus -->\\n") }
+        end
+        exit #{exit_status.to_i}
+      RUBY
+    )
+    if RbConfig::CONFIG["host_os"].match?(/mswin|mingw|cygwin/i)
+      File.write(File.join(bin_dir, "docker.cmd"), "@echo off\r\n\"#{RbConfig.ruby}\" \"#{docker_script}\" %*\r\n")
+    else
+      File.write(File.join(bin_dir, "docker"), "#!/bin/sh\nexec #{RbConfig.ruby.shellescape} #{docker_script.shellescape} \"$@\"\n")
+      FileUtils.chmod("+x", File.join(bin_dir, "docker"))
+    end
+
+    if RbConfig::CONFIG["host_os"].match?(/mswin|mingw|cygwin/i)
+      script = File.join(bin_dir, "openmanus-fake.rb")
+      File.write(
+        script,
+        <<~RUBY
+          # frozen_string_literal: true
+          STDIN.read
+          if ENV.keys.any? { |key| %w[OPENAI_API_KEY ANTHROPIC_API_KEY FAKE_OPENMANUS_SECRET].include?(key) }
+            warn "secret environment leaked to openmanus"
+            exit 81
+          end
+          unless ENV["AIWEB_NETWORK_ALLOWED"] == "0"
+            warn "network guard missing"
+            exit 82
+          end
+          unless ENV["AIWEB_MCP_ALLOWED"] == "0"
+            warn "mcp guard missing"
+            exit 83
+          end
+          unless ENV["AIWEB_ENV_ACCESS_ALLOWED"] == "0"
+            warn "env guard missing"
+            exit 84
+          end
+          puts "fake openmanus stdout"
+          warn "fake openmanus stderr"
+          if #{patch_workspace ? "true" : "false"}
+            path = File.join("src", "components", "Hero.astro")
+            File.open(path, "a") { |file| file.write("\\n<!-- patched by fake openmanus -->\\n") } if File.file?(path)
+          end
+          root_mutation_path = #{mutate_root_path.inspect}
+          if root_mutation_path && !root_mutation_path.empty?
+            File.open(root_mutation_path, "a") { |file| file.write("\\n<!-- root mutation by fake openmanus -->\\n") }
+          end
+          result_path = ENV["AIWEB_OPENMANUS_RESULT_PATH"].to_s
+          File.write(result_path, "{\\"schema_version\\":1,\\"status\\":\\"patched\\"}\\n") unless result_path.empty?
+          exit #{exit_status.to_i}
+        RUBY
+      )
+      File.write(File.join(bin_dir, "openmanus.cmd"), "@echo off\r\n\"#{RbConfig.ruby}\" \"#{script}\" %*\r\n")
+      return bin_dir
+    end
+
+    workspace_patch =
+      if patch_workspace
+        <<~SH
+          if [ -f src/components/Hero.astro ]; then
+            printf '\\n<!-- patched by fake openmanus -->\\n' >> src/components/Hero.astro
+          fi
+        SH
+      else
+        ":"
+      end
+    root_mutation = mutate_root_path ? "printf '\\n<!-- root mutation by fake openmanus -->\\n' >> #{mutate_root_path.shellescape}" : ":"
+    write_fake_executable(
+      bin_dir,
+      "openmanus",
+      <<~SH
+        cat >/dev/null
+        if env | grep -E 'OPENAI_API_KEY|ANTHROPIC_API_KEY|FAKE_OPENMANUS_SECRET' >/dev/null; then
+          echo 'secret environment leaked to openmanus' >&2
+          exit 81
+        fi
+        [ "$AIWEB_NETWORK_ALLOWED" = "0" ] || { echo 'network guard missing' >&2; exit 82; }
+        [ "$AIWEB_MCP_ALLOWED" = "0" ] || { echo 'mcp guard missing' >&2; exit 83; }
+        [ "$AIWEB_ENV_ACCESS_ALLOWED" = "0" ] || { echo 'env guard missing' >&2; exit 84; }
+        echo 'fake openmanus stdout'
+        echo 'fake openmanus stderr' >&2
+        #{workspace_patch}
+        #{root_mutation}
+        if [ -n "$AIWEB_OPENMANUS_RESULT_PATH" ]; then
+          printf '{"schema_version":1,"status":"patched"}\\n' > "$AIWEB_OPENMANUS_RESULT_PATH"
+        fi
+        exit #{exit_status.to_i}
+      SH
+    )
+    bin_dir
+  end
+
   def write_fake_verify_loop_tooling(root)
     FileUtils.mkdir_p(File.join(root, "node_modules", ".bin"))
     %w[playwright axe lighthouse].each do |name|
@@ -3101,6 +3597,41 @@ class AiwebCliTest < Minitest::Test
   def assert_agent_run_artifacts_do_not_leak_secret(secret, *paths)
     text = paths.map { |path| File.exist?(path) ? File.read(path) : "" }.join("\n")
     refute_includes text, secret
+  end
+
+  def agent_run_safe_task_markdown
+    <<~MD
+      # Task Packet
+
+      Task ID: agent-run-latest
+      Phase: phase-7
+      Created at: 2026-05-03T00:00:00Z
+
+      ## Goal
+      Improve the hero copy using a local source patch.
+
+      ## Inputs
+      - `.ai-web/state.yaml`
+      - `.ai-web/DESIGN.md`
+      - `.ai-web/component-map.json`
+      - `src/components/Hero.astro`
+
+      ## Constraints
+      - Do not read `.env` or `.env.*`
+      - Keep changes local and reversible
+
+      ## Machine Constraints
+      shell_allowed: false
+      network_allowed: false
+      env_access_allowed: false
+      requires_selected_design: true
+      allowed_source_paths:
+      - src/components/Hero.astro
+
+      ## Acceptance Criteria
+      - Source patch evidence is recorded.
+      - Logs, metadata, and diff evidence are written.
+    MD
   end
 
   def test_next_task_generates_schema_complete_machine_constrained_packet
@@ -3377,6 +3908,63 @@ class AiwebCliTest < Minitest::Test
       refute File.exist?(marker), "agent-run --dry-run must not execute codex"
       refute_includes stdout, "fake codex stdout"
       refute_includes stdout, "fake codex stderr"
+    end
+  end
+
+  def test_agent_run_openmanus_dry_run_plans_contract_without_process_execution
+    in_tmp do |dir|
+      prepare_agent_run_fixture(task_markdown: agent_run_safe_task_markdown)
+      bin_dir = write_fake_openmanus_tooling(dir)
+      marker = File.join(dir, "openmanus-was-run")
+      before_entries = project_entries
+      before_state = File.read(".ai-web/state.yaml")
+      before_source = File.read("src/components/Hero.astro")
+
+      stdout, stderr, code = run_aiweb_env(
+        {
+          "PATH" => [bin_dir, "/usr/bin", "/bin", "/usr/sbin", "/sbin"].join(File::PATH_SEPARATOR),
+          "FAKE_OPENMANUS_SECRET" => "must-not-reach-subprocess"
+        },
+        "agent-run", "--task", "latest", "--agent", "openmanus", "--dry-run", "--json"
+      )
+      payload = JSON.parse(stdout)
+
+      assert_equal 0, code
+      assert_equal "", stderr
+      assert_equal true, payload["dry_run"]
+      assert_equal "openmanus", payload.dig("agent_run", "agent")
+      assert_equal "implementation-local-no-network", payload.dig("agent_run", "permission_profile")
+      assert_equal "planned", payload.dig("agent_run", "status")
+      assert_equal "rerun aiweb agent-run --task latest --agent openmanus --sandbox docker --approved to execute the local openmanus patch run in an aiweb-managed sandbox", payload["next_action"]
+      assert_includes payload.fetch("planned_changes"), ".ai-web/runs/#{payload.dig("agent_run", "run_id")}/openmanus-context.json"
+      assert_equal ["src/components/Hero.astro"], payload.dig("agent_run", "openmanus", "context", "allowed_source_paths")
+      assert_equal "missing", payload.dig("agent_run", "openmanus", "context", "sandbox_mode")
+      assert_equal true, payload.dig("agent_run", "openmanus", "context", "sandbox_required")
+      assert_no_agent_run_side_effects(before_entries: before_entries, before_state: before_state)
+      assert_equal before_source, File.read("src/components/Hero.astro"), "openmanus dry-run must not patch source"
+      refute File.exist?(marker), "openmanus dry-run must not execute subprocess"
+      refute_includes stdout, "must-not-reach-subprocess"
+    end
+  end
+
+  def test_agent_run_diff_validator_rejects_unsafe_hunk_structure
+    in_tmp do
+      project = Aiweb::Project.new(Dir.pwd)
+      diff = <<~PATCH
+        diff --git a/src/components/Hero.astro b/.env
+        old mode 100644
+        new mode 100755
+        --- a/src/components/Hero.astro
+        +++ b/.env
+        @@ malformed hunk
+        +SECRET=leak
+      PATCH
+
+      blockers = project.send(:agent_run_validate_source_diff, diff, ["src/components/Hero.astro"])
+      message = blockers.join("\n")
+      assert_match(/outside allowed source paths|unsafe path/i, message)
+      assert_match(/file mode changes/i, message)
+      assert_match(/malformed hunk/i, message)
     end
   end
 
@@ -3717,6 +4305,164 @@ class AiwebCliTest < Minitest::Test
     end
   end
 
+  def test_agent_run_approved_fake_openmanus_uses_managed_container_sandbox_contract
+    in_tmp do |dir|
+      secret = "SECRET=pr-openmanus-do-not-leak"
+      prepare_agent_run_fixture(task_markdown: agent_run_safe_task_markdown, secret: secret)
+      bin_dir = write_fake_openmanus_tooling(dir)
+      before_entries = project_entries
+      before_source = File.read("src/components/Hero.astro")
+      env_size = File.size(".env")
+      env_mtime = File.mtime(".env")
+
+      stdout, stderr, code = run_aiweb_env(
+        {
+          "PATH" => [bin_dir, "/usr/bin", "/bin", "/usr/sbin", "/sbin"].join(File::PATH_SEPARATOR),
+          "OPENAI_API_KEY" => "must-not-reach-openmanus",
+          "FAKE_OPENMANUS_SECRET" => "must-not-reach-openmanus"
+        },
+        "agent-run", "--task", "latest", "--agent", "openmanus", "--sandbox", "docker", "--approved", "--json"
+      )
+      payload = JSON.parse(stdout)
+      run_dir = Dir.glob(".ai-web/runs/agent-run-*").sort.last
+      diff_path = Dir.glob(".ai-web/diffs/agent-run-*.patch").sort.last
+      state = load_state
+
+      assert_equal 0, code, stdout
+      assert_equal "", stderr
+      assert_equal "openmanus", payload.dig("agent_run", "agent")
+      assert_equal "passed", payload.dig("agent_run", "status")
+      assert_equal "ran openmanus patch", payload["action_taken"]
+      assert_equal "implementation-local-no-network", payload.dig("agent_run", "permission_profile")
+      assert_equal "docker", payload.dig("agent_run", "openmanus", "context", "sandbox_mode")
+      command = payload.dig("agent_run", "command")
+      assert_match(/docker run/, command)
+      assert_match(/--network none/, command)
+      assert_match(/--read-only/, command)
+      assert_match(/--cap-drop ALL/, command)
+      assert_match(%r{:/workspace:rw}, command)
+      assert_equal ["src/components/Hero.astro"], payload.dig("agent_run", "changed_source_files")
+      assert run_dir, "approved openmanus run must write a run directory"
+      %w[openmanus-context.json openmanus-prompt.md openmanus-validator.json openmanus-result.json network.log browser-requests.log denied-access.log].each do |name|
+        assert File.file?(File.join(run_dir, name)), "expected #{name} evidence"
+      end
+      assert_equal "fake openmanus stdout\n", File.read(File.join(run_dir, "stdout.log"))
+      assert_equal "fake openmanus stderr\n", File.read(File.join(run_dir, "stderr.log"))
+      assert_match(/patched by fake openmanus/, File.read("src/components/Hero.astro"))
+      refute_equal before_source, File.read("src/components/Hero.astro"), "approved openmanus run must patch source"
+      assert_operator project_entries.size, :>, before_entries.size, "approved openmanus run must write evidence artifacts"
+      assert_equal env_size, File.size(".env")
+      assert_equal env_mtime, File.mtime(".env")
+      refute_includes stdout, secret
+      refute_includes stdout, "must-not-reach-openmanus"
+      assert_agent_run_artifacts_do_not_leak_secret(secret, File.join(run_dir, "agent-run.json"), File.join(run_dir, "stdout.log"), File.join(run_dir, "stderr.log"), diff_path, File.join(run_dir, "openmanus-context.json"), File.join(run_dir, "openmanus-result.json"))
+      result_payload = JSON.parse(File.read(File.join(run_dir, "openmanus-result.json")))
+      assert_equal "openmanus", result_payload.fetch("agent")
+      assert_equal "implementation-local-no-network", result_payload.fetch("permission_profile")
+      assert_equal "docker", result_payload.fetch("openmanus_report").fetch("sandbox_mode") if result_payload.fetch("openmanus_report").key?("sandbox_mode")
+      assert_equal ".ai-web/runs/#{File.basename(run_dir)}/openmanus-validator.json", result_payload.dig("evidence", "validator_result")
+      assert_match(%r{\A\.ai-web/runs/agent-run-.+/agent-run\.json\z}, state.dig("implementation", "latest_agent_run"))
+    end
+  end
+
+  def test_agent_run_openmanus_approved_requires_aiweb_managed_sandbox
+    in_tmp do |dir|
+      prepare_agent_run_fixture(task_markdown: agent_run_safe_task_markdown)
+      bin_dir = write_fake_openmanus_tooling(dir)
+      before_entries = project_entries
+      before_state = File.read(".ai-web/state.yaml")
+      before_source = File.read("src/components/Hero.astro")
+
+      stdout, stderr, code = run_aiweb_env(
+        {
+          "PATH" => [bin_dir, "/usr/bin", "/bin", "/usr/sbin", "/sbin"].join(File::PATH_SEPARATOR),
+          "AIWEB_OPENMANUS_SANDBOX" => "external"
+        },
+        "agent-run", "--task", "latest", "--agent", "openmanus", "--approved", "--json"
+      )
+      payload = JSON.parse(stdout)
+
+      assert_equal 5, code
+      assert_equal "", stderr
+      assert_equal "blocked", payload.dig("agent_run", "status")
+      assert_match(/--sandbox docker|--sandbox podman|aiweb can construct/i, payload.dig("agent_run", "blocking_issues").join("\n"))
+      assert_equal "missing", payload.dig("agent_run", "openmanus", "context", "sandbox_mode")
+      assert_no_agent_run_side_effects(before_entries: before_entries, before_state: before_state)
+      assert_equal before_source, File.read("src/components/Hero.astro"), "blocked openmanus run must not patch source"
+    end
+  end
+
+  def test_agent_run_openmanus_approved_requires_prepared_local_image
+    in_tmp do |dir|
+      prepare_agent_run_fixture(task_markdown: agent_run_safe_task_markdown)
+      bin_dir = write_fake_openmanus_tooling(dir)
+      before_entries = project_entries
+      before_state = File.read(".ai-web/state.yaml")
+      before_source = File.read("src/components/Hero.astro")
+
+      stdout, stderr, code = run_aiweb_env(
+        {
+          "PATH" => [bin_dir, "/usr/bin", "/bin", "/usr/sbin", "/sbin"].join(File::PATH_SEPARATOR),
+          "FAKE_OPENMANUS_IMAGE_MISSING" => "1"
+        },
+        "agent-run", "--task", "latest", "--agent", "openmanus", "--sandbox", "docker", "--approved", "--json"
+      )
+      payload = JSON.parse(stdout)
+
+      assert_equal 5, code
+      assert_equal "", stderr
+      assert_equal "blocked", payload.dig("agent_run", "status")
+      assert_match(/image is missing locally|openmanus:latest/i, payload.dig("agent_run", "blocking_issues").join("\n"))
+      assert_no_agent_run_side_effects(before_entries: before_entries, before_state: before_state)
+      assert_equal before_source, File.read("src/components/Hero.astro"), "blocked openmanus image preflight must not patch source"
+    end
+  end
+
+  def test_agent_run_openmanus_sandbox_validator_rejects_unsafe_container_shape
+    in_tmp do |dir|
+      project = Aiweb::Project.new(Dir.pwd)
+      workspace_dir = File.join(dir, ".ai-web", "tmp", "openmanus", "agent-run-20260512T000000Z")
+      unsafe = [
+        "docker", "run", "--rm",
+        "-v", "#{dir}:/workspace:rw",
+        "openmanus:latest",
+        "openmanus"
+      ]
+
+      blockers = project.send(:agent_run_openmanus_sandbox_command_blockers, unsafe, sandbox: "docker", workspace_dir: workspace_dir)
+      message = blockers.join("\n")
+      assert_match(/--network none/, message)
+      assert_match(/read-only/, message)
+      assert_match(/drop all capabilities/, message)
+      assert_match(/staging workspace/, message)
+    end
+  end
+
+  def test_agent_run_openmanus_rejects_root_mutations_outside_isolated_workspace
+    in_tmp do |dir|
+      prepare_agent_run_fixture(task_markdown: agent_run_safe_task_markdown)
+      root_mutation_path = File.join(dir, "src/pages/index.astro")
+      bin_dir = write_fake_openmanus_tooling(dir, mutate_root_path: root_mutation_path)
+      before_hero = File.read("src/components/Hero.astro")
+
+      stdout, stderr, code = run_aiweb_env(
+        {
+          "PATH" => [bin_dir, "/usr/bin", "/bin", "/usr/sbin", "/sbin"].join(File::PATH_SEPARATOR),
+        },
+        "agent-run", "--task", "latest", "--agent", "openmanus", "--sandbox", "docker", "--approved", "--json"
+      )
+      payload = JSON.parse(stdout)
+
+      assert_equal 1, code
+      assert_equal "", stderr
+      assert_equal "failed", payload.dig("agent_run", "status")
+      assert_match(/outside the isolated workspace/i, payload.dig("agent_run", "blocking_issues").join("\n"))
+      assert_includes payload.dig("agent_run", "blocking_issues").join("\n"), "src/pages/index.astro"
+      assert_equal before_hero, File.read("src/components/Hero.astro"), "openmanus workspace patch must not be applied after root mutation"
+      assert_match(/root mutation by fake openmanus/, File.read(root_mutation_path))
+    end
+  end
+
   def test_agent_run_targeted_visual_edit_uses_selected_source_only_and_blocks_full_page_regeneration
     in_tmp do |dir|
       prepare_profile_d_scaffold_flow
@@ -4053,6 +4799,8 @@ class AiwebCliTest < Minitest::Test
     assert_equal "", stderr
     assert_includes stdout, "agent-run --task latest --agent codex --approved"
     assert_includes stdout, "agent-run --task latest --agent codex --dry-run"
+    assert_includes stdout, "agent-run --task latest --agent openmanus --sandbox docker --approved"
+    assert_includes stdout, "agent-run --task latest --agent openmanus --dry-run"
 
     help_stdout, help_stderr, help_code = run_webbuilder("--help")
     assert_equal 0, help_code
@@ -4154,6 +4902,33 @@ class AiwebCliTest < Minitest::Test
       refute File.exist?(marker), "verify-loop --dry-run must not execute pnpm or codex"
       refute Dir.exist?("dist"), "verify-loop --dry-run must not build"
       refute_includes stdout, secret
+    end
+  end
+
+  def test_verify_loop_dry_run_accepts_openmanus_implementation_agent
+    in_tmp do |dir|
+      prepare_profile_d_scaffold_flow
+      bin_dir = write_fake_openmanus_tooling(dir)
+      marker = File.join(dir, "verify-loop-tool-was-run")
+      write_fake_executable(bin_dir, "pnpm", "touch #{marker.shellescape}; echo should-not-run >&2; exit 99")
+      before_entries = project_entries
+      before_state = File.read(".ai-web/state.yaml")
+
+      stdout, stderr, code = run_aiweb_env(
+        { "PATH" => [bin_dir, "/usr/bin", "/bin", "/usr/sbin", "/sbin"].join(File::PATH_SEPARATOR) },
+        "verify-loop", "--max-cycles", "2", "--agent", "openmanus", "--dry-run", "--json"
+      )
+      payload = JSON.parse(stdout)
+      loop = payload.fetch("verify_loop")
+
+      assert_equal 0, code
+      assert_equal "", stderr
+      assert_equal "openmanus", loop["agent"]
+      assert_equal true, loop["dry_run"]
+      assert_includes payload["next_action"], "--agent openmanus --sandbox docker --approved"
+      assert_equal before_entries, project_entries, "openmanus verify-loop dry-run must not write artifacts"
+      assert_equal before_state, File.read(".ai-web/state.yaml"), "openmanus verify-loop dry-run must not mutate state"
+      refute File.exist?(marker), "openmanus verify-loop dry-run must not execute pnpm or openmanus"
     end
   end
 
@@ -4846,9 +5621,17 @@ class AiwebCliTest < Minitest::Test
       assert_equal expected_controls, controls.map { |control| control.fetch("command") }
       controls.each do |control|
         assert_includes ["cli", "cli_descriptor"], control["kind"] || control["mode"]
-        assert_equal false, control["mutates_state"] if control.key?("mutates_state")
+        assert_includes [true, false], control["mutates_state"] if control.key?("mutates_state")
+        assert_includes [true, false], control["launches_process"] if control.key?("launches_process")
+        assert_includes [true, false], control["requires_approval"] if control.key?("requires_approval")
         refute_match(/state\.yaml/, control.fetch("command"), "workbench controls must be declarative CLI commands, not direct state writes")
       end
+      design_control = controls.find { |control| control.fetch("command") == "aiweb design" }
+      preview_control = controls.find { |control| control.fetch("command") == "aiweb preview" }
+      verify_control = controls.find { |control| control.fetch("command") == "aiweb verify-loop --max-cycles 3" }
+      assert_equal true, design_control["mutates_state"]
+      assert_equal true, preview_control["launches_process"]
+      assert_equal true, verify_control["requires_approval"]
       refute_includes stdout, "do-not-touch"
     end
   end
@@ -5026,8 +5809,8 @@ class AiwebCliTest < Minitest::Test
     ensure
       if pid && pid.positive?
         begin
-          Process.kill("TERM", pid)
-        rescue Errno::ESRCH
+          Process.kill(RbConfig::CONFIG["host_os"].match?(/mswin|mingw|cygwin/i) ? "KILL" : "TERM", pid)
+        rescue Errno::ESRCH, Errno::EINVAL
         end
       end
     end
@@ -6351,14 +7134,18 @@ class AiwebCliTest < Minitest::Test
   ].freeze
 
   VISUAL_CRITIQUE_SCORE_KEYS = %w[
+    first_impression
     hierarchy
     typography
+    layout_rhythm
     spacing
     color
     originality
     mobile_polish
     brand_fit
     intent_fit
+    content_credibility
+    interaction_clarity
   ].freeze
 
   def write_visual_critique_fixture(path, scores:)
@@ -6542,6 +7329,34 @@ class AiwebCliTest < Minitest::Test
       assert_equal env_body, File.read(".env"), "low-score visual critique must not mutate .env"
       refute Dir.exist?(".ai-web/repair"), "visual-critique must not create repair records"
       refute Dir.exist?("dist"), "visual-critique must not build or deploy"
+    end
+  end
+
+  def test_visual_critique_phase_0_average_threshold_requires_repair
+    in_tmp do
+      json_cmd("init", "--profile", "D")
+      FileUtils.mkdir_p("evidence")
+      screenshot_path = File.join("evidence", "homepage.png")
+      File.binwrite(screenshot_path, "fake screenshot bytes")
+      metadata_path = write_visual_critique_fixture(
+        File.join("evidence", "visual-metadata.json"),
+        scores: VISUAL_CRITIQUE_SCORE_KEYS.to_h { |key| [key, 77] }
+      )
+
+      stdout, stderr, code = run_aiweb(
+        "visual-critique",
+        "--screenshot", screenshot_path,
+        "--metadata", metadata_path,
+        "--task-id", "hero-average-gate",
+        "--json"
+      )
+      payload = JSON.parse(stdout)
+
+      assert_equal 1, code
+      assert_equal "", stderr
+      assert_equal "repair", payload.dig("visual_critique", "approval")
+      assert_match(/average visual score/i, payload.dig("visual_critique", "issues").join("\n"))
+      assert payload.dig("visual_critique", "patch_plan").any?, "average-gate repair should include a patch plan"
     end
   end
 

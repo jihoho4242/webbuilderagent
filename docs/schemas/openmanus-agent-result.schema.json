@@ -1,0 +1,62 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://aiweb.local/schemas/openmanus-agent-result.schema.json",
+  "title": "OpenManus Agent Result",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "status",
+    "mode",
+    "agent",
+    "permission_profile",
+    "changed_source_files",
+    "blocking_issues",
+    "evidence"
+  ],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "status": { "enum": ["planned", "passed", "failed", "blocked", "no_changes"] },
+    "mode": { "enum": ["dry_run", "approved"] },
+    "agent": { "const": "openmanus" },
+    "exit_code": { "type": ["integer", "null"] },
+    "agent_version": { "type": ["string", "null"] },
+    "permission_profile": { "const": "implementation-local-no-network" },
+    "changed_source_files": {
+      "type": "array",
+      "items": { "type": "string" },
+      "uniqueItems": true
+    },
+    "diff_path": { "type": ["string", "null"] },
+    "patch_hash": { "type": ["string", "null"] },
+    "patch_base_hashes": {
+      "type": "object",
+      "additionalProperties": { "type": "string" }
+    },
+    "redactions": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "blocking_issues": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "error_code": { "type": ["string", "null"] },
+    "openmanus_report": {
+      "type": ["object", "null"]
+    },
+    "evidence": {
+      "type": "object",
+      "required": [
+        "stdout_log",
+        "stderr_log",
+        "context_manifest",
+        "validator_result",
+        "network_log",
+        "browser_request_log",
+        "denied_access_log"
+      ],
+      "additionalProperties": { "type": ["string", "null"] }
+    }
+  },
+  "additionalProperties": false
+}

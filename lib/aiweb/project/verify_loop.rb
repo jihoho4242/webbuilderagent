@@ -2,12 +2,14 @@
 
 module Aiweb
   module ProjectVerifyLoop
-    def verify_loop(max_cycles: 3, approved: false, dry_run: false, force: false)
+    def verify_loop(max_cycles: 3, agent: nil, sandbox: nil, approved: false, dry_run: false, force: false)
       assert_initialized!
 
       state = load_state
       ensure_implementation_state_defaults!(state)
       cycle_limit = verify_loop_cycle_limit(max_cycles)
+      implementation_agent = verify_loop_agent(agent, state)
+      implementation_sandbox = verify_loop_sandbox(sandbox, implementation_agent)
       timestamp = Time.now.utc.strftime("%Y%m%dT%H%M%SZ")
       run_id = "verify-loop-#{timestamp}"
       run_dir = File.join(aiweb_dir, "runs", run_id)
@@ -19,6 +21,8 @@ module Aiweb
           run_id: run_id,
           status: "blocked",
           max_cycles: cycle_limit,
+          agent: implementation_agent,
+          sandbox: implementation_sandbox,
           approved: false,
           dry_run: false,
           run_dir: run_dir,
@@ -33,7 +37,7 @@ module Aiweb
           changed_files: [],
           planned_changes: [],
           action_taken: "verify loop blocked",
-          next_action: "rerun aiweb verify-loop --max-cycles #{cycle_limit} --dry-run to inspect the plan or --approved to execute locally"
+          next_action: "rerun aiweb verify-loop --max-cycles #{cycle_limit} --agent #{implementation_agent}#{verify_loop_sandbox_suffix(implementation_agent, implementation_sandbox)} --dry-run to inspect the plan or aiweb verify-loop --max-cycles #{cycle_limit} --agent #{implementation_agent}#{verify_loop_sandbox_suffix(implementation_agent, implementation_sandbox, default_openmanus: true)} --approved to execute locally"
         )
       end
 
@@ -42,6 +46,8 @@ module Aiweb
           run_id: run_id,
           status: "dry_run",
           max_cycles: cycle_limit,
+          agent: implementation_agent,
+          sandbox: implementation_sandbox,
           approved: approved,
           dry_run: true,
           run_dir: run_dir,
@@ -60,7 +66,7 @@ module Aiweb
           changed_files: [],
           planned_changes: planned_changes,
           action_taken: "planned verify loop",
-          next_action: "rerun aiweb verify-loop --max-cycles #{cycle_limit} --approved to execute the local closed loop"
+          next_action: "rerun aiweb verify-loop --max-cycles #{cycle_limit} --agent #{implementation_agent}#{verify_loop_sandbox_suffix(implementation_agent, implementation_sandbox, default_openmanus: true)} --approved to execute the local closed loop"
         )
       end
 
@@ -70,6 +76,8 @@ module Aiweb
           run_id: run_id,
           status: "blocked",
           max_cycles: cycle_limit,
+          agent: implementation_agent,
+          sandbox: implementation_sandbox,
           approved: true,
           dry_run: false,
           run_dir: run_dir,
@@ -84,7 +92,7 @@ module Aiweb
           changed_files: [],
           planned_changes: [],
           action_taken: "verify loop blocked",
-          next_action: "resolve local runtime dependencies with aiweb setup --install --approved, then rerun aiweb verify-loop --max-cycles #{cycle_limit} --approved"
+          next_action: "resolve local runtime dependencies with aiweb setup --install --approved, then rerun aiweb verify-loop --max-cycles #{cycle_limit} --agent #{implementation_agent}#{verify_loop_sandbox_suffix(implementation_agent, implementation_sandbox, default_openmanus: true)} --approved"
         )
       end
 
@@ -93,7 +101,7 @@ module Aiweb
         run_id: run_id,
         run_dir: run_dir,
         metadata_path: metadata_path,
-        command: ["aiweb", "verify-loop", "--max-cycles", cycle_limit.to_s, "--approved"],
+        command: ["aiweb", "verify-loop", "--max-cycles", cycle_limit.to_s, "--agent", implementation_agent, *verify_loop_sandbox_argv(implementation_agent, implementation_sandbox), "--approved"],
         force: force
       )
       begin
@@ -105,62 +113,66 @@ module Aiweb
         stop_reason = "max_cycles"
 
         cycle_limit.times do |index|
-        cycle_number = index + 1
-        cycle = verify_loop_start_cycle(run_dir, cycle_number, changed_files, cycles)
-        outcome = verify_loop_execute_cycle(
-          cycle,
-          run_id: run_id,
-          cycle_number: cycle_number,
-          cycle_limit: cycle_limit,
-          force: force
-        )
-        next if outcome[:continue]
+          cycle_number = index + 1
+          cycle = verify_loop_start_cycle(run_dir, cycle_number, changed_files, cycles)
+          outcome = verify_loop_execute_cycle(
+            cycle,
+            run_id: run_id,
+            cycle_number: cycle_number,
+            cycle_limit: cycle_limit,
+            agent: implementation_agent,
+            sandbox: implementation_sandbox,
+            force: force
+          )
+          next if outcome[:continue]
 
-        final_status = outcome.fetch(:final_status)
-        stop_reason = outcome.fetch(:stop_reason)
-        latest_blocker = outcome[:latest_blocker]
-        break
-      end
+          final_status = outcome.fetch(:final_status)
+          stop_reason = outcome.fetch(:stop_reason)
+          latest_blocker = outcome[:latest_blocker]
+          break
+        end
 
         state = load_state
         ensure_implementation_state_defaults!(state)
         provenance = deploy_workspace_provenance(state, include_tool_versions: true)
 
         metadata = verify_loop_run_metadata(
-        run_id: run_id,
-        status: final_status,
-        max_cycles: cycle_limit,
-        approved: true,
-        dry_run: false,
-        run_dir: run_dir,
-        metadata_path: metadata_path,
-        cycles: cycles,
-        blocking_issues: latest_blocker ? [latest_blocker] : [],
-        latest_blocker: latest_blocker,
-        provenance: provenance
-      )
-      metadata["stop_reason"] = stop_reason
-      metadata["cycle_count"] = cycles.length
-      changed_files << write_json(metadata_path, metadata, false)
+          run_id: run_id,
+          status: final_status,
+          max_cycles: cycle_limit,
+          agent: implementation_agent,
+          sandbox: implementation_sandbox,
+          approved: true,
+          dry_run: false,
+          run_dir: run_dir,
+          metadata_path: metadata_path,
+          cycles: cycles,
+          blocking_issues: latest_blocker ? [latest_blocker] : [],
+          latest_blocker: latest_blocker,
+          provenance: provenance
+        )
+        metadata["stop_reason"] = stop_reason
+        metadata["cycle_count"] = cycles.length
+        changed_files << write_json(metadata_path, metadata, false)
 
-      state["implementation"]["latest_verify_loop"] = relative(metadata_path)
-      state["implementation"]["verify_loop_status"] = final_status
-      state["implementation"]["verify_loop_cycle_count"] = cycles.length
-      state["implementation"]["latest_blocker"] = latest_blocker
-      state["project"]["updated_at"] = now if state["project"].is_a?(Hash)
-      changed_files << write_yaml(state_path, state, false)
+        state["implementation"]["latest_verify_loop"] = relative(metadata_path)
+        state["implementation"]["verify_loop_status"] = final_status
+        state["implementation"]["verify_loop_cycle_count"] = cycles.length
+        state["implementation"]["latest_blocker"] = latest_blocker
+        state["project"]["updated_at"] = now if state["project"].is_a?(Hash)
+        changed_files << write_yaml(state_path, state, false)
 
-      result = verify_loop_payload(
-        state: state,
-        metadata: metadata,
-        changed_files: compact_changes(changed_files),
-        planned_changes: [],
-        action_taken: verify_loop_action_taken(final_status),
-        next_action: verify_loop_next_action(metadata)
-      )
-      active_run_finish!(active_record, final_status)
-      active_record = nil
-      result
+        result = verify_loop_payload(
+          state: state,
+          metadata: metadata,
+          changed_files: compact_changes(changed_files),
+          planned_changes: [],
+          action_taken: verify_loop_action_taken(final_status),
+          next_action: verify_loop_next_action(metadata)
+        )
+        active_run_finish!(active_record, final_status)
+        active_record = nil
+        result
       ensure
         active_run_finish!(active_record, "failed") if active_record
       end
@@ -177,6 +189,35 @@ module Aiweb
       end
 
       value
+    end
+
+    def verify_loop_agent(requested, state)
+      value = requested.to_s.strip
+      value = state.dig("adapters", "implementation_agent", "provider").to_s.strip if value.empty?
+      value = "codex" if value.empty?
+      raise UserError.new("verify-loop --agent must be codex or openmanus", 1) unless %w[codex openmanus].include?(value)
+
+      value
+    end
+
+    def verify_loop_sandbox(requested, agent)
+      value = requested.to_s.strip.downcase
+      return nil if value.empty?
+      raise UserError.new("verify-loop --sandbox is only supported with --agent openmanus", 1) unless agent == "openmanus"
+      raise UserError.new("verify-loop --sandbox must be docker or podman", 1) unless %w[docker podman].include?(value)
+
+      value
+    end
+
+    def verify_loop_sandbox_suffix(agent, sandbox, default_openmanus: false)
+      return "" unless agent == "openmanus"
+
+      chosen = sandbox.to_s.empty? && default_openmanus ? "docker" : sandbox.to_s
+      chosen.empty? ? "" : " --sandbox #{chosen}"
+    end
+
+    def verify_loop_sandbox_argv(agent, sandbox)
+      agent == "openmanus" && !sandbox.to_s.empty? ? ["--sandbox", sandbox] : []
     end
 
     def verify_loop_planned_steps(cycle_limit)
@@ -234,11 +275,13 @@ module Aiweb
       blockers.compact.uniq
     end
 
-    def verify_loop_run_metadata(run_id:, status:, max_cycles:, approved:, dry_run:, run_dir:, metadata_path:, cycles:, blocking_issues:, latest_blocker:, provenance: nil)
+    def verify_loop_run_metadata(run_id:, status:, max_cycles:, agent:, sandbox:, approved:, dry_run:, run_dir:, metadata_path:, cycles:, blocking_issues:, latest_blocker:, provenance: nil)
       metadata = {
         "schema_version" => 1,
         "run_id" => run_id,
         "status" => status,
+        "agent" => agent,
+        "sandbox" => sandbox,
         "approved" => approved,
         "dry_run" => dry_run,
         "requires_approval" => !approved && !dry_run,
@@ -281,7 +324,7 @@ module Aiweb
       cycle
     end
 
-    def verify_loop_execute_cycle(cycle, run_id:, cycle_number:, cycle_limit:, force:)
+    def verify_loop_execute_cycle(cycle, run_id:, cycle_number:, cycle_limit:, agent:, sandbox:, force:)
       if (outcome = verify_loop_cancelled_outcome(cycle, run_id))
         return outcome
       end
@@ -308,7 +351,7 @@ module Aiweb
         return outcome
       end
 
-      if (outcome = verify_loop_qa_failure_outcome(cycle, qa_results, cycle_number, cycle_limit))
+      if (outcome = verify_loop_qa_failure_outcome(cycle, qa_results, cycle_number, cycle_limit, agent, sandbox))
         return outcome
       end
 
@@ -324,7 +367,7 @@ module Aiweb
       end
 
       verify_loop_ensure_component_map(cycle)
-      if (outcome = verify_loop_agent_run_outcome(cycle))
+      if (outcome = verify_loop_agent_run_outcome(cycle, agent, sandbox))
         return outcome
       end
 
@@ -345,7 +388,7 @@ module Aiweb
       ]
     end
 
-    def verify_loop_qa_failure_outcome(cycle, qa_results, cycle_number, cycle_limit)
+    def verify_loop_qa_failure_outcome(cycle, qa_results, cycle_number, cycle_limit, agent, sandbox)
       blocked_qa = qa_results.find { |result| verify_loop_step_status(result).to_s == "blocked" }
       return verify_loop_step_blocked_outcome(cycle, "qa", blocked_qa, stop_reason: "qa_blocked") if blocked_qa
 
@@ -360,7 +403,7 @@ module Aiweb
       end
 
       verify_loop_ensure_component_map(cycle)
-      if (outcome = verify_loop_agent_run_outcome(cycle))
+      if (outcome = verify_loop_agent_run_outcome(cycle, agent, sandbox))
         return outcome
       end
 
@@ -372,8 +415,8 @@ module Aiweb
       { continue: true }
     end
 
-    def verify_loop_agent_run_outcome(cycle)
-      agent_result = verify_loop_record_step(cycle, "agent-run") { agent_run(task: "latest", agent: "codex", approved: true, dry_run: false) }
+    def verify_loop_agent_run_outcome(cycle, agent, sandbox)
+      agent_result = verify_loop_record_step(cycle, "agent-run") { agent_run(task: "latest", agent: agent, sandbox: sandbox, approved: true, dry_run: false) }
       return nil if verify_loop_step_passed?(agent_result, "agent-run")
 
       verify_loop_status_outcome(
@@ -554,13 +597,13 @@ module Aiweb
       when "passed"
         "review #{metadata["metadata_path"]} and continue toward deploy planning only after approval gates are satisfied"
       when "max_cycles"
-        "inspect #{metadata["metadata_path"]}, review latest blocker, then rerun with a higher --max-cycles only after reviewing the generated task/diff evidence"
+        "inspect #{metadata["metadata_path"]}, review latest blocker, then rerun with a higher --max-cycles and --agent #{metadata["agent"]} only after reviewing the generated task/diff evidence"
       when "agent_run_failed"
         "inspect the cycle agent-run logs in #{metadata["run_dir"]}, then repair the task packet or source allowlist"
       when "cancelled"
         "inspect #{metadata["metadata_path"]}, then record a resume descriptor with aiweb run-resume --run-id #{metadata["run_id"]} if you want to continue"
       else
-        "resolve #{metadata["latest_blocker"] || "verify-loop blockers"}, then rerun aiweb verify-loop --max-cycles #{metadata["max_cycles"]} --approved"
+        "resolve #{metadata["latest_blocker"] || "verify-loop blockers"}, then rerun aiweb verify-loop --max-cycles #{metadata["max_cycles"]} --agent #{metadata["agent"]} --approved"
       end
     end
 

@@ -1,0 +1,78 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+require "open3"
+require "rbconfig"
+
+ROOT = File.expand_path("..", __dir__)
+RUBY = RbConfig.ruby
+TEXT_GLOBS = %w[
+  .gitattributes
+  AGENTS.md
+  DESIGN.md
+  README.md
+  aiweb
+  웹빌더
+  .github/**/*.yml
+  bin/*
+  craft/**/*.md
+  design-systems/**/*.md
+  docs/**/*.md
+  docs/**/*.json
+  docs/**/*.yaml
+  docs/**/*.yml
+  lib/**/*.rb
+  skills/**/*.md
+  test/**/*.rb
+].freeze
+
+def run_check(label, *command)
+  puts "==> #{label}"
+  stdout, stderr, status = Open3.capture3(*command, chdir: ROOT)
+  print stdout unless stdout.empty?
+  warn stderr unless stderr.empty?
+  return true if status.success?
+
+  warn "#{label} failed with exit code #{status.exitstatus || "unknown"}"
+  false
+end
+
+def ruby_syntax_files
+  text_files.select do |path|
+    File.extname(path) == ".rb" || File.read(path, 32).start_with?("#!/usr/bin/env ruby")
+  end
+end
+
+def text_files
+  TEXT_GLOBS.flat_map { |pattern| Dir.glob(File.join(ROOT, pattern), File::FNM_DOTMATCH) }
+            .uniq
+            .select { |path| File.file?(path) }
+end
+
+def repository_text_guard
+  failures = []
+  text_files.sort.each do |path|
+    relative = path.delete_prefix(ROOT + File::SEPARATOR)
+    content = File.binread(path)
+    failures << "#{relative}: contains CRLF line endings" if content.include?("\r\n")
+    failures << "#{relative}: contains merge conflict marker" if content.match?(/^(<<<<<<<|=======|>>>>>>>) /)
+  end
+  if failures.empty?
+    puts "repository text guard passed"
+    true
+  else
+    failures.each { |failure| warn failure }
+    false
+  end
+end
+
+checks = []
+ruby_syntax_files.sort.each do |path|
+  checks << run_check("ruby -c #{path.delete_prefix(ROOT + File::SEPARATOR)}", RUBY, "-c", path)
+end
+checks << repository_text_guard
+checks << run_check("load smoke", RUBY, "-Ilib", "-e", "require 'aiweb'")
+checks << run_check("test suite", RUBY, "-Itest", "test/all.rb")
+checks << run_check("git diff --check", "git", "diff", "--check")
+
+exit(checks.all? ? 0 : 1)

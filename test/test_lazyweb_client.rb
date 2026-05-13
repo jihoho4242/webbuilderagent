@@ -1,12 +1,11 @@
 # frozen_string_literal: true
 
 require "json"
-require "minitest/autorun"
 require "tmpdir"
 
+require_relative "support/test_helper"
 require_relative "support/fake_mcp_http_server"
 
-$LOAD_PATH.unshift(File.expand_path("../lib", __dir__))
 require "aiweb/lazyweb_client"
 
 class LazywebClientTest < Minitest::Test

@@ -208,6 +208,8 @@ module Aiweb
         bridge.agent_run(
           project_path: required_project_path!(payload["path"]),
           task: payload["task"] || "latest",
+          agent: payload["agent"] || "codex",
+          sandbox: payload["sandbox"],
           dry_run: payload.key?("dry_run") ? truthy?(payload["dry_run"]) : true,
           approved: approved
         ).tap { |result| result["bridge"]["serialized_execution"] = true if result["bridge"].is_a?(Hash) }

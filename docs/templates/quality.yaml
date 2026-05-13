@@ -27,6 +27,36 @@ quality:
     max_button_variants: 3
     max_card_variants: 4
     visual_diff_tolerance_percent: 5
+    phase_0_gate:
+      design_system_required: true
+      craft_rules_required:
+        - anti-ai-slop
+        - color
+        - typography
+        - spacing-responsive
+      candidate_strategy_count: 3
+      candidate_strategies:
+        - editorial-premium
+        - conversion-focused
+        - trust-minimal
+      required_score_categories:
+        - first_impression
+        - hierarchy
+        - typography
+        - layout_rhythm
+        - spacing
+        - color
+        - originality
+        - mobile_polish
+        - brand_fit
+        - intent_fit
+        - content_credibility
+        - interaction_clarity
+      min_visual_score_average: 78
+      min_visual_score_axis: 70
+      first_view_alignment_required: true
+      no_copy_provenance_required: true
+      responsive_first_fold_widths: [375, 390, 768, 1440]
   content:
     hero_clear_value_prop: true
     primary_cta_above_fold: true

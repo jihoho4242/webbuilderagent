@@ -41,9 +41,9 @@ module Aiweb
           qa-checklist [--force]
           qa-report [--from PATH] [--status passed|failed|blocked] [--duration-minutes N] [--timed-out] [--force]
           repair [--from-qa PATH|latest] [--max-cycles N] [--force]
-          verify-loop [--max-cycles N:1-10] [--approved] [--force]
+          verify-loop [--max-cycles N:1-10] [--agent codex|openmanus] [--sandbox docker|podman] [--approved] [--force]
           verify-loop --max-cycles 3 --dry-run
-          verify-loop --max-cycles 3 --approved
+          verify-loop --max-cycles 3 --agent codex --approved
           qa-playwright [--url URL] [--task-id ID] [--force]
           qa-screenshot [--url URL] [--task-id ID] [--force]
           qa-a11y [--url URL] [--task-id ID] [--force]
@@ -87,15 +87,17 @@ module Aiweb
           run-timeline/observability-summary: read-only timeline and compact observability rollups over safe .ai-web/runs JSON evidence; caps --limit at 50, redacts secret-like keys and .env paths, writes nothing, and launches no processes
           build: runs the scaffolded Astro build only after runtime-plan is ready and records .ai-web/runs logs
           preview: starts/stops the local scaffold dev server after runtime-plan is ready; --dry-run does not write files or launch Node
-          agent-run: runs an approved local source-patch agent task packet for repair / visual-polish / visual-edit evidence with logs and diff artifacts; --dry-run does not write files or launch a process
+          agent-run: runs an approved local source-patch agent task packet for repair / visual-polish / visual-edit evidence with logs and diff artifacts; --agent supports codex or openmanus; OpenManus approved runs require --sandbox docker|podman; --dry-run does not write files or launch a process
           qa-playwright: runs safe local Playwright QA browser checks against localhost/127.0.0.1 preview; --dry-run does not write files or launch Node
           qa-screenshot: captures safe local screenshot evidence for mobile/tablet/desktop from localhost/127.0.0.1 preview; --dry-run does not write files, launch browsers, install packages, or start preview
           qa-a11y: runs safe local axe accessibility QA against localhost/127.0.0.1 preview; --dry-run does not write files or launch Node
           qa-lighthouse: runs safe local Lighthouse QA against localhost/127.0.0.1 preview; --dry-run does not write files or launch Node
           visual-critique: records safe local visual critique from explicit screenshot/metadata evidence or --from-screenshots latest only; --dry-run plans .ai-web/visual artifacts without writes, browser launch, installs, repair, deploy, network, or .env access
-          verify-loop: runs the local build -> preview -> QA -> critique -> task -> agent-run loop; --max-cycles is capped at 10, --dry-run writes nothing and plans build -> preview -> QA -> screenshot -> visual critique -> repair/visual-polish -> agent-run cycles, while real execution requires --approved, uses existing local adapters, records .ai-web/runs/verify-loop-<timestamp>/verify-loop.json plus per-cycle evidence and deploy provenance, never installs packages, never deploys, and stops on pass, max cycles, blockers, unsafe action, or agent-run failure
+          verify-loop: runs the local build -> preview -> QA -> critique -> task -> agent-run loop; --agent chooses codex or openmanus for implementation repair cycles, OpenManus repair cycles require --sandbox docker|podman for approved execution, --max-cycles is capped at 10, --dry-run writes nothing and plans build -> preview -> QA -> screenshot -> visual critique -> repair/visual-polish -> agent-run cycles, while real execution requires --approved, uses existing local adapters, records .ai-web/runs/verify-loop-<timestamp>/verify-loop.json plus per-cycle evidence and deploy provenance, never installs packages, never deploys, and stops on pass, max cycles, blockers, unsafe action, or agent-run failure
           agent-run --task latest --agent codex --dry-run
           agent-run --task latest --agent codex --approved
+          agent-run --task latest --agent openmanus --dry-run
+          agent-run --task latest --agent openmanus --sandbox docker --approved
           workbench: plans, exports, or serves a local UI manifest under .ai-web/workbench using declarative CLI controls only; requires initialized .ai-web/state.yaml, --dry-run writes nothing, export writes only workbench artifacts, serve binds only localhost/127.0.0.1 and requires --approved for real process launch, executes no controls, and never mutates state.yaml
           daemon: starts the local backend API bridge for the future web Workbench; --dry-run reports endpoints and guardrails without binding a port
           ingest-reference: phase-3 or phase-3.5; writes only .ai-web/design-reference-brief.md pattern constraints, never implementation source, and rejects .env/.env.* or secret-looking reference paths
@@ -109,7 +111,7 @@ module Aiweb
           qa-checklist: phase-7 through phase-11
           qa-report: phase-7 through phase-11
           repair: phase-7 through phase-11; records a bounded local repair-loop task from failed/blocked QA without running build, QA, preview, deploy, package install, or source auto-patches
-          agent-run: phase-7 through phase-11; approved local source-patch task packets only, with logs, diff evidence, and no .env/.env.* access
+          agent-run: phase-7 through phase-11; approved local source-patch task packets only, with logs, diff evidence, and no .env/.env.* access; openmanus runs through an aiweb-managed docker/podman sandbox, isolated workspace, JSON contract, and only validated allowed source files are copied back
           qa-screenshot: phase-7 through phase-11; captures safe local screenshot evidence for critique/human QA without starting preview or installing packages
           visual-critique: phase-7 through phase-11; records deterministic local visual critique evidence from explicit input paths or latest screenshot metadata only
           visual-polish --repair: records safe local visual polish repair loop from failed/repair/redesign critique evidence in phase-7 through phase-11 without source edits, build, QA, preview, browser capture, deploy, package install, network, or AI calls
@@ -336,7 +338,7 @@ module Aiweb
       score_line = if scores.empty?
         "Scores: n/a"
       else
-        ordered = %w[hierarchy typography spacing color originality mobile_polish brand_fit intent_fit]
+        ordered = %w[first_impression hierarchy typography layout_rhythm spacing color originality mobile_polish brand_fit intent_fit content_credibility interaction_clarity]
         "Scores: " + ordered.select { |key| scores.key?(key) }.map { |key| "#{key}=#{scores[key]}" }.join(", ")
       end
       issues = critique["issues"] || []

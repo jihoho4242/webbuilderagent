@@ -1,14 +1,14 @@
 # frozen_string_literal: true
 
 require "json"
-require "minitest/autorun"
 require "fileutils"
 require "stringio"
 require "tmpdir"
 require "uri"
 require "yaml"
 
-$LOAD_PATH.unshift(File.expand_path("../lib", __dir__))
+require_relative "support/test_helper"
+
 require "aiweb"
 
 class AiwebDaemonTest < Minitest::Test
@@ -55,6 +55,7 @@ class AiwebDaemonTest < Minitest::Test
     assert_equal AIWEB, payload.dig("backend", "bridge", "aiweb_bin")
     assert_includes payload.dig("backend", "routes"), "GET /api/project/artifact?path=PROJECT_PATH&artifact=ARTIFACT_PATH"
     assert_includes payload.dig("backend", "bridge", "allowed_commands"), "agent-run"
+    assert_includes payload.dig("backend", "bridge", "allowed_commands"), "verify-loop"
     assert_includes payload.dig("backend", "bridge", "allowed_commands"), "ingest-reference"
     assert_includes payload.dig("backend", "bridge", "guardrails"), "frontend sends structured JSON only; no raw shell commands"
     assert_equal "AIWEB_DAEMON_TOKEN", payload.dig("backend", "auth", "api_token_env")
@@ -160,15 +161,37 @@ class AiwebDaemonTest < Minitest::Test
     end
   end
 
+  def test_codex_agent_run_endpoint_passes_openmanus_agent_selection
+    in_tmp do |dir|
+      app.call("POST", "/api/project/command", api_headers, JSON.generate("path" => dir, "command" => "init", "args" => ["--profile", "D"]))
+      status, payload = app.call(
+        "POST",
+        "/api/codex/agent-run",
+        api_headers,
+        JSON.generate("path" => dir, "task" => "latest", "agent" => "openmanus", "dry_run" => true)
+      )
+
+      assert_equal 200, status
+      assert_equal "agent-run", payload.dig("bridge", "command")
+      assert_equal ["--task", "latest", "--agent", "openmanus"], payload.dig("bridge", "args")
+      assert_equal true, payload.dig("bridge", "dry_run")
+      assert_equal "openmanus", payload.dig("stdout_json", "agent_run", "agent")
+    end
+  end
+
   def test_bridge_timeout_cleans_process_group_without_waiting_on_descendant_stdout
     bridge = Aiweb::CodexCliBridge.new(engine_root: REPO_ROOT, command_timeout: 0.2)
-    code = <<~RUBY
-      fork do
-        STDOUT.sync = true
-        sleep 3
-      end
-      sleep 3
-    RUBY
+    code = if RbConfig::CONFIG["host_os"].match?(/mswin|mingw|cygwin/i)
+             "sleep 3"
+           else
+             <<~RUBY
+               fork do
+                 STDOUT.sync = true
+                 sleep 3
+               end
+               sleep 3
+             RUBY
+           end
 
     started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
     error = assert_raises(Aiweb::UserError) do
@@ -425,8 +448,12 @@ class AiwebDaemonTest < Minitest::Test
       File.write(outside_secret, "SECRET=daemon-symlink-outside-do-not-leak\n")
       FileUtils.mkdir_p(File.join(dir, ".ai-web", "tasks"))
       FileUtils.mkdir_p(File.join(dir, ".ai-web", "design-candidates"))
-      File.symlink(File.join(dir, ".env"), File.join(dir, ".ai-web", "tasks", "link.md"))
-      File.symlink(File.expand_path(outside_secret), File.join(dir, ".ai-web", "design-candidates", "candidate-01.md"))
+      begin
+        File.symlink(File.join(dir, ".env"), File.join(dir, ".ai-web", "tasks", "link.md"))
+        File.symlink(File.expand_path(outside_secret), File.join(dir, ".ai-web", "design-candidates", "candidate-01.md"))
+      rescue NotImplementedError, Errno::EACCES
+        skip "symlink creation is not available in this Windows test environment"
+      end
       encoded_path = URI.encode_www_form_component(dir)
 
       [".ai-web/tasks/link.md", ".ai-web/design-candidates/candidate-01.md"].each do |artifact_path|

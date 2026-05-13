@@ -25,7 +25,8 @@ require_relative "profiles"
 require_relative "project/runtime_commands"
 require_relative "project/verify_loop"
 require_relative "project/agent_run"
-
+require_relative "project/state"
+require_relative "project/workbench"
 module Aiweb
   class UserError < StandardError
     attr_reader :exit_code
@@ -40,7 +41,8 @@ module Aiweb
     include ProjectRuntimeCommands
     include ProjectVerifyLoop
     include ProjectAgentRun
-
+    include ProjectStateBoundary
+    include ProjectWorkbench
     PHASES = %w[
       phase--1
       phase-0
@@ -518,6 +520,14 @@ module Aiweb
             {
               "id" => candidate.id,
               "path" => ".ai-web/design-candidates/#{candidate.id}.html",
+              "strategy_id" => candidate.strategy_id,
+              "score" => candidate.score,
+              "rubric_scores" => candidate.rubric_scores,
+              "first_view" => candidate.first_view,
+              "proof_pattern" => candidate.proof_pattern,
+              "cta_flow" => candidate.cta_flow,
+              "mobile_behavior" => candidate.mobile_behavior,
+              "risks" => candidate.risks,
               "status" => "draft"
             }
           end
@@ -557,7 +567,8 @@ module Aiweb
         end
         state["design_candidates"]["candidates"] = refs
         state["design_candidates"]["selected_candidate"] = selected_id
-        changes << write_file(File.join(aiweb_dir, "design-candidates", "selected.md"), selected_design_markdown(selected_id), dry_run)
+        selected_ref = refs.find { |candidate| candidate["id"] == selected_id } || { "id" => selected_id, "path" => ".ai-web/design-candidates/#{selected_id}.html" }
+        changes << write_file(File.join(aiweb_dir, "design-candidates", "selected.md"), selected_design_markdown(selected_id, selected_ref: selected_ref, refs: refs), dry_run)
         changes << write_file(File.join(aiweb_dir, "gates", "gate-2-design.md"), gate_markdown("Gate 2 — Design", ["Selected design candidate: #{selected_id}", "Source of truth remains .ai-web/DESIGN.md", "Candidate HTML: .ai-web/design-candidates/#{selected_id}.html"], "pending"), dry_run)
         mark_artifacts_from_files!(state)
         add_decision!(state, "design_candidate_selected", "Selected #{selected_id}; .ai-web/DESIGN.md remains source of truth")
@@ -861,218 +872,6 @@ module Aiweb
       raise UserError.new("Supabase local verification artifact is malformed; review #{SCAFFOLD_PROFILE_S_LOCAL_VERIFY_PATH} or rerun with force", 1)
     end
 
-
-    def workbench(export: false, serve: false, approved: false, host: "127.0.0.1", port: nil, dry_run: false, force: false)
-      return workbench_serve(approved: approved, host: host, port: port, dry_run: dry_run, force: force) if serve
-
-      state, state_error = workbench_state_snapshot
-      paths = workbench_paths
-      should_export = !!export && !dry_run
-      status = state_error ? "blocked" : (should_export ? "exported" : "planned")
-      blockers = state_error ? [state_error] : []
-      planned_changes = [paths["index_html"], paths["manifest_json"]]
-      manifest = workbench_manifest(state: state, status: status, export: should_export, dry_run: dry_run, blocking_issues: blockers, paths: paths)
-
-      if blockers.empty? && should_export
-        existing_conflicts = workbench_existing_conflicts(paths, manifest)
-        unless existing_conflicts.empty? || force
-          blockers = existing_conflicts.map { |path| "workbench artifact already exists and differs: #{path}" }
-          manifest = workbench_manifest(state: state, status: "blocked", export: true, dry_run: false, blocking_issues: blockers, paths: paths)
-          return workbench_payload(state: state, workbench: manifest, changed_files: [], blocking_issues: blockers, next_action: "review existing workbench artifacts or rerun aiweb workbench --export --force")
-        end
-
-        changes = []
-        mutation(dry_run: false) do
-          changes << write_file(File.join(root, paths["index_html"]), workbench_html(manifest), false)
-          changes << write_json(File.join(root, paths["manifest_json"]), manifest, false)
-        end
-        return workbench_payload(state: state, workbench: manifest, changed_files: compact_changes(changes), blocking_issues: [], next_action: "open .ai-web/workbench/index.html locally or inspect .ai-web/workbench/workbench.json")
-      end
-
-      workbench_payload(
-        state: state,
-        workbench: manifest,
-        changed_files: blockers.empty? ? planned_changes : [],
-        blocking_issues: blockers,
-        next_action: blockers.empty? ? "rerun aiweb workbench --export to write the local workbench artifacts" : "run aiweb init or aiweb start before exporting the workbench"
-      )
-    end
-
-    def workbench_serve(approved:, host:, port:, dry_run:, force:)
-      state, state_error = workbench_state_snapshot
-      paths = workbench_paths
-      bind_host = workbench_serve_host(host)
-      bind_port = workbench_serve_port(port)
-      timestamp = Time.now.utc.strftime("%Y%m%dT%H%M%SZ")
-      run_id = "workbench-serve-#{timestamp}"
-      run_dir = File.join(aiweb_dir, "runs", run_id)
-      stdout_path = File.join(run_dir, "stdout.log")
-      stderr_path = File.join(run_dir, "stderr.log")
-      metadata_path = File.join(run_dir, "workbench-serve.json")
-      url = "http://#{bind_host}:#{bind_port}/"
-      blockers = []
-      blockers << state_error if state_error
-      blockers << "workbench --serve requires localhost or 127.0.0.1 host" unless workbench_serve_allowed_host?(bind_host)
-      blockers << "workbench --serve requires --approved for real local serving" if !dry_run && !approved
-      planned_changes = [paths["index_html"], paths["manifest_json"], relative(run_dir), relative(stdout_path), relative(stderr_path), relative(metadata_path)]
-      running = blockers.empty? ? running_workbench_serve_metadata : nil
-
-      if running
-        already = running.merge("status" => "already_running", "dry_run" => dry_run, "approved" => approved, "blocking_issues" => [])
-        manifest = workbench_manifest(
-          state: state,
-          status: "already_running",
-          export: true,
-          dry_run: dry_run,
-          blocking_issues: [],
-          paths: paths,
-          serve: workbench_serve_summary(already)
-        )
-        return workbench_payload(
-          state: state,
-          workbench: manifest,
-          changed_files: [],
-          blocking_issues: [],
-          next_action: "open #{already["url"]} locally or stop pid #{already["pid"]} before starting another workbench server"
-        )
-      end
-
-      status = blockers.empty? ? (dry_run ? "planned" : "serving") : "blocked"
-      metadata = workbench_serve_metadata(
-        run_id: run_id,
-        status: dry_run && blockers.empty? ? "dry_run" : status,
-        host: bind_host,
-        port: bind_port,
-        url: url,
-        command: workbench_serve_command(bind_host, bind_port),
-        pid: nil,
-        started_at: nil,
-        finished_at: nil,
-        stdout_log: relative(stdout_path),
-        stderr_log: relative(stderr_path),
-        metadata_path: relative(metadata_path),
-        workbench_paths: paths,
-        dry_run: dry_run,
-        approved: approved,
-        blocking_issues: blockers
-      )
-      manifest = workbench_manifest(
-        state: state,
-        status: status,
-        export: !dry_run && blockers.empty?,
-        dry_run: dry_run,
-        blocking_issues: blockers,
-        paths: paths,
-        serve: workbench_serve_summary(metadata)
-      )
-
-      if dry_run || !blockers.empty?
-        return workbench_payload(
-          state: state,
-          workbench: manifest,
-          changed_files: blockers.empty? ? planned_changes : [],
-          blocking_issues: blockers,
-          next_action: blockers.empty? ? "rerun aiweb workbench --serve --approved to write artifacts and start the localhost server" : "resolve workbench serve blockers, then rerun with --dry-run or --approved"
-        )
-      end
-
-      existing_conflicts = workbench_existing_conflicts(paths, manifest)
-      unless existing_conflicts.empty? || force
-        blockers = existing_conflicts.map { |path| "workbench artifact already exists and differs: #{path}" }
-        metadata["status"] = "blocked"
-        metadata["blocking_issues"] = blockers
-        manifest = workbench_manifest(
-          state: state,
-          status: "blocked",
-          export: true,
-          dry_run: false,
-          blocking_issues: blockers,
-          paths: paths,
-          serve: workbench_serve_summary(metadata)
-        )
-        return workbench_payload(
-          state: state,
-          workbench: manifest,
-          changed_files: [],
-          blocking_issues: blockers,
-          next_action: "review existing workbench artifacts or rerun aiweb workbench --serve --approved --force"
-        )
-      end
-
-      active_record = active_run_begin!(
-        kind: "workbench-serve",
-        run_id: run_id,
-        run_dir: run_dir,
-        metadata_path: metadata_path,
-        command: workbench_serve_command(bind_host, bind_port),
-        force: force,
-        keep_active: true
-      )
-      begin
-      changes = []
-      result = mutation(dry_run: false) do
-        FileUtils.mkdir_p(run_dir)
-        changes << relative(run_dir)
-        changes << write_file(File.join(root, paths["index_html"]), workbench_html(manifest), false)
-        changes << write_json(File.join(root, paths["manifest_json"]), manifest, false)
-        FileUtils.touch(stdout_path)
-        FileUtils.touch(stderr_path)
-        stdout_file = File.open(stdout_path, "ab")
-        stderr_file = File.open(stderr_path, "ab")
-        pid = nil
-        begin
-          pid = Process.spawn(*workbench_serve_command(bind_host, bind_port), chdir: root, out: stdout_file, err: stderr_file)
-          Process.detach(pid)
-        ensure
-          stdout_file.close
-          stderr_file.close
-        end
-        metadata = workbench_serve_metadata(
-          run_id: run_id,
-          status: "running",
-          host: bind_host,
-          port: bind_port,
-          url: url,
-          command: workbench_serve_command(bind_host, bind_port),
-          pid: pid,
-          started_at: now,
-          finished_at: nil,
-          stdout_log: relative(stdout_path),
-          stderr_log: relative(stderr_path),
-          metadata_path: relative(metadata_path),
-          workbench_paths: paths,
-          dry_run: false,
-          approved: true,
-          blocking_issues: []
-        )
-        manifest["status"] = "running"
-        manifest["serve"] = workbench_serve_summary(metadata)
-        active_record = active_record.merge(
-          "pid" => pid,
-          "status" => "running",
-          "heartbeat_at" => now,
-          "url" => url
-        )
-        changes << write_json(active_run_lock_path, active_record, false)
-        changes << write_json(run_lifecycle_path(run_id), active_record, false)
-        changes << write_json(File.join(root, paths["manifest_json"]), manifest, false)
-        changes << relative(stdout_path)
-        changes << relative(stderr_path)
-        changes << write_json(metadata_path, metadata, false)
-        workbench_payload(
-          state: state,
-          workbench: manifest,
-          changed_files: compact_changes(changes),
-          blocking_issues: [],
-          next_action: "open #{url} locally; stop pid #{pid} when finished"
-        )
-      end
-      active_record = nil
-      result
-      ensure
-        active_run_finish!(active_record, "failed") if active_record
-      end
-    end
 
     def run_status(run_id: nil)
       assert_initialized!
@@ -2449,364 +2248,6 @@ module Aiweb
       }
     end
 
-    def ensure_defaults!(state)
-      state["invalidations"] ||= []
-      state["decisions"] ||= []
-      state["snapshots"] ||= []
-      state["qa"] ||= {}
-      state["qa"]["open_failures"] ||= []
-      state["design_candidates"] ||= {}
-      state["design_candidates"]["candidates"] ||= []
-      ensure_research_state_defaults!(state)
-      ensure_pr19_deploy_defaults!(state)
-      ensure_setup_state_defaults!(state)
-      ensure_scaffold_state_defaults!(state)
-      ensure_design_research_state_defaults!(state)
-      state["budget"] ||= {}
-      state["budget"]["cost_mode"] ||= "subscription_usage"
-      state["budget"]["meter_model_cost"] = false if state["budget"]["meter_model_cost"].nil?
-      state["budget"]["max_design_generations_total"] ||= 10
-      state["budget"]["max_design_candidates"] ||= 10
-      state["budget"]["max_qa_runtime_minutes"] ||= 60
-      state["budget"]["qa_timeout_action"] ||= "self_diagnose_fix_rerun"
-      state["budget"]["max_qa_timeout_recovery_cycles"] ||= 3
-      state
-    end
-
-    def ensure_research_state_defaults!(state)
-      state["artifacts"] ||= {}
-      state["artifacts"]["design_reference_brief"] ||= { "path" => DESIGN_REFERENCE_BRIEF_PATH, "status" => "missing" }
-      state["artifacts"]["design_reference_results"] ||= { "path" => DESIGN_REFERENCE_RESULTS_PATH, "status" => "missing" }
-      state["artifacts"]["design_pattern_matrix"] ||= { "path" => DESIGN_PATTERN_MATRIX_PATH, "status" => "missing" }
-
-      state["research"] ||= {}
-      state["research"]["design_research"] ||= {}
-      design_research = state["research"]["design_research"]
-      design_research["policy"] ||= "opportunistic"
-      design_research["provider"] ||= "lazyweb"
-      design_research["latest_run"] = nil unless design_research.key?("latest_run")
-      design_research["status"] ||= "missing"
-      design_research["reference_brief_path"] ||= DESIGN_REFERENCE_BRIEF_PATH
-      design_research["pattern_matrix_path"] ||= DESIGN_PATTERN_MATRIX_PATH
-      design_research["normalized_results_path"] ||= DESIGN_REFERENCE_RESULTS_PATH
-      design_research["min_references"] ||= 5
-      design_research["min_companies"] ||= 3
-      design_research["last_error"] = nil unless design_research.key?("last_error")
-      design_research["skipped_reason"] = nil unless design_research.key?("skipped_reason")
-
-      state["adapters"] ||= {}
-      state["adapters"]["design_research"] ||= {}
-      adapter = state["adapters"]["design_research"]
-      adapter["provider"] ||= "lazyweb"
-      adapter["transport"] ||= "streamable-http"
-      adapter["endpoint"] ||= "https://www.lazyweb.com/mcp"
-      adapter["network_allowed"] = true unless adapter.key?("network_allowed")
-      adapter["mcp_servers_allowed"] ||= ["lazyweb"]
-      adapter["token_sources"] ||= [
-        "LAZYWEB_MCP_TOKEN",
-        "~/.lazyweb/lazyweb_mcp_token",
-        "~/.codex/lazyweb_mcp_token"
-      ]
-      adapter["token_storage_allowed_in_repo"] = false unless adapter.key?("token_storage_allowed_in_repo")
-      adapter["command_timeout_seconds"] ||= 45
-
-      state
-    end
-
-    def refresh_state!(state)
-      ensure_defaults!(state)
-      mark_artifacts_from_files!(state)
-      update_design_counts!(state)
-      state
-    end
-
-    def mark_artifacts_from_files!(state)
-      artifacts = state["artifacts"] || {}
-      artifacts.each do |name, meta|
-        next unless meta.is_a?(Hash)
-        path = meta["path"]
-        next if path.nil?
-        full = File.join(root, path)
-        if File.directory?(full)
-          meta["status"] = Dir.children(full).empty? ? "missing" : "draft"
-        elsif File.exist?(full)
-          meta["status"] = stub_file?(full) ? "stub" : "draft"
-        else
-          meta["status"] = "missing"
-        end
-      end
-      state
-    end
-
-    def update_design_counts!(state)
-      dir = File.join(aiweb_dir, "design-candidates")
-      candidate_files = Dir.exist?(dir) ? Dir.glob(File.join(dir, "candidate-*.{md,html}"), File::FNM_EXTGLOB).sort : []
-      refs = state.dig("design_candidates", "candidates") || []
-      known = refs.map { |r| r["path"] }
-      candidate_files.each do |path|
-        rel = relative(path)
-        next if known.include?(rel)
-        refs << {
-          "id" => File.basename(path, File.extname(path)),
-          "path" => rel,
-          "status" => "draft"
-        }
-      end
-      state["design_candidates"]["candidates"] = refs
-      count = refs.length
-      state["design_candidates"]["max_allowed"] ||= state.dig("budget", "max_design_candidates") || 10
-      if state.dig("artifacts", "design_candidates")
-        state["artifacts"]["design_candidates"]["count"] = count
-        state["artifacts"]["design_candidates"]["status"] = count.zero? ? "missing" : "draft"
-      end
-      state
-    end
-
-    def validate_state_shape(state)
-      errors = []
-      schema_errors = validate_json_schema(state, load_schema("state.schema.json"))
-      schema_errors = suppress_stale_design_research_schema_errors(schema_errors)
-      errors.concat(schema_errors.map { |error| "state.schema: #{error}" })
-      errors.concat(validate_intent_shape)
-      REQUIRED_TOP_LEVEL_STATE_KEYS.each { |key| errors << "missing #{key}" unless state.key?(key) }
-      unknown = state.keys - REQUIRED_TOP_LEVEL_STATE_KEYS
-      errors << "unknown top-level keys: #{unknown.join(", ")}" unless unknown.empty?
-      errors << "schema_version must be 1" unless state["schema_version"] == 1
-      current = state.dig("phase", "current")
-      errors << "unknown phase #{current.inspect}" unless PHASES.include?(current)
-      budget = state["budget"] || {}
-      errors << "budget.cost_mode missing" unless budget.key?("cost_mode")
-      errors << "budget.max_design_candidates must be >= 1" if budget["max_design_candidates"].to_i < 1
-      errors << "budget.max_qa_runtime_minutes must be >= 1" if budget["max_qa_runtime_minutes"].to_i < 1
-      errors << "Gate 1B key missing" unless state.dig("gates", "gate_1b_product_content_ia_data_security")
-      validate_accepted_risks(state, errors)
-      errors
-    end
-
-    def validate_intent_shape
-      path = File.join(aiweb_dir, "intent.yaml")
-      return ["intent artifact missing"] unless File.exist?(path)
-      return [] if stub_file?(path)
-
-      intent = YAML.load_file(path)
-      validate_json_schema(intent, load_schema("intent.schema.json")).map { |error| "intent.schema: #{error}" }
-    rescue Psych::SyntaxError => e
-      ["intent.yaml parse failed: #{e.message}"]
-    end
-
-    def validate_qa_result!(result)
-      errors = validate_json_schema(result, load_schema("qa-result.schema.json"))
-      raise UserError.new("QA result schema failed: #{errors.join("; ")}", 1) unless errors.empty?
-      true
-    end
-
-    def load_schema(name)
-      project_schema = name == "qa-result.schema.json" ? File.join(aiweb_dir, "qa", name) : File.join(aiweb_dir, name)
-      path = File.exist?(project_schema) ? project_schema : File.join(templates_dir, name)
-      JSON.parse(File.read(path))
-    rescue JSON::ParserError => e
-      raise UserError.new("cannot parse schema #{name}: #{e.message}", 1)
-    end
-
-
-    def suppress_stale_design_research_schema_errors(errors)
-      allowed = [
-        "$.research is not allowed",
-        "$.adapters.design_research is not allowed",
-        "$.artifacts.design_reference_brief is not allowed",
-        "$.artifacts.design_reference_results is not allowed",
-        "$.artifacts.design_pattern_matrix is not allowed"
-      ]
-      errors.reject { |error| allowed.include?(error) }
-    end
-
-    def validate_json_schema(value, schema, path = "$", root_schema = nil)
-      root_schema ||= schema
-      if schema["$ref"]
-        schema = resolve_schema_ref(root_schema, schema["$ref"])
-      end
-
-      errors = []
-      if schema.key?("const") && value != schema["const"]
-        errors << "#{path} must equal #{schema["const"].inspect}"
-      end
-      if schema.key?("enum") && !schema["enum"].include?(value)
-        errors << "#{path} must be one of #{schema["enum"].map(&:inspect).join(", ")}"
-      end
-      if schema["type"] && !schema_type_match?(value, schema["type"])
-        errors << "#{path} expected #{Array(schema["type"]).join("|")}, got #{value.class}"
-        return errors
-      end
-      if schema.key?("minimum") && value.is_a?(Numeric) && value < schema["minimum"]
-        errors << "#{path} must be >= #{schema["minimum"]}"
-      end
-
-      if value.is_a?(Hash)
-        required = schema["required"] || []
-        required.each do |key|
-          errors << "#{path}.#{key} is required" unless value.key?(key)
-        end
-
-        properties = schema["properties"] || {}
-        properties.each do |key, child_schema|
-          next unless value.key?(key)
-          errors.concat(validate_json_schema(value[key], child_schema, "#{path}.#{key}", root_schema))
-        end
-
-        additional = schema["additionalProperties"]
-        unknown = value.keys - properties.keys
-        if additional == false
-          unknown.each { |key| errors << "#{path}.#{key} is not allowed" }
-        elsif additional.is_a?(Hash)
-          unknown.each do |key|
-            errors.concat(validate_json_schema(value[key], additional, "#{path}.#{key}", root_schema))
-          end
-        end
-      elsif value.is_a?(Array) && schema["items"]
-        value.each_with_index do |item, index|
-          errors.concat(validate_json_schema(item, schema["items"], "#{path}[#{index}]", root_schema))
-        end
-      end
-
-      errors
-    end
-
-    def resolve_schema_ref(root_schema, ref)
-      unless ref.start_with?("#/")
-        raise UserError.new("unsupported schema ref #{ref}", 1)
-      end
-      ref.sub("#/", "").split("/").reduce(root_schema) do |node, part|
-        key = part.gsub("~1", "/").gsub("~0", "~")
-        node.fetch(key)
-      end
-    end
-
-    def schema_type_match?(value, type)
-      Array(type).any? do |kind|
-        case kind
-        when "null" then value.nil?
-        when "object" then value.is_a?(Hash)
-        when "array" then value.is_a?(Array)
-        when "string" then value.is_a?(String)
-        when "integer" then value.is_a?(Integer) && !value.is_a?(TrueClass) && !value.is_a?(FalseClass)
-        when "number" then value.is_a?(Numeric) && !value.is_a?(TrueClass) && !value.is_a?(FalseClass)
-        when "boolean" then value == true || value == false
-        else true
-        end
-      end
-    end
-
-    def phase_blockers(state)
-      blockers = []
-      current = state.dig("phase", "current")
-      artifacts = state["artifacts"] || {}
-      blockers.concat(phase_lock_blockers(state))
-      case current
-      when "phase-0"
-        blockers.concat(missing_artifacts(artifacts, %w[project product intent first_view_contract]))
-      when "phase-0.25"
-        blockers.concat(missing_artifacts(artifacts, %w[quality]))
-        blockers.concat(quality_contract_blockers)
-      when "phase-0.5"
-        blockers << "implementation.stack_profile is required" if blank?(state.dig("implementation", "stack_profile"))
-        blockers.concat(missing_artifacts(artifacts, %w[stack]))
-        blockers << "Gate 1A approval artifact is missing" unless File.exist?(File.join(root, state.dig("gates", "gate_1a_scope_quality_stack", "artifact").to_s))
-        blockers << "Gate 1A approval is pending" unless gate_approved?(state, "gate_1a_scope_quality_stack")
-      when "phase-1"
-        blockers.concat(missing_artifacts(artifacts, %w[product]))
-      when "phase-1.5"
-        blockers.concat(missing_artifacts(artifacts, %w[brand content]))
-      when "phase-2"
-        blockers.concat(missing_artifacts(artifacts, %w[ia]))
-      when "phase-2.5"
-        blockers.concat(missing_artifacts(artifacts, %w[data security]))
-        blockers << "Gate 1B approval artifact is missing" unless File.exist?(File.join(root, state.dig("gates", "gate_1b_product_content_ia_data_security", "artifact").to_s))
-        blockers << "Gate 1B approval is pending" unless gate_approved?(state, "gate_1b_product_content_ia_data_security")
-      when "phase-3"
-        blockers.concat(missing_artifacts(artifacts, %w[design_brief]))
-      when "phase-3.5"
-        count = state.dig("artifacts", "design_candidates", "count").to_i
-        min = state.dig("design_candidates", "min_required").to_i
-        blockers << "design candidates must be >= #{min}; currently #{count}" if count < min
-        blockers.concat(missing_artifacts(artifacts, %w[design_comparison selected_design_candidate]))
-        blockers << "Gate 2 design draft is missing" unless File.exist?(File.join(root, state.dig("design_candidates", "gate_2_draft_path").to_s))
-        selected = state.dig("design_candidates", "selected_candidate")
-        candidate_ids = (state.dig("design_candidates", "candidates") || []).map { |candidate| candidate["id"] }
-        blockers << "selected design candidate is required" if blank?(selected)
-        blockers << "selected design candidate #{selected.inspect} is not in candidates" if !blank?(selected) && !candidate_ids.include?(selected)
-        blockers << "Gate 2 design approval is pending" unless gate_approved?(state, "gate_2_design")
-        blockers.concat(design_research_required_blockers(state))
-      when "phase-4"
-        blockers.concat(missing_artifacts(artifacts, %w[design_system]))
-      when "phase-5"
-        blockers << "root AGENTS.md is missing" unless File.exist?(File.join(root, "AGENTS.md"))
-      when "phase-6"
-        blockers << "implementation.current_task is required for bootstrap" if blank?(state.dig("implementation", "current_task"))
-      when "phase-7"
-        blockers.concat(completed_task_evidence_blockers(state, {
-          "design tokens" => [/design[-_ ]?tokens?/i],
-          "component primitives" => [/component[-_ ]?primitives?/i],
-          "component audit" => [/component[-_ ]?audit/i]
-        }))
-      when "phase-8"
-        blockers << "Gate 3 golden flow artifact is missing" unless File.exist?(File.join(root, state.dig("gates", "gate_3_golden_flow", "artifact").to_s))
-        blockers << "Gate 3 golden flow approval is pending" unless gate_approved?(state, "gate_3_golden_flow")
-      when "phase-9"
-        blockers.concat(completed_task_evidence_blockers(state, {
-          "remaining page/feature completion" => [/phase[-_ ]?9/i, /remaining/i, /page/i, /feature/i]
-        }))
-      when "phase-10"
-        blockers << "QA checklist is required" if blank?(state.dig("qa", "current_checklist")) || !File.exist?(File.join(root, state.dig("qa", "current_checklist").to_s))
-      when "phase-11"
-        blockers.concat(missing_artifacts(artifacts, %w[deploy final_qa_report post_launch_backlog]))
-        blockers << "Gate 4 predeploy approval artifact is missing" unless File.exist?(File.join(root, state.dig("gates", "gate_4_predeploy", "artifact").to_s))
-        blockers << "Gate 4 predeploy approval is pending" unless gate_approved?(state, "gate_4_predeploy")
-        blockers << "deploy.rollback_defined must be true" unless state.dig("deploy", "rollback_defined") == true
-        blockers << "deploy.rollback_dry_run_result is required" if blank?(state.dig("deploy", "rollback_dry_run_result"))
-      end
-      blockers.concat(approved_hash_drift_blockers(state))
-      open_failures = state.dig("qa", "open_failures") || []
-      blocking_open_failures = open_failures.select { |failure| failure["blocking"] != false }
-      blockers << "open QA failures: #{blocking_open_failures.length}" if qa_failures_block_phase?(current) && !blocking_open_failures.empty?
-      blockers
-    end
-
-
-    def ensure_design_research_state_defaults!(state)
-      state["research"] ||= {}
-      state["research"]["design_research"] ||= {}
-      research = state["research"]["design_research"]
-      research["policy"] ||= "opportunistic"
-      research["provider"] ||= "lazyweb"
-      research["latest_run"] = nil unless research.key?("latest_run")
-      research["status"] ||= "missing"
-      research["reference_brief_path"] ||= ".ai-web/design-reference-brief.md"
-      research["pattern_matrix_path"] ||= ".ai-web/research/lazyweb/pattern-matrix.md"
-      research["normalized_results_path"] ||= ".ai-web/research/lazyweb/results.json"
-      research["min_references"] ||= 5
-      research["min_companies"] ||= 3
-      research["last_error"] = nil unless research.key?("last_error")
-      research["skipped_reason"] = nil unless research.key?("skipped_reason")
-
-      state["artifacts"] ||= {}
-      state["artifacts"]["design_reference_brief"] ||= { "path" => research["reference_brief_path"], "status" => "missing" }
-      state["artifacts"]["design_reference_results"] ||= { "path" => research["normalized_results_path"], "status" => "missing" }
-      state["artifacts"]["design_pattern_matrix"] ||= { "path" => research["pattern_matrix_path"], "status" => "missing" }
-
-      state["adapters"] ||= {}
-      state["adapters"]["design_research"] ||= {}
-      adapter = state["adapters"]["design_research"]
-      adapter["provider"] ||= "lazyweb"
-      adapter["transport"] ||= "streamable-http"
-      adapter["endpoint"] ||= "https://www.lazyweb.com/mcp"
-      adapter["network_allowed"] = true if adapter["network_allowed"].nil?
-      adapter["mcp_servers_allowed"] ||= ["lazyweb"]
-      adapter["token_sources"] ||= ["LAZYWEB_MCP_TOKEN", "~/.lazyweb/lazyweb_mcp_token", "~/.codex/lazyweb_mcp_token"]
-      adapter["token_storage_allowed_in_repo"] = false if adapter["token_storage_allowed_in_repo"].nil?
-      adapter["command_timeout_seconds"] ||= 45
-      state
-    end
-
     def design_research_paths(state)
       research = state.dig("research", "design_research") || {}
       {
@@ -3150,395 +2591,6 @@ module Aiweb
 
     def write_yaml(path, data, dry_run)
       write_file(path, YAML.dump(data), dry_run)
-    end
-
-
-    def workbench_state_snapshot
-      return [nil, "Project is not initialized; run aiweb init or aiweb start before exporting the workbench."] unless File.file?(state_path)
-
-      state = YAML.load_file(state_path)
-      return [refresh_state!(state), nil] if state.is_a?(Hash)
-
-      [nil, ".ai-web/state.yaml must be a YAML mapping; repair state before exporting the workbench."]
-    rescue Psych::Exception => e
-      [nil, "Cannot parse .ai-web/state.yaml: #{e.message}"]
-    end
-
-    def workbench_paths
-      {
-        "index_html" => ".ai-web/workbench/index.html",
-        "manifest_json" => ".ai-web/workbench/workbench.json"
-      }
-    end
-
-    def workbench_manifest(state:, status:, export:, dry_run:, blocking_issues:, paths:, serve: nil)
-      {
-        "schema_version" => 1,
-        "status" => status,
-        "export" => export,
-        "dry_run" => dry_run,
-        "generated_at" => now,
-        "root" => root,
-        "paths" => paths,
-        "serve" => serve,
-        "panels" => workbench_panels(state),
-        "controls" => workbench_controls,
-        "guardrails" => [
-          "declarative CLI command descriptors only",
-          "does not directly write .ai-web/state.yaml",
-          "excludes local environment secret files from file-tree and artifact summaries",
-          "local artifact/server only; no install, build, preview, QA, deploy, provider network, or AI calls",
-          "serve mode binds only to localhost or 127.0.0.1 and requires --approved for real process launch"
-        ],
-        "blocking_issues" => blocking_issues
-      }
-    end
-
-    def workbench_serve_host(host)
-      value = host.to_s.strip
-      value.empty? ? "127.0.0.1" : value
-    end
-
-    def workbench_serve_port(port)
-      value = port.to_i
-      value.positive? ? value : 17342
-    end
-
-    def workbench_serve_allowed_host?(host)
-      %w[localhost 127.0.0.1].include?(host.to_s)
-    end
-
-    def workbench_serve_command(host, port)
-      [RbConfig.ruby, "-run", "-e", "httpd", File.join(root, ".ai-web", "workbench"), "-b", host.to_s, "-p", port.to_i.to_s]
-    end
-
-    def workbench_serve_metadata(run_id:, status:, host:, port:, url:, command:, pid:, started_at:, finished_at:, stdout_log:, stderr_log:, metadata_path:, workbench_paths:, dry_run:, approved:, blocking_issues:)
-      {
-        "schema_version" => 1,
-        "run_id" => run_id,
-        "status" => status,
-        "host" => host,
-        "port" => port,
-        "url" => url,
-        "local_only" => true,
-        "command" => command,
-        "cwd" => root,
-        "pid" => pid,
-        "started_at" => started_at,
-        "finished_at" => finished_at,
-        "stdout_log" => stdout_log,
-        "stderr_log" => stderr_log,
-        "metadata_path" => metadata_path,
-        "workbench_paths" => workbench_paths,
-        "dry_run" => dry_run,
-        "approved" => approved,
-        "blocking_issues" => blocking_issues
-      }
-    end
-
-    def workbench_serve_summary(metadata)
-      return nil unless metadata
-
-      metadata.slice("status", "host", "port", "url", "local_only", "pid", "metadata_path", "stdout_log", "stderr_log", "approved", "dry_run", "blocking_issues")
-    end
-
-    def running_workbench_serve_metadata
-      workbench_serve_metadata_files.reverse_each do |path|
-        metadata = read_workbench_serve_metadata(path)
-        next unless metadata
-        next unless metadata["status"] == "running"
-        next unless live_process?(metadata["pid"].to_i)
-
-        metadata["metadata_path"] ||= relative(path)
-        return metadata
-      end
-      nil
-    end
-
-    def workbench_serve_metadata_files
-      Dir.glob(File.join(aiweb_dir, "runs", "workbench-serve-*", "workbench-serve.json")).sort
-    end
-
-    def read_workbench_serve_metadata(path)
-      data = JSON.parse(File.read(path))
-      data.is_a?(Hash) ? data : nil
-    rescue JSON::ParserError, SystemCallError
-      nil
-    end
-
-    def workbench_payload(state:, workbench:, changed_files:, blocking_issues:, next_action:)
-      {
-        "schema_version" => 1,
-        "current_phase" => state&.dig("phase", "current"),
-        "action_taken" => workbench_action_taken(workbench),
-        "changed_files" => changed_files,
-        "blocking_issues" => blocking_issues,
-        "missing_artifacts" => state ? [] : [".ai-web/state.yaml"],
-        "workbench" => workbench,
-        "next_action" => next_action
-      }
-    end
-
-    def workbench_action_taken(workbench)
-      case workbench["status"]
-      when "exported" then "exported workbench UI"
-      when "running" then "started workbench server"
-      when "already_running" then "workbench server already running"
-      when "blocked" then "workbench blocked"
-      else "planned workbench UI"
-      end
-    end
-
-    def workbench_controls
-      WORKBENCH_CONTROLS.map do |id, label, command|
-        {
-          "id" => id,
-          "label" => label,
-          "command" => command,
-          "mode" => "cli_descriptor",
-          "mutates_state" => false,
-          "notes" => "UI may invoke this CLI command through an approved shell/daemon adapter; it must not edit state files directly."
-        }
-      end
-    end
-
-    def workbench_panels(state)
-      WORKBENCH_PANELS.map do |panel|
-        { "id" => panel }.merge(workbench_panel(panel, state))
-      end
-    end
-
-    def workbench_panel(panel, state)
-      case panel
-      when "chat"
-        { "status" => "planned", "summary" => "Local chat/command log placeholder; no network or AI calls are made by this static export." }
-      when "plan_artifacts"
-        { "status" => state ? "ready" : "blocked", "artifacts" => workbench_artifact_summaries(state) }
-      when "design_candidates"
-        { "status" => workbench_design_candidates(state).empty? ? "empty" : "ready", "candidates" => workbench_design_candidates(state) }
-      when "selected_design"
-        workbench_selected_design(state)
-      when "preview"
-        { "status" => latest_preview_metadata ? "ready" : "empty", "latest" => workbench_safe_metadata(latest_preview_metadata) }
-      when "file_tree"
-        { "status" => "ready", "entries" => workbench_file_tree }
-      when "qa_results"
-        { "status" => workbench_latest_json(".ai-web/qa/results/*.json") ? "ready" : "empty", "latest" => workbench_latest_json(".ai-web/qa/results/*.json") }
-      when "visual_critique"
-        path = state&.dig("qa", "latest_visual_critique") || latest_visual_critique_artifact
-        { "status" => path ? "ready" : "empty", "latest" => path ? workbench_json_summary(path) : nil }
-      when "run_timeline"
-        { "status" => "ready", "runs" => workbench_run_timeline }
-      when "verify_loop_status"
-        workbench_verify_loop_status(state)
-      else
-        { "status" => "planned" }
-      end
-    end
-
-    def workbench_artifact_summaries(state)
-      return [] unless state
-
-      (state["artifacts"] || {}).sort.map do |name, meta|
-        meta = {} unless meta.is_a?(Hash)
-        path = meta["path"].to_s
-        next if workbench_excluded_path?(path)
-
-        full = File.join(root, path)
-        {
-          "id" => name,
-          "path" => path,
-          "status" => meta["status"],
-          "exists" => File.exist?(full),
-          "directory" => File.directory?(full),
-          "size_bytes" => File.file?(full) ? File.size(full) : nil
-        }
-      end.compact
-    end
-
-    def workbench_design_candidates(state)
-      refs = Array(state&.dig("design_candidates", "candidates"))
-      refs.map do |candidate|
-        next unless candidate.is_a?(Hash)
-        path = candidate["path"].to_s
-        next if workbench_excluded_path?(path)
-        full = File.join(root, path)
-        candidate.slice("id", "path", "status").merge(
-          "exists" => File.exist?(full),
-          "size_bytes" => File.file?(full) ? File.size(full) : nil
-        )
-      end.compact
-    end
-
-    def workbench_selected_design(state)
-      selected = state&.dig("design_candidates", "selected_candidate")
-      design_md = File.join(aiweb_dir, "DESIGN.md")
-      selected_md = File.join(aiweb_dir, "design-candidates", "selected.md")
-      {
-        "status" => selected.to_s.empty? ? "empty" : "ready",
-        "selected_candidate" => selected,
-        "design_md" => { "path" => ".ai-web/DESIGN.md", "exists" => File.file?(design_md), "substantive" => File.file?(design_md) && !stub_file?(design_md) },
-        "selected_notes" => { "path" => ".ai-web/design-candidates/selected.md", "exists" => File.file?(selected_md) }
-      }
-    end
-
-    def workbench_file_tree
-      entries = []
-      return entries unless File.directory?(root)
-
-      Find.find(root) do |path|
-        rel = relative(path)
-        next if rel.empty?
-        if workbench_excluded_path?(rel)
-          Find.prune if File.directory?(path)
-          next
-        end
-        entries << {
-          "path" => rel,
-          "type" => File.directory?(path) ? "directory" : "file",
-          "size_bytes" => File.file?(path) ? File.size(path) : nil
-        }
-        Find.prune if entries.length >= 200
-      end
-      entries
-    end
-
-    def bounded_observability_limit(limit)
-      value = limit.to_i
-      value = 20 unless value.positive?
-      [[value, 1].max, 50].min
-    end
-
-    def workbench_run_timeline(limit = 20)
-      bounded_limit = bounded_observability_limit(limit)
-      Dir.glob(File.join(aiweb_dir, "runs", "*", "*.json"))
-         .reject { |path| unsafe_env_path?(relative(path)) }
-         .sort_by { |path| [File.mtime(path), path] }
-         .last(bounded_limit)
-         .map do |path|
-        workbench_json_summary(relative(path), allow_runs: true)
-      end.compact
-    end
-
-    def workbench_verify_loop_status(state)
-      implementation = state&.dig("implementation").is_a?(Hash) ? state.dig("implementation") : {}
-      latest_path = implementation["latest_verify_loop"]
-      latest = latest_path && !unsafe_env_path?(latest_path) ? workbench_json_summary(latest_path, allow_runs: true) : nil
-      {
-        "status" => implementation["verify_loop_status"] || (latest ? latest["status"] : "empty"),
-        "latest_verify_loop" => latest_path,
-        "cycle_count" => implementation["verify_loop_cycle_count"],
-        "latest_blocker" => implementation["latest_blocker"],
-        "latest" => latest
-      }
-    end
-
-    def workbench_latest_json(pattern)
-      path = Dir.glob(File.join(root, pattern)).sort.last
-      path ? workbench_json_summary(relative(path)) : nil
-    end
-
-    def workbench_json_summary(path, allow_runs: false)
-      return nil if workbench_excluded_path?(path) && !(allow_runs && path.to_s.start_with?(".ai-web/runs/"))
-
-      full = File.expand_path(path, root)
-      data = JSON.parse(File.read(full))
-      summary = workbench_safe_metadata(data)
-      summary["path"] = relative(full)
-      summary["size_bytes"] = File.size(full) if File.file?(full)
-      summary
-    rescue JSON::ParserError, SystemCallError
-      { "path" => path, "status" => "unreadable" }
-    end
-
-    def workbench_safe_metadata(value)
-      case value
-      when Hash
-        value.each_with_object({}) do |(key, item), memo|
-          key = key.to_s
-          next if key.match?(/secret|token|password|api[_-]?key|credential/i)
-          next if workbench_excluded_path?(item.to_s)
-
-          memo[key] = workbench_safe_metadata(item)
-        end
-      when Array
-        value.first(20).map { |item| workbench_safe_metadata(item) }
-      when String
-        workbench_excluded_path?(value) ? "[excluded]" : value[0, 300]
-      else
-        value
-      end
-    end
-
-    def workbench_excluded_path?(path)
-      value = path.to_s
-      return true if value.empty? && path
-      parts = value.split(/[\\\/]+/)
-      return true if parts.any? { |part| part == ".env" || part.start_with?(".env.") }
-
-      normalized = value.sub(%r{\A\./}, "")
-      WORKBENCH_FILE_TREE_EXCLUDES.any? do |excluded|
-        normalized == excluded || normalized.start_with?(excluded + "/")
-      end
-    end
-
-    def workbench_existing_conflicts(paths, manifest)
-      index_path = File.join(root, paths["index_html"])
-      manifest_path = File.join(root, paths["manifest_json"])
-      conflicts = []
-      conflicts << paths["index_html"] if File.file?(index_path) && File.read(index_path) != workbench_html(manifest)
-      conflicts << paths["manifest_json"] if File.file?(manifest_path) && File.read(manifest_path) != JSON.pretty_generate(manifest) + "\n"
-      conflicts
-    end
-
-    def workbench_html(manifest)
-      panels = manifest.fetch("panels").map do |panel|
-        name = panel["id"].to_s
-        "<section class=\"panel\"><h2>#{CGI.escapeHTML(name.tr("_", " ").split.map(&:capitalize).join(" "))}</h2><pre>#{CGI.escapeHTML(JSON.pretty_generate(panel))}</pre></section>"
-      end.join("\n")
-      controls = manifest.fetch("controls").map do |control|
-        "<li><code>#{CGI.escapeHTML(control["command"])}</code><span>#{CGI.escapeHTML(control["label"])}</span></li>"
-      end.join("\n")
-      <<~HTML
-        <!doctype html>
-        <html lang="en">
-        <head>
-          <meta charset="utf-8">
-          <meta name="viewport" content="width=device-width, initial-scale=1">
-          <title>AI Web Director Workbench</title>
-          <style>
-            :root { color-scheme: light dark; font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
-            body { margin: 0; background: #0f172a; color: #e2e8f0; }
-            header { padding: 32px; border-bottom: 1px solid #334155; background: linear-gradient(135deg, #111827, #1e293b); }
-            main { display: grid; grid-template-columns: minmax(220px, 320px) 1fr; gap: 20px; padding: 24px; }
-            aside, .panel { border: 1px solid #334155; border-radius: 16px; background: #111827; box-shadow: 0 18px 50px rgba(0, 0, 0, 0.25); }
-            aside { padding: 20px; align-self: start; position: sticky; top: 16px; }
-            .grid { display: grid; gap: 20px; }
-            .panel { padding: 20px; overflow: hidden; }
-            h1, h2 { margin: 0 0 12px; }
-            p { color: #94a3b8; }
-            ul { list-style: none; padding: 0; display: grid; gap: 12px; }
-            li { display: grid; gap: 4px; padding: 12px; border: 1px solid #334155; border-radius: 12px; background: #0f172a; }
-            code, pre { white-space: pre-wrap; word-break: break-word; color: #bfdbfe; }
-            pre { max-height: 360px; overflow: auto; padding: 12px; border-radius: 12px; background: #020617; }
-          </style>
-        </head>
-        <body>
-          <header>
-            <h1>AI Web Director Workbench</h1>
-            <p>Status: #{CGI.escapeHTML(manifest["status"])} · Manifest: #{CGI.escapeHTML(manifest.dig("paths", "manifest_json"))}</p>
-          </header>
-          <main>
-            <aside>
-              <h2>Declarative controls</h2>
-              <ul>#{controls}</ul>
-              <p>Controls describe approved CLI commands only. This static UI does not directly mutate .ai-web/state.yaml.</p>
-            </aside>
-            <div class="grid">#{panels}</div>
-          </main>
-        </body>
-        </html>
-      HTML
     end
 
 
@@ -4014,7 +3066,21 @@ module Aiweb
     end
 
     def executable_path(name)
-      ENV.fetch("PATH", "").split(File::PATH_SEPARATOR).map { |dir| File.join(dir, name) }.find { |path| File.executable?(path) && !File.directory?(path) }
+      suffixes = [""]
+      if windows? && File.extname(name.to_s).empty?
+        suffixes.concat(ENV.fetch("PATHEXT", ".COM;.EXE;.BAT;.CMD").split(";"))
+      end
+      ENV.fetch("PATH", "").split(File::PATH_SEPARATOR).flat_map do |dir|
+        suffixes.map { |suffix| File.join(dir, "#{name}#{suffix}") }
+      end.find { |path| File.executable?(path) && !File.directory?(path) }
+    end
+
+    def local_executable_path(path)
+      suffixes = [""]
+      if windows? && File.extname(path.to_s).empty?
+        suffixes.concat(ENV.fetch("PATHEXT", ".COM;.EXE;.BAT;.CMD").split(";"))
+      end
+      suffixes.map { |suffix| "#{path}#{suffix}" }.find { |candidate| File.executable?(candidate) && !File.directory?(candidate) }
     end
 
     def write_json(path, data, dry_run)
@@ -4065,10 +3131,38 @@ module Aiweb
       errors = validate_json_schema(quality, load_schema("quality.schema.json"))
       return errors.map { |error| "quality.schema: #{error}" } unless errors.empty?
 
+      design_blockers = quality_design_phase0_gate_blockers(quality)
+      return design_blockers unless design_blockers.empty?
+
       approved = quality.dig("quality", "approved")
       approved == true ? [] : ["quality contract must be explicitly approved in .ai-web/quality.yaml (quality.approved: true)"]
     rescue Psych::SyntaxError => e
       ["cannot parse quality.yaml: #{e.message}"]
+    end
+
+    def quality_design_phase0_gate_blockers(quality)
+      gate = quality.dig("quality", "design", "phase_0_gate")
+      return ["quality.design.phase_0_gate is required for human-grade design gating"] unless gate.is_a?(Hash)
+
+      blockers = []
+      missing_craft = %w[anti-ai-slop color typography spacing-responsive] - Array(gate["craft_rules_required"]).map(&:to_s)
+      blockers << "quality.design.phase_0_gate missing craft rules: #{missing_craft.join(", ")}" unless missing_craft.empty?
+
+      missing_strategies = %w[editorial-premium conversion-focused trust-minimal] - Array(gate["candidate_strategies"]).map(&:to_s)
+      blockers << "quality.design.phase_0_gate must require differentiated candidate strategies: #{missing_strategies.join(", ")}" unless missing_strategies.empty?
+      blockers << "quality.design.phase_0_gate candidate_strategy_count must be at least 3" if gate["candidate_strategy_count"].to_i < 3
+
+      missing_scores = visual_critique_score_categories - Array(gate["required_score_categories"]).map(&:to_s)
+      blockers << "quality.design.phase_0_gate missing visual score categories: #{missing_scores.join(", ")}" unless missing_scores.empty?
+      blockers << "quality.design.phase_0_gate min_visual_score_axis must be at least 70" if gate["min_visual_score_axis"].to_f < 70
+      blockers << "quality.design.phase_0_gate min_visual_score_average must be at least 78" if gate["min_visual_score_average"].to_f < 78
+
+      missing_widths = [375, 390, 768, 1440] - Array(gate["responsive_first_fold_widths"]).map(&:to_i)
+      blockers << "quality.design.phase_0_gate missing responsive widths: #{missing_widths.join(", ")}" unless missing_widths.empty?
+      blockers << "quality.design.phase_0_gate first_view_alignment_required must be true" unless gate["first_view_alignment_required"] == true
+      blockers << "quality.design.phase_0_gate no_copy_provenance_required must be true" unless gate["no_copy_provenance_required"] == true
+
+      blockers
     end
 
     def completed_task_evidence_blockers(state, requirements)
@@ -5274,7 +4368,8 @@ module Aiweb
       return false if blank?(markdown)
 
       markdown.include?("Design Candidate Comparison") &&
-        markdown.include?("| Candidate | Mood | Layout | Strengths | Tradeoffs |") &&
+        markdown.include?("| Candidate | Strategy | Score | First-view | Proof pattern | CTA flow | Mobile behavior | Risks |") &&
+        %w[editorial-premium conversion-focused trust-minimal].all? { |strategy| markdown.include?(strategy) } &&
         DesignCandidateGenerator::CANDIDATE_IDS.all? { |id| markdown.include?("| #{id} |") }
     end
 
@@ -5452,22 +4547,38 @@ module Aiweb
       MD
     end
 
-    def selected_design_markdown(selected_id)
+    def selected_design_markdown(selected_id, selected_ref: {}, refs: [])
+      strategy = selected_ref["strategy_id"].to_s.empty? ? "unknown" : selected_ref["strategy_id"]
+      score = selected_ref["score"] || "unscored"
+      selected_strength = selected_ref["first_view"].to_s.empty? ? "the selected candidate artifact" : selected_ref["first_view"]
+      selected_cta = selected_ref["cta_flow"].to_s.empty? ? "the approved primary action flow" : selected_ref["cta_flow"]
+      selected_proof = selected_ref["proof_pattern"].to_s.empty? ? "source-backed proof placeholders" : selected_ref["proof_pattern"]
+      rejected = Array(refs).reject { |candidate| candidate["id"] == selected_id }.map do |candidate|
+        "- #{candidate["id"]}: #{candidate["strategy_id"] || "unknown strategy"} scored #{candidate["score"] || "unscored"}; tradeoff retained for comparison but not selected for this route."
+      end
+      rejected = ["- No rejected candidates were recorded; rerun `aiweb design --candidates 3 --force` if comparison evidence is missing."] if rejected.empty?
       <<~MD
         # Selected Design Candidate
 
         Selected candidate: #{selected_id}
         Selected candidate path: .ai-web/design-candidates/#{selected_id}.html
+        Strategy: #{strategy}
+        Score: #{score}
         Selected at: #{now}
 
         ## Decision
-        Use `#{selected_id}` as the review-selected visual direction for prompt and task-packet handoff. DESIGN.md remains the source of truth; `.ai-web/DESIGN.md` remains authoritative for route, tokens, components, visual contract hooks, and implementation constraints.
+        Use `#{selected_id}` as the review-selected visual direction for prompt and task-packet handoff. It best balances #{selected_strength}, #{selected_cta}, and #{selected_proof}. DESIGN.md remains the source of truth; `.ai-web/DESIGN.md` remains authoritative for route, tokens, components, visual contract hooks, and implementation constraints.
 
         ## Why This Candidate
-        TODO: explain why this candidate best satisfies quality.yaml, `.ai-web/DESIGN.md`, first-view obligations, and product goals.
+        - Strategy coverage: #{strategy}.
+        - Rubric score: #{score}.
+        - First-view fit: #{selected_strength}.
+        - Proof pattern: #{selected_proof}.
+        - CTA flow: #{selected_cta}.
+        - Mobile behavior: #{selected_ref["mobile_behavior"] || "preserve approved responsive first-view behavior"}.
 
         ## Rejected Candidates
-        - TODO: summarize tradeoffs from `.ai-web/design-candidates/comparison.md`.
+        #{rejected.join("\n")}
 
         ## Required Adjustments Before Code Generation
         - Keep `data-aiweb-id` hooks from the selected candidate or replace them with equally stable semantic IDs.
@@ -6856,7 +5967,7 @@ module Aiweb
     end
 
     def visual_critique_score_categories
-      %w[hierarchy typography spacing color originality mobile_polish brand_fit intent_fit]
+      %w[first_impression hierarchy typography layout_rhythm spacing color originality mobile_polish brand_fit intent_fit content_credibility interaction_clarity]
     end
 
     def visual_critique_default_score(category, evidence, fixture)
@@ -6881,27 +5992,46 @@ module Aiweb
       explicit = fixture["issues"]
       return explicit.map(&:to_s) if explicit.is_a?(Array) && !explicit.empty?
 
-      low = scores.select { |_category, score| score < 75 }
-      return [] if low.empty?
+      thresholds = visual_critique_gate_thresholds
+      axis_floor = thresholds.fetch("min_axis")
+      average_floor = thresholds.fetch("min_average")
+      low = scores.select { |_category, score| score < axis_floor }
+      average = scores.empty? ? 0.0 : scores.values.sum.to_f / scores.length
+      issues = low.map { |category, score| "#{category.tr("_", " ")} score #{score} is below the visual quality target #{axis_floor.to_i}" }
+      if average < average_floor
+        issues << "average visual score #{format('%.1f', average)} is below the visual quality target #{average_floor.to_i}"
+      end
+      return [] if issues.empty?
 
-      low.map { |category, score| "#{category.tr("_", " ")} score #{score} is below the visual quality target 75" }
+      issues
     end
 
     def visual_critique_patch_plan(scores, issues)
       return [] if issues.empty?
 
-      scores.select { |_category, score| score < 75 }.map do |category, score|
+      axis_floor = visual_critique_gate_thresholds.fetch("min_axis")
+      plan = scores.select { |_category, score| score < axis_floor }.map do |category, score|
         {
           "area" => category,
           "priority" => score < 50 ? "high" : "medium",
           "action" => visual_critique_patch_action(category)
         }
       end
+      if plan.empty?
+        plan << {
+          "area" => "overall_visual_quality",
+          "priority" => "medium",
+          "action" => "raise the average visual quality through stronger first-view composition, contrast, spacing, and source-backed proof"
+        }
+      end
+      plan
     end
 
     def visual_critique_patch_action(category)
       case category
+      when "first_impression" then "tighten first-view composition, value clarity, and brand signal"
       when "hierarchy" then "clarify primary headline, CTA emphasis, and section order"
+      when "layout_rhythm" then "rebalance section rhythm, composition changes, and scan path"
       when "typography" then "tighten type scale, line height, and readable contrast"
       when "spacing" then "normalize section rhythm, gutters, and component padding"
       when "color" then "reduce palette noise and improve semantic color contrast"
@@ -6909,17 +6039,32 @@ module Aiweb
       when "mobile_polish" then "verify responsive spacing, tap targets, and above-the-fold composition"
       when "brand_fit" then "align tone, visual motifs, and UI details with brand attributes"
       when "intent_fit" then "make the page goal and user journey more explicit"
+      when "content_credibility" then "remove unsupported claims and improve source-backed proof hierarchy"
+      when "interaction_clarity" then "clarify CTA states, forms, and navigation affordances"
       else "improve visual quality for #{category.tr("_", " ")}"
       end
     end
 
     def visual_critique_approval(scores, issues)
       minimum = scores.values.min || 0
-      average = scores.values.sum.to_f / scores.length
+      average = scores.empty? ? 0.0 : scores.values.sum.to_f / scores.length
+      thresholds = visual_critique_gate_thresholds
       return "redesign" if minimum < 50 || average < 60
-      return "repair" if minimum < 75 || !issues.empty?
+      return "repair" if minimum < thresholds.fetch("min_axis") || average < thresholds.fetch("min_average") || !issues.empty?
 
       "pass"
+    end
+
+    def visual_critique_gate_thresholds
+      quality = File.file?(quality_path) ? YAML.load_file(quality_path) : {}
+      gate = quality.dig("quality", "design", "phase_0_gate") if quality.is_a?(Hash)
+      gate = {} unless gate.is_a?(Hash)
+      {
+        "min_axis" => [gate["min_visual_score_axis"].to_f, 70.0].max,
+        "min_average" => [gate["min_visual_score_average"].to_f, 75.0].max
+      }
+    rescue Psych::Exception, SystemCallError
+      { "min_axis" => 75.0, "min_average" => 75.0 }
     end
 
     def visual_critique_payload(state:, critique:, changed_files:, planned_changes:, action_taken:, next_action:)

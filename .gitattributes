@@ -1,0 +1,23 @@
+* text=auto
+/.gitattributes text eol=lf
+
+*.rb text eol=lf
+*.ru text eol=lf
+*.rake text eol=lf
+*.md text eol=lf
+*.yml text eol=lf
+*.yaml text eol=lf
+*.json text eol=lf
+*.sh text eol=lf
+*.css text eol=lf
+*.html text eol=lf
+bin/* text eol=lf
+/aiweb text eol=lf
+/웹빌더 text eol=lf
+
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.webp binary
+*.ico binary

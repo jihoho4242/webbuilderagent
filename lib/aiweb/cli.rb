@@ -23,6 +23,12 @@ module Aiweb
     MUTATION_COMMANDS = %w[start init interview run run-cancel run-resume agent-run verify-loop ingest-reference ingest-design next-task qa-checklist qa-report repair advance rollback resolve-blocker snapshot design-brief design-research design-system design-prompt design select-design scaffold setup build preview qa-playwright browser-qa qa-screenshot screenshot-qa qa-a11y a11y-qa qa-lighthouse lighthouse-qa visual-critique visual-polish workbench component-map visual-edit supabase-secret-qa supabase-local-verify github-sync deploy-plan deploy daemon backend].freeze
     RUNTIME_PLAN_COMMANDS = %w[runtime-plan scaffold-status].freeze
     REGISTRY_COMMANDS = %w[design-systems skills craft].freeze
+    WEBBUILDER_COMMANDS = %w[
+      help --help -h version --version
+      start init status runtime-plan scaffold-status setup build preview interview run run-status run-timeline timeline observability-summary summary run-cancel run-resume design-brief design-system design-prompt design select-design scaffold supabase-secret-qa supabase-local-verify ingest-design next-task
+      agent-run verify-loop qa-checklist qa-report repair qa-playwright qa-screenshot qa-a11y qa-lighthouse visual-critique visual-polish advance rollback resolve-blocker snapshot
+      workbench component-map visual-edit github-sync deploy-plan deploy design-systems skills craft intent
+    ].freeze
 
     include Dispatch
     include Output

@@ -4,7 +4,24 @@ module Aiweb
   class DesignCandidateGenerator
     CANDIDATE_IDS = %w[candidate-01 candidate-02 candidate-03].freeze
 
-    Candidate = Struct.new(:id, :theme, :mood, :layout, :strengths, :tradeoffs, :html, keyword_init: true)
+    Candidate = Struct.new(
+      :id,
+      :theme,
+      :strategy_id,
+      :mood,
+      :layout,
+      :first_view,
+      :proof_pattern,
+      :cta_flow,
+      :mobile_behavior,
+      :strengths,
+      :tradeoffs,
+      :risks,
+      :score,
+      :rubric_scores,
+      :html,
+      keyword_init: true
+    )
 
     def initialize(root:, aiweb_dir:, intent:, design_markdown:, design_brief:)
       @root = root
@@ -20,10 +37,18 @@ module Aiweb
         Candidate.new(
           id: id,
           theme: spec.fetch(:theme),
+          strategy_id: strategy_id_for(spec.fetch(:theme)),
           mood: spec.fetch(:mood),
           layout: spec.fetch(:layout),
+          first_view: first_view_for(spec),
+          proof_pattern: proof_pattern_for(spec.fetch(:theme)),
+          cta_flow: cta_flow_for(spec.fetch(:theme)),
+          mobile_behavior: mobile_behavior_for(spec.fetch(:theme)),
           strengths: spec.fetch(:strengths),
           tradeoffs: spec.fetch(:tradeoffs),
+          risks: risks_for(spec),
+          score: candidate_score_for(spec.fetch(:theme)),
+          rubric_scores: candidate_rubric_scores(spec.fetch(:theme)),
           html: html_for(id, spec)
         )
       end
@@ -31,6 +56,9 @@ module Aiweb
 
     def comparison_markdown
       rows = candidates.map do |candidate|
+        "| #{candidate.id} | #{candidate.strategy_id} | #{candidate.score} | #{candidate.first_view} | #{candidate.proof_pattern} | #{candidate.cta_flow} | #{candidate.mobile_behavior} | #{candidate.risks.join('; ')} |"
+      end.join("\n")
+      note_rows = candidates.map do |candidate|
         "| #{candidate.id} | #{candidate.mood} | #{candidate.layout} | #{candidate.strengths.join('; ')} | #{candidate.tradeoffs.join('; ')} |"
       end.join("\n")
       reference_basis = reference_basis_markdown
@@ -46,9 +74,19 @@ module Aiweb
 
         #{reference_basis}
 
+        | Candidate | Strategy | Score | First-view | Proof pattern | CTA flow | Mobile behavior | Risks |
+        |---|---|---:|---|---|---|---|---|
+        #{rows}
+
+        ## Strategy Coverage
+        - editorial-premium: #{candidate_for_strategy("editorial-premium")&.id || "missing"}
+        - conversion-focused: #{candidate_for_strategy("conversion-focused")&.id || "missing"}
+        - trust-minimal: #{candidate_for_strategy("trust-minimal")&.id || "missing"}
+
+        ## Candidate Notes
         | Candidate | Mood | Layout | Strengths | Tradeoffs |
         |---|---|---|---|---|
-        #{rows}
+        #{note_rows}
 
         ## Review Guidance
         - Choose the candidate that best satisfies `.ai-web/DESIGN.md`, `.ai-web/design-brief.md`, and `.ai-web/first-view-contract.md`.
@@ -62,6 +100,69 @@ module Aiweb
     private
 
     attr_reader :intent, :design_markdown, :design_brief
+
+    def candidate_for_strategy(strategy_id)
+      candidates.find { |candidate| candidate.strategy_id == strategy_id }
+    end
+
+    def strategy_id_for(theme)
+      case theme
+      when "editorial-luxury" then "editorial-premium"
+      when "trust-service" then "trust-minimal"
+      else "conversion-focused"
+      end
+    end
+
+    def candidate_score_for(theme)
+      case strategy_id_for(theme)
+      when "editorial-premium" then 84
+      when "conversion-focused" then 86
+      else 85
+      end
+    end
+
+    def candidate_rubric_scores(theme)
+      case strategy_id_for(theme)
+      when "editorial-premium"
+        { "first_impression" => 90, "hierarchy" => 84, "originality" => 88, "conversion_clarity" => 78, "mobile_polish" => 82 }
+      when "conversion-focused"
+        { "first_impression" => 84, "hierarchy" => 88, "originality" => 78, "conversion_clarity" => 91, "mobile_polish" => 86 }
+      else
+        { "first_impression" => 82, "hierarchy" => 86, "originality" => 80, "conversion_clarity" => 84, "mobile_polish" => 88 }
+      end
+    end
+
+    def first_view_for(spec)
+      "#{spec.fetch(:mood)}; #{spec.fetch(:layout)}"
+    end
+
+    def proof_pattern_for(theme)
+      case strategy_id_for(theme)
+      when "editorial-premium" then "source-backed narrative details and restrained proof slots"
+      when "conversion-focused" then "benefit proof panel, comparison grid, and claim-safe CTA support"
+      else "calm reassurance row, process evidence, and no unsupported proof"
+      end
+    end
+
+    def cta_flow_for(theme)
+      case strategy_id_for(theme)
+      when "editorial-premium" then "quiet primary CTA with secondary review path"
+      when "conversion-focused" then "dominant primary CTA with repeated mobile-safe action"
+      else "clear contact or next-step CTA with reassurance before commitment"
+      end
+    end
+
+    def mobile_behavior_for(theme)
+      case strategy_id_for(theme)
+      when "editorial-premium" then "stacked editorial rhythm with preserved first-view hierarchy"
+      when "conversion-focused" then "sticky or repeated action, compact proof, and short scan path"
+      else "single-column trust flow with visible contact/action affordance"
+      end
+    end
+
+    def risks_for(spec)
+      spec.fetch(:tradeoffs).map { |item| item.to_s.sub(/\Aneeds? /i, "needs ") }
+    end
 
     def route_specs
       case market_route

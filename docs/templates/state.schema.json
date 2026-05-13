@@ -1038,6 +1038,7 @@
               "type": "string",
               "enum": [
                 "codex",
+                "openmanus",
                 "claude_code",
                 "openhands",
                 "manual"

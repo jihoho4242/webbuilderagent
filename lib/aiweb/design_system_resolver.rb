@@ -96,9 +96,13 @@ module Aiweb
 
         ## Candidate Generation Contract
         - Candidate prompts must include or reference this `.ai-web/DESIGN.md` file and the PR4 design brief.
+        - Generate exactly three meaningfully different strategies by default: `editorial-premium`, `conversion-focused`, and `trust-minimal` unless a stricter project-specific route overrides them.
+        - Candidates must differ in first-view composition, information hierarchy, typography direction, proof pattern, CTA flow, and mobile behavior; color-only or spacing-only variants fail Gate 2.
         - Candidate images must visibly satisfy the first-view obligations and selected route assets (`#{selected_design_system}`, `#{selected_skill}`).
         - Candidate notes must map visual choices back to token/component decisions in this file.
-        - Reject candidates that look polished but violate craft rules, first-view obligations, mobile usability, or provenance constraints.
+        - Reject candidates that look polished but violate craft rules, first-view obligations, mobile usability, provenance constraints, or anti-slop rules.
+        - Visual critique must score first impression, hierarchy, typography, layout rhythm, spacing, color, originality, mobile polish, brand fit, intent fit, content credibility, and interaction clarity.
+        - Passing quality requires both an average visual threshold and per-axis floors; one weak axis cannot be hidden by a high average.
 
         ## Implementation Contract
         - Implement from `.ai-web/DESIGN.md` before `.ai-web/design-prompt.md` or candidate notes when conflicts exist.

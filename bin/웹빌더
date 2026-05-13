@@ -1,5 +1,4 @@
-#!/usr/bin/env bash
-set -euo pipefail
+#!/usr/bin/env ruby
+# frozen_string_literal: true
 
-DIR="$(cd "$(dirname "$0")" && pwd)"
-exec "$DIR/webbuilder" "$@"
+load File.expand_path("webbuilder", __dir__)

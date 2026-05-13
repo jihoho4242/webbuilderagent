@@ -6,7 +6,7 @@ module Aiweb
       status runtime-plan scaffold-status intent init start interview run design-brief design-research
       design-system design-prompt design select-design ingest-reference scaffold setup build preview qa-playwright
       qa-screenshot qa-a11y qa-lighthouse visual-critique repair visual-polish workbench
-      component-map visual-edit agent-run github-sync deploy-plan deploy qa-checklist qa-report
+      component-map visual-edit agent-run verify-loop github-sync deploy-plan deploy qa-checklist qa-report
       next-task advance rollback resolve-blocker snapshot supabase-secret-qa
     ].freeze
 
@@ -31,7 +31,7 @@ module Aiweb
         "ruby" => RbConfig.ruby,
         "command_timeout_seconds" => command_timeout,
         "allowed_commands" => allowed_commands,
-        "codex_agent_command" => "agent-run",
+        "source_patch_agent_command" => "agent-run",
         "guardrails" => guardrails
       }
     end
@@ -45,8 +45,8 @@ module Aiweb
         "frontend-supplied backend flags (--path, --json, --dry-run, --approved) are rejected inside command args",
         ".env and .env.* path segments are rejected before bridge execution",
         "bridge commands time out instead of blocking the backend indefinitely",
-        "approved agent-run/setup execution requires a matching X-Aiweb-Approval-Token header or the API token when no separate approval token is configured",
-        "agent-run maps to Codex CLI only through aiweb agent-run --agent codex and keeps approval semantics",
+        "approved agent-run/setup/verify-loop execution requires a matching X-Aiweb-Approval-Token header or the API token when no separate approval token is configured",
+        "agent-run maps to aiweb agent-run --agent codex|openmanus and keeps approval semantics",
         "deploy is exposed as dry-run planning only through this bridge"
       ]
     end
@@ -63,7 +63,7 @@ module Aiweb
 
       argv = [RbConfig.ruby, aiweb_bin, "--path", project_path, command]
       argv.concat(args)
-      argv << "--approved" if %w[agent-run setup].include?(command) && approved
+      argv << "--approved" if %w[agent-run setup verify-loop].include?(command) && approved
       argv << "--dry-run" if dry_run
       argv << "--json"
 
@@ -87,11 +87,18 @@ module Aiweb
       }
     end
 
-    def agent_run(project_path:, task: "latest", dry_run: true, approved: false)
+    def agent_run(project_path:, task: "latest", agent: "codex", sandbox: nil, dry_run: true, approved: false)
+      agent_name = agent.to_s.strip.empty? ? "codex" : agent.to_s.strip
+      raise UserError.new("bridge agent-run agent must be codex or openmanus", 5) unless %w[codex openmanus].include?(agent_name)
+      sandbox_name = sandbox.to_s.strip.downcase
+      raise UserError.new("bridge agent-run sandbox must be docker or podman", 5) unless sandbox_name.empty? || %w[docker podman].include?(sandbox_name)
+
+      args = ["--task", task.to_s, "--agent", agent_name]
+      args.concat(["--sandbox", sandbox_name]) unless sandbox_name.empty?
       run(
         project_path: project_path,
         command: "agent-run",
-        args: ["--task", task.to_s, "--agent", "codex"],
+        args: args,
         dry_run: dry_run,
         approved: approved
       )
@@ -111,7 +118,7 @@ module Aiweb
       status = nil
       timed_out = false
 
-      Open3.popen3(*argv, pgroup: true) do |stdin, stdout, stderr, wait_thr|
+      Open3.popen3(*argv, **popen_options) do |stdin, stdout, stderr, wait_thr|
         stdin.close
         stdout_reader = Thread.new { read_stream(stdout) }
         stderr_reader = Thread.new { read_stream(stderr) }
@@ -159,9 +166,22 @@ module Aiweb
     end
 
     def terminate_process_tree(pid)
+      if windows?
+        kill_process(pid, "KILL")
+        return
+      end
+
       kill_process(-pid, "TERM") || kill_process(pid, "TERM")
       sleep 0.2
       kill_process(-pid, "KILL") || kill_process(pid, "KILL")
+    end
+
+    def popen_options
+      windows? ? {} : { pgroup: true }
+    end
+
+    def windows?
+      RbConfig::CONFIG["host_os"].match?(/mswin|mingw|cygwin/i)
     end
 
     def kill_process(target, signal)

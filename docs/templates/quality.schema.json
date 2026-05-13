@@ -40,7 +40,69 @@
           "type": "object"
         },
         "design": {
-          "type": "object"
+          "type": "object",
+          "required": [
+            "phase_0_gate"
+          ],
+          "properties": {
+            "phase_0_gate": {
+              "type": "object",
+              "required": [
+                "design_system_required",
+                "craft_rules_required",
+                "candidate_strategy_count",
+                "candidate_strategies",
+                "required_score_categories",
+                "min_visual_score_average",
+                "min_visual_score_axis",
+                "first_view_alignment_required",
+                "no_copy_provenance_required",
+                "responsive_first_fold_widths"
+              ],
+              "properties": {
+                "design_system_required": { "type": "boolean" },
+                "craft_rules_required": {
+                  "type": "array",
+                  "items": { "type": "string" },
+                  "minItems": 4
+                },
+                "candidate_strategy_count": {
+                  "type": "integer",
+                  "minimum": 3
+                },
+                "candidate_strategies": {
+                  "type": "array",
+                  "items": { "type": "string" },
+                  "minItems": 3,
+                  "uniqueItems": true
+                },
+                "required_score_categories": {
+                  "type": "array",
+                  "items": { "type": "string" },
+                  "minItems": 8,
+                  "uniqueItems": true
+                },
+                "min_visual_score_average": {
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 100
+                },
+                "min_visual_score_axis": {
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 100
+                },
+                "first_view_alignment_required": { "type": "boolean" },
+                "no_copy_provenance_required": { "type": "boolean" },
+                "responsive_first_fold_widths": {
+                  "type": "array",
+                  "items": { "type": "integer", "minimum": 1 },
+                  "minItems": 4,
+                  "uniqueItems": true
+                }
+              }
+            }
+          }
         },
         "content": {
           "type": "object"

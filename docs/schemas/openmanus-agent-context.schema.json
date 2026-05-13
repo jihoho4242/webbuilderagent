@@ -1,0 +1,76 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://aiweb.local/schemas/openmanus-agent-context.schema.json",
+  "title": "OpenManus Agent Context",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "mode",
+    "run_id",
+    "task_path",
+    "workspace_root",
+    "allowed_source_paths",
+    "denied_globs",
+    "base_hashes",
+    "timeout_sec",
+    "permission_profile",
+    "sandbox_mode",
+    "sandbox_required",
+    "forbidden_actions",
+    "expected_output"
+  ],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "mode": { "enum": ["dry_run", "approved"] },
+    "run_id": { "type": "string", "pattern": "^agent-run-[0-9]{8}T[0-9]{6}Z$" },
+    "task_id": { "type": ["string", "null"] },
+    "task_path": { "type": ["string", "null"] },
+    "project_root_hash": { "type": "string" },
+    "workspace_root": { "type": "string" },
+    "design_path": { "type": ["string", "null"] },
+    "selected_candidate_path": { "type": ["string", "null"] },
+    "component_map_path": { "type": ["string", "null"] },
+    "allowed_source_paths": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "pattern": "^(?!/)(?![A-Za-z]:)(?!.*(?:^|/)\\.\\.?(?:/|$))(?!.*(?:^|/)\\.env(?:\\.|/|$)).+"
+      },
+      "uniqueItems": true
+    },
+    "allowed_globs": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "pattern": "^(?!/)(?![A-Za-z]:)(?!.*(?:^|/)\\.\\.?(?:/|$))(?!.*(?:^|/)\\.env(?:\\.|/|$)).+"
+      }
+    },
+    "denied_globs": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "base_hashes": {
+      "type": "object",
+      "additionalProperties": { "type": "string" }
+    },
+    "timeout_sec": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 600
+    },
+    "max_output_bytes": {
+      "type": "integer",
+      "minimum": 1024,
+      "maximum": 1048576
+    },
+    "permission_profile": { "const": "implementation-local-no-network" },
+    "sandbox_mode": { "enum": ["missing", "docker", "podman"] },
+    "sandbox_required": { "const": true },
+    "forbidden_actions": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "expected_output": { "type": "string" }
+  },
+  "additionalProperties": false
+}

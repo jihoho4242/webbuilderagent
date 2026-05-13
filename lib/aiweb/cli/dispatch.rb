@@ -92,13 +92,15 @@ module Aiweb
       when "verify-loop"
         opts = parse_options do |o, options|
           o.on("--max-cycles N") { |v| options[:max_cycles] = parse_positive_integer(v, "--max-cycles") }
+          o.on("--agent AGENT") { |v| options[:agent] = v }
+          o.on("--sandbox SANDBOX") { |v| options[:sandbox] = v }
           o.on("--approved") { options[:approved] = true }
           o.on("--force") { options[:force] = true }
         end
         unless @argv.empty?
           raise UserError.new("verify-loop does not accept extra positional arguments: #{@argv.join(", ")}", EXIT_VALIDATION_FAILED)
         end
-        project.verify_loop(max_cycles: opts[:max_cycles] || 3, approved: !!opts[:approved], force: opts[:force], dry_run: @dry_run)
+        project.verify_loop(max_cycles: opts[:max_cycles] || 3, agent: opts[:agent], sandbox: opts[:sandbox], approved: !!opts[:approved], force: opts[:force], dry_run: @dry_run)
       when "design-brief"
         opts = parse_options do |o, options|
           o.on("--force") { options[:force] = true }
@@ -578,6 +580,7 @@ module Aiweb
       opts = parse_options do |o, options|
         o.on("--task TASK") { |v| options[:task] = v }
         o.on("--agent AGENT") { |v| options[:agent] = v }
+        o.on("--sandbox SANDBOX") { |v| options[:sandbox] = v }
         o.on("--approved") { options[:approved] = true }
       end
       unless @argv.empty?
@@ -588,12 +591,15 @@ module Aiweb
       agent = opts[:agent].to_s.strip
       raise UserError.new("agent-run requires --task TASK", EXIT_UNSAFE_EXTERNAL_ACTION) if task.empty?
       raise UserError.new("agent-run requires --agent AGENT", EXIT_UNSAFE_EXTERNAL_ACTION) if agent.empty?
+      sandbox = opts[:sandbox].to_s.strip.downcase
+      raise UserError.new("agent-run --sandbox is only supported with --agent openmanus", EXIT_VALIDATION_FAILED) if !sandbox.empty? && agent != "openmanus"
+      raise UserError.new("agent-run --sandbox must be docker or podman", EXIT_VALIDATION_FAILED) unless sandbox.empty? || %w[docker podman].include?(sandbox)
 
       approved = !!opts[:approved]
       return agent_run_approval_blocked_payload(task: task, agent: agent) if !@dry_run && !approved
       return agent_run_adapter_unavailable_payload(task: task, agent: agent, approved: approved) unless project.respond_to?(:agent_run)
 
-      call_project_adapter(:agent_run, { task: task, agent: agent, approved: approved, dry_run: @dry_run }).tap do |result|
+      call_project_adapter(:agent_run, { task: task, agent: agent, sandbox: sandbox.empty? ? nil : sandbox, approved: approved, dry_run: @dry_run }).tap do |result|
         normalize_agent_run_payload!(result, task: task, agent: agent, approved: approved, dry_run: @dry_run)
       end
     end
@@ -1055,35 +1061,6 @@ module Aiweb
       }
     end
 
-    def browser_adapter_unavailable_payload(command, opts)
-      adapter = command.sub(/^qa-/, "")
-      target = opts[:url].to_s.strip
-      command_line = ["aiweb", command]
-      command_line.concat(["--url", target]) unless target.empty?
-      command_line.concat(["--task-id", opts[:task_id].to_s]) unless opts[:task_id].to_s.empty?
-      command_line << "--force" if opts[:force]
-      command_line << "--dry-run" if @dry_run
-
-      {
-        "schema_version" => 1,
-        "current_phase" => nil,
-        "action_taken" => "#{adapter} QA unavailable",
-        "changed_files" => [],
-        "blocking_issues" => ["#{command} command surface is reserved, but the #{adapter} QA adapter is not implemented yet."],
-        "missing_artifacts" => [],
-        "browser_qa" => {
-          "schema_version" => 1,
-          "adapter" => adapter,
-          "status" => "blocked",
-          "command" => command_line.join(" "),
-          "url" => target.empty? ? nil : target,
-          "task_id" => opts[:task_id],
-          "dry_run" => @dry_run,
-          "blocking_issues" => ["#{command} command surface is reserved, but the #{adapter} QA adapter is not implemented yet."]
-        },
-        "next_action" => "use aiweb qa-playwright for the implemented local browser QA path until #{command} has a project adapter"
-      }
-    end
-    end
   end
+end
 end

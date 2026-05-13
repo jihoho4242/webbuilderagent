@@ -1,0 +1,120 @@
+# Security Boundary Contract
+
+This contract defines the non-negotiable boundary for local aiweb agent execution.
+
+## Secret Surface
+
+aiweb must block reads, writes, copies, artifact exposure, and prompt inclusion for:
+
+- `.env`, `.env.*`, `.env/**`
+- `.npmrc`, `.yarnrc`, `.pypirc`
+- `.ssh/**`, `.aws/**`
+- `.vercel/**`, `.netlify/**`
+- `*.pem`, `*.key`
+- `id_rsa`, `id_dsa`, `id_ed25519`
+- paths containing `secret`, `secrets`, `credential`, `credentials`, `private-key`, `private_key`
+- browser profiles, cookies, sessions, local storage, and cached credentials
+- provider CLI auth stores
+
+Secret-looking stdout/stderr values must be redacted before writing run evidence.
+
+## Process Environment
+
+OpenManus must run with a clean environment. User shell variables, API keys, provider tokens, package manager credentials, deployment credentials, and inherited agent environment must not be passed through.
+
+Allowed baseline values:
+
+- `PATH`
+- `PATHEXT` on Windows
+- `SYSTEMROOT` / `WINDIR` on Windows when needed for subprocess startup
+- aiweb-specific contract variables
+
+## File Boundary
+
+OpenManus may receive only the workspace staging context. In v1, approved execution is blocked unless `--sandbox docker|podman` lets aiweb construct and validate the container command. aiweb must reject:
+
+- symlinks and hardlinks
+- absolute paths
+- `..` traversal
+- Windows drive paths
+- Windows 8.3 alias-style bypasses
+- case-folding collisions
+- files outside allowed source paths
+
+Context artifacts are read-only by contract. Writable files are limited to copied source files inside the workspace. Runtime prevention of host filesystem reads/writes is provided by the aiweb-generated container command: no network, read-only root filesystem, dropped capabilities, no-new-privileges, bounded resources, restricted tmpfs, and only the staging workspace mounted writable.
+
+## Network Boundary
+
+Implementation, repair, visual polish, and QA diagnosis agent runs are no-network by contract. The Ruby v1 adapter exposes guard environment variables and records evidence, and approved OpenManus execution requires aiweb-managed Docker/Podman `--network none` before it launches.
+
+If a future design research mode needs network, it must use:
+
+- explicit URL allowlist
+- request log
+- no credential-bearing headers
+- no prompt-injected command execution
+- no direct source patching in the same phase
+
+## Browser Boundary
+
+Browser automation for implementation and QA must use an ephemeral browser profile and may navigate only to:
+
+- `localhost`
+- `127.0.0.1`
+- `::1`
+
+External font, image, script, analytics, and navigation requests must be blocked or recorded as denied evidence.
+
+## MCP Boundary
+
+MCP is disabled by contract for OpenManus adapter execution. The v1 adapter does not expose aiweb MCP handles to OpenManus; OS/process-level prevention depends on the configured OpenManus runtime.
+
+If a future mode enables MCP:
+
+- tool discovery must be disabled unless explicitly allowed
+- server allowlist is required
+- every tool call must be logged
+- MCP output must be treated as untrusted evidence, not source authority
+
+## Patch Boundary
+
+Patch validation is structural and hunk-level. Reject:
+
+- rename, delete, binary diff, symlink, and executable bit changes
+- absolute paths and parent traversal
+- package lockfile changes unless explicitly listed
+- deploy/provider config changes unless explicitly listed
+- generated bulk output
+- path casing collisions
+- changed files not listed in `allowed_source_paths`
+
+Validation order:
+
+```text
+snapshot base hashes
+-> run agent in workspace-scoped staging directory
+-> compare workspace copies to base hashes
+-> validate changed file list
+-> validate staged diff
+-> copy back allowed files only
+-> generate git diff
+-> re-check changed file list
+-> record validator evidence
+```
+
+## Required Evidence
+
+Every approved OpenManus run records:
+
+- command argv
+- agent/version/config summary
+- permission profile
+- context hash
+- base hashes
+- patch hash
+- validator result
+- denied file access log
+- network log
+- browser request log
+- redacted stdout/stderr
+- changed source files

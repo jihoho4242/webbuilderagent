@@ -25,5 +25,5 @@ jobs:
         with:
           ruby-version: ${{ matrix.ruby }}
 
-      - name: Run CLI test suite
-        run: ruby test/test_aiweb_cli.rb
+      - name: Run repository checks
+        run: ruby bin/check

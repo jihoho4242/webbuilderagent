@@ -1,12 +1,15 @@
 # frozen_string_literal: true
 
+require_relative "agent_run/openmanus"
+
 module Aiweb
   module ProjectAgentRun
-    def agent_run(task: "latest", agent: "codex", approved: false, dry_run: false)
+    def agent_run(task: "latest", agent: "codex", approved: false, dry_run: false, sandbox: nil)
       assert_initialized!
 
       agent_name = agent.to_s.strip.empty? ? "codex" : agent.to_s.strip
-      raise UserError.new("agent-run currently supports only --agent codex", 1) unless agent_name == "codex"
+      supported_agents = %w[codex openmanus]
+      raise UserError.new("agent-run currently supports --agent codex or --agent openmanus", 1) unless supported_agents.include?(agent_name)
 
       state = load_state
       ensure_implementation_state_defaults!(state)
@@ -17,7 +20,17 @@ module Aiweb
       stdout_path = File.join(run_dir, "stdout.log")
       stderr_path = File.join(run_dir, "stderr.log")
       metadata_path = File.join(run_dir, "agent-run.json")
+      context_path = File.join(run_dir, "agent-run-context.json")
       diff_path = File.join(aiweb_dir, "diffs", "#{run_id}.patch")
+      openmanus_context_path = File.join(run_dir, "openmanus-context.json")
+      openmanus_prompt_path = File.join(run_dir, "openmanus-prompt.md")
+      openmanus_validator_path = File.join(run_dir, "openmanus-validator.json")
+      openmanus_result_path = File.join(run_dir, "openmanus-result.json")
+      openmanus_network_log_path = File.join(run_dir, "network.log")
+      openmanus_browser_log_path = File.join(run_dir, "browser-requests.log")
+      openmanus_denied_access_log_path = File.join(run_dir, "denied-access.log")
+      openmanus_workspace_path = File.join(aiweb_dir, "tmp", "openmanus", run_id)
+      openmanus_sandbox = agent_name == "openmanus" ? agent_run_openmanus_sandbox_name(sandbox) : nil
       blockers = []
 
       task_source = resolve_agent_run_task_source(task, state)
@@ -70,7 +83,13 @@ module Aiweb
       blockers << "agent-run task packet does not identify any safe source targets" if source_paths.empty?
       blockers << "agent-run component map is malformed" if component_map_error
       blockers << "agent-run requires --approved for real command execution" if !dry_run && !approved
-      blockers << "codex executable is missing from PATH" if !dry_run && approved && executable_path(agent_name).nil?
+      blockers.concat(agent_run_source_security_blockers(source_paths))
+      agent_command = agent_run_command(agent_name, sandbox: openmanus_sandbox, workspace_dir: openmanus_workspace_path)
+      if agent_name == "openmanus"
+        blockers.concat(agent_run_openmanus_sandbox_blockers(agent_command, sandbox: openmanus_sandbox, workspace_dir: openmanus_workspace_path)) if !dry_run && approved
+      elsif !dry_run && approved && agent_command.empty?
+        blockers << "#{agent_name} executable is missing from PATH"
+      end
       blockers.concat(agent_run_forbidden_path_blockers(task_text, component_map_text))
       blockers.concat(agent_run_target_allowlist_blockers(target_allowlist, component_map))
 
@@ -78,16 +97,48 @@ module Aiweb
         relative(run_dir),
         relative(stdout_path),
         relative(stderr_path),
+        relative(context_path),
         relative(metadata_path),
         relative(diff_path)
       ]
+      if agent_name == "openmanus"
+        planned_changes.concat([
+          relative(openmanus_workspace_path),
+          relative(openmanus_context_path),
+          relative(openmanus_prompt_path),
+          relative(openmanus_validator_path),
+          relative(openmanus_result_path),
+          relative(openmanus_network_log_path),
+          relative(openmanus_browser_log_path),
+          relative(openmanus_denied_access_log_path)
+        ])
+      end
+
+      openmanus_contract = agent_name == "openmanus" ? agent_run_openmanus_contract(
+        run_id: run_id,
+        run_dir: run_dir,
+        context_path: openmanus_context_path,
+        prompt_path: openmanus_prompt_path,
+        validator_path: openmanus_validator_path,
+        result_path: openmanus_result_path,
+        network_log_path: openmanus_network_log_path,
+        browser_log_path: openmanus_browser_log_path,
+        denied_access_log_path: openmanus_denied_access_log_path,
+        task_source: task_source,
+        context: context,
+        source_paths: source_paths,
+        command: agent_command,
+        dry_run: dry_run,
+        approved: approved
+      ) : nil
 
       metadata = agent_run_run_metadata(
         run_id: run_id,
         agent: agent_name,
         task_source: task_source,
         context: context,
-        command: agent_name,
+        command: agent_command.empty? ? agent_name : agent_command.join(" "),
+        context_path: relative(context_path),
         started_at: nil,
         finished_at: nil,
         exit_code: nil,
@@ -101,6 +152,9 @@ module Aiweb
         blocking_issues: blockers.uniq,
         status: blockers.empty? ? "planned" : "blocked"
       )
+      metadata["mode"] = dry_run ? "dry_run" : (approved ? "approved" : "blocked")
+      metadata["permission_profile"] = "implementation-local-no-network" if agent_name == "openmanus"
+      metadata["openmanus"] = openmanus_contract if openmanus_contract
 
       if dry_run || !blockers.empty?
         return agent_run_payload(
@@ -110,7 +164,31 @@ module Aiweb
           planned_changes: blockers.empty? ? planned_changes : [],
           action_taken: blockers.empty? ? "planned agent run" : "agent run blocked",
           blocking_issues: blockers.uniq,
-          next_action: blockers.empty? ? "rerun aiweb agent-run --task latest --agent codex --approved to execute the local codex patch run" : "add a safe source target to the task packet or component map, then rerun aiweb agent-run --task latest --agent codex --approved"
+          next_action: blockers.empty? ? agent_run_approved_next_action(agent_name, openmanus_sandbox) : "add a safe source target to the task packet or component map, then rerun #{agent_run_approved_command(agent_name, openmanus_sandbox)}"
+        )
+      end
+
+      if agent_name == "openmanus"
+        return agent_run_openmanus(
+          state: state,
+          task_source: task_source,
+          context: context,
+          source_paths: source_paths,
+          run_id: run_id,
+          run_dir: run_dir,
+          stdout_path: stdout_path,
+          stderr_path: stderr_path,
+          metadata_path: metadata_path,
+          diff_path: diff_path,
+          context_path: openmanus_context_path,
+          prompt_path: openmanus_prompt_path,
+          validator_path: openmanus_validator_path,
+          result_path: openmanus_result_path,
+          network_log_path: openmanus_network_log_path,
+          browser_log_path: openmanus_browser_log_path,
+          denied_access_log_path: openmanus_denied_access_log_path,
+          command: agent_command,
+          contract: openmanus_contract
         )
       end
 
@@ -121,6 +199,7 @@ module Aiweb
         changes << relative(run_dir)
         started_at = now
         prompt = agent_run_prompt(context: context)
+        changes << write_json(context_path, context, false)
         before_snapshot = agent_run_workspace_snapshot
         stdout = ""
         stderr = ""
@@ -128,7 +207,7 @@ module Aiweb
         status = "blocked"
 
         stdout, stderr, process_status = Open3.capture3(
-          { "AIWEB_AGENT_RUN_CONTEXT_JSON" => JSON.pretty_generate(context), "AIWEB_AGENT_RUN_ALLOWED_SOURCE_PATHS_JSON" => JSON.generate(source_paths), "AIWEB_AGENT_RUN_TASK_PATH" => task_source["relative"].to_s, "AIWEB_AGENT_RUN_APPROVED" => "1", "AIWEB_AGENT_RUN_DRY_RUN" => "0", "AIWEB_AGENT_RUN_RUN_ID" => run_id, "AIWEB_AGENT_RUN_DIFF_PATH" => relative(diff_path), "AIWEB_AGENT_RUN_METADATA_PATH" => relative(metadata_path) },
+          agent_run_process_env(context_path: context_path, source_paths: source_paths, task_source: task_source, run_id: run_id, diff_path: diff_path, metadata_path: metadata_path),
           agent_name,
           stdin_data: prompt,
           chdir: root
@@ -148,6 +227,7 @@ module Aiweb
         changes << write_file(stdout_path, stdout, false)
         changes << write_file(stderr_path, stderr, false)
         diff_patch, changed_source_files = agent_run_source_diff(source_paths)
+        blocking_issues.concat(agent_run_validate_source_diff(diff_patch, source_paths))
         changes << write_file(diff_path, diff_patch, false)
 
         metadata = agent_run_run_metadata(
@@ -156,6 +236,7 @@ module Aiweb
           task_source: task_source,
           context: context,
           command: agent_name,
+          context_path: relative(context_path),
           started_at: started_at,
           finished_at: now,
           exit_code: exit_code,
@@ -167,7 +248,7 @@ module Aiweb
           dry_run: false,
           approved: true,
           blocking_issues: blocking_issues,
-          status: if status == "failed"
+          status: if status == "failed" || !blocking_issues.empty?
                     "failed"
                   elsif changed_source_files.empty? || diff_patch.to_s.strip.empty?
                     "no_changes"
@@ -198,6 +279,30 @@ module Aiweb
 
 
     private
+
+    def agent_run_command(agent_name, sandbox: nil, workspace_dir: nil)
+      if agent_name == "openmanus"
+        return [] if sandbox.to_s.empty?
+        return agent_run_openmanus_container_command(sandbox, workspace_dir)
+      end
+
+      executable_path(agent_name) ? [agent_name] : []
+    rescue ArgumentError
+      []
+    end
+
+    def agent_run_process_env(context_path:, source_paths:, task_source:, run_id:, diff_path:, metadata_path:)
+      {
+        "AIWEB_AGENT_RUN_CONTEXT_PATH" => context_path,
+        "AIWEB_AGENT_RUN_ALLOWED_SOURCE_PATHS_JSON" => JSON.generate(source_paths),
+        "AIWEB_AGENT_RUN_TASK_PATH" => task_source["relative"].to_s,
+        "AIWEB_AGENT_RUN_APPROVED" => "1",
+        "AIWEB_AGENT_RUN_DRY_RUN" => "0",
+        "AIWEB_AGENT_RUN_RUN_ID" => run_id,
+        "AIWEB_AGENT_RUN_DIFF_PATH" => relative(diff_path),
+        "AIWEB_AGENT_RUN_METADATA_PATH" => relative(metadata_path)
+      }
+    end
 
     def agent_run_default_source_targets
       component_map_source_paths.select { |path| agent_run_source_path_allowed?(path) }
@@ -249,10 +354,32 @@ module Aiweb
         return allowlist_paths.uniq.select { |path| agent_run_source_path_allowed?(path) }.first(10)
       end
 
+      explicit_paths = agent_run_allowed_source_paths_from_task(task_text)
+      unless explicit_paths.empty?
+        return explicit_paths.uniq.select { |path| agent_run_source_path_allowed?(path) }.first(10)
+      end
+
       paths = []
       paths.concat(agent_run_paths_from_text(task_text))
       paths.concat(agent_run_component_map_source_paths(component_map)) if component_map
       paths.uniq.select { |path| agent_run_source_path_allowed?(path) }.first(10)
+    end
+
+    def agent_run_allowed_source_paths_from_task(task_text)
+      collecting = false
+      task_text.to_s.each_line.each_with_object([]) do |line, memo|
+        stripped = line.strip
+        if stripped == "allowed_source_paths:"
+          collecting = true
+          next
+        end
+        next unless collecting
+        break memo if stripped.empty? || stripped.start_with?("## ") || stripped.match?(/\A[A-Za-z_][\w-]*:\s*(?:false|true|\d+|".*"|'.*')?\z/)
+        next unless stripped.start_with?("- ")
+
+        path = stripped.sub(/\A-\s+/, "").sub(/[),.;:]+$/, "").delete("`\"'")
+        memo << agent_run_normalized_relative_path(path)
+      end
     end
 
     def agent_run_target_allowlist(task_text)
@@ -373,7 +500,15 @@ module Aiweb
       return false if secret_looking_path?(normalized)
       return false if normalized.start_with?(".ai-web/")
 
-      File.exist?(File.join(root, normalized))
+      expanded = File.expand_path(normalized, root)
+      root_prefix = File.expand_path(root)
+      comparison_expanded = windows? ? expanded.downcase : expanded
+      comparison_root = windows? ? root_prefix.downcase : root_prefix
+      return false unless comparison_expanded == comparison_root || comparison_expanded.start_with?(comparison_root + File::SEPARATOR)
+      return false if File.symlink?(expanded)
+      return false if File.file?(expanded) && File.lstat(expanded).nlink.to_i > 1
+
+      File.exist?(expanded)
     end
 
     def agent_run_requires_selected_design?(source_paths)
@@ -621,9 +756,69 @@ module Aiweb
           next stdout if status.success? && !stdout.empty?
           next [stdout, stderr].join
         end
+      rescue SystemCallError
+        next agent_run_full_file_diff(path, nil, File.join(root, path))
       end.join
 
       [patch, changed_files.map { |entry| entry["path"] }]
+    end
+
+    def agent_run_full_file_diff(relative_path, before_path, after_path)
+      before_lines = before_path && File.file?(before_path) ? File.readlines(before_path) : []
+      after_lines = after_path && File.file?(after_path) ? File.readlines(after_path) : []
+      return "" if before_lines == after_lines
+
+      old_start = before_lines.empty? ? 0 : 1
+      new_start = after_lines.empty? ? 0 : 1
+      lines = [
+        "diff --git a/#{relative_path} b/#{relative_path}\n",
+        "--- a/#{relative_path}\n",
+        "+++ b/#{relative_path}\n",
+        "@@ -#{old_start},#{before_lines.length} +#{new_start},#{after_lines.length} @@\n"
+      ]
+      before_lines.each { |line| lines << agent_run_diff_body_line("-", line) }
+      after_lines.each { |line| lines << agent_run_diff_body_line("+", line) }
+      lines.join
+    rescue SystemCallError
+      ""
+    end
+
+    def agent_run_diff_body_line(prefix, line)
+      text = line.to_s
+      text = "#{text}\n" unless text.end_with?("\n")
+      "#{prefix}#{text}"
+    end
+
+    def agent_run_validate_source_diff(diff_patch, allowed_source_paths)
+      return [] if diff_patch.to_s.strip.empty?
+
+      allowed = Array(allowed_source_paths).map { |path| agent_run_normalized_relative_path(path) }.to_set
+      blockers = []
+      diff_patch.each_line do |line|
+        case line
+        when /\Adiff --git a\/(.+) b\/(.+)\s*\z/
+          [$1, $2].each do |path|
+            normalized = agent_run_normalized_relative_path(path)
+            blockers << "agent-run diff touches path outside allowed source paths: #{normalized}" unless allowed.include?(normalized)
+            blockers << "agent-run diff contains unsafe path: #{normalized}" if unsafe_secret_surface_path?(normalized) || normalized.split("/").any? { |part| part == ".." }
+          end
+        when /\A(?:rename from|rename to|copy from|copy to|similarity index|dissimilarity index)\b/
+          blockers << "agent-run diff contains rename/copy metadata, which is not allowed"
+        when /\A(?:deleted file mode|new file mode|old mode|new mode)\b/
+          blockers << "agent-run diff contains file mode changes, which are not allowed"
+        when /\A(?:Binary files|GIT binary patch)\b/
+          blockers << "agent-run diff contains binary patch content, which is not allowed"
+        when /\A@@ /
+          blockers << "agent-run diff contains malformed hunk header: #{line.strip}" unless line.match?(/\A@@ -\d+(?:,\d+)? \+\d+(?:,\d+)? @@/)
+        when /\A(?:---|\+\+\+) (.+)\s*\z/
+          marker_path = $1.to_s
+          next if marker_path == "/dev/null"
+
+          normalized = agent_run_normalized_relative_path(marker_path.sub(%r{\A[ab]/}, ""))
+          blockers << "agent-run diff header touches path outside allowed source paths: #{normalized}" unless allowed.include?(normalized)
+        end
+      end
+      blockers.uniq
     end
 
     def agent_run_changed_files(source_paths)
@@ -642,6 +837,8 @@ module Aiweb
         memo << { "path" => path, "untracked" => code == "??" }
       end
       changed.uniq { |entry| entry["path"] }
+    rescue SystemCallError
+      source_paths.map { |path| { "path" => path, "untracked" => false } }
     end
 
     def agent_run_workspace_snapshot
@@ -650,11 +847,11 @@ module Aiweb
         relative_path = relative(path)
         if File.directory?(path)
           parts = relative_path.split("/")
-          Find.prune if parts.any? { |part| self.class::AGENT_RUN_SNAPSHOT_PRUNE_DIRS.include?(part) } || relative_path.start_with?(".ai-web/runs", ".ai-web/diffs", ".ai-web/snapshots")
+          Find.prune if parts.any? { |part| self.class::AGENT_RUN_SNAPSHOT_PRUNE_DIRS.include?(part) } || relative_path.start_with?(".ai-web/runs", ".ai-web/diffs", ".ai-web/snapshots", ".ai-web/tmp")
           next
         end
         next unless File.file?(path) || File.symlink?(path)
-        next if relative_path.start_with?(".ai-web/runs/", ".ai-web/diffs/", ".ai-web/snapshots/")
+        next if relative_path.start_with?(".ai-web/runs/", ".ai-web/diffs/", ".ai-web/snapshots/", ".ai-web/tmp/")
 
         stat = File.lstat(path)
         snapshot[relative_path] = if unsafe_env_path?(relative_path) || secret_looking_path?(relative_path) || File.symlink?(path)
@@ -683,7 +880,7 @@ module Aiweb
       end.join
     end
 
-    def agent_run_run_metadata(run_id:, agent:, task_source:, context:, command:, started_at:, finished_at:, exit_code:, stdout_log:, stderr_log:, metadata_path:, diff_path:, source_paths:, dry_run:, approved:, blocking_issues:, status:, changed_source_files: [])
+    def agent_run_run_metadata(run_id:, agent:, task_source:, context:, command:, context_path:, started_at:, finished_at:, exit_code:, stdout_log:, stderr_log:, metadata_path:, diff_path:, source_paths:, dry_run:, approved:, blocking_issues:, status:, changed_source_files: [])
       {
         "schema_version" => 1,
         "run_id" => run_id,
@@ -709,6 +906,7 @@ module Aiweb
         "exit_code" => exit_code,
         "stdout_log" => stdout_log,
         "stderr_log" => stderr_log,
+        "context_path" => context_path,
         "metadata_path" => metadata_path,
         "diff_path" => diff_path,
         "dry_run" => dry_run,
@@ -729,15 +927,16 @@ module Aiweb
     end
 
     def agent_run_next_action(metadata)
+      agent = metadata["agent"].to_s.empty? ? "codex" : metadata["agent"]
       case metadata["status"]
       when "passed"
         "review #{metadata["metadata_path"]} and #{metadata["diff_path"]} before accepting the patch"
       when "no_changes"
         "inspect #{metadata["stdout_log"]} and #{metadata["stderr_log"]}; rerun with better source hints if the patch should have changed files"
       when "failed"
-        "inspect #{metadata["stdout_log"]} and #{metadata["stderr_log"]}, then repair the source task and rerun aiweb agent-run --task latest --agent codex --approved"
+        "inspect #{metadata["stdout_log"]} and #{metadata["stderr_log"]}, then repair the source task and rerun aiweb agent-run --task latest --agent #{agent} --approved"
       else
-        "add a safe source target to the task packet or component map, then rerun aiweb agent-run --task latest --agent codex --approved"
+        "add a safe source target to the task packet or component map, then rerun aiweb agent-run --task latest --agent #{agent} --approved"
       end
     end
 
