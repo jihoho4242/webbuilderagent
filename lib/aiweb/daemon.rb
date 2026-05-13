@@ -2,6 +2,7 @@
 
 require "json"
 require "digest"
+require "fileutils"
 require "open3"
 require "rbconfig"
 require "securerandom"
@@ -11,6 +12,10 @@ require "timeout"
 require "time"
 require "uri"
 
+require_relative "errors"
 require_relative "daemon/cli_bridge"
+require_relative "daemon/backend_artifacts"
+require_relative "daemon/backend_jobs"
+require_relative "daemon/openmanus_readiness"
 require_relative "daemon/local_backend_app"
 require_relative "daemon/local_backend_daemon"

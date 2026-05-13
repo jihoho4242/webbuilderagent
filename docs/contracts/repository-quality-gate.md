@@ -9,6 +9,7 @@ The gate covers:
 - Ruby syntax for executable Ruby files under `bin/`, `lib/`, and `test/`
 - repository text hygiene for CRLF line endings and merge conflict markers
 - load smoke via `require "aiweb"`
+- warning-enabled load smoke via `ruby -w`
 - full Minitest suite via `ruby -Itest test/all.rb`
 - Git whitespace validation via `git diff --check`
 

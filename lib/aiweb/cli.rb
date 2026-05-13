@@ -4,6 +4,8 @@ require "json"
 require "optparse"
 require "stringio"
 
+require_relative "errors"
+require_relative "project"
 require_relative "registry"
 require_relative "intent_router"
 require_relative "cli/dispatch"

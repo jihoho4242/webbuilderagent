@@ -1,5 +1,6 @@
 # frozen_string_literal: true
 
+require_relative "aiweb/errors"
 require_relative "aiweb/version"
 require_relative "aiweb/profiles"
 require_relative "aiweb/archetypes"

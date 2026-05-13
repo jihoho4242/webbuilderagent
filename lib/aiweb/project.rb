@@ -14,6 +14,7 @@ require "time"
 require "uri"
 require "yaml"
 
+require_relative "errors"
 require_relative "archetypes"
 require_relative "design_brief"
 require_relative "design_candidate_generator"
@@ -30,16 +31,8 @@ require_relative "project/agent_run"
 require_relative "project/engine_run"
 require_relative "project/state"
 require_relative "project/workbench"
+
 module Aiweb
-  class UserError < StandardError
-    attr_reader :exit_code
-
-    def initialize(message, exit_code = 1)
-      super(message)
-      @exit_code = exit_code
-    end
-  end
-
   class Project
     include ProjectRuntimeCommands
     include ProjectVerifyLoop
@@ -3002,7 +2995,7 @@ module Aiweb
                   return nil unless path
 
                   [path, *args]
-      end
+                end
       stdout = ""
       Timeout.timeout(2) do
         stdout, _stderr, status = Open3.capture3(subprocess_path_env, *command, chdir: root, unsetenv_others: true)

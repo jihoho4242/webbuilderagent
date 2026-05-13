@@ -172,10 +172,6 @@ module Aiweb
         unless @argv.empty?
           raise UserError.new("supabase-secret-qa does not accept extra positional arguments: #{@argv.join(", ")}", EXIT_VALIDATION_FAILED)
         end
-        unless project.respond_to?(:supabase_secret_qa)
-          return supabase_secret_qa_adapter_unavailable_payload(opts)
-        end
-
         project.supabase_secret_qa(dry_run: @dry_run, force: opts[:force])
       when "supabase-local-verify"
         opts = parse_options do |o, options|
@@ -184,10 +180,6 @@ module Aiweb
         unless @argv.empty?
           raise UserError.new("supabase-local-verify does not accept extra positional arguments: #{@argv.join(", ")}", EXIT_VALIDATION_FAILED)
         end
-        unless project.respond_to?(:supabase_local_verify)
-          return supabase_local_verify_adapter_unavailable_payload(opts)
-        end
-
         project.supabase_local_verify(dry_run: @dry_run, force: opts[:force])
       when "build"
         parse_options
@@ -208,8 +200,6 @@ module Aiweb
         project.qa_playwright(url: opts[:url], task_id: opts[:task_id], force: opts[:force], dry_run: @dry_run)
       when "qa-screenshot", "screenshot-qa"
         opts = parse_browser_qa_options(command)
-        return qa_screenshot_adapter_unavailable_payload(command, opts) unless project.respond_to?(:qa_screenshot)
-
         project.qa_screenshot(url: opts[:url], task_id: opts[:task_id], force: opts[:force], dry_run: @dry_run)
       when "qa-a11y", "a11y-qa"
         opts = parse_options do |o, options|
@@ -242,10 +232,6 @@ module Aiweb
         unless @argv.empty?
           raise UserError.new("visual-critique does not accept extra positional arguments: #{@argv.join(", ")}", EXIT_VALIDATION_FAILED)
         end
-        unless project.respond_to?(:visual_critique)
-          return visual_critique_adapter_unavailable_payload(opts)
-        end
-
         project.visual_critique(screenshot: opts[:screenshot], metadata: opts[:metadata], from_screenshots: opts[:from_screenshots], task_id: opts[:task_id], force: opts[:force], dry_run: @dry_run)
       when "visual-polish"
         opts = parse_options do |o, options|
@@ -260,10 +246,6 @@ module Aiweb
         unless opts[:repair]
           raise UserError.new("visual-polish requires --repair for the bounded local repair loop", EXIT_VALIDATION_FAILED)
         end
-        unless project.respond_to?(:visual_polish)
-          return visual_polish_adapter_unavailable_payload(opts)
-        end
-
         project.visual_polish(from_critique: opts[:from_critique] || "latest", max_cycles: opts[:max_cycles], force: opts[:force], dry_run: @dry_run)
       when "workbench"
         opts = parse_options do |o, options|
@@ -277,10 +259,6 @@ module Aiweb
         unless @argv.empty?
           raise UserError.new("workbench does not accept extra positional arguments: #{@argv.join(", ")}", EXIT_VALIDATION_FAILED)
         end
-        unless project.respond_to?(:workbench)
-          return workbench_adapter_unavailable_payload(opts)
-        end
-
         project.workbench(export: opts[:export], serve: opts[:serve], approved: !!opts[:approved], host: opts[:host] || "127.0.0.1", port: opts[:port], force: opts[:force], dry_run: @dry_run)
       when "component-map"
         opts = parse_options do |o, options|
@@ -289,10 +267,6 @@ module Aiweb
         unless @argv.empty?
           raise UserError.new("component-map does not accept extra positional arguments: #{@argv.join(", ")}", EXIT_VALIDATION_FAILED)
         end
-        unless project.respond_to?(:component_map)
-          return component_map_adapter_unavailable_payload(opts)
-        end
-
         project.component_map(force: opts[:force], dry_run: @dry_run)
       when "visual-edit"
         opts = parse_options do |o, options|
@@ -310,10 +284,6 @@ module Aiweb
         if opts[:prompt].to_s.strip.empty?
           raise UserError.new("visual-edit requires --prompt TEXT", EXIT_VALIDATION_FAILED)
         end
-        unless project.respond_to?(:visual_edit)
-          return visual_edit_adapter_unavailable_payload(opts)
-        end
-
         project.visual_edit(target: opts[:target], prompt: opts[:prompt], from_map: opts[:from_map] || "latest", force: opts[:force], dry_run: @dry_run)
       when "github-sync"
         opts = parse_options do |o, options|
@@ -599,7 +569,6 @@ module Aiweb
 
       approved = !!opts[:approved]
       return agent_run_approval_blocked_payload(task: task, agent: agent) if !@dry_run && !approved
-      return agent_run_adapter_unavailable_payload(task: task, agent: agent, approved: approved) unless project.respond_to?(:agent_run)
 
       call_project_adapter(:agent_run, { task: task, agent: agent, sandbox: sandbox.empty? ? nil : sandbox, approved: approved, dry_run: @dry_run }).tap do |result|
         normalize_agent_run_payload!(result, task: task, agent: agent, approved: approved, dry_run: @dry_run)
@@ -771,32 +740,6 @@ module Aiweb
       )
     end
 
-    def agent_run_dry_run_payload(task:, agent:, approved:)
-      agent_run_base_payload(
-        status: "dry_run",
-        task: task,
-        agent: agent,
-        approved: approved,
-        dry_run: true,
-        action_taken: "planned agent run",
-        blocking_issues: [],
-        next_action: "rerun aiweb agent-run --task #{task} --agent #{agent} --approved to execute the local codex patch run"
-      )
-    end
-
-    def agent_run_adapter_unavailable_payload(task:, agent:, approved:)
-      agent_run_base_payload(
-        status: "blocked",
-        task: task,
-        agent: agent,
-        approved: approved,
-        dry_run: false,
-        action_taken: "agent run unavailable",
-        blocking_issues: ["agent-run project adapter is not available in this build."],
-        next_action: "integrate the local agent-run project adapter, then rerun the agent run as aiweb agent-run --task #{task} --agent #{agent} --approved"
-      )
-    end
-
     def unsafe_deploy_blocked_payload(target, message)
       {
         "schema_version" => 1,
@@ -843,262 +786,6 @@ module Aiweb
       }
     end
 
-    def supabase_secret_qa_adapter_unavailable_payload(opts)
-      command_line = ["aiweb", "supabase-secret-qa"]
-      command_line << "--force" if opts[:force]
-      command_line << "--dry-run" if @dry_run
-
-      {
-        "schema_version" => 1,
-        "current_phase" => nil,
-        "action_taken" => "supabase secret QA unavailable",
-        "changed_files" => [],
-        "blocking_issues" => ["supabase-secret-qa command surface is reserved, but the project adapter is not implemented yet."],
-        "missing_artifacts" => [],
-        "supabase_secret_qa" => {
-          "schema_version" => 1,
-          "status" => "blocked",
-          "dry_run" => @dry_run,
-          "force" => !!opts[:force],
-          "command" => command_line.join(" "),
-          "planned_artifact_path" => ".ai-web/qa/supabase-secret-qa.json",
-          "scanned_paths" => ["supabase/env.example.template"],
-          "read_dot_env" => false,
-          "guardrails" => ["no .env/.env.* reads", "no .env.example generation", "no external Supabase project creation", "no network/deploy/install/build/preview"],
-          "blocking_issues" => ["supabase-secret-qa project adapter is not available in this build."]
-        },
-        "next_action" => "integrate the local Profile S Supabase secret QA project adapter, then rerun aiweb supabase-secret-qa --dry-run"
-      }
     end
-
-    def supabase_local_verify_adapter_unavailable_payload(opts)
-      command_line = ["aiweb", "supabase-local-verify"]
-      command_line << "--force" if opts[:force]
-      command_line << "--dry-run" if @dry_run
-
-      {
-        "schema_version" => 1,
-        "current_phase" => nil,
-        "action_taken" => "supabase local verification unavailable",
-        "changed_files" => [],
-        "blocking_issues" => ["supabase-local-verify command surface is reserved, but the project adapter is not implemented yet."],
-        "missing_artifacts" => [],
-        "supabase_local_verify" => {
-          "schema_version" => 1,
-          "status" => "blocked",
-          "dry_run" => @dry_run,
-          "force" => !!opts[:force],
-          "command" => command_line.join(" "),
-          "planned_artifact_path" => ".ai-web/qa/supabase-local-verify.json",
-          "read_dot_env" => false,
-          "local_only" => true,
-          "guardrails" => ["no .env/.env.* reads", "no external Supabase project creation", "no network/provider CLI/deploy/install/build/preview"],
-          "blocking_issues" => ["supabase-local-verify project adapter is not available in this build."]
-        },
-        "next_action" => "integrate the local Profile S Supabase verification adapter, then rerun aiweb supabase-local-verify --dry-run"
-      }
-    end
-
-    def visual_critique_adapter_unavailable_payload(opts)
-      command_line = ["aiweb", "visual-critique"]
-      command_line.concat(["--screenshot", opts[:screenshot].to_s]) unless opts[:screenshot].to_s.empty?
-      command_line.concat(["--metadata", opts[:metadata].to_s]) unless opts[:metadata].to_s.empty?
-      command_line.concat(["--task-id", opts[:task_id].to_s]) unless opts[:task_id].to_s.empty?
-      command_line << "--force" if opts[:force]
-      command_line << "--dry-run" if @dry_run
-
-      {
-        "schema_version" => 1,
-        "current_phase" => nil,
-        "action_taken" => "visual critique unavailable",
-        "changed_files" => [],
-        "blocking_issues" => ["visual-critique command surface is reserved, but the project adapter is not implemented yet."],
-        "missing_artifacts" => [],
-        "visual_critique" => {
-          "schema_version" => 1,
-          "status" => "blocked",
-          "approval" => "repair",
-          "command" => command_line.join(" "),
-          "screenshot" => opts[:screenshot],
-          "metadata" => opts[:metadata],
-          "task_id" => opts[:task_id],
-          "dry_run" => @dry_run,
-          "blocking_issues" => ["visual-critique command surface is reserved, but the project adapter is not implemented yet."]
-        },
-        "next_action" => "implement the local visual critique project adapter, then rerun aiweb visual-critique"
-      }
-    end
-
-    def visual_polish_adapter_unavailable_payload(opts)
-      command_line = ["aiweb", "visual-polish", "--repair"]
-      command_line.concat(["--from-critique", (opts[:from_critique] || "latest").to_s])
-      command_line.concat(["--max-cycles", opts[:max_cycles].to_s]) if opts[:max_cycles]
-      command_line << "--force" if opts[:force]
-      command_line << "--dry-run" if @dry_run
-
-      {
-        "schema_version" => 1,
-        "current_phase" => nil,
-        "action_taken" => "visual polish unavailable",
-        "changed_files" => [],
-        "blocking_issues" => ["visual-polish command surface is reserved, but the project adapter is not implemented yet."],
-        "missing_artifacts" => [],
-        "visual_polish" => {
-          "schema_version" => 1,
-          "status" => "blocked",
-          "mode" => "repair",
-          "command" => command_line.join(" "),
-          "from_critique" => opts[:from_critique] || "latest",
-          "max_cycles" => opts[:max_cycles],
-          "dry_run" => @dry_run,
-          "blocking_issues" => ["visual-polish command surface is reserved, but the project adapter is not implemented yet."]
-        },
-        "next_action" => "implement the local visual polish project adapter, then rerun aiweb visual-polish --repair"
-      }
-    end
-
-    def workbench_adapter_unavailable_payload(opts)
-      command_line = ["aiweb", "workbench"]
-      command_line << "--export" if opts[:export]
-      command_line << "--force" if opts[:force]
-      command_line << "--dry-run" if @dry_run
-
-      {
-        "schema_version" => 1,
-        "current_phase" => nil,
-        "action_taken" => "workbench unavailable",
-        "changed_files" => [],
-        "blocking_issues" => ["workbench command surface is reserved, but the project adapter is not implemented yet."],
-        "missing_artifacts" => [],
-        "workbench" => {
-          "schema_version" => 1,
-          "status" => "blocked",
-          "dry_run" => @dry_run,
-          "export" => !!opts[:export],
-          "force" => !!opts[:force],
-          "command" => command_line.join(" "),
-          "panels" => %w[chat plan_artifacts design_candidates selected_design preview file_tree qa_results visual_critique run_timeline],
-          "controls" => declarative_workbench_controls,
-          "planned_index_path" => ".ai-web/workbench/index.html",
-          "planned_manifest_path" => ".ai-web/workbench/workbench.json",
-          "blocking_issues" => ["workbench project adapter is not available in this build."]
-        },
-        "next_action" => "integrate the local workbench project adapter, then rerun aiweb workbench --dry-run"
-      }
-    end
-
-    def declarative_workbench_controls
-      [
-        "aiweb run",
-        "aiweb design",
-        "aiweb build",
-        "aiweb preview",
-        "aiweb qa-playwright",
-        "aiweb visual-critique",
-        "aiweb repair",
-        "aiweb visual-polish",
-        "aiweb component-map",
-        "aiweb visual-edit --target DATA_AIWEB_ID --prompt TEXT"
-      ].map do |command|
-        {
-          "command" => command,
-          "mode" => "descriptor",
-          "writes_state_directly" => false
-        }
-      end
-    end
-
-    def component_map_adapter_unavailable_payload(opts)
-      command_line = ["aiweb", "component-map"]
-      command_line << "--force" if opts[:force]
-      command_line << "--dry-run" if @dry_run
-
-      {
-        "schema_version" => 1,
-        "current_phase" => nil,
-        "action_taken" => "component map unavailable",
-        "changed_files" => [],
-        "blocking_issues" => ["component-map command surface is reserved, but the project adapter is not implemented yet."],
-        "missing_artifacts" => [],
-        "component_map" => {
-          "schema_version" => 1,
-          "status" => "blocked",
-          "dry_run" => @dry_run,
-          "force" => !!opts[:force],
-          "command" => command_line.join(" "),
-          "planned_artifact_path" => ".ai-web/component-map.json",
-          "components" => [],
-          "blocking_issues" => ["component-map project adapter is not available in this build."]
-        },
-        "next_action" => "integrate the local component-map project adapter, then rerun aiweb component-map --dry-run"
-      }
-    end
-
-    def visual_edit_adapter_unavailable_payload(opts)
-      command_line = ["aiweb", "visual-edit", "--target", opts[:target].to_s, "--prompt", "TEXT"]
-      command_line.concat(["--from-map", (opts[:from_map] || "latest").to_s])
-      command_line << "--force" if opts[:force]
-      command_line << "--dry-run" if @dry_run
-
-      {
-        "schema_version" => 1,
-        "current_phase" => nil,
-        "action_taken" => "visual edit unavailable",
-        "changed_files" => [],
-        "blocking_issues" => ["visual-edit command surface is reserved, but the project adapter is not implemented yet."],
-        "missing_artifacts" => [],
-        "visual_edit" => {
-          "schema_version" => 1,
-          "status" => "blocked",
-          "dry_run" => @dry_run,
-          "force" => !!opts[:force],
-          "target" => opts[:target],
-          "prompt_summary" => opts[:prompt].to_s.strip[0, 120],
-          "from_map" => opts[:from_map] || "latest",
-          "command" => command_line.join(" "),
-          "planned_task_path" => ".ai-web/tasks/visual-edit-<timestamp>.md",
-          "planned_record_path" => ".ai-web/visual/visual-edit-<timestamp>.json",
-          "guardrails" => ["selected data-aiweb-id region only", "no source auto-patch", "no build/QA/browser/deploy/network/AI execution", "reject .env/.env.* map paths without reading"],
-          "blocking_issues" => ["visual-edit project adapter is not available in this build."]
-        },
-        "next_action" => "integrate the local visual-edit project adapter, then rerun aiweb visual-edit --target DATA_AIWEB_ID --prompt TEXT --dry-run"
-      }
-    end
-
-    def qa_screenshot_adapter_unavailable_payload(command, opts)
-      target = opts[:url].to_s.strip
-      command_line = ["aiweb", command]
-      command_line.concat(["--url", target]) unless target.empty?
-      command_line.concat(["--task-id", opts[:task_id].to_s]) unless opts[:task_id].to_s.empty?
-      command_line << "--force" if opts[:force]
-      command_line << "--dry-run" if @dry_run
-
-      {
-        "schema_version" => 1,
-        "current_phase" => nil,
-        "action_taken" => "screenshot QA unavailable",
-        "changed_files" => [],
-        "blocking_issues" => ["qa-screenshot command surface is reserved, but the screenshot QA project adapter is not implemented yet."],
-        "missing_artifacts" => [],
-        "screenshot_qa" => {
-          "schema_version" => 1,
-          "status" => "blocked",
-          "command" => command_line.join(" "),
-          "url" => target.empty? ? nil : target,
-          "task_id" => opts[:task_id],
-          "dry_run" => @dry_run,
-          "planned_screenshots" => [
-            ".ai-web/qa/screenshots/mobile-home.png",
-            ".ai-web/qa/screenshots/tablet-home.png",
-            ".ai-web/qa/screenshots/desktop-home.png"
-          ],
-          "planned_metadata_path" => ".ai-web/qa/screenshots/metadata.json",
-          "blocking_issues" => ["qa-screenshot project adapter is not available in this build."]
-        },
-        "next_action" => "integrate the local qa-screenshot project adapter, then rerun aiweb qa-screenshot --url http://127.0.0.1:4321"
-      }
-    end
-
   end
-end
 end

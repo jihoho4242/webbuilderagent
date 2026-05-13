@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "json"
+require "rbconfig"
 
 require_relative "support/test_helper"
 
@@ -106,12 +107,46 @@ class AiwebContractTest < Minitest::Test
     assert_includes ci_workflow, "ruby bin/check"
     assert_includes readme, "ruby bin/check"
     assert_includes contract, "The formal quality gate is `ruby bin/check`"
+    assert_includes contract, "warning-enabled load smoke"
     assert_includes check_script, "ruby -c"
     assert_includes check_script, "repository_text_guard"
     assert_includes check_script, "require 'aiweb'"
+    assert_includes check_script, "\"-w\""
     assert_includes check_script, "test/all.rb"
     assert_includes check_script, "git diff"
     refute File.exist?(File.join(REPO_ROOT, "Gemfile")), "quality gate must remain dependency-free until a Gemfile is explicitly introduced"
+  end
+
+  def test_daemon_entrypoint_can_be_required_without_full_aiweb_loader
+    script = <<~RUBY
+      require "aiweb/daemon"
+      raise "UserError missing" unless defined?(Aiweb::UserError)
+      raise "FileUtils missing" unless defined?(FileUtils)
+      app = Aiweb::LocalBackendApp.new(api_token: "expected-token")
+      status, payload = app.call("GET", "/api/engine", { "x-aiweb-token" => "wrong-token" })
+      raise "unexpected daemon auth response: \#{[status, payload].inspect}" unless status == 403 && payload["error"].include?("API token")
+    RUBY
+
+    assert system(RbConfig.ruby, "-I#{File.join(REPO_ROOT, "lib")}", "-e", script)
+  end
+
+  def test_cli_entrypoint_can_be_required_without_full_aiweb_loader
+    script = <<~RUBY
+      require "aiweb/cli"
+      raise "UserError missing" unless defined?(Aiweb::UserError)
+      raise "Project missing" unless defined?(Aiweb::Project)
+      cli = Aiweb::CLI.new(["status"], Dir.pwd)
+      original_stdout = $stdout
+      begin
+        $stdout = StringIO.new
+        code = cli.run
+      ensure
+        $stdout = original_stdout
+      end
+      raise "unexpected cli status exit: \#{code.inspect}" unless code.is_a?(Integer)
+    RUBY
+
+    assert system(RbConfig.ruby, "-I#{File.join(REPO_ROOT, "lib")}", "-e", script)
   end
 
   def test_repository_line_ending_policy_covers_runtime_sources

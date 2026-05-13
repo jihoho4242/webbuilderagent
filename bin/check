@@ -72,6 +72,7 @@ ruby_syntax_files.sort.each do |path|
 end
 checks << repository_text_guard
 checks << run_check("load smoke", RUBY, "-Ilib", "-e", "require 'aiweb'")
+checks << run_check("warning load smoke", RUBY, "-w", "-Ilib", "-e", "require 'aiweb'")
 checks << run_check("test suite", RUBY, "-Itest", "test/all.rb")
 checks << run_check("git diff --check", "git", "diff", "--check")
 
