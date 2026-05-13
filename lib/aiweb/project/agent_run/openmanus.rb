@@ -26,75 +26,61 @@ module Aiweb
       "missing"
     end
 
-    def agent_run_openmanus_container_command(sandbox, workspace_dir)
+    def agent_run_openmanus_command_env(sandbox:, source_paths:, task_source:, run_id:, diff_path:, metadata_path:)
+      {
+        "AIWEB_AGENT_RUN_CONTEXT_PATH" => "/workspace/_aiweb/openmanus-context.json",
+        "AIWEB_AGENT_RUN_ALLOWED_SOURCE_PATHS_JSON" => JSON.generate(source_paths),
+        "AIWEB_AGENT_RUN_TASK_PATH" => task_source["relative"].to_s,
+        "AIWEB_AGENT_RUN_APPROVED" => "1",
+        "AIWEB_AGENT_RUN_DRY_RUN" => "0",
+        "AIWEB_AGENT_RUN_RUN_ID" => run_id,
+        "AIWEB_AGENT_RUN_DIFF_PATH" => relative(diff_path),
+        "AIWEB_AGENT_RUN_METADATA_PATH" => relative(metadata_path),
+        "AIWEB_OPENMANUS_WORKSPACE" => "/workspace",
+        "AIWEB_OPENMANUS_RESULT_PATH" => "/workspace/_aiweb/openmanus-result.json",
+        "AIWEB_OPENMANUS_SANDBOX" => sandbox.to_s,
+        "HOME" => "/workspace/_aiweb/home",
+        "USERPROFILE" => "/workspace/_aiweb/home",
+        "TMPDIR" => "/workspace/_aiweb/tmp",
+        "TMP" => "/workspace/_aiweb/tmp",
+        "TEMP" => "/workspace/_aiweb/tmp",
+        "AIWEB_NETWORK_ALLOWED" => "0",
+        "AIWEB_MCP_ALLOWED" => "0",
+        "AIWEB_ENV_ACCESS_ALLOWED" => "0"
+      }
+    end
+
+    def agent_run_openmanus_container_command(sandbox, workspace_dir, env)
       provider = sandbox.to_s
-      workspace_host_path = File.expand_path(workspace_dir, root)
       image = ENV["AIWEB_OPENMANUS_IMAGE"].to_s.strip
       image = "openmanus:latest" if image.empty?
-      [
-        provider, "run", "--rm", "-i",
-        "--network", "none",
-        "--read-only",
-        "--cap-drop", "ALL",
-        "--security-opt", "no-new-privileges",
-        "--pids-limit", "256",
-        "--memory", "1g",
-        "--cpus", "1",
-        "--tmpfs", "/tmp:rw,noexec,nosuid,nodev,size=64m",
-        "-v", "#{workspace_host_path}:/workspace:rw",
-        "-w", "/workspace",
-        "-e", "AIWEB_AGENT_RUN_CONTEXT_PATH=/workspace/_aiweb/openmanus-context.json",
-        "-e", "AIWEB_AGENT_RUN_ALLOWED_SOURCE_PATHS_JSON",
-        "-e", "AIWEB_AGENT_RUN_TASK_PATH=",
-        "-e", "AIWEB_AGENT_RUN_APPROVED=1",
-        "-e", "AIWEB_AGENT_RUN_DRY_RUN=0",
-        "-e", "AIWEB_AGENT_RUN_RUN_ID",
-        "-e", "AIWEB_AGENT_RUN_DIFF_PATH",
-        "-e", "AIWEB_AGENT_RUN_METADATA_PATH",
-        "-e", "AIWEB_OPENMANUS_WORKSPACE=/workspace",
-        "-e", "AIWEB_OPENMANUS_RESULT_PATH=/workspace/_aiweb/openmanus-result.json",
-        "-e", "AIWEB_OPENMANUS_SANDBOX=#{provider}",
-        "-e", "HOME=/workspace/_aiweb/home",
-        "-e", "USERPROFILE=/workspace/_aiweb/home",
-        "-e", "TMPDIR=/workspace/_aiweb/tmp",
-        "-e", "TMP=/workspace/_aiweb/tmp",
-        "-e", "TEMP=/workspace/_aiweb/tmp",
-        "-e", "AIWEB_NETWORK_ALLOWED=0",
-        "-e", "AIWEB_MCP_ALLOWED=0",
-        "-e", "AIWEB_ENV_ACCESS_ALLOWED=0",
-        image,
-        "openmanus"
-      ]
+      sandbox_runtime_container_command(
+        provider: provider,
+        workspace_dir: workspace_dir,
+        image: image,
+        env: env,
+        pids_limit: 256,
+        memory: "1g",
+        cpus: "1",
+        tmpfs_size: "64m",
+        command: ["openmanus"]
+      )
     end
 
     def agent_run_openmanus_sandbox_command_blockers(command, sandbox:, workspace_dir:)
-      argv = Array(command).map(&:to_s)
-      blockers = []
-      executable = File.basename(argv.first.to_s).downcase.sub(/\.(?:exe|cmd|bat|com)\z/, "")
-      blockers << "openmanus sandbox command must start with #{sandbox}" unless executable == sandbox.to_s
-      blockers << "openmanus sandbox command must use #{sandbox} run" unless argv[1] == "run"
-      blockers << "openmanus sandbox command must disable networking with --network none" unless agent_run_argv_option_value(argv, "--network") == "none"
-      blockers << "openmanus sandbox command must use --read-only root filesystem" unless argv.include?("--read-only")
-      blockers << "openmanus sandbox command must drop all capabilities" unless agent_run_argv_option_value(argv, "--cap-drop") == "ALL"
-      blockers << "openmanus sandbox command must set no-new-privileges" unless agent_run_argv_option_value(argv, "--security-opt") == "no-new-privileges"
-      blockers << "openmanus sandbox command must set --pids-limit" if agent_run_argv_option_value(argv, "--pids-limit").to_s.empty?
-      blockers << "openmanus sandbox command must set --memory" if agent_run_argv_option_value(argv, "--memory").to_s.empty?
-      blockers << "openmanus sandbox command must set --cpus" if agent_run_argv_option_value(argv, "--cpus").to_s.empty?
-      blockers << "openmanus sandbox command must mount a restricted /tmp tmpfs" unless agent_run_argv_option_value(argv, "--tmpfs").to_s.start_with?("/tmp:")
-      blockers << "openmanus sandbox command must set workdir to /workspace" unless agent_run_argv_option_value(argv, "-w") == "/workspace"
-      blockers.concat(agent_run_openmanus_mount_blockers(argv, workspace_dir))
-      required_envs = {
+      sandbox_runtime_container_command_blockers(
+        command,
+        sandbox: sandbox,
+        workspace_dir: workspace_dir,
+        required_env: {
         "AIWEB_AGENT_RUN_CONTEXT_PATH" => "/workspace/_aiweb/openmanus-context.json",
         "AIWEB_OPENMANUS_RESULT_PATH" => "/workspace/_aiweb/openmanus-result.json",
         "AIWEB_NETWORK_ALLOWED" => "0",
         "AIWEB_MCP_ALLOWED" => "0",
         "AIWEB_ENV_ACCESS_ALLOWED" => "0"
-      }
-      env_values = agent_run_container_env_values(argv)
-      required_envs.each do |key, expected|
-        blockers << "openmanus sandbox command must pass #{key}=#{expected}" unless env_values[key] == expected
-      end
-      blockers.uniq
+        },
+        label: "openmanus sandbox"
+      )
     end
 
     def agent_run_openmanus_mount_blockers(argv, workspace_dir)
@@ -123,7 +109,7 @@ module Aiweb
 
     def agent_run_openmanus_image_blockers(command, sandbox:)
       image = agent_run_openmanus_image(command)
-      _stdout, stderr, status = Open3.capture3(sandbox.to_s, "image", "inspect", image)
+      _stdout, stderr, status = Open3.capture3(subprocess_path_env, sandbox.to_s, "image", "inspect", image, unsetenv_others: true)
       return [] if status.success?
 
       message = "openmanus sandbox image is missing locally: #{image}; build or pull it before approved execution"
@@ -643,10 +629,7 @@ module Aiweb
     end
 
     def agent_run_clean_openmanus_env(context_path:, result_path:, workspace_dir:, source_paths:, run_id:, metadata_path:, diff_path:, sandbox_mode:)
-      allowed = {}
-      %w[PATH PATHEXT SYSTEMROOT WINDIR COMSPEC].each do |key|
-        allowed[key] = ENV[key] if ENV[key]
-      end
+      allowed = subprocess_path_env
       allowed.merge(
         "AIWEB_AGENT_RUN_CONTEXT_PATH" => context_path,
         "AIWEB_AGENT_RUN_ALLOWED_SOURCE_PATHS_JSON" => JSON.generate(source_paths),

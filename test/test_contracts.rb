@@ -44,11 +44,51 @@ class AiwebContractTest < Minitest::Test
     end
   end
 
+  def test_engine_run_schemas_lock_agentic_runtime_contract
+    run = schema("engine-run.schema.json")
+    approval = schema("engine-run-approval.schema.json")
+    event = schema("engine-run-event.schema.json")
+    checkpoint = schema("engine-run-checkpoint.schema.json")
+
+    %w[schema_version run_id status mode agent capability approval_hash events_path checkpoint_path workspace_path opendesign_contract blocking_issues].each do |field|
+      assert_includes run.fetch("required"), field
+    end
+    assert_equal %w[safe_patch agentic_local external_approval], run.dig("properties", "mode", "enum")
+    assert_equal %w[codex openmanus], run.dig("properties", "agent", "enum")
+    assert_includes run.dig("properties", "status", "enum"), "waiting_approval"
+
+    %w[writable_globs allowed_tools forbidden limits copy_back opendesign_contract].each do |field|
+      assert_includes approval.fetch("required"), field
+    end
+    assert_includes approval.dig("properties", "forbidden", "items", "enum"), "host_root_write"
+    assert_equal true, approval.dig("properties", "copy_back", "properties", "requires_validation", "const")
+    assert_equal 10, approval.dig("properties", "limits", "properties", "max_cycles", "maximum")
+
+    assert_includes event.dig("properties", "type", "enum"), "tool.started"
+    assert_includes event.dig("properties", "type", "enum"), "backend.job.queued"
+    assert_includes event.dig("properties", "type", "enum"), "backend.job.finished"
+    assert_includes event.dig("properties", "type", "enum"), "sandbox.preflight.started"
+    assert_includes event.dig("properties", "type", "enum"), "design.contract.loaded"
+    assert_includes event.dig("properties", "type", "enum"), "design.fidelity.checked"
+    assert_includes event.dig("properties", "type", "enum"), "preview.ready"
+    assert_includes event.dig("properties", "type", "enum"), "screenshot.capture.finished"
+    assert_includes event.dig("properties", "type", "enum"), "browser.observation.recorded"
+    assert_includes event.dig("properties", "type", "enum"), "design.review.failed"
+    assert_includes event.dig("properties", "type", "enum"), "design.repair.started"
+    assert_includes event.dig("properties", "type", "enum"), "tool.action.blocked"
+    assert_includes event.dig("properties", "type", "enum"), "checkpoint.saved"
+
+    %w[schema_version run_id status cycle next_step workspace_path safe_changes saved_at opendesign_contract].each do |field|
+      assert_includes checkpoint.fetch("required"), field
+    end
+  end
+
   def test_backend_route_contract_stays_structured_and_local_only
     routes = Aiweb::LocalBackendApp.routes
 
     assert_equal routes.uniq, routes
     assert_includes routes, "POST /api/project/command"
+    assert_includes routes, "GET /api/engine/openmanus-readiness"
     assert_includes routes, "POST /api/codex/agent-run"
     refute routes.any? { |route| route.match?(/shell|exec/i) }, "backend routes must not expose raw shell execution"
 

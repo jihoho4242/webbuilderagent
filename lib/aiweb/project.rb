@@ -24,7 +24,10 @@ require_relative "lazyweb_client"
 require_relative "profiles"
 require_relative "project/runtime_commands"
 require_relative "project/verify_loop"
+require_relative "project/sandbox_runtime"
+require_relative "project/design_fidelity"
 require_relative "project/agent_run"
+require_relative "project/engine_run"
 require_relative "project/state"
 require_relative "project/workbench"
 module Aiweb
@@ -40,7 +43,10 @@ module Aiweb
   class Project
     include ProjectRuntimeCommands
     include ProjectVerifyLoop
+    include ProjectSandboxRuntime
+    include ProjectDesignFidelity
     include ProjectAgentRun
+    include ProjectEngineRun
     include ProjectStateBoundary
     include ProjectWorkbench
     PHASES = %w[
@@ -96,6 +102,7 @@ module Aiweb
       workbench-serve.json
       setup.json
       agent-run.json
+      engine-run.json
       preview.json
     ].freeze
 
@@ -2101,6 +2108,7 @@ module Aiweb
       return nil unless result.is_a?(Hash)
 
       result.dig("verify_loop", "status") ||
+        result.dig("engine_run", "status") ||
         result.dig("deploy", "status") ||
         result.dig("workbench", "serve", "status") ||
         result.dig("workbench", "status") ||
@@ -2183,6 +2191,7 @@ module Aiweb
 
     def run_kind_from_id(run_id, metadata)
       return "verify-loop" if run_id.start_with?("verify-loop-")
+      return "engine-run" if run_id.start_with?("engine-run-")
       return "deploy" if run_id.start_with?("deploy-")
       return "workbench-serve" if run_id.start_with?("workbench-serve-")
       return "setup" if run_id.start_with?("setup-")
@@ -2230,6 +2239,10 @@ module Aiweb
                   ["aiweb", "setup", "--install", "--approved"]
                 when "agent-run"
                   ["aiweb", "agent-run", "--task", "latest", "--agent", metadata["agent"].to_s.empty? ? "codex" : metadata["agent"].to_s, "--approved"]
+                when "engine-run"
+                  command = ["aiweb", "engine-run", "--resume", target.fetch("run_id"), "--agent", metadata["agent"].to_s.empty? ? "codex" : metadata["agent"].to_s, "--mode", metadata["mode"].to_s.empty? ? "agentic_local" : metadata["mode"].to_s, "--approved"]
+                  command += ["--sandbox", metadata["sandbox"].to_s] unless metadata["sandbox"].to_s.empty?
+                  command
                 end
       return nil unless command
 
@@ -2989,10 +3002,10 @@ module Aiweb
                   return nil unless path
 
                   [path, *args]
-                end
+      end
       stdout = ""
       Timeout.timeout(2) do
-        stdout, _stderr, status = Open3.capture3(*command, chdir: root)
+        stdout, _stderr, status = Open3.capture3(subprocess_path_env, *command, chdir: root, unsetenv_others: true)
         return nil unless status.success?
       end
       stdout.lines.first.to_s.strip[0, 120]
@@ -3073,6 +3086,12 @@ module Aiweb
       ENV.fetch("PATH", "").split(File::PATH_SEPARATOR).flat_map do |dir|
         suffixes.map { |suffix| File.join(dir, "#{name}#{suffix}") }
       end.find { |path| File.executable?(path) && !File.directory?(path) }
+    end
+
+    def subprocess_path_env
+      %w[PATH PATHEXT SYSTEMROOT WINDIR COMSPEC].each_with_object({}) do |key, env|
+        env[key] = ENV[key] if ENV[key]
+      end
     end
 
     def local_executable_path(path)

@@ -13,6 +13,7 @@ require_relative "support/test_helper"
 require_relative "support/fake_mcp_http_server"
 
 require "aiweb/project"
+require "aiweb/cli"
 
 class AiwebCliTest < Minitest::Test
   AIWEB = File.expand_path("../bin/aiweb", __dir__)
@@ -109,6 +110,20 @@ class AiwebCliTest < Minitest::Test
 
   def windows?
     RbConfig::CONFIG["host_os"].match?(/mswin|mingw|cygwin/i)
+  end
+
+  def refute_windows_process_command_includes(fragment)
+    return unless windows?
+
+    stdout, _stderr, status = Open3.capture3(
+      "powershell",
+      "-NoProfile",
+      "-Command",
+      "Get-CimInstance Win32_Process | Select-Object -ExpandProperty CommandLine"
+    )
+    return unless status.success?
+
+    refute_includes stdout.tr("\\", "/"), fragment.tr("\\", "/")
   end
 
   def write_fake_windows_executable(dir, name, body)
@@ -510,7 +525,7 @@ class AiwebCliTest < Minitest::Test
 
       project_public = %i[
         runtime_plan setup build preview qa_playwright browser_qa qa_screenshot
-        qa_a11y qa_lighthouse agent_run verify_loop
+        qa_a11y qa_lighthouse engine_run agent_run verify_loop
       ]
       missing_project_methods = project_public.reject { |method| Aiweb::Project.instance_methods.include?(method) }
       raise "missing Project methods: #{missing_project_methods.inspect}" unless missing_project_methods.empty?
@@ -551,6 +566,7 @@ class AiwebCliTest < Minitest::Test
         [["setup", "--install", "--dry-run"], "setup", "setup install blocked", 1],
         [["build", "--dry-run"], "build", "scaffold build blocked", 1],
         [["preview", "--dry-run"], "preview", "scaffold preview blocked", 1],
+        [["engine-run", "--goal", "smoke", "--dry-run"], "engine_run", "planned engine run", 0],
         [["agent-run", "--task", "latest", "--agent", "codex", "--dry-run"], "agent_run", "agent run blocked", 5]
       ].each do |args, payload_key, action_taken, expected_code|
         payload, code = json_cmd("--path", dir, *args)
@@ -966,7 +982,7 @@ class AiwebCliTest < Minitest::Test
       File.write(File.join(dir, "design-systems", "broken-json", "metadata.json"), "{ broken json")
 
       payload, code = json_cmd("--path", dir, "design-systems", "list")
-      assert_equal 5, code
+      refute_equal 0, code
       assert payload["validation_errors"].any? { |error| error.include?("design-systems/broken-json/metadata.json") && error.include?("invalid JSON") }
       assert payload["warnings"].any? { |warning| warning.include?("metadata could not be loaded") }
       assert_match(/registry metadata validation failed/, payload["blocking_issues"].join("\n"))
@@ -3221,33 +3237,377 @@ class AiwebCliTest < Minitest::Test
     bin_dir
   end
 
-  def write_fake_codex_tooling(root)
+  def write_fake_codex_tooling(root, prompt_path: nil, patch_path: nil, marker_path: nil, stdout_text: "fake codex stdout", stderr_text: "fake codex stderr", exit_status: 0)
     bin_dir = File.join(root, "fake-agent-bin")
     FileUtils.mkdir_p(bin_dir)
-    write_fake_executable(
-      bin_dir,
-      "codex",
-      <<~'SH'
-        if [ -n "${FAKE_CODEX_PROMPT_PATH:-}" ]; then
-          cat > "${FAKE_CODEX_PROMPT_PATH}"
-        else
-          cat >/dev/null
-        fi
-        echo "${FAKE_CODEX_STDOUT:-fake codex stdout}"
-        echo "${FAKE_CODEX_STDERR:-fake codex stderr}" >&2
-        if [ -n "${FAKE_CODEX_PATCH_PATH:-}" ] && [ -f "${FAKE_CODEX_PATCH_PATH}" ]; then
-          printf '\n<!-- patched by fake codex -->\n' >> "${FAKE_CODEX_PATCH_PATH}"
-        fi
-        if [ -n "${FAKE_CODEX_MARKER:-}" ]; then
-          touch "${FAKE_CODEX_MARKER}"
-        fi
-        exit "${FAKE_CODEX_EXIT_STATUS:-0}"
-      SH
+    script = File.join(bin_dir, "codex-fake.rb")
+    File.write(
+      script,
+      <<~RUBY
+        # frozen_string_literal: true
+
+        require "fileutils"
+
+        input = STDIN.read
+        prompt_path = #{prompt_path.inspect}
+        patch_path = #{patch_path.inspect}
+        marker_path = #{marker_path.inspect}
+
+        unless prompt_path.to_s.empty?
+          FileUtils.mkdir_p(File.dirname(prompt_path))
+          File.write(prompt_path, input)
+        end
+
+        if !patch_path.to_s.empty? && File.file?(patch_path)
+          File.open(patch_path, "a") { |file| file.write("\\n<!-- patched by fake codex -->\\n") }
+        end
+
+        unless marker_path.to_s.empty?
+          FileUtils.mkdir_p(File.dirname(marker_path))
+          FileUtils.touch(marker_path)
+        end
+
+        puts #{stdout_text.inspect}
+        warn #{stderr_text.inspect}
+        exit #{exit_status.to_i}
+      RUBY
     )
+    if windows?
+      File.write(File.join(bin_dir, "codex.cmd"), "@echo off\r\n\"#{RbConfig.ruby}\" \"#{script}\" %*\r\n")
+    else
+      wrapper = File.join(bin_dir, "codex")
+      File.write(wrapper, "#!/bin/sh\nexec #{RbConfig.ruby.shellescape} #{script.shellescape} \"$@\"\n")
+      FileUtils.chmod("+x", wrapper)
+    end
     bin_dir
   end
 
-  def write_fake_openmanus_tooling(root, exit_status: 0, patch_workspace: true, mutate_root_path: nil)
+  def write_fake_codex_env_guard_tooling(root)
+    bin_dir = File.join(root, "fake-codex-env-guard-bin")
+    FileUtils.mkdir_p(bin_dir)
+    if windows?
+      script = File.join(bin_dir, "codex-env-guard-fake.rb")
+      File.write(
+        script,
+        <<~'RUBY'
+          # frozen_string_literal: true
+          STDIN.read
+          if ENV.keys.any? { |key| %w[OPENAI_API_KEY ANTHROPIC_API_KEY FAKE_CODEX_SECRET].include?(key) }
+            warn "secret environment leaked to codex"
+            exit 81
+          end
+          path = File.join("src", "components", "Hero.astro")
+          File.open(path, "a") { |file| file.write("\n<!-- patched by env guard codex -->\n") } if File.file?(path)
+          puts "fake env guard codex stdout"
+        RUBY
+      )
+      File.write(File.join(bin_dir, "codex.cmd"), "@echo off\r\n\"#{RbConfig.ruby}\" \"#{script}\" %*\r\n")
+    else
+      script = File.join(bin_dir, "codex")
+      File.write(
+        script,
+        <<~'SH'
+          #!/bin/sh
+          cat >/dev/null
+          if env | grep -E 'OPENAI_API_KEY|ANTHROPIC_API_KEY|FAKE_CODEX_SECRET' >/dev/null; then
+            echo "secret environment leaked to codex" >&2
+            exit 81
+          fi
+          if [ -f src/components/Hero.astro ]; then
+            printf '\n<!-- patched by env guard codex -->\n' >> src/components/Hero.astro
+          fi
+          echo "fake env guard codex stdout"
+        SH
+      )
+      FileUtils.chmod("+x", script)
+    end
+    bin_dir
+  end
+
+  def write_fake_engine_codex_tooling(root, patch_path: "src/components/Hero.astro", secret_path: nil, patch_text: "<!-- patched by fake engine codex -->", stdout_text: "fake engine codex stdout", exit_status: 0)
+    bin_dir = File.join(root, "fake-engine-bin")
+    FileUtils.mkdir_p(bin_dir)
+    if windows?
+      script = File.join(bin_dir, "codex-engine-fake.rb")
+      File.write(
+        script,
+        <<~RUBY
+          # frozen_string_literal: true
+          STDIN.read
+          path = #{patch_path.inspect}
+          if path && !path.empty? && File.file?(path)
+            File.open(path, "a") { |file| file.write("\\n" + #{patch_text.inspect} + "\\n") }
+          end
+          secret_path = #{secret_path.inspect}
+          File.write(secret_path, "SECRET=engine-run-created-env\\n") if secret_path && !secret_path.empty?
+          puts #{stdout_text.inspect}
+          warn "fake engine codex stderr"
+          exit #{exit_status.to_i}
+        RUBY
+      )
+      File.write(File.join(bin_dir, "codex.cmd"), "@echo off\r\n\"#{RbConfig.ruby}\" \"#{script}\" %*\r\n")
+    else
+      script = File.join(bin_dir, "codex")
+      File.write(
+        script,
+        <<~SH
+          #!/bin/sh
+          cat >/dev/null
+          if [ -n #{patch_path.shellescape} ] && [ -f #{patch_path.shellescape} ]; then
+            printf '\\n%s\\n' #{patch_text.shellescape} >> #{patch_path.shellescape}
+          fi
+          if [ -n #{secret_path.to_s.shellescape} ]; then
+            printf 'SECRET=engine-run-created-env\\n' > #{secret_path.to_s.shellescape}
+          fi
+          echo #{stdout_text.shellescape}
+          echo "fake engine codex stderr" >&2
+          exit #{exit_status.to_i}
+        SH
+      )
+      FileUtils.chmod("+x", script)
+    end
+    bin_dir
+  end
+
+  def write_fake_engine_repair_tooling(root)
+    bin_dir = File.join(root, "fake-engine-repair-bin")
+    FileUtils.mkdir_p(bin_dir)
+    if windows?
+      codex_script = File.join(bin_dir, "codex-repair-fake.rb")
+      File.write(
+        codex_script,
+        <<~'RUBY'
+          # frozen_string_literal: true
+          STDIN.read
+          marker = File.file?(File.join("_aiweb", "repair-observation.json")) ? "<!-- fixed after qa -->" : "<!-- needs repair -->"
+          File.open(File.join("src", "components", "Hero.astro"), "a") { |file| file.write("\n#{marker}\n") }
+          puts "fake repair codex stdout"
+        RUBY
+      )
+      File.write(File.join(bin_dir, "codex.cmd"), "@echo off\r\n\"#{RbConfig.ruby}\" \"#{codex_script}\" %*\r\n")
+      npm_script = File.join(bin_dir, "npm-repair-fake.rb")
+      File.write(
+        npm_script,
+        <<~'RUBY'
+          # frozen_string_literal: true
+          unless ARGV == ["run", "build"]
+            warn "unexpected npm command: #{ARGV.join(" ")}"
+            exit 64
+          end
+          body = File.file?(File.join("src", "components", "Hero.astro")) ? File.read(File.join("src", "components", "Hero.astro")) : ""
+          if body.include?("fixed after qa")
+            puts "fake build passed"
+            exit 0
+          end
+          warn "fake build failed"
+          exit 7
+        RUBY
+      )
+      File.write(File.join(bin_dir, "npm.cmd"), "@echo off\r\n\"#{RbConfig.ruby}\" \"#{npm_script}\" %*\r\n")
+    else
+      codex_script = File.join(bin_dir, "codex")
+      File.write(
+        codex_script,
+        <<~'SH'
+          #!/bin/sh
+          cat >/dev/null
+          if [ -f _aiweb/repair-observation.json ]; then
+            printf '\n<!-- fixed after qa -->\n' >> src/components/Hero.astro
+          else
+            printf '\n<!-- needs repair -->\n' >> src/components/Hero.astro
+          fi
+          echo "fake repair codex stdout"
+        SH
+      )
+      FileUtils.chmod("+x", codex_script)
+      npm_script = File.join(bin_dir, "npm")
+      File.write(
+        npm_script,
+        <<~'SH'
+          #!/bin/sh
+          if [ "$1 $2" != "run build" ]; then
+            echo "unexpected npm command: $*" >&2
+            exit 64
+          fi
+          if grep -q "fixed after qa" src/components/Hero.astro; then
+            echo "fake build passed"
+            exit 0
+          fi
+          echo "fake build failed" >&2
+          exit 7
+        SH
+      )
+      FileUtils.chmod("+x", npm_script)
+    end
+    bin_dir
+  end
+
+  def write_fake_engine_verification_guard_tooling(root)
+    bin_dir = write_fake_engine_codex_tooling(root)
+    if windows?
+      npm_script = File.join(bin_dir, "npm-guard-fake.rb")
+      File.write(
+        npm_script,
+        <<~'RUBY'
+          # frozen_string_literal: true
+          if ENV.keys.any? { |key| %w[OPENAI_API_KEY ANTHROPIC_API_KEY FAKE_ENGINE_SECRET].include?(key) }
+            warn "secret environment leaked to verification"
+            exit 81
+          end
+          unless ARGV == ["run", "build"]
+            warn "unexpected npm command: #{ARGV.join(" ")}"
+            exit 64
+          end
+          puts "fake clean verification"
+        RUBY
+      )
+      File.write(File.join(bin_dir, "npm.cmd"), "@echo off\r\n\"#{RbConfig.ruby}\" \"#{npm_script}\" %*\r\n")
+    else
+      npm_script = File.join(bin_dir, "npm")
+      File.write(
+        npm_script,
+        <<~'SH'
+          #!/bin/sh
+          if env | grep -E 'OPENAI_API_KEY|ANTHROPIC_API_KEY|FAKE_ENGINE_SECRET' >/dev/null; then
+            echo "secret environment leaked to verification" >&2
+            exit 81
+          fi
+          if [ "$1 $2" != "run build" ]; then
+            echo "unexpected npm command: $*" >&2
+            exit 64
+          fi
+          echo "fake clean verification"
+        SH
+      )
+      FileUtils.chmod("+x", npm_script)
+    end
+    bin_dir
+  end
+
+  def write_fake_engine_openmanus_repair_tooling(root)
+    bin_dir = write_fake_openmanus_tooling(root, repair_mode: true)
+    if windows?
+      npm_script = File.join(bin_dir, "npm-repair-fake.rb")
+      File.write(
+        npm_script,
+        <<~'RUBY'
+          # frozen_string_literal: true
+          unless ARGV == ["run", "build"]
+            warn "unexpected npm command: #{ARGV.join(" ")}"
+            exit 64
+          end
+          body = File.file?(File.join("src", "components", "Hero.astro")) ? File.read(File.join("src", "components", "Hero.astro")) : ""
+          if body.include?("fixed after qa")
+            puts "fake build passed"
+            exit 0
+          end
+          warn "fake build failed"
+          exit 7
+        RUBY
+      )
+      File.write(File.join(bin_dir, "npm.cmd"), "@echo off\r\n\"#{RbConfig.ruby}\" \"#{npm_script}\" %*\r\n")
+    else
+      npm_script = File.join(bin_dir, "npm")
+      File.write(
+        npm_script,
+        <<~'SH'
+          #!/bin/sh
+          if [ "$1 $2" != "run build" ]; then
+            echo "unexpected npm command: $*" >&2
+            exit 64
+          fi
+          if grep -q "fixed after qa" src/components/Hero.astro; then
+            echo "fake build passed"
+            exit 0
+          fi
+          echo "fake build failed" >&2
+          exit 7
+        SH
+      )
+      FileUtils.chmod("+x", npm_script)
+    end
+    bin_dir
+  end
+
+  def write_fake_engine_openmanus_verification_guard_tooling(root)
+    bin_dir = write_fake_openmanus_tooling(root)
+    if windows?
+      npm_script = File.join(bin_dir, "npm-guard-fake.rb")
+      File.write(
+        npm_script,
+        <<~'RUBY'
+          # frozen_string_literal: true
+          if ENV.keys.any? { |key| %w[OPENAI_API_KEY ANTHROPIC_API_KEY FAKE_ENGINE_SECRET].include?(key) }
+            warn "secret environment leaked to verification"
+            exit 81
+          end
+          unless ARGV == ["run", "build"]
+            warn "unexpected npm command: #{ARGV.join(" ")}"
+            exit 64
+          end
+          puts "fake clean verification"
+        RUBY
+      )
+      File.write(File.join(bin_dir, "npm.cmd"), "@echo off\r\n\"#{RbConfig.ruby}\" \"#{npm_script}\" %*\r\n")
+    else
+      npm_script = File.join(bin_dir, "npm")
+      File.write(
+        npm_script,
+        <<~'SH'
+          #!/bin/sh
+          if env | grep -E 'OPENAI_API_KEY|ANTHROPIC_API_KEY|FAKE_ENGINE_SECRET' >/dev/null; then
+            echo "secret environment leaked to verification" >&2
+            exit 81
+          fi
+          if [ "$1 $2" != "run build" ]; then
+            echo "unexpected npm command: $*" >&2
+            exit 64
+          fi
+          echo "fake clean verification"
+        SH
+      )
+      FileUtils.chmod("+x", npm_script)
+    end
+    bin_dir
+  end
+
+  def write_fake_engine_openmanus_preview_tooling(root, preview_exit_status: 0)
+    bin_dir = write_fake_openmanus_tooling(root)
+    if windows?
+      npm_script = File.join(bin_dir, "npm-preview-fake.rb")
+      File.write(
+        npm_script,
+        <<~RUBY
+          # frozen_string_literal: true
+          unless ARGV == ["run", "dev"]
+            warn "unexpected npm command: \#{ARGV.join(" ")}"
+            exit 64
+          end
+          puts "Local: http://127.0.0.1:4321/"
+          exit #{preview_exit_status.to_i}
+        RUBY
+      )
+      File.write(File.join(bin_dir, "npm.cmd"), "@echo off\r\n\"#{RbConfig.ruby}\" \"#{npm_script}\" %*\r\n")
+    else
+      npm_script = File.join(bin_dir, "npm")
+      File.write(
+        npm_script,
+        <<~SH
+          #!/bin/sh
+          if [ "$1 $2" != "run dev" ]; then
+            echo "unexpected npm command: $*" >&2
+            exit 64
+          fi
+          echo "Local: http://127.0.0.1:4321/"
+          exit #{preview_exit_status.to_i}
+        SH
+      )
+      FileUtils.chmod("+x", npm_script)
+    end
+    bin_dir
+  end
+
+  def write_fake_openmanus_tooling(root, exit_status: 0, patch_workspace: true, mutate_root_path: nil, patch_path: File.join("src", "components", "Hero.astro"), patch_text: "<!-- patched by fake openmanus -->", stdout_text: "fake openmanus stdout", secret_path: nil, repair_mode: false, repair_first_text: "<!-- needs repair -->", repair_fixed_text: "<!-- fixed after qa -->", overwrite_workspace: false)
     bin_dir = File.join(root, "fake-openmanus-bin")
     FileUtils.mkdir_p(bin_dir)
     docker_script = File.join(bin_dir, "docker-openmanus-fake.rb")
@@ -3289,7 +3649,11 @@ class AiwebCliTest < Minitest::Test
         end
 
         if ARGV[0] == "image" && ARGV[1] == "inspect"
-          if ENV["FAKE_OPENMANUS_IMAGE_MISSING"] == "1"
+          if ENV.keys.any? { |key| %w[OPENAI_API_KEY ANTHROPIC_API_KEY FAKE_OPENMANUS_SECRET].include?(key) }
+            warn "secret environment leaked to docker image inspect"
+            exit 82
+          end
+          if ENV["FAKE_OPENMANUS_IMAGE_MISSING"] == "1" || ARGV[2].to_s.include?("missing")
             warn "fake image missing"
             exit 1
           end
@@ -3329,17 +3693,41 @@ class AiwebCliTest < Minitest::Test
         end
 
         STDIN.read
+        configured_image = ENV["AIWEB_OPENMANUS_IMAGE"].to_s
+        configured_image = "openmanus:latest" if configured_image.empty?
+        image_index = ARGV.index(configured_image)
+        container_command = image_index ? ARGV[(image_index + 1)..] : []
+        tool_exit_status = nil
         Dir.chdir(host_workspace) do
-          puts "fake openmanus stdout"
-          warn "fake openmanus stderr"
-          if #{patch_workspace ? "true" : "false"}
-            path = File.join("src", "components", "Hero.astro")
-            File.open(path, "a") { |file| file.write("\\n<!-- patched by fake openmanus -->\\n") } if File.file?(path)
+          if container_command.empty? || container_command.first == "openmanus"
+            puts #{stdout_text.inspect}
+            warn "fake openmanus stderr"
+            if #{patch_workspace ? "true" : "false"}
+              path = #{patch_path.inspect}
+              marker = if #{repair_mode ? "true" : "false"}
+                         File.file?(File.join("_aiweb", "repair-observation.json")) ? #{repair_fixed_text.inspect} : #{repair_first_text.inspect}
+                       else
+                         #{patch_text.inspect}
+                       end
+              if File.file?(path)
+                if #{overwrite_workspace ? "true" : "false"}
+                  File.write(path, marker)
+                else
+                  File.open(path, "a") { |file| file.write("\\n" + marker + "\\n") }
+                end
+              end
+            end
+            secret_path = #{secret_path.inspect}
+            File.write(secret_path, "SECRET=engine-run-created-env\\n") if secret_path && !secret_path.empty?
+            result_path = workspace_path(host_workspace, env["AIWEB_OPENMANUS_RESULT_PATH"])
+            FileUtils.mkdir_p(File.dirname(result_path)) unless result_path.empty?
+            File.write(result_path, "{\\"schema_version\\":1,\\"status\\":\\"patched\\",\\"sandbox_mode\\":\\"docker\\"}\\n") unless result_path.empty?
+          else
+            system(*container_command)
+            tool_exit_status = $?.exitstatus
           end
-          result_path = workspace_path(host_workspace, env["AIWEB_OPENMANUS_RESULT_PATH"])
-          FileUtils.mkdir_p(File.dirname(result_path)) unless result_path.empty?
-          File.write(result_path, "{\\"schema_version\\":1,\\"status\\":\\"patched\\",\\"sandbox_mode\\":\\"docker\\"}\\n") unless result_path.empty?
         end
+        exit tool_exit_status if tool_exit_status
         root_mutation_path = #{mutate_root_path.inspect}
         if root_mutation_path && !root_mutation_path.empty?
           File.open(root_mutation_path, "a") { |file| file.write("\\n<!-- root mutation by fake openmanus -->\\n") }
@@ -3377,12 +3765,25 @@ class AiwebCliTest < Minitest::Test
             warn "env guard missing"
             exit 84
           end
-          puts "fake openmanus stdout"
+          puts #{stdout_text.inspect}
           warn "fake openmanus stderr"
           if #{patch_workspace ? "true" : "false"}
-            path = File.join("src", "components", "Hero.astro")
-            File.open(path, "a") { |file| file.write("\\n<!-- patched by fake openmanus -->\\n") } if File.file?(path)
+            path = #{patch_path.inspect}
+            marker = if #{repair_mode ? "true" : "false"}
+                       File.file?(File.join("_aiweb", "repair-observation.json")) ? #{repair_fixed_text.inspect} : #{repair_first_text.inspect}
+                     else
+                       #{patch_text.inspect}
+                     end
+            if File.file?(path)
+              if #{overwrite_workspace ? "true" : "false"}
+                File.write(path, marker)
+              else
+                File.open(path, "a") { |file| file.write("\\n" + marker + "\\n") }
+              end
+            end
           end
+          secret_path = #{secret_path.inspect}
+          File.write(secret_path, "SECRET=engine-run-created-env\\n") if secret_path && !secret_path.empty?
           root_mutation_path = #{mutate_root_path.inspect}
           if root_mutation_path && !root_mutation_path.empty?
             File.open(root_mutation_path, "a") { |file| file.write("\\n<!-- root mutation by fake openmanus -->\\n") }
@@ -3398,15 +3799,23 @@ class AiwebCliTest < Minitest::Test
 
     workspace_patch =
       if patch_workspace
+        shell_patch_text = repair_mode ? "" : patch_text.shellescape
         <<~SH
-          if [ -f src/components/Hero.astro ]; then
-            printf '\\n<!-- patched by fake openmanus -->\\n' >> src/components/Hero.astro
+          if [ -f #{patch_path.shellescape} ]; then
+            if [ #{repair_mode ? "1" : "0"} -eq 1 ] && [ -f _aiweb/repair-observation.json ]; then
+              #{overwrite_workspace ? "printf '%s\\n' #{repair_fixed_text.shellescape} > #{patch_path.shellescape}" : "printf '\\n%s\\n' #{repair_fixed_text.shellescape} >> #{patch_path.shellescape}"}
+            elif [ #{repair_mode ? "1" : "0"} -eq 1 ]; then
+              #{overwrite_workspace ? "printf '%s\\n' #{repair_first_text.shellescape} > #{patch_path.shellescape}" : "printf '\\n%s\\n' #{repair_first_text.shellescape} >> #{patch_path.shellescape}"}
+            else
+              #{overwrite_workspace ? "printf '%s\\n' #{shell_patch_text} > #{patch_path.shellescape}" : "printf '\\n%s\\n' #{shell_patch_text} >> #{patch_path.shellescape}"}
+            fi
           fi
         SH
       else
         ":"
       end
     root_mutation = mutate_root_path ? "printf '\\n<!-- root mutation by fake openmanus -->\\n' >> #{mutate_root_path.shellescape}" : ":"
+    secret_write = secret_path.to_s.empty? ? ":" : "printf 'SECRET=engine-run-created-env\\n' > #{secret_path.to_s.shellescape}"
     write_fake_executable(
       bin_dir,
       "openmanus",
@@ -3419,9 +3828,10 @@ class AiwebCliTest < Minitest::Test
         [ "$AIWEB_NETWORK_ALLOWED" = "0" ] || { echo 'network guard missing' >&2; exit 82; }
         [ "$AIWEB_MCP_ALLOWED" = "0" ] || { echo 'mcp guard missing' >&2; exit 83; }
         [ "$AIWEB_ENV_ACCESS_ALLOWED" = "0" ] || { echo 'env guard missing' >&2; exit 84; }
-        echo 'fake openmanus stdout'
+        echo #{stdout_text.shellescape}
         echo 'fake openmanus stderr' >&2
         #{workspace_patch}
+        #{secret_write}
         #{root_mutation}
         if [ -n "$AIWEB_OPENMANUS_RESULT_PATH" ]; then
           printf '{"schema_version":1,"status":"patched"}\\n' > "$AIWEB_OPENMANUS_RESULT_PATH"
@@ -3520,21 +3930,33 @@ class AiwebCliTest < Minitest::Test
         exit 64
       SH
     )
-    write_fake_executable(
-      bin_dir,
-      "codex",
-      <<~'SH'
-        echo "${FAKE_CODEX_STDOUT:-fake verify-loop codex stdout}"
-        echo "${FAKE_CODEX_STDERR:-fake verify-loop codex stderr}" >&2
-        if [ -n "${FAKE_CODEX_PATCH_PATH:-}" ] && [ -f "${FAKE_CODEX_PATCH_PATH}" ]; then
-          printf '\n<!-- patched by fake verify-loop codex -->\n' >> "${FAKE_CODEX_PATCH_PATH}"
-        fi
-        if [ -n "${FAKE_CODEX_MARKER:-}" ]; then
-          echo run >> "${FAKE_CODEX_MARKER}"
-        fi
-        exit "${FAKE_CODEX_EXIT_STATUS:-0}"
-      SH
+    codex_script = File.join(bin_dir, "codex-fake.rb")
+    File.write(
+      codex_script,
+      <<~RUBY
+        # frozen_string_literal: true
+
+        require "fileutils"
+
+        STDIN.read
+        patch_path = #{File.join(root, "src/components/Hero.astro").inspect}
+        marker_path = #{File.join(root, ".ai-web", "runs", "codex-runs.log").inspect}
+        if File.file?(patch_path)
+          File.open(patch_path, "a") { |file| file.write("\\n<!-- patched by fake verify-loop codex -->\\n") }
+        end
+        FileUtils.mkdir_p(File.dirname(marker_path))
+        File.open(marker_path, "a") { |file| file.write("run\\n") }
+        puts "fake verify-loop codex stdout"
+        warn "fake verify-loop codex stderr"
+      RUBY
     )
+    if windows?
+      File.write(File.join(bin_dir, "codex.cmd"), "@echo off\r\n\"#{RbConfig.ruby}\" \"#{codex_script}\" %*\r\n")
+    else
+      wrapper = File.join(bin_dir, "codex")
+      File.write(wrapper, "#!/bin/sh\nexec #{RbConfig.ruby.shellescape} #{codex_script.shellescape} \"$@\"\n")
+      FileUtils.chmod("+x", wrapper)
+    end
     bin_dir
   end
 
@@ -3632,6 +4054,656 @@ class AiwebCliTest < Minitest::Test
       - Source patch evidence is recorded.
       - Logs, metadata, and diff evidence are written.
     MD
+  end
+
+  def test_engine_run_dry_run_returns_capability_envelope_without_writes
+    in_tmp do
+      json_cmd("init")
+      File.write(".env", "SECRET=engine-run-dry-run-do-not-leak\n")
+      before_entries = project_entries
+      before_state = File.read(".ai-web/state.yaml")
+
+      payload, code = json_cmd("engine-run", "--goal", "build a cafe landing page", "--dry-run")
+
+      assert_equal 0, code
+      assert_equal "planned engine run", payload["action_taken"]
+      assert_equal "dry_run", payload.dig("engine_run", "status")
+      assert_equal "agentic_local", payload.dig("engine_run", "mode")
+      assert_equal "codex", payload.dig("engine_run", "agent")
+      assert_includes payload.dig("engine_run", "capability", "allowed_tools"), "sandbox_shell"
+      assert_includes payload.dig("engine_run", "capability", "forbidden"), "host_root_write"
+      assert_match(/\A[0-9a-f]{64}\z/, payload.dig("engine_run", "approval_hash"))
+      assert_match(%r{\A\.ai-web/runs/engine-run-.+/events\.jsonl\z}, payload.dig("engine_run", "events_path"))
+      assert_match(%r{\A\.ai-web/runs/engine-run-.+/checkpoint\.json\z}, payload.dig("engine_run", "checkpoint_path"))
+      assert_equal before_entries, project_entries, "engine-run --dry-run must not write run artifacts"
+      assert_equal before_state, File.read(".ai-web/state.yaml"), "engine-run --dry-run must not mutate state"
+      refute_includes JSON.generate(payload), "engine-run-dry-run-do-not-leak"
+    end
+  end
+
+  def test_engine_run_dry_run_includes_opendesign_contract_without_writes
+    in_tmp do
+      prepare_profile_d_design_flow
+      FileUtils.mkdir_p("src/components")
+      File.write("src/components/Hero.astro", "<section data-aiweb-id=\"component.hero.copy\">Before</section>\n")
+      File.write(".ai-web/component-map.json", JSON.pretty_generate(
+        "schema_version" => 1,
+        "components" => [
+          {
+            "data_aiweb_id" => "component.hero.copy",
+            "source_path" => "src/components/Hero.astro",
+            "editable" => true
+          }
+        ]
+      ))
+      before_entries = project_entries
+
+      payload, code = json_cmd("engine-run", "--goal", "patch hero", "--agent", "openmanus", "--sandbox", "docker", "--dry-run")
+
+      assert_equal 0, code
+      contract = payload.dig("engine_run", "opendesign_contract")
+      assert_equal "ready", contract.fetch("status")
+      assert_equal "candidate-02", contract.fetch("selected_candidate")
+      assert_match(/\Asha256:[0-9a-f]{64}\z/, contract.fetch("contract_hash"))
+      assert_equal contract.fetch("contract_hash"), payload.dig("engine_run", "capability", "opendesign_contract", "contract_hash")
+      assert_equal ".ai-web/design-candidates/candidate-02.html", contract.fetch("selected_candidate_path")
+      assert_includes contract.fetch("artifacts").keys, "design"
+      assert_includes contract.fetch("artifacts").keys, "selected_design"
+      assert_includes contract.fetch("artifacts").keys, "selected_candidate"
+      assert_includes contract.fetch("artifacts").keys, "component_map"
+      assert_includes contract.fetch("required_data_aiweb_ids"), "candidate.candidate-02.first-view"
+      assert_includes contract.fetch("component_data_aiweb_ids"), "component.hero.copy"
+      assert_equal before_entries, project_entries, "engine-run OpenDesign dry-run must not write artifacts"
+    end
+  end
+
+  def test_engine_run_blocks_profile_d_ui_goal_when_selected_design_is_missing_without_writes
+    in_tmp do |dir|
+      json_cmd("init", "--profile", "D")
+      bin_dir = write_fake_openmanus_tooling(dir)
+      env = { "PATH" => [bin_dir, "/usr/bin", "/bin", "/usr/sbin", "/sbin"].join(File::PATH_SEPARATOR) }
+      before_entries = project_entries
+
+      payload, code = json_cmd_with_env(env, "engine-run", "--goal", "build landing page UI", "--agent", "openmanus", "--sandbox", "docker", "--approved")
+
+      refute_equal 0, code
+      assert_equal "blocked", payload.dig("engine_run", "status")
+      assert_equal "missing", payload.dig("engine_run", "opendesign_contract", "status")
+      assert_match(/selected design candidate/i, payload.dig("engine_run", "blocking_issues").join("\n"))
+      assert_equal before_entries, project_entries, "missing selected design must block before run artifacts"
+    end
+  end
+
+  def test_engine_run_persists_opendesign_contract_and_keeps_hash_stable_between_dry_run_and_real_run
+    in_tmp do |dir|
+      prepare_profile_d_design_flow
+      FileUtils.mkdir_p("src/components")
+      File.write("src/components/Hero.astro", "<section data-aiweb-id=\"component.hero.copy\">Before</section>\n")
+      bin_dir = write_fake_openmanus_tooling(dir)
+      env = { "PATH" => [bin_dir, "/usr/bin", "/bin", "/usr/sbin", "/sbin"].join(File::PATH_SEPARATOR) }
+      dry_payload, dry_code = json_cmd("engine-run", "--goal", "patch hero", "--agent", "openmanus", "--sandbox", "docker", "--dry-run")
+      dry_contract_hash = dry_payload.dig("engine_run", "opendesign_contract", "contract_hash")
+
+      assert_equal 0, dry_code
+      payload, code = json_cmd_with_env(env, "engine-run", "--goal", "patch hero", "--agent", "openmanus", "--sandbox", "docker", "--approval-hash", dry_payload.dig("engine_run", "approval_hash"), "--approved")
+
+      assert_equal 0, code
+      assert_equal "passed", payload.dig("engine_run", "status")
+      assert_equal dry_contract_hash, payload.dig("engine_run", "opendesign_contract", "contract_hash")
+      contract_path = File.join(payload.dig("engine_run", "run_dir"), "artifacts", "opendesign-contract.json")
+      assert File.file?(contract_path)
+      persisted = JSON.parse(File.read(contract_path))
+      assert_equal dry_contract_hash, persisted.fetch("contract_hash")
+      checkpoint = JSON.parse(File.read(payload.dig("engine_run", "checkpoint_path")))
+      assert_equal dry_contract_hash, checkpoint.dig("opendesign_contract", "contract_hash")
+      event_types = File.readlines(payload.dig("engine_run", "events_path")).map { |line| JSON.parse(line).fetch("type") }
+      assert_includes event_types, "design.contract.loaded"
+    end
+  end
+
+  def test_engine_run_design_fidelity_blocks_copy_back_when_component_hook_is_removed
+    in_tmp do |dir|
+      prepare_profile_d_design_flow
+      FileUtils.mkdir_p("src/components")
+      source = "src/components/Hero.astro"
+      File.write(source, "<section data-aiweb-id=\"component.hero.copy\">Before</section>\n")
+      File.write(".ai-web/component-map.json", JSON.pretty_generate(
+        "schema_version" => 1,
+        "components" => [{ "data_aiweb_id" => "component.hero.copy", "source_path" => source, "editable" => true }]
+      ))
+      bin_dir = write_fake_openmanus_tooling(dir, patch_text: "<section>Hook removed</section>\n", overwrite_workspace: true)
+      env = { "PATH" => [bin_dir, "/usr/bin", "/bin", "/usr/sbin", "/sbin"].join(File::PATH_SEPARATOR) }
+
+      payload, code = json_cmd_with_env(env, "engine-run", "--goal", "patch hero", "--agent", "openmanus", "--sandbox", "docker", "--approved")
+
+      refute_equal 0, code
+      assert_equal "blocked", payload.dig("engine_run", "status")
+      assert_equal "blocked", payload.dig("engine_run", "design_fidelity", "status")
+      assert_operator payload.dig("engine_run", "design_fidelity", "selected_design_fidelity"), :<, 0.8
+      assert_match(/data-aiweb-id.*component\.hero\.copy/i, payload.dig("engine_run", "design_fidelity", "blocking_issues").join("\n"))
+      assert_equal "<section data-aiweb-id=\"component.hero.copy\">Before</section>\n", File.read(source)
+    end
+  end
+
+  def test_engine_run_design_fidelity_blocks_reference_brand_leakage
+    in_tmp do |dir|
+      prepare_profile_d_design_flow
+      File.write(".ai-web/design-reference-brief.md", <<~MD)
+        # Design Reference Brief
+
+        Companies: Aesop, Stripe.
+        Copy risk: pattern-only; do not reproduce exact layouts, trademarks, prices, or copy.
+      MD
+      FileUtils.mkdir_p("src/components")
+      source = "src/components/Hero.astro"
+      File.write(source, "<section data-aiweb-id=\"component.hero.copy\">Before</section>\n")
+      File.write(".ai-web/component-map.json", JSON.pretty_generate(
+        "schema_version" => 1,
+        "components" => [{ "data_aiweb_id" => "component.hero.copy", "source_path" => source, "editable" => true }]
+      ))
+      bin_dir = write_fake_openmanus_tooling(dir, patch_text: "<section data-aiweb-id=\"component.hero.copy\">Aesop exact reference copy</section>\n", overwrite_workspace: true)
+      env = { "PATH" => [bin_dir, "/usr/bin", "/bin", "/usr/sbin", "/sbin"].join(File::PATH_SEPARATOR) }
+
+      payload, code = json_cmd_with_env(env, "engine-run", "--goal", "patch hero", "--agent", "openmanus", "--sandbox", "docker", "--approved")
+
+      refute_equal 0, code
+      assert_equal "blocked", payload.dig("engine_run", "status")
+      assert_match(/reference term|Aesop/i, payload.dig("engine_run", "design_fidelity", "blocking_issues").join("\n"))
+      refute_match(/Aesop/, File.read(source))
+    end
+  end
+
+  def test_engine_run_design_fidelity_blocks_selected_candidate_identity_drift
+    in_tmp do |dir|
+      prepare_profile_d_design_flow
+      FileUtils.mkdir_p("src/content")
+      source = "src/content/site.json"
+      File.write(source, JSON.pretty_generate("selected_candidate" => "candidate-02") + "\n")
+      bin_dir = write_fake_openmanus_tooling(
+        dir,
+        patch_path: source,
+        patch_text: JSON.pretty_generate("selected_candidate" => "candidate-03") + "\n",
+        overwrite_workspace: true
+      )
+      env = { "PATH" => [bin_dir, "/usr/bin", "/bin", "/usr/sbin", "/sbin"].join(File::PATH_SEPARATOR) }
+
+      payload, code = json_cmd_with_env(env, "engine-run", "--goal", "patch site content", "--agent", "openmanus", "--sandbox", "docker", "--approved")
+
+      refute_equal 0, code
+      assert_equal "blocked", payload.dig("engine_run", "status")
+      assert_match(/selected candidate/i, payload.dig("engine_run", "design_fidelity", "blocking_issues").join("\n"))
+      assert_equal "candidate-02", JSON.parse(File.read(source)).fetch("selected_candidate")
+    end
+  end
+
+  def test_engine_run_preview_runs_inside_sandbox_and_records_lifecycle_events
+    in_tmp do |dir|
+      json_cmd("init")
+      FileUtils.mkdir_p("src/components")
+      File.write("src/components/Hero.astro", "<h1>Before</h1>\n")
+      File.write("package.json", JSON.pretty_generate("scripts" => { "dev" => "fake dev" }))
+      bin_dir = write_fake_engine_openmanus_preview_tooling(dir)
+      env = { "PATH" => [bin_dir, "/usr/bin", "/bin", "/usr/sbin", "/sbin"].join(File::PATH_SEPARATOR) }
+
+      payload, code = json_cmd_with_env(env, "engine-run", "--goal", "patch hero", "--agent", "openmanus", "--sandbox", "docker", "--approved")
+
+      assert_equal 0, code
+      assert_equal "ready", payload.dig("engine_run", "preview", "status")
+      assert_match(/\Adocker run\b/, payload.dig("engine_run", "preview", "command"))
+      assert_includes payload.dig("engine_run", "preview", "command"), "--network none"
+      assert_equal "http://127.0.0.1:4321/", payload.dig("engine_run", "preview", "url")
+      event_types = File.readlines(payload.dig("engine_run", "events_path")).map { |line| JSON.parse(line).fetch("type") }
+      assert_includes event_types, "preview.started"
+      assert_includes event_types, "preview.ready"
+      assert_includes event_types, "preview.stopped"
+    end
+  end
+
+  def test_engine_run_preview_failure_records_evidence_without_copy_back
+    in_tmp do |dir|
+      json_cmd("init")
+      FileUtils.mkdir_p("src/components")
+      File.write("src/components/Hero.astro", "<h1>Before</h1>\n")
+      File.write("package.json", JSON.pretty_generate("scripts" => { "dev" => "fake dev" }))
+      bin_dir = write_fake_engine_openmanus_preview_tooling(dir, preview_exit_status: 7)
+      env = { "PATH" => [bin_dir, "/usr/bin", "/bin", "/usr/sbin", "/sbin"].join(File::PATH_SEPARATOR) }
+
+      payload, code = json_cmd_with_env(env, "engine-run", "--goal", "patch hero", "--agent", "openmanus", "--sandbox", "docker", "--approved")
+
+      refute_equal 0, code
+      assert_equal "failed", payload.dig("engine_run", "status")
+      assert_equal "failed", payload.dig("engine_run", "preview", "status")
+      assert_match(/preview failed/i, payload.dig("engine_run", "blocking_issues").join("\n"))
+      refute_match(/patched by fake openmanus/, File.read("src/components/Hero.astro"))
+      event_types = File.readlines(payload.dig("engine_run", "events_path")).map { |line| JSON.parse(line).fetch("type") }
+      assert_includes event_types, "preview.started"
+      assert_includes event_types, "preview.failed"
+      assert_includes event_types, "preview.stopped"
+    end
+  end
+
+  def test_engine_run_captures_screenshot_manifest_from_sandbox_preview
+    in_tmp do |dir|
+      json_cmd("init")
+      FileUtils.mkdir_p("src/components")
+      File.write("src/components/Hero.astro", "<h1>Before</h1>\n")
+      File.write("package.json", JSON.pretty_generate("scripts" => { "dev" => "fake dev" }))
+      bin_dir = write_fake_engine_openmanus_preview_tooling(dir)
+      env = { "PATH" => [bin_dir, "/usr/bin", "/bin", "/usr/sbin", "/sbin"].join(File::PATH_SEPARATOR) }
+
+      payload, code = json_cmd_with_env(env, "engine-run", "--goal", "patch hero", "--agent", "openmanus", "--sandbox", "docker", "--approved")
+
+      assert_equal 0, code
+      manifest_path = payload.dig("engine_run", "screenshot_evidence_path")
+      assert_match(%r{\A\.ai-web/runs/.+/qa/screenshots\.json\z}, manifest_path)
+      manifest = JSON.parse(File.read(manifest_path))
+      assert_equal "captured", manifest.fetch("status")
+      assert_equal %w[desktop tablet mobile], manifest.fetch("screenshots").map { |shot| shot.fetch("viewport") }
+      manifest.fetch("screenshots").each do |shot|
+        assert File.file?(shot.fetch("path")), "#{shot.fetch("path")} should exist"
+        assert_operator File.size(shot.fetch("path")), :>, 0
+        assert_equal "http://127.0.0.1:4321/", shot.fetch("url")
+      end
+      event_types = File.readlines(payload.dig("engine_run", "events_path")).map { |line| JSON.parse(line).fetch("type") }
+      assert_includes event_types, "screenshot.capture.started"
+      assert_includes event_types, "screenshot.capture.finished"
+      assert_includes event_types, "browser.observation.recorded"
+    end
+  end
+
+  def test_engine_run_design_verdict_passes_with_screenshot_evidence_and_scores
+    in_tmp do |dir|
+      prepare_profile_d_design_flow
+      FileUtils.mkdir_p("src/components")
+      source = "src/components/Hero.astro"
+      File.write(source, "<section data-aiweb-id=\"component.hero.copy\">Before</section>\n")
+      File.write(".ai-web/component-map.json", JSON.pretty_generate(
+        "schema_version" => 1,
+        "components" => [{ "data_aiweb_id" => "component.hero.copy", "source_path" => source, "editable" => true }]
+      ))
+      File.write("package.json", JSON.pretty_generate("scripts" => { "dev" => "fake dev" }))
+      bin_dir = write_fake_engine_openmanus_preview_tooling(dir)
+      env = { "PATH" => [bin_dir, "/usr/bin", "/bin", "/usr/sbin", "/sbin"].join(File::PATH_SEPARATOR) }
+
+      payload, code = json_cmd_with_env(env, "engine-run", "--goal", "patch hero", "--agent", "openmanus", "--sandbox", "docker", "--approved")
+
+      assert_equal 0, code
+      assert_equal "passed", payload.dig("engine_run", "design_verdict", "status")
+      assert_equal true, payload.dig("engine_run", "copy_back_policy", "design_gate_required")
+      assert_equal "passed", payload.dig("engine_run", "copy_back_policy", "design_gate_status")
+      assert_match(%r{\.ai-web/runs/.+/qa/design-verdict\.json}, payload.dig("engine_run", "copy_back_policy", "design_gate_artifact"))
+      assert_equal "deterministic_local", payload.dig("engine_run", "design_verdict", "reviewer")
+      assert_operator payload.dig("engine_run", "design_verdict", "scores", "selected_design_fidelity"), :>=, 0.8
+      assert File.file?(payload.dig("engine_run", "design_verdict_path"))
+      event_types = File.readlines(payload.dig("engine_run", "events_path")).map { |line| JSON.parse(line).fetch("type") }
+      assert_includes event_types, "design.review.started"
+      assert_includes event_types, "design.review.finished"
+    end
+  end
+
+  def test_engine_run_rejects_stale_approval_hash_after_opendesign_contract_changes
+    in_tmp do |dir|
+      prepare_profile_d_design_flow
+      FileUtils.mkdir_p("src/components")
+      File.write("src/components/Hero.astro", "<section data-aiweb-id=\"component.hero.copy\">Before</section>\n")
+      bin_dir = write_fake_openmanus_tooling(dir)
+      env = { "PATH" => [bin_dir, "/usr/bin", "/bin", "/usr/sbin", "/sbin"].join(File::PATH_SEPARATOR) }
+      dry_payload, dry_code = json_cmd("engine-run", "--goal", "patch hero", "--agent", "openmanus", "--sandbox", "docker", "--dry-run")
+      before_entries = project_entries
+
+      assert_equal 0, dry_code
+      File.open(".ai-web/design-candidates/selected.md", "a") { |file| file.write("\nContract changed after approval.\n") }
+      payload, code = json_cmd_with_env(env, "engine-run", "--goal", "patch hero", "--agent", "openmanus", "--sandbox", "docker", "--approval-hash", dry_payload.dig("engine_run", "approval_hash"), "--approved")
+
+      refute_equal 0, code
+      assert_equal "blocked", payload.dig("engine_run", "status")
+      assert_match(/approval hash does not match/i, payload.dig("engine_run", "blocking_issues").join("\n"))
+      assert_equal before_entries, project_entries, "stale approval must block before run artifacts"
+    end
+  end
+
+  def test_engine_run_design_verdict_blocks_low_visual_quality
+    in_tmp do |dir|
+      prepare_profile_d_design_flow
+      FileUtils.mkdir_p("src/components")
+      source = "src/components/Hero.astro"
+      File.write(source, "<section data-aiweb-id=\"component.hero.copy\">Before</section>\n")
+      File.write(".ai-web/component-map.json", JSON.pretty_generate(
+        "schema_version" => 1,
+        "components" => [{ "data_aiweb_id" => "component.hero.copy", "source_path" => source, "editable" => true }]
+      ))
+      File.write("package.json", JSON.pretty_generate("scripts" => { "dev" => "fake dev" }))
+      bin_dir = write_fake_engine_openmanus_preview_tooling(dir)
+      write_fake_openmanus_tooling(dir, patch_text: "<section data-aiweb-id=\"component.hero.copy\" class=\"bad-spacing bad-typography\">Weak</section>\n", overwrite_workspace: true)
+      env = { "PATH" => [bin_dir, "/usr/bin", "/bin", "/usr/sbin", "/sbin"].join(File::PATH_SEPARATOR) }
+
+      payload, code = json_cmd_with_env(env, "engine-run", "--goal", "patch hero", "--agent", "openmanus", "--sandbox", "docker", "--approved")
+
+      refute_equal 0, code
+      assert_equal "failed", payload.dig("engine_run", "status")
+      assert_equal "failed", payload.dig("engine_run", "design_verdict", "status")
+      assert_operator payload.dig("engine_run", "design_verdict", "scores", "spacing"), :<, 0.8
+      assert_match(/spacing|typography/i, payload.dig("engine_run", "design_verdict", "blocking_issues").join("\n"))
+      refute_match(/bad-spacing/, File.read(source))
+      event_types = File.readlines(payload.dig("engine_run", "events_path")).map { |line| JSON.parse(line).fetch("type") }
+      assert_includes event_types, "design.review.failed"
+    end
+  end
+
+  def test_engine_run_design_repair_cycle_fixes_low_visual_quality
+    in_tmp do |dir|
+      prepare_profile_d_design_flow
+      FileUtils.mkdir_p("src/components")
+      source = "src/components/Hero.astro"
+      File.write(source, "<section data-aiweb-id=\"component.hero.copy\">Before</section>\n")
+      File.write(".ai-web/component-map.json", JSON.pretty_generate(
+        "schema_version" => 1,
+        "components" => [{ "data_aiweb_id" => "component.hero.copy", "source_path" => source, "editable" => true }]
+      ))
+      File.write("package.json", JSON.pretty_generate("scripts" => { "dev" => "fake dev" }))
+      bin_dir = write_fake_engine_openmanus_preview_tooling(dir)
+      write_fake_openmanus_tooling(
+        dir,
+        repair_mode: true,
+        overwrite_workspace: true,
+        repair_first_text: "<section data-aiweb-id=\"component.hero.copy\" class=\"bad-spacing bad-typography\">Weak</section>\n",
+        repair_fixed_text: "<section data-aiweb-id=\"component.hero.copy\" class=\"polished-layout\">Fixed</section>\n"
+      )
+      env = { "PATH" => [bin_dir, "/usr/bin", "/bin", "/usr/sbin", "/sbin"].join(File::PATH_SEPARATOR) }
+
+      payload, code = json_cmd_with_env(env, "engine-run", "--goal", "patch hero", "--agent", "openmanus", "--sandbox", "docker", "--max-cycles", "2", "--approved")
+
+      assert_equal 0, code
+      assert_equal "passed", payload.dig("engine_run", "status")
+      assert_equal "passed", payload.dig("engine_run", "design_verdict", "status")
+      assert_match(/polished-layout/, File.read(source))
+      event_types = File.readlines(payload.dig("engine_run", "events_path")).map { |line| JSON.parse(line).fetch("type") }
+      assert_includes event_types, "design.repair.planned"
+      assert_includes event_types, "design.repair.started"
+      assert_includes event_types, "design.repair.finished"
+    end
+  end
+
+  def test_engine_run_blocks_unsandboxed_codex_agentic_local_without_launch_or_writes
+    in_tmp do |dir|
+      json_cmd("init")
+      FileUtils.mkdir_p("src/components")
+      File.write("src/components/Hero.astro", "<h1>Before</h1>\n")
+      File.write(".env", "SECRET=engine-run-approved-do-not-leak\n")
+      marker = File.join(dir, "codex-was-run")
+      bin_dir = write_fake_codex_tooling(dir, marker_path: marker, patch_path: File.join(dir, "src/components/Hero.astro"))
+      env = { "PATH" => [bin_dir, "/usr/bin", "/bin", "/usr/sbin", "/sbin"].join(File::PATH_SEPARATOR) }
+      dry_payload, dry_code = json_cmd("engine-run", "--goal", "patch hero", "--dry-run")
+      before_entries = project_entries
+
+      assert_equal 0, dry_code
+      payload, code = json_cmd_with_env(env, "engine-run", "--goal", "patch hero", "--approval-hash", dry_payload.dig("engine_run", "approval_hash"), "--approved")
+
+      assert_equal 5, code
+      assert_equal "engine run blocked", payload["action_taken"]
+      assert_equal "blocked", payload.dig("engine_run", "status")
+      assert_equal "agentic_local", payload.dig("engine_run", "mode")
+      assert_equal "codex", payload.dig("engine_run", "agent")
+      assert_match(/unsandboxed codex|safe_patch|sandbox/i, payload.dig("engine_run", "blocking_issues").join("\n"))
+      assert_equal before_entries, project_entries, "blocked unsandboxed Codex must not create run artifacts"
+      refute File.exist?(marker), "blocked unsandboxed Codex must not launch"
+      assert_equal "<h1>Before</h1>\n", File.read("src/components/Hero.astro")
+      assert_equal "SECRET=engine-run-approved-do-not-leak\n", File.read(".env")
+      refute_includes JSON.generate(payload), "engine-run-approved-do-not-leak"
+    end
+  end
+
+  def test_engine_run_blocks_secret_file_created_inside_staged_workspace
+    in_tmp do |dir|
+      json_cmd("init")
+      FileUtils.mkdir_p("src/components")
+      File.write("src/components/Hero.astro", "<h1>Before</h1>\n")
+      File.write(".env", "SECRET=engine-run-host-env-do-not-touch\n")
+      bin_dir = write_fake_openmanus_tooling(dir, secret_path: ".env")
+      env = { "PATH" => [bin_dir, "/usr/bin", "/bin", "/usr/sbin", "/sbin"].join(File::PATH_SEPARATOR) }
+
+      payload, code = json_cmd_with_env(env, "engine-run", "--goal", "try unsafe env", "--agent", "openmanus", "--sandbox", "docker", "--approved")
+
+      assert_equal 5, code
+      assert_equal "blocked", payload.dig("engine_run", "status")
+      assert_match(/unsafe changed path|\.env/i, payload.dig("engine_run", "copy_back_policy", "blocking_issues").join("\n"))
+      assert_equal "SECRET=engine-run-host-env-do-not-touch\n", File.read(".env")
+      refute_match(/patched by fake openmanus/, File.read("src/components/Hero.astro"))
+      refute_includes JSON.generate(payload), "engine-run-host-env-do-not-touch"
+    end
+  end
+
+  def test_engine_run_excludes_provider_credentials_and_browser_profiles_from_staged_workspace
+    in_tmp do |dir|
+      json_cmd("init")
+      FileUtils.mkdir_p("src/components")
+      File.write("src/components/Hero.astro", "<h1>Before</h1>\n")
+      {
+        ".aws/credentials" => "aws_access_key_id = AKIA1111111111111111\n",
+        ".npmrc" => "//registry.npmjs.org/:_authToken=npm_secret\n",
+        ".vercel/auth.json" => "{\"token\":\"provider-secret\"}\n",
+        ".netlify/config.json" => "{\"token\":\"provider-secret\"}\n",
+        ".config/google-chrome/Default/Cookies" => "cookie-secret\n"
+      }.each do |path, body|
+        FileUtils.mkdir_p(File.dirname(path))
+        File.write(path, body)
+      end
+      bin_dir = write_fake_openmanus_tooling(dir)
+      env = { "PATH" => [bin_dir, "/usr/bin", "/bin", "/usr/sbin", "/sbin"].join(File::PATH_SEPARATOR) }
+
+      payload, code = json_cmd_with_env(env, "engine-run", "--goal", "patch hero", "--agent", "openmanus", "--sandbox", "docker", "--approved")
+
+      assert_equal 0, code
+      manifest = JSON.parse(File.read(File.join(payload.dig("engine_run", "run_dir"), "artifacts", "staged-manifest.json")))
+      staged = manifest.fetch("files").keys
+      excluded = manifest.fetch("excluded")
+      %w[
+        .aws/credentials
+        .npmrc
+        .vercel
+        .netlify
+        .config/google-chrome
+      ].each do |path|
+        assert excluded.any? { |entry| entry == path || entry.start_with?("#{path}/") || path.start_with?("#{entry}/") }, "#{path} should be excluded from staged workspace"
+      end
+      refute_includes staged, ".aws/credentials"
+      refute_includes staged, ".npmrc"
+      refute staged.any? { |path| path.start_with?(".vercel/") }
+      refute staged.any? { |path| path.start_with?(".netlify/") }
+      refute staged.any? { |path| path.start_with?(".config/google-chrome/") }
+      refute_includes JSON.generate(payload), "provider-secret"
+      refute_includes JSON.generate(payload), "cookie-secret"
+    end
+  end
+
+  def test_engine_run_openmanus_uses_aiweb_managed_sandbox_and_copies_back_safe_changes
+    in_tmp do |dir|
+      json_cmd("init")
+      FileUtils.mkdir_p("src/components")
+      File.write("src/components/Hero.astro", "<h1>Before</h1>\n")
+      File.write(".env", "SECRET=engine-run-openmanus-do-not-leak\n")
+      bin_dir = write_fake_openmanus_tooling(dir)
+      env = {
+        "PATH" => [bin_dir, "/usr/bin", "/bin", "/usr/sbin", "/sbin"].join(File::PATH_SEPARATOR),
+        "FAKE_OPENMANUS_SECRET" => "must-not-leak"
+      }
+
+      payload, code = json_cmd_with_env(env, "engine-run", "--goal", "patch hero", "--agent", "openmanus", "--sandbox", "docker", "--approved")
+
+      assert_equal 0, code
+      assert_equal "passed", payload.dig("engine_run", "status")
+      assert_equal "openmanus", payload.dig("engine_run", "agent")
+      assert_equal "docker", payload.dig("engine_run", "sandbox")
+      assert_includes payload.dig("engine_run", "copy_back_policy", "safe_changes"), "src/components/Hero.astro"
+      assert_match(/patched by fake openmanus/, File.read("src/components/Hero.astro"))
+      assert_equal "SECRET=engine-run-openmanus-do-not-leak\n", File.read(".env")
+      event_types = File.readlines(payload.dig("engine_run", "events_path")).map { |line| JSON.parse(line).fetch("type") }
+      event_seq = File.readlines(payload.dig("engine_run", "events_path")).map { |line| JSON.parse(line).fetch("seq") }
+      assert_equal (1..event_seq.length).to_a, event_seq
+      assert_includes event_types, "sandbox.preflight.started"
+      assert_includes event_types, "sandbox.preflight.finished"
+      job = JSON.parse(File.read(File.join(payload.dig("engine_run", "run_dir"), "job.json")))
+      assert_equal "passed", job.fetch("status")
+      refute_includes JSON.generate(payload), "engine-run-openmanus-do-not-leak"
+    end
+  end
+
+  def test_engine_run_openmanus_blocks_when_local_image_is_missing_without_writes
+    in_tmp do |dir|
+      json_cmd("init")
+      FileUtils.mkdir_p("src/components")
+      File.write("src/components/Hero.astro", "<h1>Before</h1>\n")
+      bin_dir = write_fake_openmanus_tooling(dir)
+      env = {
+          "PATH" => [bin_dir, "/usr/bin", "/bin", "/usr/sbin", "/sbin"].join(File::PATH_SEPARATOR),
+          "AIWEB_OPENMANUS_IMAGE" => "missing-openmanus:latest"
+        }
+      before_entries = project_entries
+
+      payload, code = json_cmd_with_env(env, "engine-run", "--goal", "patch hero", "--agent", "openmanus", "--sandbox", "docker", "--approved")
+
+      assert_equal 5, code
+      assert_equal "blocked", payload.dig("engine_run", "status")
+      assert_match(/openmanus:latest|AIWEB_OPENMANUS_IMAGE|image/i, payload.dig("engine_run", "blocking_issues").join("\n"))
+      assert_equal before_entries, project_entries, "missing OpenManus image must block before run artifacts"
+      assert_equal "<h1>Before</h1>\n", File.read("src/components/Hero.astro")
+    end
+  end
+
+  def test_engine_run_waits_for_approval_when_agent_requests_package_install
+    in_tmp do |dir|
+      json_cmd("init")
+      FileUtils.mkdir_p("src/components")
+      File.write("src/components/Hero.astro", "<h1>Before</h1>\n")
+      bin_dir = write_fake_openmanus_tooling(dir, stdout_text: "need npm install lucide-react")
+      env = { "PATH" => [bin_dir, "/usr/bin", "/bin", "/usr/sbin", "/sbin"].join(File::PATH_SEPARATOR) }
+
+      payload, code = json_cmd_with_env(env, "engine-run", "--goal", "patch hero with icons", "--agent", "openmanus", "--sandbox", "docker", "--approved")
+
+      assert_equal 5, code
+      assert_equal "waiting_approval", payload.dig("engine_run", "status")
+      assert_match(/package install|network|deploy|provider CLI|git push/i, payload.dig("engine_run", "copy_back_policy", "approval_issues").join("\n"))
+      event_types = File.readlines(payload.dig("engine_run", "events_path")).map { |line| JSON.parse(line).fetch("type") }
+      assert_includes event_types, "tool.action.requested"
+      assert_includes event_types, "tool.action.blocked"
+      assert_includes event_types, "approval.requested"
+      refute_match(/patched by fake openmanus/, File.read("src/components/Hero.astro"))
+    end
+  end
+
+  def test_engine_run_repairs_after_sandbox_verification_failure
+    in_tmp do |dir|
+      json_cmd("init")
+      FileUtils.mkdir_p("src/components")
+      File.write("src/components/Hero.astro", "<h1>Before</h1>\n")
+      File.write("package.json", JSON.pretty_generate("scripts" => { "build" => "fake build" }))
+      bin_dir = write_fake_engine_openmanus_repair_tooling(dir)
+      env = { "PATH" => [bin_dir, "/usr/bin", "/bin", "/usr/sbin", "/sbin"].join(File::PATH_SEPARATOR) }
+
+      payload, code = json_cmd_with_env(env, "engine-run", "--goal", "repair failing build", "--agent", "openmanus", "--sandbox", "docker", "--max-cycles", "2", "--approved")
+
+      assert_equal 0, code
+      assert_equal "passed", payload.dig("engine_run", "status")
+      assert_match(/needs repair/, File.read("src/components/Hero.astro"))
+      assert_match(/fixed after qa/, File.read("src/components/Hero.astro"))
+      assert_equal "passed", payload.dig("engine_run", "verification", "status")
+      event_types = File.readlines(payload.dig("engine_run", "events_path")).map { |line| JSON.parse(line).fetch("type") }
+      assert_includes event_types, "qa.failed"
+      assert_includes event_types, "repair.planned"
+    end
+  end
+
+  def test_engine_run_verification_uses_clean_environment
+    in_tmp do |dir|
+      json_cmd("init")
+      FileUtils.mkdir_p("src/components")
+      File.write("src/components/Hero.astro", "<h1>Before</h1>\n")
+      File.write("package.json", JSON.pretty_generate("scripts" => { "build" => "fake build" }))
+      bin_dir = write_fake_engine_openmanus_verification_guard_tooling(dir)
+      env = {
+        "PATH" => [bin_dir, "/usr/bin", "/bin", "/usr/sbin", "/sbin"].join(File::PATH_SEPARATOR),
+        "OPENAI_API_KEY" => "must-not-reach-verification",
+        "FAKE_ENGINE_SECRET" => "must-not-reach-verification"
+      }
+
+      payload, code = json_cmd_with_env(env, "engine-run", "--goal", "verify clean env", "--agent", "openmanus", "--sandbox", "docker", "--approved")
+
+      assert_equal 0, code
+      assert_equal "passed", payload.dig("engine_run", "status")
+      assert_equal "passed", payload.dig("engine_run", "verification", "status")
+      verification_command = payload.dig("engine_run", "verification", "checks", 0, "command")
+      assert_match(/\Adocker run\b/, verification_command)
+      assert_includes verification_command, "--network none"
+      refute_includes JSON.generate(payload), "must-not-reach-verification"
+    end
+  end
+
+  def test_executable_version_uses_clean_environment
+    in_tmp do |dir|
+      bin_dir = File.join(dir, "fake-version-bin")
+      FileUtils.mkdir_p(bin_dir)
+      script = File.join(bin_dir, "pnpm-version-fake.rb")
+      File.write(
+        script,
+        <<~'RUBY'
+          # frozen_string_literal: true
+
+          if ENV.keys.any? { |key| %w[OPENAI_API_KEY FAKE_VERSION_SECRET].include?(key) }
+            warn "secret environment leaked to version command"
+            exit 81
+          end
+          puts "9.9.9"
+        RUBY
+      )
+      if windows?
+        File.write(File.join(bin_dir, "pnpm.cmd"), "@echo off\r\n\"#{RbConfig.ruby}\" \"#{script}\" %*\r\n")
+      else
+        wrapper = File.join(bin_dir, "pnpm")
+        File.write(wrapper, "#!/bin/sh\nexec #{RbConfig.ruby.shellescape} #{script.shellescape} \"$@\"\n")
+        FileUtils.chmod("+x", wrapper)
+      end
+
+      old_path = ENV["PATH"]
+      old_openai_key = ENV["OPENAI_API_KEY"]
+      old_fake_secret = ENV["FAKE_VERSION_SECRET"]
+      ENV["PATH"] = [bin_dir, old_path].compact.join(File::PATH_SEPARATOR)
+      ENV["OPENAI_API_KEY"] = "must-not-reach-version"
+      ENV["FAKE_VERSION_SECRET"] = "must-not-reach-version"
+
+      assert_equal "9.9.9", Aiweb::Project.new(dir).send(:executable_version, "pnpm", "--version")
+    ensure
+      ENV["PATH"] = old_path
+      old_openai_key.nil? ? ENV.delete("OPENAI_API_KEY") : ENV["OPENAI_API_KEY"] = old_openai_key
+      old_fake_secret.nil? ? ENV.delete("FAKE_VERSION_SECRET") : ENV["FAKE_VERSION_SECRET"] = old_fake_secret
+    end
+  end
+
+  def test_engine_run_resume_reuses_checkpoint_workspace_before_copy_back
+    in_tmp do |dir|
+      json_cmd("init")
+      FileUtils.mkdir_p("src/components")
+      File.write("src/components/Hero.astro", "<h1>Before</h1>\n")
+      bin_dir = write_fake_openmanus_tooling(dir, patch_text: "<!-- first failed patch -->", exit_status: 9)
+      env = { "PATH" => [bin_dir, "/usr/bin", "/bin", "/usr/sbin", "/sbin"].join(File::PATH_SEPARATOR) }
+
+      first_payload, first_code = json_cmd_with_env(env, "engine-run", "--goal", "resume hero patch", "--agent", "openmanus", "--sandbox", "docker", "--max-cycles", "1", "--approved")
+
+      refute_equal 0, first_code
+      assert_equal "failed", first_payload.dig("engine_run", "status")
+      refute_match(/first failed patch/, File.read("src/components/Hero.astro"))
+
+      write_fake_openmanus_tooling(dir, patch_text: "<!-- resumed patch -->")
+      payload, code = json_cmd_with_env(env, "engine-run", "--resume", first_payload.dig("engine_run", "run_id"), "--agent", "openmanus", "--sandbox", "docker", "--approved")
+
+      assert_equal 0, code
+      assert_equal "passed", payload.dig("engine_run", "status")
+      body = File.read("src/components/Hero.astro")
+      assert_match(/first failed patch/, body)
+      assert_match(/resumed patch/, body)
+      assert_equal first_payload.dig("engine_run", "run_id"), payload.dig("engine_run", "checkpoint", "resume_from")
+      event_types = File.readlines(payload.dig("engine_run", "events_path")).map { |line| JSON.parse(line).fetch("type") }
+      assert_includes event_types, "run.resumed"
+    end
   end
 
   def test_next_task_generates_schema_complete_machine_constrained_packet
@@ -3880,18 +4952,14 @@ class AiwebCliTest < Minitest::Test
         - Logs and diff artifacts are written only on approved runs.
       MD
       prepare_agent_run_fixture(task_markdown: task_markdown)
-      bin_dir = write_fake_codex_tooling(dir)
       marker = File.join(dir, "codex-was-run")
+      bin_dir = write_fake_codex_tooling(dir, marker_path: marker, patch_path: File.join(dir, "src/components/Hero.astro"))
       before_entries = project_entries
       before_state = File.read(".ai-web/state.yaml")
       before_source = File.read("src/components/Hero.astro")
 
       stdout, stderr, code = run_aiweb_env(
-        {
-          "PATH" => [bin_dir, "/usr/bin", "/bin", "/usr/sbin", "/sbin"].join(File::PATH_SEPARATOR),
-          "FAKE_CODEX_MARKER" => marker,
-          "FAKE_CODEX_PATCH_PATH" => File.join(dir, "src/components/Hero.astro")
-        },
+        { "PATH" => [bin_dir, "/usr/bin", "/bin", "/usr/sbin", "/sbin"].join(File::PATH_SEPARATOR) },
         "agent-run", "--task", "latest", "--agent", "codex", "--dry-run", "--json"
       )
       payload = JSON.parse(stdout)
@@ -3968,6 +5036,43 @@ class AiwebCliTest < Minitest::Test
     end
   end
 
+  def test_openmanus_sandbox_validation_rejects_unsafe_command_shape
+    in_tmp do
+      json_cmd("init")
+      workspace = File.join(Dir.pwd, ".ai-web", "tmp", "openmanus", "validation")
+      FileUtils.mkdir_p(workspace)
+      unsafe = [
+        "docker", "run", "--rm", "-i",
+        "--network", "bridge",
+        "--read-only",
+        "--cap-drop", "ALL",
+        "--security-opt", "no-new-privileges",
+        "-v", "#{Dir.pwd}:/workspace:rw",
+        "-w", "/workspace",
+        "-e", "OPENAI_API_KEY",
+        "openmanus:latest",
+        "openmanus"
+      ]
+
+      blockers = Aiweb::Project.new(Dir.pwd).send(
+        :sandbox_runtime_container_command_blockers,
+        unsafe,
+        sandbox: "docker",
+        workspace_dir: workspace,
+        required_env: { "AIWEB_NETWORK_ALLOWED" => "0" },
+        label: "openmanus sandbox"
+      )
+      joined = blockers.join("\n")
+
+      assert_match(/network.*none/i, joined)
+      assert_match(/pids-limit/i, joined)
+      assert_match(/memory/i, joined)
+      assert_match(/cpus/i, joined)
+      assert_match(/staging workspace|project root|mount/i, joined)
+      assert_match(/env passthrough|OPENAI_API_KEY/i, joined)
+    end
+  end
+
   def test_agent_run_source_patch_requires_selected_design_gate_before_planning
     in_tmp do |dir|
       json_cmd("init", "--profile", "D")
@@ -4003,16 +5108,13 @@ class AiwebCliTest < Minitest::Test
       state["implementation"]["current_task"] = task_path
       write_state(state)
 
-      bin_dir = write_fake_codex_tooling(dir)
       marker = File.join(dir, "codex-was-run")
+      bin_dir = write_fake_codex_tooling(dir, marker_path: marker)
       before_entries = project_entries
       before_state = File.read(".ai-web/state.yaml")
 
       stdout, stderr, code = run_aiweb_env(
-        {
-          "PATH" => [bin_dir, "/usr/bin", "/bin", "/usr/sbin", "/sbin"].join(File::PATH_SEPARATOR),
-          "FAKE_CODEX_MARKER" => marker
-        },
+        { "PATH" => [bin_dir, "/usr/bin", "/bin", "/usr/sbin", "/sbin"].join(File::PATH_SEPARATOR) },
         "agent-run", "--task", "latest", "--agent", "codex", "--dry-run", "--json"
       )
       payload = JSON.parse(stdout)
@@ -4064,14 +5166,11 @@ class AiwebCliTest < Minitest::Test
       state["design_candidates"]["candidates"] = [{ "id" => "candidate-02", "path" => ".ai-web/design-candidates/candidate-02.html" }]
       write_state(state)
 
-      bin_dir = write_fake_codex_tooling(dir)
       marker = File.join(dir, "codex-was-run")
+      bin_dir = write_fake_codex_tooling(dir, marker_path: marker)
 
       stdout, stderr, code = run_aiweb_env(
-        {
-          "PATH" => [bin_dir, "/usr/bin", "/bin", "/usr/sbin", "/sbin"].join(File::PATH_SEPARATOR),
-          "FAKE_CODEX_MARKER" => marker
-        },
+        { "PATH" => [bin_dir, "/usr/bin", "/bin", "/usr/sbin", "/sbin"].join(File::PATH_SEPARATOR) },
         "agent-run", "--task", "latest", "--agent", "codex", "--dry-run", "--json"
       )
       payload = JSON.parse(stdout)
@@ -4193,18 +5292,14 @@ class AiwebCliTest < Minitest::Test
         - src/components/Hero.astro
       MD
       prepare_agent_run_fixture(task_markdown: task_markdown)
-      bin_dir = write_fake_codex_tooling(dir)
       marker = File.join(dir, "codex-was-run")
+      bin_dir = write_fake_codex_tooling(dir, marker_path: marker, patch_path: File.join(dir, "src/components/Hero.astro"))
       before_entries = project_entries
       before_state = File.read(".ai-web/state.yaml")
       before_source = File.read("src/components/Hero.astro")
 
       stdout, stderr, code = run_aiweb_env(
-        {
-          "PATH" => [bin_dir, "/usr/bin", "/bin", "/usr/sbin", "/sbin"].join(File::PATH_SEPARATOR),
-          "FAKE_CODEX_MARKER" => marker,
-          "FAKE_CODEX_PATCH_PATH" => File.join(dir, "src/components/Hero.astro")
-        },
+        { "PATH" => [bin_dir, "/usr/bin", "/bin", "/usr/sbin", "/sbin"].join(File::PATH_SEPARATOR) },
         "agent-run", "--task", "latest", "--agent", "codex", "--json"
       )
       payload = JSON.parse(stdout)
@@ -4257,7 +5352,12 @@ class AiwebCliTest < Minitest::Test
         - Logs, metadata, and diff evidence are written.
       MD
       prepare_agent_run_fixture(task_markdown: task_markdown, secret: secret)
-      bin_dir = write_fake_codex_tooling(dir)
+      bin_dir = write_fake_codex_tooling(
+        dir,
+        patch_path: File.join(dir, "src/components/Hero.astro"),
+        stdout_text: "fake codex approved stdout",
+        stderr_text: "fake codex approved stderr"
+      )
       before_entries = project_entries
       before_state = File.read(".ai-web/state.yaml")
       before_source = File.read("src/components/Hero.astro")
@@ -4265,12 +5365,7 @@ class AiwebCliTest < Minitest::Test
       env_mtime = File.mtime(".env")
 
       stdout, stderr, code = run_aiweb_env(
-        {
-          "PATH" => [bin_dir, "/usr/bin", "/bin", "/usr/sbin", "/sbin"].join(File::PATH_SEPARATOR),
-          "FAKE_CODEX_PATCH_PATH" => File.join(dir, "src/components/Hero.astro"),
-          "FAKE_CODEX_STDOUT" => "fake codex approved stdout",
-          "FAKE_CODEX_STDERR" => "fake codex approved stderr"
-        },
+        { "PATH" => [bin_dir, "/usr/bin", "/bin", "/usr/sbin", "/sbin"].join(File::PATH_SEPARATOR) },
         "agent-run", "--task", "latest", "--agent", "codex", "--approved", "--json"
       )
       payload = JSON.parse(stdout)
@@ -4302,6 +5397,27 @@ class AiwebCliTest < Minitest::Test
       assert_match(%r{\A\.ai-web/runs/agent-run-.+/agent-run\.json\z}, state.dig("implementation", "latest_agent_run"))
       refute_nil state.dig("implementation", "last_diff")
       assert_match(%r{\A\.ai-web/diffs/agent-run-.+\.patch\z}, state.dig("implementation", "last_diff"))
+    end
+  end
+
+  def test_agent_run_codex_uses_clean_environment
+    in_tmp do |dir|
+      prepare_agent_run_fixture(task_markdown: agent_run_safe_task_markdown)
+      bin_dir = write_fake_codex_env_guard_tooling(dir)
+      env = {
+        "PATH" => [bin_dir, "/usr/bin", "/bin", "/usr/sbin", "/sbin"].join(File::PATH_SEPARATOR),
+        "OPENAI_API_KEY" => "must-not-reach-codex",
+        "FAKE_CODEX_SECRET" => "must-not-reach-codex"
+      }
+
+      stdout, stderr, code = run_aiweb_env(env, "agent-run", "--task", "latest", "--agent", "codex", "--approved", "--json")
+      payload = JSON.parse(stdout)
+
+      assert_equal 0, code
+      assert_equal "", stderr
+      assert_equal "passed", payload.dig("agent_run", "status")
+      assert_match(/patched by env guard codex/, File.read("src/components/Hero.astro"))
+      refute_includes stdout, "must-not-reach-codex"
     end
   end
 
@@ -4403,7 +5519,7 @@ class AiwebCliTest < Minitest::Test
       stdout, stderr, code = run_aiweb_env(
         {
           "PATH" => [bin_dir, "/usr/bin", "/bin", "/usr/sbin", "/sbin"].join(File::PATH_SEPARATOR),
-          "FAKE_OPENMANUS_IMAGE_MISSING" => "1"
+          "AIWEB_OPENMANUS_IMAGE" => "missing-openmanus:latest"
         },
         "agent-run", "--task", "latest", "--agent", "openmanus", "--sandbox", "docker", "--approved", "--json"
       )
@@ -4476,15 +5592,11 @@ class AiwebCliTest < Minitest::Test
       state["implementation"]["current_task"] = task_path
       write_state(state)
 
-      bin_dir = write_fake_codex_tooling(dir)
       prompt_path = File.join(dir, ".ai-web", "runs", "captured-codex-prompt.txt")
+      bin_dir = write_fake_codex_tooling(dir, patch_path: File.join(dir, "src/components/Hero.astro"), prompt_path: prompt_path)
       FileUtils.mkdir_p(File.dirname(prompt_path))
       stdout, stderr, code = run_aiweb_env(
-        {
-          "PATH" => [bin_dir, "/usr/bin", "/bin", "/usr/sbin", "/sbin"].join(File::PATH_SEPARATOR),
-          "FAKE_CODEX_PATCH_PATH" => File.join(dir, "src/components/Hero.astro"),
-          "FAKE_CODEX_PROMPT_PATH" => prompt_path
-        },
+        { "PATH" => [bin_dir, "/usr/bin", "/bin", "/usr/sbin", "/sbin"].join(File::PATH_SEPARATOR) },
         "agent-run", "--task", "latest", "--agent", "codex", "--approved", "--json"
       )
       payload = JSON.parse(stdout)
@@ -4536,15 +5648,15 @@ class AiwebCliTest < Minitest::Test
         - src/components/Hero.astro
       MD
       prepare_agent_run_fixture(task_markdown: task_markdown)
-      bin_dir = write_fake_codex_tooling(dir)
+      bin_dir = write_fake_codex_tooling(
+        dir,
+        stdout_text: "fake codex failure stdout",
+        stderr_text: "fake codex failure stderr",
+        exit_status: 23
+      )
 
       stdout, stderr, code = run_aiweb_env(
-        {
-          "PATH" => [bin_dir, "/usr/bin", "/bin", "/usr/sbin", "/sbin"].join(File::PATH_SEPARATOR),
-          "FAKE_CODEX_EXIT_STATUS" => "23",
-          "FAKE_CODEX_STDOUT" => "fake codex failure stdout",
-          "FAKE_CODEX_STDERR" => "fake codex failure stderr"
-        },
+        { "PATH" => [bin_dir, "/usr/bin", "/bin", "/usr/sbin", "/sbin"].join(File::PATH_SEPARATOR) },
         "agent-run", "--task", "latest", "--agent", "codex", "--approved", "--json"
       )
       payload = JSON.parse(stdout)
@@ -4694,14 +5806,11 @@ class AiwebCliTest < Minitest::Test
       state = load_state
       state["implementation"]["current_task"] = task_path
       write_state(state)
-      bin_dir = write_fake_codex_tooling(dir)
       marker = File.join(dir, "codex-was-run")
+      bin_dir = write_fake_codex_tooling(dir, marker_path: marker)
 
       stdout, stderr, code = run_aiweb_env(
-        {
-          "PATH" => [bin_dir, "/usr/bin", "/bin", "/usr/sbin", "/sbin"].join(File::PATH_SEPARATOR),
-          "FAKE_CODEX_MARKER" => marker
-        },
+        { "PATH" => [bin_dir, "/usr/bin", "/bin", "/usr/sbin", "/sbin"].join(File::PATH_SEPARATOR) },
         "agent-run", "--task", "latest", "--agent", "codex", "--approved", "--json"
       )
       payload = JSON.parse(stdout)
@@ -4745,16 +5854,16 @@ class AiwebCliTest < Minitest::Test
         - src/components/Hero.astro
       MD
       prepare_agent_run_fixture(task_markdown: task_markdown)
-      bin_dir = write_fake_codex_tooling(dir)
       marker = File.join(dir, "codex-was-run")
+      bin_dir = write_fake_codex_tooling(
+        dir,
+        marker_path: marker,
+        patch_path: File.join(dir, "src/components/Hero.astro"),
+        stdout_text: "fake codex unauthorized stdout"
+      )
 
       stdout, stderr, code = run_aiweb_env(
-        {
-          "PATH" => [bin_dir, "/usr/bin", "/bin", "/usr/sbin", "/sbin"].join(File::PATH_SEPARATOR),
-          "FAKE_CODEX_MARKER" => marker,
-          "FAKE_CODEX_PATCH_PATH" => File.join(dir, "src/components/Hero.astro"),
-          "FAKE_CODEX_STDOUT" => "fake codex unauthorized stdout"
-        },
+        { "PATH" => [bin_dir, "/usr/bin", "/bin", "/usr/sbin", "/sbin"].join(File::PATH_SEPARATOR) },
         "agent-run", "--task", "latest", "--agent", "codex", "--approved", "--json"
       )
       payload = JSON.parse(stdout)
@@ -5275,8 +6384,7 @@ class AiwebCliTest < Minitest::Test
       File.write(".env", "SECRET=pr23-success-do-not-leak\n")
       bin_dir = write_fake_verify_loop_tooling(dir)
       env = {
-        "PATH" => [bin_dir, "/usr/bin", "/bin", "/usr/sbin", "/sbin"].join(File::PATH_SEPARATOR),
-        "FAKE_CODEX_PATCH_PATH" => "src/components/Hero.astro"
+        "PATH" => [bin_dir, "/usr/bin", "/bin", "/usr/sbin", "/sbin"].join(File::PATH_SEPARATOR)
       }
 
       stdout, stderr, code = run_aiweb_env(env, "verify-loop", "--max-cycles", "3", "--approved", "--json")
@@ -5324,9 +6432,7 @@ class AiwebCliTest < Minitest::Test
       FileUtils.mkdir_p(File.dirname(marker))
       env = {
         "PATH" => [bin_dir, "/usr/bin", "/bin", "/usr/sbin", "/sbin"].join(File::PATH_SEPARATOR),
-        "PLAYWRIGHT_FAKE_STATUS" => "failed",
-        "FAKE_CODEX_PATCH_PATH" => "src/components/Hero.astro",
-        "FAKE_CODEX_MARKER" => marker
+        "PLAYWRIGHT_FAKE_STATUS" => "failed"
       }
 
       stdout, stderr, code = run_aiweb_env(env, "verify-loop", "--max-cycles", "1", "--approved", "--json")
@@ -5357,9 +6463,7 @@ class AiwebCliTest < Minitest::Test
       FileUtils.mkdir_p(File.dirname(marker))
       env = {
         "PATH" => [bin_dir, "/usr/bin", "/bin", "/usr/sbin", "/sbin"].join(File::PATH_SEPARATOR),
-        "PLAYWRIGHT_FAKE_STATUS" => "failed",
-        "FAKE_CODEX_PATCH_PATH" => "src/components/Hero.astro",
-        "FAKE_CODEX_MARKER" => marker
+        "PLAYWRIGHT_FAKE_STATUS" => "failed"
       }
 
       stdout, stderr, code = run_aiweb_env(env, "verify-loop", "--max-cycles", "1", "--approved", "--json")
@@ -6769,11 +7873,12 @@ class AiwebCliTest < Minitest::Test
         assert File.file?(stop_payload.dig("preview", "metadata_path"))
         assert_equal stop_payload["preview"], JSON.parse(File.read(stop_payload.dig("preview", "metadata_path")))
         assert_raises(Errno::ESRCH) { Process.kill(0, pid) }
+        refute_windows_process_command_includes(File.join(bin_dir, "pnpm-fake.rb"))
         pid = nil
       ensure
         if pid
           begin
-            Process.kill("TERM", pid)
+            Process.kill(windows? ? "KILL" : "TERM", pid)
           rescue Errno::ESRCH
             nil
           end

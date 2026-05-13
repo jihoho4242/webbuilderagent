@@ -87,6 +87,8 @@ module Aiweb
           raise UserError.new("run-resume does not accept extra positional arguments: #{@argv.join(", ")}", EXIT_VALIDATION_FAILED)
         end
         project.run_resume(run_id: opts[:run_id] || "latest", dry_run: @dry_run)
+      when "engine-run"
+        dispatch_engine_run
       when "agent-run"
         dispatch_agent_run
       when "verify-loop"
@@ -602,6 +604,42 @@ module Aiweb
       call_project_adapter(:agent_run, { task: task, agent: agent, sandbox: sandbox.empty? ? nil : sandbox, approved: approved, dry_run: @dry_run }).tap do |result|
         normalize_agent_run_payload!(result, task: task, agent: agent, approved: approved, dry_run: @dry_run)
       end
+    end
+
+    def dispatch_engine_run
+      opts = parse_options do |o, options|
+        o.on("--goal GOAL") { |v| options[:goal] = v }
+        o.on("--agent AGENT") { |v| options[:agent] = v }
+        o.on("--mode MODE") { |v| options[:mode] = v }
+        o.on("--sandbox SANDBOX") { |v| options[:sandbox] = v }
+        o.on("--max-cycles N") { |v| options[:max_cycles] = parse_positive_integer(v, "--max-cycles") }
+        o.on("--approval-hash HASH") { |v| options[:approval_hash] = v }
+        o.on("--approval-request HASH") { |v| options[:approval_hash] = v }
+        o.on("--resume RUN_ID") { |v| options[:resume] = v }
+        o.on("--run-id RUN_ID") { |v| options[:run_id] = v }
+        o.on("--approved") { options[:approved] = true }
+        o.on("--force") { options[:force] = true }
+      end
+      opts[:goal] ||= @argv.join(" ")
+      @argv.clear
+      agent = opts[:agent].to_s.strip.empty? ? "codex" : opts[:agent].to_s.strip
+      sandbox = opts[:sandbox].to_s.strip.downcase
+      raise UserError.new("engine-run --sandbox is only supported with --agent openmanus", EXIT_VALIDATION_FAILED) if !sandbox.empty? && agent != "openmanus"
+      raise UserError.new("engine-run --sandbox must be docker or podman", EXIT_VALIDATION_FAILED) unless sandbox.empty? || %w[docker podman].include?(sandbox)
+
+      call_project_adapter(:engine_run, {
+        goal: opts[:goal],
+        agent: agent,
+        mode: opts[:mode] || "agentic_local",
+        sandbox: sandbox.empty? ? nil : sandbox,
+        max_cycles: opts[:max_cycles] || 3,
+        approved: !!opts[:approved],
+        approval_hash: opts[:approval_hash],
+        resume: opts[:resume],
+        run_id: opts[:run_id],
+        force: opts[:force],
+        dry_run: @dry_run
+      })
     end
 
     def call_project_adapter(method_name, kwargs)

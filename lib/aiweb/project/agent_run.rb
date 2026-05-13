@@ -84,7 +84,15 @@ module Aiweb
       blockers << "agent-run component map is malformed" if component_map_error
       blockers << "agent-run requires --approved for real command execution" if !dry_run && !approved
       blockers.concat(agent_run_source_security_blockers(source_paths))
-      agent_command = agent_run_command(agent_name, sandbox: openmanus_sandbox, workspace_dir: openmanus_workspace_path)
+      openmanus_command_env = agent_name == "openmanus" ? agent_run_openmanus_command_env(
+        sandbox: openmanus_sandbox,
+        source_paths: source_paths,
+        task_source: task_source,
+        run_id: run_id,
+        diff_path: diff_path,
+        metadata_path: metadata_path
+      ) : {}
+      agent_command = agent_run_command(agent_name, sandbox: openmanus_sandbox, workspace_dir: openmanus_workspace_path, openmanus_env: openmanus_command_env)
       if agent_name == "openmanus"
         blockers.concat(agent_run_openmanus_sandbox_blockers(agent_command, sandbox: openmanus_sandbox, workspace_dir: openmanus_workspace_path)) if !dry_run && approved
       elsif !dry_run && approved && agent_command.empty?
@@ -210,7 +218,8 @@ module Aiweb
           agent_run_process_env(context_path: context_path, source_paths: source_paths, task_source: task_source, run_id: run_id, diff_path: diff_path, metadata_path: metadata_path),
           agent_name,
           stdin_data: prompt,
-          chdir: root
+          chdir: root,
+          unsetenv_others: true
         )
         after_snapshot = agent_run_workspace_snapshot
         unauthorized_changes = agent_run_unauthorized_workspace_changes(before_snapshot, after_snapshot, source_paths)
@@ -280,10 +289,10 @@ module Aiweb
 
     private
 
-    def agent_run_command(agent_name, sandbox: nil, workspace_dir: nil)
+    def agent_run_command(agent_name, sandbox: nil, workspace_dir: nil, openmanus_env: {})
       if agent_name == "openmanus"
         return [] if sandbox.to_s.empty?
-        return agent_run_openmanus_container_command(sandbox, workspace_dir)
+        return agent_run_openmanus_container_command(sandbox, workspace_dir, openmanus_env)
       end
 
       executable_path(agent_name) ? [agent_name] : []
@@ -292,7 +301,7 @@ module Aiweb
     end
 
     def agent_run_process_env(context_path:, source_paths:, task_source:, run_id:, diff_path:, metadata_path:)
-      {
+      subprocess_path_env.merge(
         "AIWEB_AGENT_RUN_CONTEXT_PATH" => context_path,
         "AIWEB_AGENT_RUN_ALLOWED_SOURCE_PATHS_JSON" => JSON.generate(source_paths),
         "AIWEB_AGENT_RUN_TASK_PATH" => task_source["relative"].to_s,
@@ -301,7 +310,7 @@ module Aiweb
         "AIWEB_AGENT_RUN_RUN_ID" => run_id,
         "AIWEB_AGENT_RUN_DIFF_PATH" => relative(diff_path),
         "AIWEB_AGENT_RUN_METADATA_PATH" => relative(metadata_path)
-      }
+      )
     end
 
     def agent_run_default_source_targets

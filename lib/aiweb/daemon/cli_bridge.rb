@@ -4,9 +4,10 @@ module Aiweb
   class CodexCliBridge
     DEFAULT_ALLOWED_COMMANDS = %w[
       status runtime-plan scaffold-status intent init start interview run design-brief design-research
+      run-status run-timeline observability-summary run-cancel run-resume
       design-system design-prompt design select-design ingest-reference scaffold setup build preview qa-playwright
       qa-screenshot qa-a11y qa-lighthouse visual-critique repair visual-polish workbench
-      component-map visual-edit agent-run verify-loop github-sync deploy-plan deploy qa-checklist qa-report
+      component-map visual-edit engine-run agent-run verify-loop github-sync deploy-plan deploy qa-checklist qa-report
       next-task advance rollback resolve-blocker snapshot supabase-secret-qa
     ].freeze
 
@@ -46,6 +47,8 @@ module Aiweb
         ".env and .env.* path segments are rejected before bridge execution",
         "bridge commands time out instead of blocking the backend indefinitely",
         "approved agent-run/setup/verify-loop execution requires a matching X-Aiweb-Approval-Token header or the API token when no separate approval token is configured",
+        "engine-run is called by the dedicated backend job API; frontend generic command requests for engine-run are rejected",
+        "engine-run exposes the agentic sandbox task runtime through structured command envelopes",
         "agent-run maps to aiweb agent-run --agent codex|openmanus and keeps approval semantics",
         "deploy is exposed as dry-run planning only through this bridge"
       ]
@@ -63,7 +66,7 @@ module Aiweb
 
       argv = [RbConfig.ruby, aiweb_bin, "--path", project_path, command]
       argv.concat(args)
-      argv << "--approved" if %w[agent-run setup verify-loop].include?(command) && approved
+      argv << "--approved" if %w[agent-run engine-run setup verify-loop].include?(command) && approved
       argv << "--dry-run" if dry_run
       argv << "--json"
 
@@ -104,7 +107,43 @@ module Aiweb
       )
     end
 
+    def engine_run(project_path:, goal: nil, agent: "codex", mode: "agentic_local", sandbox: nil, max_cycles: 3, approval_hash: nil, resume: nil, run_id: nil, dry_run: true, approved: false)
+      agent_name = agent.to_s.strip.empty? ? "codex" : agent.to_s.strip
+      mode_name = mode.to_s.strip.empty? ? "agentic_local" : mode.to_s.strip
+      sandbox_name = sandbox.to_s.strip.downcase
+      cycles = parse_max_cycles(max_cycles)
+      requested_run_id = run_id.to_s.strip
+      raise UserError.new("bridge engine-run agent must be codex or openmanus", 5) unless %w[codex openmanus].include?(agent_name)
+      raise UserError.new("bridge engine-run mode must be safe_patch, agentic_local, or external_approval", 5) unless %w[safe_patch agentic_local external_approval].include?(mode_name)
+      raise UserError.new("bridge engine-run sandbox is only supported with openmanus", 5) if !sandbox_name.empty? && agent_name != "openmanus"
+      raise UserError.new("bridge engine-run sandbox must be docker or podman", 5) unless sandbox_name.empty? || %w[docker podman].include?(sandbox_name)
+      validate_run_id!(requested_run_id, "engine-run run_id") unless requested_run_id.empty?
+
+      args = ["--agent", agent_name, "--mode", mode_name, "--max-cycles", cycles.to_s]
+      args.concat(["--goal", goal.to_s]) unless goal.to_s.strip.empty?
+      args.concat(["--sandbox", sandbox_name]) unless sandbox_name.empty?
+      args.concat(["--approval-hash", approval_hash.to_s]) unless approval_hash.to_s.strip.empty?
+      args.concat(["--resume", resume.to_s]) unless resume.to_s.strip.empty?
+      args.concat(["--run-id", requested_run_id]) unless requested_run_id.empty?
+      run(
+        project_path: project_path,
+        command: "engine-run",
+        args: args,
+        dry_run: dry_run,
+        approved: approved
+      )
+    end
+
     private
+
+    def parse_max_cycles(value)
+      number = Integer(value || 3)
+      raise ArgumentError if number < 1 || number > 10
+
+      number
+    rescue ArgumentError, TypeError
+      raise UserError.new("bridge engine-run max_cycles must be an integer between 1 and 10", 1)
+    end
 
     def parse_json(stdout)
       JSON.parse(stdout)
@@ -221,6 +260,15 @@ module Aiweb
     def reject_unsafe_path!(value, label)
       if value.to_s.match?(UNSAFE_ARG_PATTERN) || File.basename(value.to_s).match?(/\A\.env(?:\.|\z)/)
         raise UserError.new("unsafe #{label} blocked: .env/.env.* paths are not allowed", 5)
+      end
+    end
+
+    def validate_run_id!(value, label)
+      if value.include?("/") || value.include?("\\") || value.include?("..") || value.start_with?(".") || value.match?(UNSAFE_ARG_PATTERN)
+        raise UserError.new("unsafe #{label} blocked", 5)
+      end
+      unless value.match?(/\Aengine-run-[A-Za-z0-9_.-]+\z/)
+        raise UserError.new("#{label} must start with engine-run- and contain only letters, numbers, dot, underscore, or dash", 1)
       end
     end
   end

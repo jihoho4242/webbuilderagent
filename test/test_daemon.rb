@@ -37,6 +37,68 @@ class AiwebDaemonTest < Minitest::Test
     api_headers({ "X-Aiweb-Approval-Token" => APPROVAL_TOKEN }.merge(extra))
   end
 
+  class RecordingEngineBridge
+    attr_reader :calls
+
+    def initialize
+      @calls = []
+    end
+
+    def metadata
+      {
+        "schema_version" => 1,
+        "engine_root" => REPO_ROOT,
+        "allowed_commands" => %w[engine-run]
+      }
+    end
+
+    def engine_run(**kwargs)
+      @calls << kwargs
+      {
+        "schema_version" => 1,
+        "status" => "passed",
+        "bridge" => {
+          "command" => "engine-run",
+          "project_path" => kwargs.fetch(:project_path),
+          "goal" => kwargs[:goal],
+          "agent" => kwargs[:agent],
+          "mode" => kwargs[:mode],
+          "sandbox" => kwargs[:sandbox],
+          "max_cycles" => kwargs[:max_cycles],
+          "approval_hash" => kwargs[:approval_hash],
+          "resume" => kwargs[:resume],
+          "run_id" => kwargs[:run_id],
+          "dry_run" => kwargs[:dry_run],
+          "approved" => kwargs[:approved]
+        },
+        "stdout_json" => {
+          "engine_run" => {
+            "status" => kwargs[:dry_run] ? "dry_run" : "passed",
+            "run_id" => kwargs[:run_id] || kwargs[:resume] || "engine-run-test"
+          }
+        }
+      }
+    end
+
+    def run(**kwargs)
+      @calls << kwargs.merge(kind: :bridge_run)
+      {
+        "schema_version" => 1,
+        "status" => "passed",
+        "bridge" => {
+          "command" => kwargs[:command],
+          "project_path" => kwargs[:project_path],
+          "args" => kwargs[:args],
+          "dry_run" => kwargs[:dry_run],
+          "approved" => kwargs[:approved]
+        },
+        "stdout_json" => {
+          "action_taken" => "recorded #{kwargs[:command]}"
+        }
+      }
+    end
+  end
+
   def test_bridge_default_engine_root_points_to_repo_bin
     bridge = Aiweb::CodexCliBridge.new
 
@@ -51,15 +113,394 @@ class AiwebDaemonTest < Minitest::Test
     assert_equal "planned local backend daemon", payload["action_taken"]
     assert_equal "planned", payload.dig("backend", "status")
     assert_includes payload.dig("backend", "routes"), "POST /api/codex/agent-run"
+    assert_includes payload.dig("backend", "routes"), "GET /api/engine/openmanus-readiness"
     assert_equal REPO_ROOT, payload.dig("backend", "bridge", "engine_root")
     assert_equal AIWEB, payload.dig("backend", "bridge", "aiweb_bin")
     assert_includes payload.dig("backend", "routes"), "GET /api/project/artifact?path=PROJECT_PATH&artifact=ARTIFACT_PATH"
+    assert_includes payload.dig("backend", "routes"), "GET /api/project/console?path=PROJECT_PATH"
+    assert_includes payload.dig("backend", "routes"), "GET /api/project/run?path=PROJECT_PATH&run_id=RUN_ID"
+    assert_includes payload.dig("backend", "routes"), "GET /api/project/run-stream?path=PROJECT_PATH&run_id=RUN_ID&cursor=N"
+    assert_includes payload.dig("backend", "routes"), "GET /api/project/run-events?path=PROJECT_PATH&run_id=RUN_ID"
+    assert_includes payload.dig("backend", "routes"), "GET /api/project/approvals?path=PROJECT_PATH"
+    assert_includes payload.dig("backend", "routes"), "GET /api/project/job/status?path=PROJECT_PATH&run_id=RUN_ID"
+    assert_includes payload.dig("backend", "routes"), "GET /api/project/job/timeline?path=PROJECT_PATH&limit=N"
+    assert_includes payload.dig("backend", "routes"), "GET /api/project/job/summary?path=PROJECT_PATH&limit=N"
+    assert_includes payload.dig("backend", "routes"), "POST /api/engine/run"
+    assert_includes payload.dig("backend", "routes"), "POST /api/engine/approve"
+    assert_includes payload.dig("backend", "routes"), "POST /api/project/job/cancel"
+    assert_includes payload.dig("backend", "routes"), "POST /api/project/job/resume"
     assert_includes payload.dig("backend", "bridge", "allowed_commands"), "agent-run"
+    assert_includes payload.dig("backend", "bridge", "allowed_commands"), "engine-run"
     assert_includes payload.dig("backend", "bridge", "allowed_commands"), "verify-loop"
     assert_includes payload.dig("backend", "bridge", "allowed_commands"), "ingest-reference"
     assert_includes payload.dig("backend", "bridge", "guardrails"), "frontend sends structured JSON only; no raw shell commands"
+    assert_includes payload.dig("backend", "guardrails"), "engine-run is exposed only through dedicated job APIs, not the generic command bridge"
     assert_equal "AIWEB_DAEMON_TOKEN", payload.dig("backend", "auth", "api_token_env")
     assert_equal "X-Aiweb-Token", payload.dig("backend", "auth", "api_token_header")
+  end
+
+  def test_backend_exposes_engine_run_events_and_approval_inbox_without_raw_shell
+    in_tmp do |dir|
+      run_id = "engine-run-20260513T010203Z"
+      run_dir = File.join(dir, ".ai-web", "runs", run_id)
+      FileUtils.mkdir_p(run_dir)
+      File.write(
+        File.join(run_dir, "events.jsonl"),
+        [
+          JSON.generate("schema_version" => 1, "type" => "run.created", "message" => "created", "at" => "now", "data" => {}),
+          JSON.generate("schema_version" => 1, "type" => "tool.started", "message" => "build", "at" => "now", "data" => { "command" => "npm run build" })
+        ].join("\n") + "\n"
+      )
+      File.write(
+        File.join(run_dir, "approvals.jsonl"),
+        JSON.generate(
+          "schema_version" => 1,
+          "status" => "planned",
+          "approval_hash" => "abc123",
+          "capability" => { "goal" => "patch hero", "forbidden" => ["external_network"] }
+        ) + "\n"
+      )
+
+      encoded_path = URI.encode_www_form_component(dir)
+      status, events = app.call("GET", "/api/project/run-events?path=#{encoded_path}&run_id=#{run_id}", api_headers)
+      assert_equal 200, status
+      assert_equal "ready", events["status"]
+      assert_equal run_id, events["run_id"]
+      assert_equal 2, events["count"]
+      assert_equal "tool.started", events["events"].last["type"]
+
+      status, approvals = app.call("GET", "/api/project/approvals?path=#{encoded_path}", api_headers)
+      assert_equal 200, status
+      assert_equal "ready", approvals["status"]
+      assert_equal run_id, approvals["approvals"].first["run_id"]
+      assert_equal "abc123", approvals["approvals"].first["approval_hash"]
+    end
+  end
+
+  def test_engine_run_endpoint_maps_to_dedicated_bridge_without_raw_shell
+    in_tmp do |dir|
+      bridge = RecordingEngineBridge.new
+      local_app = Aiweb::LocalBackendApp.new(bridge: bridge, api_token: API_TOKEN, approval_token: APPROVAL_TOKEN)
+
+      status, payload = local_app.call(
+        "POST",
+        "/api/engine/run",
+        api_headers,
+        JSON.generate(
+          "path" => dir,
+          "goal" => "build a local console",
+          "agent" => "openmanus",
+          "mode" => "agentic_local",
+          "sandbox" => "docker",
+          "max_cycles" => 4,
+          "dry_run" => true
+        )
+      )
+
+      assert_equal 200, status
+      assert_equal "passed", payload["status"]
+      assert_equal "engine-run", payload.dig("bridge", "command")
+      assert_equal "build a local console", bridge.calls.last[:goal]
+      assert_equal "openmanus", bridge.calls.last[:agent]
+      assert_equal "docker", bridge.calls.last[:sandbox]
+      assert_equal 4, bridge.calls.last[:max_cycles]
+      assert_equal true, bridge.calls.last[:dry_run]
+      assert_equal false, bridge.calls.last[:approved]
+      refute_includes JSON.generate(payload), ";"
+    end
+  end
+
+  def test_engine_approval_endpoint_resumes_with_approval_token
+    in_tmp do |dir|
+      bridge = RecordingEngineBridge.new
+      local_app = Aiweb::LocalBackendApp.new(bridge: bridge, api_token: API_TOKEN, approval_token: APPROVAL_TOKEN)
+
+      status, blocked = local_app.call(
+        "POST",
+        "/api/engine/approve",
+        api_headers,
+        JSON.generate("path" => dir, "run_id" => "engine-run-20260513T010203Z", "approval_hash" => "abc123")
+      )
+      assert_equal 403, status
+      assert_match(/approval token/i, blocked["error"])
+
+      status, payload = local_app.call(
+        "POST",
+        "/api/engine/approve",
+        approval_headers,
+        JSON.generate(
+          "path" => dir,
+          "run_id" => "engine-run-20260513T010203Z",
+          "approval_hash" => "abc123",
+          "agent" => "codex",
+          "mode" => "agentic_local"
+        )
+      )
+
+      assert_equal 200, status
+      assert_equal "queued", payload["status"]
+      assert_match(/\Aengine-run-resume-/, payload.dig("engine_run", "run_id"))
+      assert_equal true, payload.dig("engine_run", "async")
+      assert_equal true, payload.dig("engine_run", "approval_resume")
+      assert local_app.wait_for_background_jobs(timeout: 2), "background approval job should finish in test"
+      assert_equal "engine-run-20260513T010203Z", bridge.calls.last[:resume]
+      assert_equal "abc123", bridge.calls.last[:approval_hash]
+      assert_match(/\Aengine-run-resume-/, bridge.calls.last[:run_id])
+      assert_equal false, bridge.calls.last[:dry_run]
+      assert_equal true, bridge.calls.last[:approved]
+    end
+  end
+
+  def test_engine_run_real_execution_returns_durable_background_job
+    in_tmp do |dir|
+      bridge = RecordingEngineBridge.new
+      local_app = Aiweb::LocalBackendApp.new(bridge: bridge, api_token: API_TOKEN, approval_token: APPROVAL_TOKEN)
+
+      status, blocked = local_app.call(
+        "POST",
+        "/api/engine/run",
+        api_headers,
+        JSON.generate("path" => dir, "goal" => "ship console", "dry_run" => false, "approved" => false)
+      )
+      assert_equal 403, status
+      assert_match(/approved=true/, blocked["error"])
+
+      status, payload = local_app.call(
+        "POST",
+        "/api/engine/run",
+        approval_headers,
+        JSON.generate(
+          "path" => dir,
+          "goal" => "ship console",
+          "agent" => "openmanus",
+          "sandbox" => "docker",
+          "dry_run" => false,
+          "approved" => true,
+          "job_run_id" => "engine-run-web-test"
+        )
+      )
+
+      assert_equal 200, status
+      assert_equal "queued", payload["status"]
+      assert_equal "engine-run-web-test", payload.dig("engine_run", "run_id")
+      assert_equal ".ai-web/runs/engine-run-web-test/job.json", payload.dig("engine_run", "job_path")
+      assert_equal ".ai-web/runs/engine-run-web-test/events.jsonl", payload.dig("engine_run", "events_path")
+
+      encoded_path = URI.encode_www_form_component(dir)
+      status, stream = local_app.call("GET", "/api/project/run-stream?path=#{encoded_path}&run_id=engine-run-web-test&cursor=0&wait_ms=1", api_headers)
+      assert_equal 200, status
+      assert_includes stream["events"].map { |event| event["type"] }, "backend.job.queued"
+
+      assert local_app.wait_for_background_jobs(timeout: 2), "background engine job should finish in test"
+      assert_equal "engine-run-web-test", bridge.calls.last[:run_id]
+      assert_equal "ship console", bridge.calls.last[:goal]
+      assert_equal false, bridge.calls.last[:dry_run]
+      assert_equal true, bridge.calls.last[:approved]
+
+      status, job = local_app.call("GET", "/api/project/job/status?path=#{encoded_path}&run_id=engine-run-web-test", api_headers)
+      assert_equal 200, status
+      assert_equal "ready", job["status"]
+      assert_equal "passed", job.dig("job", "status")
+      assert_equal "passed", job.dig("job", "engine_status")
+    end
+  end
+
+  def test_bridge_engine_run_can_pin_backend_job_run_id
+    in_tmp do |dir|
+      app.call("POST", "/api/project/command", api_headers, JSON.generate("path" => dir, "command" => "init", "args" => ["--profile", "D"]))
+      bridge = Aiweb::CodexCliBridge.new(engine_root: REPO_ROOT)
+
+      result = bridge.engine_run(
+        project_path: dir,
+        goal: "inspect fixed id",
+        agent: "codex",
+        mode: "agentic_local",
+        run_id: "engine-run-fixed-web-id",
+        dry_run: true,
+        approved: false
+      )
+
+      assert_includes result.dig("bridge", "args"), "--run-id"
+      assert_includes result.dig("bridge", "args"), "engine-run-fixed-web-id"
+      assert_equal "engine-run-fixed-web-id", result.dig("stdout_json", "engine_run", "run_id")
+    end
+  end
+
+  def test_backend_run_detail_stream_and_diff_artifact_for_console
+    in_tmp do |dir|
+      run_id = "engine-run-20260513T111213Z"
+      run_dir = File.join(dir, ".ai-web", "runs", run_id)
+      FileUtils.mkdir_p(File.join(run_dir, "artifacts"))
+      FileUtils.mkdir_p(File.join(run_dir, "qa"))
+      FileUtils.mkdir_p(File.join(run_dir, "screenshots"))
+      FileUtils.mkdir_p(File.join(dir, ".ai-web", "diffs"))
+      File.write(File.join(run_dir, "qa", "design-verdict.json"), JSON.pretty_generate("schema_version" => 1, "status" => "passed", "scores" => { "selected_design_fidelity" => 0.94 }))
+      File.write(File.join(run_dir, "qa", "preview.json"), JSON.pretty_generate("schema_version" => 1, "status" => "ready", "url" => "http://127.0.0.1:4321/"))
+      File.write(File.join(run_dir, "qa", "screenshots.json"), JSON.pretty_generate("schema_version" => 1, "status" => "captured", "screenshots" => [{ "viewport" => "desktop", "path" => ".ai-web/runs/#{run_id}/screenshots/desktop.png", "url" => "http://127.0.0.1:4321/" }]))
+      File.write(File.join(run_dir, "artifacts", "opendesign-contract.json"), JSON.pretty_generate("schema_version" => 1, "status" => "ready", "contract_hash" => "sha256:abc"))
+      File.binwrite(File.join(run_dir, "screenshots", "desktop.png"), "png")
+      File.write(
+        File.join(run_dir, "engine-run.json"),
+        JSON.pretty_generate(
+          "schema_version" => 1,
+          "run_id" => run_id,
+          "status" => "waiting_approval",
+          "agent" => "codex",
+          "mode" => "agentic_local",
+          "approval_hash" => "hash-123",
+          "events_path" => ".ai-web/runs/#{run_id}/events.jsonl",
+          "approval_path" => ".ai-web/runs/#{run_id}/approvals.jsonl",
+          "diff_path" => ".ai-web/diffs/#{run_id}.patch",
+          "design_verdict_path" => ".ai-web/runs/#{run_id}/qa/design-verdict.json",
+          "preview_path" => ".ai-web/runs/#{run_id}/qa/preview.json",
+          "screenshot_evidence_path" => ".ai-web/runs/#{run_id}/qa/screenshots.json",
+          "opendesign_contract_path" => ".ai-web/runs/#{run_id}/artifacts/opendesign-contract.json",
+          "stdout_log" => ".ai-web/runs/#{run_id}/logs/stdout.log",
+          "stderr_log" => ".ai-web/runs/#{run_id}/logs/stderr.log",
+          "copy_back_policy" => { "approval_issues" => ["package install requested"], "safe_changes" => [] },
+          "context" => { "content" => "SECRET=must-not-leak" }
+        )
+      )
+      FileUtils.mkdir_p(File.join(run_dir, "logs"))
+      File.write(File.join(run_dir, "logs", "stdout.log"), "visible stdout\n")
+      File.write(File.join(run_dir, "logs", "stderr.log"), "visible stderr\n")
+      File.write(
+        File.join(run_dir, "events.jsonl"),
+        [
+          JSON.generate("schema_version" => 1, "type" => "run.created", "message" => "created", "at" => "1", "data" => {}),
+          JSON.generate("schema_version" => 1, "type" => "approval.requested", "message" => "needs approval", "at" => "2", "data" => { "reason" => "package install" })
+        ].join("\n") + "\n"
+      )
+      File.write(
+        File.join(run_dir, "approvals.jsonl"),
+        JSON.generate("schema_version" => 1, "status" => "planned", "approval_hash" => "hash-123") + "\n"
+      )
+      File.write(File.join(dir, ".ai-web", "diffs", "#{run_id}.patch"), "diff --git a/src/App.js b/src/App.js\n")
+
+      encoded_path = URI.encode_www_form_component(dir)
+      status, detail = app.call("GET", "/api/project/run?path=#{encoded_path}&run_id=#{run_id}", api_headers)
+      assert_equal 200, status
+      assert_equal "ready", detail["status"]
+      assert_equal run_id, detail.dig("run", "run_id")
+      assert_equal "waiting_approval", detail.dig("run", "metadata", "status")
+      assert_equal true, detail.dig("run", "console", "needs_approval")
+      assert_equal ".ai-web/diffs/#{run_id}.patch", detail.dig("run", "artifact_refs").find { |entry| entry["role"] == "diff" }["path"]
+      assert_equal ".ai-web/runs/#{run_id}/logs/stdout.log", detail.dig("run", "artifact_refs").find { |entry| entry["role"] == "stdout" }["path"]
+      assert_equal ".ai-web/runs/#{run_id}/logs/stderr.log", detail.dig("run", "artifact_refs").find { |entry| entry["role"] == "stderr" }["path"]
+      assert_equal "passed", detail.dig("run", "panels", "design_verdict", "data", "status")
+      assert_equal "ready", detail.dig("run", "panels", "preview", "data", "status")
+      assert_equal ["desktop"], detail.dig("run", "panels", "screenshots", "screenshots").map { |shot| shot["viewport"] }
+      assert_equal "sha256:abc", detail.dig("run", "panels", "opendesign_contract", "data", "contract_hash")
+      assert_equal ".ai-web/diffs/#{run_id}.patch", detail.dig("run", "panels", "diff", "artifact", "path")
+      assert_equal "ready", detail.dig("run", "panels", "approvals", "status")
+      refute_includes JSON.generate(detail), "must-not-leak"
+
+      status, stream = app.call("GET", "/api/project/run-stream?path=#{encoded_path}&run_id=#{run_id}&cursor=1&wait_ms=25", api_headers)
+      assert_equal 200, status
+      assert_equal 1, stream["cursor"]
+      assert_equal "long_poll", stream["stream_mode"]
+      assert_equal 25, stream["wait_ms"]
+      assert_equal 2, stream["next_cursor"]
+      assert_equal ["approval.requested"], stream["events"].map { |event| event["type"] }
+
+      artifact = URI.encode_www_form_component(".ai-web/diffs/#{run_id}.patch")
+      status, diff = app.call("GET", "/api/project/artifact?path=#{encoded_path}&artifact=#{artifact}", api_headers)
+      assert_equal 200, status
+      assert_equal "text/x-diff", diff.dig("artifact", "media_type")
+      assert_match(/diff --git/, diff.dig("artifact", "content"))
+    end
+  end
+
+  def test_backend_console_payload_surfaces_latest_run_and_approval_count
+    in_tmp do |dir|
+      run_id = "engine-run-20260513T141516Z"
+      run_dir = File.join(dir, ".ai-web", "runs", run_id)
+      FileUtils.mkdir_p(run_dir)
+      File.write(File.join(run_dir, "engine-run.json"), JSON.pretty_generate("schema_version" => 1, "run_id" => run_id, "status" => "waiting_approval"))
+      File.write(File.join(run_dir, "approvals.jsonl"), JSON.generate("schema_version" => 1, "status" => "planned", "approval_hash" => "hash-456") + "\n")
+
+      encoded_path = URI.encode_www_form_component(dir)
+      status, payload = app.call("GET", "/api/project/console?path=#{encoded_path}", api_headers)
+
+      assert_equal 200, status
+      assert_equal "ready", payload["status"]
+      assert_equal true, payload.dig("console", "backend_ready")
+      assert_equal run_id, payload.dig("console", "latest_run", "run_id")
+      assert_equal 1, payload.dig("console", "approval_count")
+      assert_includes payload.dig("console", "routes"), "POST /api/engine/run"
+    end
+  end
+
+  def test_backend_job_lifecycle_routes_map_to_bridge_and_require_tokens
+    in_tmp do |dir|
+      bridge = RecordingEngineBridge.new
+      local_app = Aiweb::LocalBackendApp.new(bridge: bridge, api_token: API_TOKEN, approval_token: APPROVAL_TOKEN)
+      encoded_path = URI.encode_www_form_component(dir)
+
+      status, lifecycle = local_app.call("GET", "/api/project/job/status?path=#{encoded_path}&run_id=active", api_headers)
+      assert_equal 200, status
+      assert_equal "run-status", lifecycle.dig("bridge", "command")
+      assert_equal ["--run-id", "active"], lifecycle.dig("bridge", "args")
+
+      status, timeline = local_app.call("GET", "/api/project/job/timeline?path=#{encoded_path}&limit=7", api_headers)
+      assert_equal 200, status
+      assert_equal "run-timeline", timeline.dig("bridge", "command")
+      assert_equal ["--limit", "7"], timeline.dig("bridge", "args")
+
+      status, summary = local_app.call("GET", "/api/project/job/summary?path=#{encoded_path}&limit=3", api_headers)
+      assert_equal 200, status
+      assert_equal "observability-summary", summary.dig("bridge", "command")
+      assert_equal ["--limit", "3"], summary.dig("bridge", "args")
+
+      status, blocked = local_app.call(
+        "POST",
+        "/api/project/job/cancel",
+        api_headers,
+        JSON.generate("path" => dir, "run_id" => "active", "force" => true)
+      )
+      assert_equal 403, status
+      assert_match(/approval token/i, blocked["error"])
+
+      status, cancel = local_app.call(
+        "POST",
+        "/api/project/job/cancel",
+        approval_headers,
+        JSON.generate("path" => dir, "run_id" => "active", "force" => true)
+      )
+      assert_equal 200, status
+      assert_equal "run-cancel", cancel.dig("bridge", "command")
+      assert_equal ["--run-id", "active", "--force"], cancel.dig("bridge", "args")
+
+      status, dry_cancel = local_app.call(
+        "POST",
+        "/api/project/job/cancel",
+        api_headers,
+        JSON.generate("path" => dir, "run_id" => "active", "dry_run" => true)
+      )
+      assert_equal 200, status
+      assert_equal "run-cancel", dry_cancel.dig("bridge", "command")
+      assert_equal true, dry_cancel.dig("bridge", "dry_run")
+      assert_equal ["--run-id", "active"], dry_cancel.dig("bridge", "args")
+
+      status, dry_resume = local_app.call(
+        "POST",
+        "/api/project/job/resume",
+        api_headers,
+        JSON.generate("path" => dir, "run_id" => "latest", "dry_run" => true)
+      )
+      assert_equal 200, status
+      assert_equal "run-resume", dry_resume.dig("bridge", "command")
+      assert_equal true, dry_resume.dig("bridge", "dry_run")
+
+      status, blocked_resume = local_app.call(
+        "POST",
+        "/api/project/job/resume",
+        api_headers,
+        JSON.generate("path" => dir, "run_id" => "latest")
+      )
+      assert_equal 403, status
+      assert_match(/approval token/i, blocked_resume["error"])
+    end
   end
 
   def test_daemon_defaults_to_local_host_and_rejects_external_binding
@@ -109,6 +550,20 @@ class AiwebDaemonTest < Minitest::Test
     status, payload = app.call("GET", "/api/engine", api_headers)
     assert_equal 200, status
     assert_equal "ready", payload["status"]
+    assert_equal true, payload.dig("capabilities", "engine_run_async_jobs")
+    assert_equal false, payload.dig("capabilities", "generic_engine_run_command")
+    assert_equal false, payload.dig("openmanus_runtime", "check_image")
+  end
+
+  def test_backend_reports_openmanus_readiness_for_web_preflight
+    status, payload = app.call("GET", "/api/engine/openmanus-readiness", api_headers)
+
+    assert_equal 200, status
+    assert_includes %w[ready missing_runtime missing_image unavailable], payload["status"]
+    assert_equal true, payload["check_image"]
+    assert_equal "openmanus:latest", payload["image"]
+    assert_equal %w[docker podman], payload["providers"].map { |provider| provider["provider"] }
+    assert payload["next_action"].is_a?(String)
   end
 
   def test_backend_app_health_and_status_use_latest_engine_bridge
@@ -265,6 +720,15 @@ class AiwebDaemonTest < Minitest::Test
       )
       assert_equal 403, status
       assert_match(/--approved/, blocked_approved["error"])
+
+      status, blocked_engine = app.call(
+        "POST",
+        "/api/project/command",
+        api_headers,
+        JSON.generate("path" => dir, "command" => "engine-run", "args" => ["--goal", "ship web"])
+      )
+      assert_equal 403, status
+      assert_match(%r{/api/engine/run}, blocked_engine["error"])
 
       status, blocked_env = app.call(
         "POST",

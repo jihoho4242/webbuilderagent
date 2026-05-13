@@ -21,6 +21,8 @@ module Aiweb
           observability-summary [--limit N] (alias: summary)
           run-cancel [--run-id active|ID] [--force]
           run-resume [--run-id latest|ID]
+          engine-run [--goal "..."] [--agent codex|openmanus] [--mode safe_patch|agentic_local] [--sandbox docker|podman] [--max-cycles N] [--run-id RUN_ID] [--approved] [--approval-hash HASH]
+          engine-run --dry-run
           design-brief [--force]
           design-research [--provider lazyweb] [--policy off|opportunistic|required] [--limit N] [--force]
           design-system resolve [--force]
@@ -84,6 +86,7 @@ module Aiweb
           supabase-local-verify: verifies generated Profile S files, safe Supabase template, migrations/RLS/storage docs, and SSR client/server stubs locally, records .ai-web/qa/supabase-local-verify.json, and never creates hosted Supabase projects, runs provider CLI/network, deploys, installs, builds, previews, or reads .env/.env.*
           runtime-plan/scaffold-status: read-only runtime readiness metadata; does not install or launch Node
           run-status/run-cancel/run-resume: local run lifecycle control plane backed by .ai-web/runs/active-run.json plus per-run lifecycle/cancel/resume descriptors; status is read-only, cancel/resume support --dry-run no-write planning, cancellation is observed at lifecycle checkpoints, and resume records a descriptor without launching provider or agent commands
+          engine-run: Manus-style engine-first task runtime; --dry-run writes nothing and returns a capability envelope, planned run artifacts, event/checkpoint paths, and approval hash; approved agentic_local runs stage a filtered sandbox workspace, let codex/openmanus work there, run local verification where available, then copy back only validated safe source changes while network/install/deploy/provider CLI/git push remain elevated-approval actions
           run-timeline/observability-summary: read-only timeline and compact observability rollups over safe .ai-web/runs JSON evidence; caps --limit at 50, redacts secret-like keys and .env paths, writes nothing, and launches no processes
           build: runs the scaffolded Astro build only after runtime-plan is ready and records .ai-web/runs logs
           preview: starts/stops the local scaffold dev server after runtime-plan is ready; --dry-run does not write files or launch Node

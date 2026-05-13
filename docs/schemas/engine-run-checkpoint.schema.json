@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://aiweb.local/schemas/engine-run-checkpoint.schema.json",
+  "title": "Engine Run Checkpoint",
+  "type": "object",
+  "required": ["schema_version", "run_id", "status", "cycle", "next_step", "workspace_path", "safe_changes", "saved_at", "opendesign_contract"],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "run_id": { "type": "string", "pattern": "^engine-run-" },
+    "status": {
+      "enum": ["dry_run", "blocked", "running", "waiting_approval", "failed", "no_changes", "passed", "cancelled"]
+    },
+    "cycle": { "type": "integer", "minimum": 0, "maximum": 10 },
+    "next_step": { "type": "string", "minLength": 1 },
+    "workspace_path": { "type": "string", "pattern": "^\\.ai-web/tmp/agentic/.+/workspace$" },
+    "safe_changes": { "type": "array", "items": { "type": "string" } },
+    "opendesign_contract": { "type": "object" },
+    "goal": { "type": "string" },
+    "resume_from": { "type": "string" },
+    "saved_at": { "type": "string", "minLength": 1 }
+  },
+  "additionalProperties": true
+}

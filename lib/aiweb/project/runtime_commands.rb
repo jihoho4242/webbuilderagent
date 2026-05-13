@@ -365,7 +365,15 @@ module Aiweb
           stdout_file = File.open(stdout_path, "ab")
           stderr_file = File.open(stderr_path, "ab")
           begin
-            pid = Process.spawn(command, chdir: root, out: stdout_file, err: stderr_file)
+            pid = Process.spawn(
+              subprocess_path_env,
+              *preview_command_argv(command),
+              chdir: root,
+              in: File::NULL,
+              out: stdout_file,
+              err: stderr_file,
+              unsetenv_others: true
+            )
             Process.detach(pid)
             status = "running"
           ensure
@@ -1281,6 +1289,14 @@ module Aiweb
       base.match?(/--host(?:\s|=)/) ? base : "#{base} --host 127.0.0.1"
     end
 
+    def preview_command_argv(command)
+      parts = Shellwords.split(command.to_s)
+      executable = executable_path(parts.fetch(0))
+      [executable || parts.fetch(0), *parts.drop(1)]
+    rescue IndexError, ArgumentError
+      ["pnpm", "dev", "--host", "127.0.0.1"]
+    end
+
     def preview_port(command)
       match = command.match(/(?:--port(?:=|\s+))(\d+)/)
       match ? match[1].to_i : 4321
@@ -1370,7 +1386,7 @@ module Aiweb
 
       mutation(dry_run: false) do
         pid = metadata["pid"].to_i
-        Process.kill(windows? ? "KILL" : "TERM", pid)
+        stop_process_tree(pid)
         begin
           Timeout.timeout(5) do
             sleep 0.05 while live_process?(pid)
@@ -1396,6 +1412,20 @@ module Aiweb
           next_action: preview_next_action("stopped")
         )
       end
+    end
+
+    def stop_process_tree(pid)
+      if windows?
+        taskkill = File.join(ENV["WINDIR"].to_s.empty? ? "C:/Windows" : ENV["WINDIR"], "System32", "taskkill.exe")
+        return if File.executable?(taskkill) && system(taskkill, "/PID", pid.to_s, "/T", "/F", out: File::NULL, err: File::NULL)
+        return if system("taskkill.exe", "/PID", pid.to_s, "/T", "/F", out: File::NULL, err: File::NULL)
+
+        Process.kill("KILL", pid)
+      else
+        Process.kill("TERM", pid)
+      end
+    rescue Errno::ESRCH, Errno::EINVAL
+      nil
     end
 
     def runtime_state_snapshot

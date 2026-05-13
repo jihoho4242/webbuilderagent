@@ -8,6 +8,7 @@ require "securerandom"
 require "socket"
 require "thread"
 require "timeout"
+require "time"
 require "uri"
 
 require_relative "daemon/cli_bridge"
