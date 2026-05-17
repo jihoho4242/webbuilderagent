@@ -1221,78 +1221,7 @@ module Aiweb
           "safe_patch" => "delegated to existing agent-run safe patch flow",
           "external_approval" => "requires explicit external approval before execution"
         },
-        "adapters" => [
-          engine_run_worker_adapter_registry_entry(
-            id: "openmanus",
-            status: sandbox.to_s.empty? ? "implemented_requires_docker_or_podman" : "implemented_container_worker",
-            modes: %w[agentic_local],
-            runtime_boundary: "aiweb_validated_docker_or_podman_no_network_staged_workspace",
-            command_driver: "engine_run_openmanus_command",
-            sandbox_preflight: "required_before_execution",
-            result_schema: "worker-adapter-v1 engine-result.json",
-            broker_id: "aiweb.engine_run.tool_broker",
-            broker_enforcement_status: "enforced",
-            broker_evidence: %w[_aiweb/tool-broker-events.jsonl worker-adapter-contract.json worker-adapter-registry.json sandbox-preflight.json agent-result.json],
-            evidence: %w[worker-adapter-contract.json worker-adapter-registry.json sandbox-preflight.json agent-result.json],
-            limitations: []
-          ),
-          engine_run_worker_adapter_registry_entry(
-            id: "codex",
-            status: "delegated_safe_patch_only",
-            modes: %w[safe_patch],
-            runtime_boundary: "agent_run_clean_environment_bounded_copy_back",
-            command_driver: "agent_run",
-            sandbox_preflight: "not_applicable_safe_patch_delegation",
-            result_schema: "agent-run.json diff.patch",
-            broker_id: "aiweb.agent_run.safe_patch_boundary",
-            broker_enforcement_status: "delegated_safe_patch_bounded",
-            broker_evidence: %w[agent-run.json stdout.log stderr.log diff.patch],
-            evidence: %w[agent-run.json stdout.log stderr.log diff.patch],
-            limitations: ["real agentic_local Codex execution is blocked until a sandbox adapter exists"]
-          ),
-          engine_run_worker_adapter_registry_entry(
-            id: "openhands",
-            status: engine_run_worker_adapter_status("openhands", mode: mode, sandbox: sandbox),
-            modes: %w[agentic_local],
-            runtime_boundary: "experimental_aiweb_validated_docker_or_podman_no_network_staged_workspace_with_openhands_headless",
-            command_driver: "engine_run_openhands_command",
-            sandbox_preflight: "required_before_execution",
-            result_schema: "engine-run-openhands-result.schema.json",
-            broker_id: "aiweb.engine_run.tool_broker",
-            broker_enforcement_status: "enforced",
-            broker_evidence: %w[_aiweb/tool-broker-events.jsonl worker-adapter-contract.json worker-adapter-registry.json sandbox-preflight.json agent-result.json _aiweb/openhands-task.md],
-            evidence: %w[worker-adapter-contract.json worker-adapter-registry.json sandbox-preflight.json agent-result.json openhands-task.md],
-            limitations: ["experimental OpenHands headless CLI container adapter only", "requires a prepared local OpenHands-compatible image and model/runtime configuration inside the approved sandbox", "does not imply LangGraph or OpenAI Agents SDK worker parity"]
-          ),
-          engine_run_worker_adapter_registry_entry(
-            id: "langgraph",
-            status: engine_run_worker_adapter_status("langgraph", mode: mode, sandbox: sandbox),
-            modes: %w[agentic_local],
-            runtime_boundary: "experimental_aiweb_validated_docker_or_podman_no_network_staged_workspace_with_langgraph_stategraph_bridge",
-            command_driver: "engine_run_langgraph_command",
-            sandbox_preflight: "required_before_execution",
-            result_schema: "engine-run-langgraph-result.schema.json",
-            broker_id: "aiweb.engine_run.tool_broker",
-            broker_enforcement_status: "enforced",
-            broker_evidence: %w[_aiweb/tool-broker-events.jsonl worker-adapter-contract.json worker-adapter-registry.json sandbox-preflight.json agent-result.json _aiweb/langgraph-worker.py _aiweb/langgraph-task.md],
-            evidence: %w[worker-adapter-contract.json worker-adapter-registry.json sandbox-preflight.json agent-result.json langgraph-worker.py langgraph-task.md],
-            limitations: ["experimental LangGraph StateGraph bridge only", "requires a prepared local LangGraph-compatible Python image", "does not provide a LangGraph Platform deployment or distributed checkpoint store", "does not imply OpenAI Agents SDK worker parity"]
-          ),
-          engine_run_worker_adapter_registry_entry(
-            id: "openai_agents_sdk",
-            status: engine_run_worker_adapter_status("openai_agents_sdk", mode: mode, sandbox: sandbox),
-            modes: %w[agentic_local],
-            runtime_boundary: "experimental_aiweb_validated_docker_or_podman_no_network_staged_workspace_with_openai_agents_sdk_bridge",
-            command_driver: "engine_run_openai_agents_sdk_command",
-            sandbox_preflight: "required_before_execution",
-            result_schema: "engine-run-openai-agents-sdk-result.schema.json",
-            broker_id: "aiweb.engine_run.tool_broker",
-            broker_enforcement_status: "enforced",
-            broker_evidence: %w[_aiweb/tool-broker-events.jsonl worker-adapter-contract.json worker-adapter-registry.json sandbox-preflight.json agent-result.json _aiweb/openai-agents-worker.py _aiweb/openai-agents-task.md],
-            evidence: %w[worker-adapter-contract.json worker-adapter-registry.json sandbox-preflight.json agent-result.json openai-agents-worker.py openai-agents-task.md],
-            limitations: ["experimental OpenAI Agents SDK bridge only", "requires a prepared local Python image with openai-agents installed", "default bridge records SDK orchestration readiness without enabling external OpenAI network calls", "does not provide production handoff/tool parity"]
-          )
-        ],
+        "adapters" => engine_run_worker_adapter_registry_entries(mode: mode, sandbox: sandbox),
         "runtime_broker_enforcement" => engine_run_runtime_broker_enforcement(selected_adapter: selected),
         "interchangeability_claim" => "registry exposes adapter readiness; only adapters with implemented/delegated status may execute",
         "blocking_policy" => "planned_contract_only adapters are visible for migration planning but blocked as execution targets"
@@ -1301,6 +1230,97 @@ module Aiweb
       raise UserError.new("engine-run worker adapter registry invalid: #{blockers.join(", ")}", 5) unless blockers.empty?
 
       registry
+    end
+
+    def engine_run_worker_adapter_registry_entries(mode:, sandbox:)
+      engine_run_worker_adapter_registry_definitions.map do |definition|
+        id = definition.fetch(:id)
+        engine_run_worker_adapter_registry_entry(
+          id: id,
+          status: definition.fetch(:status) { engine_run_worker_adapter_status(id, mode: mode, sandbox: sandbox) },
+          modes: Array(definition.fetch(:modes)),
+          runtime_boundary: definition.fetch(:runtime_boundary),
+          command_driver: definition.fetch(:command_driver),
+          sandbox_preflight: definition.fetch(:sandbox_preflight),
+          result_schema: definition.fetch(:result_schema),
+          broker_id: definition.fetch(:broker_id),
+          broker_enforcement_status: definition.fetch(:broker_enforcement_status),
+          broker_evidence: Array(definition.fetch(:broker_evidence)),
+          evidence: Array(definition.fetch(:evidence)),
+          limitations: Array(definition.fetch(:limitations))
+        )
+      end
+    end
+
+    def engine_run_worker_adapter_registry_definitions
+      [
+        {
+          id: "openmanus",
+          modes: %w[agentic_local],
+          runtime_boundary: "aiweb_validated_docker_or_podman_no_network_staged_workspace",
+          command_driver: "engine_run_openmanus_command",
+          sandbox_preflight: "required_before_execution",
+          result_schema: "worker-adapter-v1 engine-result.json",
+          broker_id: "aiweb.engine_run.tool_broker",
+          broker_enforcement_status: "enforced",
+          broker_evidence: %w[_aiweb/tool-broker-events.jsonl worker-adapter-contract.json worker-adapter-registry.json sandbox-preflight.json agent-result.json],
+          evidence: %w[worker-adapter-contract.json worker-adapter-registry.json sandbox-preflight.json agent-result.json],
+          limitations: []
+        },
+        {
+          id: "codex",
+          status: "delegated_safe_patch_only",
+          modes: %w[safe_patch],
+          runtime_boundary: "agent_run_clean_environment_bounded_copy_back",
+          command_driver: "agent_run",
+          sandbox_preflight: "not_applicable_safe_patch_delegation",
+          result_schema: "agent-run.json diff.patch",
+          broker_id: "aiweb.agent_run.safe_patch_boundary",
+          broker_enforcement_status: "delegated_safe_patch_bounded",
+          broker_evidence: %w[agent-run.json stdout.log stderr.log diff.patch],
+          evidence: %w[agent-run.json stdout.log stderr.log diff.patch],
+          limitations: ["real agentic_local Codex execution is blocked until a sandbox adapter exists"]
+        },
+        {
+          id: "openhands",
+          modes: %w[agentic_local],
+          runtime_boundary: "experimental_aiweb_validated_docker_or_podman_no_network_staged_workspace_with_openhands_headless",
+          command_driver: "engine_run_openhands_command",
+          sandbox_preflight: "required_before_execution",
+          result_schema: "engine-run-openhands-result.schema.json",
+          broker_id: "aiweb.engine_run.tool_broker",
+          broker_enforcement_status: "enforced",
+          broker_evidence: %w[_aiweb/tool-broker-events.jsonl worker-adapter-contract.json worker-adapter-registry.json sandbox-preflight.json agent-result.json _aiweb/openhands-task.md],
+          evidence: %w[worker-adapter-contract.json worker-adapter-registry.json sandbox-preflight.json agent-result.json openhands-task.md],
+          limitations: ["experimental OpenHands headless CLI container adapter only", "requires a prepared local OpenHands-compatible image and model/runtime configuration inside the approved sandbox", "does not imply LangGraph or OpenAI Agents SDK worker parity"]
+        },
+        {
+          id: "langgraph",
+          modes: %w[agentic_local],
+          runtime_boundary: "experimental_aiweb_validated_docker_or_podman_no_network_staged_workspace_with_langgraph_stategraph_bridge",
+          command_driver: "engine_run_langgraph_command",
+          sandbox_preflight: "required_before_execution",
+          result_schema: "engine-run-langgraph-result.schema.json",
+          broker_id: "aiweb.engine_run.tool_broker",
+          broker_enforcement_status: "enforced",
+          broker_evidence: %w[_aiweb/tool-broker-events.jsonl worker-adapter-contract.json worker-adapter-registry.json sandbox-preflight.json agent-result.json _aiweb/langgraph-worker.py _aiweb/langgraph-task.md],
+          evidence: %w[worker-adapter-contract.json worker-adapter-registry.json sandbox-preflight.json agent-result.json langgraph-worker.py langgraph-task.md],
+          limitations: ["experimental LangGraph StateGraph bridge only", "requires a prepared local LangGraph-compatible Python image", "does not provide a LangGraph Platform deployment or distributed checkpoint store", "does not imply OpenAI Agents SDK worker parity"]
+        },
+        {
+          id: "openai_agents_sdk",
+          modes: %w[agentic_local],
+          runtime_boundary: "experimental_aiweb_validated_docker_or_podman_no_network_staged_workspace_with_openai_agents_sdk_bridge",
+          command_driver: "engine_run_openai_agents_sdk_command",
+          sandbox_preflight: "required_before_execution",
+          result_schema: "engine-run-openai-agents-sdk-result.schema.json",
+          broker_id: "aiweb.engine_run.tool_broker",
+          broker_enforcement_status: "enforced",
+          broker_evidence: %w[_aiweb/tool-broker-events.jsonl worker-adapter-contract.json worker-adapter-registry.json sandbox-preflight.json agent-result.json _aiweb/openai-agents-worker.py _aiweb/openai-agents-task.md],
+          evidence: %w[worker-adapter-contract.json worker-adapter-registry.json sandbox-preflight.json agent-result.json openai-agents-worker.py openai-agents-task.md],
+          limitations: ["experimental OpenAI Agents SDK bridge only", "requires a prepared local Python image with openai-agents installed", "default bridge records SDK orchestration readiness without enabling external OpenAI network calls", "does not provide production handoff/tool parity"]
+        }
+      ]
     end
 
     def engine_run_worker_adapter_registry_entry(id:, status:, modes:, runtime_boundary:, command_driver:, broker_id:, broker_enforcement_status:, broker_evidence:, evidence:, limitations:, sandbox_preflight: nil, result_schema: nil)
