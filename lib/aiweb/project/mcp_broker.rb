@@ -428,58 +428,23 @@ module Aiweb
     end
 
     def implementation_mcp_project_file_path_blockers(value)
-      normalized = implementation_mcp_project_file_normalized_path(value)
-      blockers = []
-      parts = normalized.split("/")
-      blockers << "project_file_metadata path must be relative" if normalized.empty? || Pathname.new(normalized).absolute?
-      blockers << "project_file_metadata path must not traverse outside project" if parts.include?("..")
-      blockers << "project_file_metadata path must not reference .env/.env.*" if parts.any? { |part| part == ".env" || part.start_with?(".env.") }
-      blockers << "project_file_metadata path must not reference .git, node_modules, or generated run artifacts" if parts.any? { |part| %w[.git node_modules].include?(part) } || implementation_mcp_project_file_runs_path?(normalized)
-      path = File.expand_path(normalized, root)
-      root_path = File.expand_path(root)
-      blockers << "project_file_metadata path escapes project root" unless path == root_path || path.start_with?(root_path + File::SEPARATOR)
-      if blockers.empty?
-        blockers << "project_file_metadata requires an existing regular file" unless File.file?(path)
-        blockers << "project_file_metadata refuses symlink paths" if File.symlink?(path)
-      end
+      policy = implementation_mcp_project_file_path_policy(value, tool: "project_file_metadata", block_secret_looking: false)
+      blockers = policy.fetch(:blockers)
+      blockers.concat(implementation_mcp_project_file_existing_blockers(policy, tool: "project_file_metadata", allow_directory: false)) if blockers.empty?
       blockers
     end
 
     def implementation_mcp_project_file_list_path_blockers(value)
-      normalized = implementation_mcp_project_file_normalized_path(value)
-      blockers = []
-      parts = normalized.split("/")
-      blockers << "project_file_list path must be relative" if normalized.empty? || Pathname.new(normalized).absolute?
-      blockers << "project_file_list path must not traverse outside project" if parts.include?("..")
-      blockers << "project_file_list path must not reference .env/.env.*" if parts.any? { |part| part == ".env" || part.start_with?(".env.") }
-      blockers << "project_file_list path must not reference .git, node_modules, or generated run artifacts" if parts.any? { |part| %w[.git node_modules].include?(part) } || implementation_mcp_project_file_runs_path?(normalized)
-      blockers << "project_file_list path must not be secret-looking" if secret_looking_path?(normalized)
-      path = File.expand_path(normalized, root)
-      root_path = File.expand_path(root)
-      blockers << "project_file_list path escapes project root" unless path == root_path || path.start_with?(root_path + File::SEPARATOR)
-      if blockers.empty?
-        blockers << "project_file_list requires an existing regular file or directory" unless File.file?(path) || File.directory?(path)
-        blockers << "project_file_list refuses symlink paths" if File.symlink?(path)
-      end
+      policy = implementation_mcp_project_file_path_policy(value, tool: "project_file_list", block_secret_looking: true)
+      blockers = policy.fetch(:blockers)
+      blockers.concat(implementation_mcp_project_file_existing_blockers(policy, tool: "project_file_list", allow_directory: true)) if blockers.empty?
       blockers
     end
 
     def implementation_mcp_project_file_excerpt_path_blockers(value)
-      normalized = implementation_mcp_project_file_normalized_path(value)
-      blockers = []
-      parts = normalized.split("/")
-      blockers << "project_file_excerpt path must be relative" if normalized.empty? || Pathname.new(normalized).absolute?
-      blockers << "project_file_excerpt path must not traverse outside project" if parts.include?("..")
-      blockers << "project_file_excerpt path must not reference .env/.env.*" if parts.any? { |part| part == ".env" || part.start_with?(".env.") }
-      blockers << "project_file_excerpt path must not reference .git, node_modules, or generated run artifacts" if parts.any? { |part| %w[.git node_modules].include?(part) } || implementation_mcp_project_file_runs_path?(normalized)
-      blockers << "project_file_excerpt path must not be secret-looking" if secret_looking_path?(normalized)
-      path = File.expand_path(normalized, root)
-      root_path = File.expand_path(root)
-      blockers << "project_file_excerpt path escapes project root" unless path == root_path || path.start_with?(root_path + File::SEPARATOR)
-      if blockers.empty?
-        blockers << "project_file_excerpt requires an existing regular file" unless File.file?(path)
-        blockers << "project_file_excerpt refuses symlink paths" if File.symlink?(path)
-      end
+      policy = implementation_mcp_project_file_path_policy(value, tool: "project_file_excerpt", block_secret_looking: true)
+      blockers = policy.fetch(:blockers)
+      blockers.concat(implementation_mcp_project_file_existing_blockers(policy, tool: "project_file_excerpt", allow_directory: false)) if blockers.empty?
       blockers
     end
 
@@ -500,26 +465,14 @@ module Aiweb
     end
 
     def implementation_mcp_project_file_search_blockers(path_value, pattern_value)
-      normalized = implementation_mcp_project_file_normalized_path(path_value)
+      policy = implementation_mcp_project_file_path_policy(path_value, tool: "project_file_search", block_secret_looking: true)
       pattern = pattern_value.to_s
-      blockers = []
-      parts = normalized.split("/")
-      blockers << "project_file_search path must be relative" if normalized.empty? || Pathname.new(normalized).absolute?
-      blockers << "project_file_search path must not traverse outside project" if parts.include?("..")
-      blockers << "project_file_search path must not reference .env/.env.*" if parts.any? { |part| part == ".env" || part.start_with?(".env.") }
-      blockers << "project_file_search path must not reference .git, node_modules, or generated run artifacts" if parts.any? { |part| %w[.git node_modules].include?(part) } || implementation_mcp_project_file_runs_path?(normalized)
-      blockers << "project_file_search path must not be secret-looking" if secret_looking_path?(normalized)
+      blockers = policy.fetch(:blockers)
       blockers << "project_file_search pattern is required" if pattern.empty?
       blockers << "project_file_search pattern must be at most 80 characters" if pattern.length > 80
       blockers << "project_file_search pattern must not contain NUL bytes" if pattern.include?("\x00")
       blockers << "project_file_search pattern must not be secret-like" if redact_side_effect_process_output(pattern) != pattern
-      full_path = File.expand_path(normalized, root)
-      root_path = File.expand_path(root)
-      blockers << "project_file_search path escapes project root" unless full_path == root_path || full_path.start_with?(root_path + File::SEPARATOR)
-      if blockers.empty?
-        blockers << "project_file_search requires an existing regular file or directory" unless File.file?(full_path) || File.directory?(full_path)
-        blockers << "project_file_search refuses symlink paths" if File.symlink?(full_path)
-      end
+      blockers.concat(implementation_mcp_project_file_existing_blockers(policy, tool: "project_file_search", allow_directory: true)) if blockers.empty?
       blockers
     end
 
@@ -551,19 +504,46 @@ module Aiweb
     end
 
     def implementation_mcp_project_file_list_entry_excluded?(relative_path)
-      normalized = implementation_mcp_project_file_normalized_path(relative_path)
-      parts = normalized.split("/")
-      return true if normalized.empty? || Pathname.new(normalized).absolute?
-      return true if parts.include?("..")
-      return true if parts.any? { |part| part == ".env" || part.start_with?(".env.") }
-      return true if parts.any? { |part| %w[.git node_modules].include?(part) } || implementation_mcp_project_file_runs_path?(normalized)
-      return true if secret_looking_path?(normalized)
+      policy = implementation_mcp_project_file_path_policy(relative_path, tool: "project_file_list", block_secret_looking: true)
+      return true unless policy.fetch(:blockers).empty?
 
+      File.symlink?(policy.fetch(:path))
+    end
+
+    def implementation_mcp_project_file_path_policy(value, tool:, block_secret_looking:)
+      normalized = implementation_mcp_project_file_normalized_path(value)
+      parts = normalized.split("/")
       path = File.expand_path(normalized, root)
       root_path = File.expand_path(root)
-      return true unless path == root_path || path.start_with?(root_path + File::SEPARATOR)
+      blockers = []
+      blockers << "#{tool} path must be relative" if normalized.empty? || Pathname.new(normalized).absolute?
+      blockers << "#{tool} path must not traverse outside project" if parts.include?("..")
+      blockers << "#{tool} path must not reference .env/.env.*" if implementation_mcp_project_file_env_path?(parts)
+      blockers << "#{tool} path must not reference .git, node_modules, or generated run artifacts" if implementation_mcp_project_file_generated_path?(normalized, parts)
+      blockers << "#{tool} path must not be secret-looking" if block_secret_looking && secret_looking_path?(normalized)
+      blockers << "#{tool} path escapes project root" unless implementation_mcp_project_file_project_root_path?(path, root_path)
+      { normalized: normalized, parts: parts, path: path, root_path: root_path, blockers: blockers }
+    end
 
-      File.symlink?(path)
+    def implementation_mcp_project_file_existing_blockers(policy, tool:, allow_directory:)
+      path = policy.fetch(:path)
+      blockers = []
+      allowed_type = allow_directory ? File.file?(path) || File.directory?(path) : File.file?(path)
+      blockers << "#{tool} requires an existing #{allow_directory ? "regular file or directory" : "regular file"}" unless allowed_type
+      blockers << "#{tool} refuses symlink paths" if File.symlink?(path)
+      blockers
+    end
+
+    def implementation_mcp_project_file_env_path?(parts)
+      parts.any? { |part| part == ".env" || part.start_with?(".env.") }
+    end
+
+    def implementation_mcp_project_file_generated_path?(normalized, parts)
+      parts.any? { |part| %w[.git node_modules].include?(part) } || implementation_mcp_project_file_runs_path?(normalized)
+    end
+
+    def implementation_mcp_project_file_project_root_path?(path, root_path)
+      path == root_path || path.start_with?(root_path + File::SEPARATOR)
     end
 
     def implementation_mcp_project_file_runs_path?(normalized)
