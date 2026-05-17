@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require_relative "../authz_contract"
+
 module Aiweb
   module BackendArtifacts
     def console_payload(path)
@@ -382,7 +384,7 @@ module Aiweb
                         "viewer"
                       end
       {
-        "policy" => "local_backend_artifact_acl_v1",
+        "policy" => Aiweb::AuthzContract::ARTIFACT_ACL_POLICY.fetch("policy"),
         "required_role" => required_role,
         "category" => required_role == "viewer" ? "standard_safe_artifact" : "sensitive_run_artifact",
         "reason" => required_role == "viewer" ? "safe artifact allowlist and viewer role are sufficient" : "logs, diffs, approvals, and sensitive run artifacts require elevated project role"

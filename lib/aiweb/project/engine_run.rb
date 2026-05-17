@@ -1087,36 +1087,11 @@ module Aiweb
     end
 
     def engine_run_local_backend_route_required_roles
-      {
-        "view_status" => "viewer",
-        "view_workbench" => "viewer",
-        "view_console" => "viewer",
-        "view_runs" => "viewer",
-        "view_run" => "viewer",
-        "view_events" => "viewer",
-        "view_approvals" => "viewer",
-        "view_job_status" => "viewer",
-        "view_job_timeline" => "viewer",
-        "view_job_summary" => "viewer",
-        "view_artifact" => "viewer",
-        "command" => "operator",
-        "codex_agent_run" => "operator",
-        "run_start" => "operator",
-        "resume" => "operator",
-        "cancel" => "operator",
-        "approve" => "admin",
-        "copy_back" => "admin"
-      }
+      Aiweb::AuthzContract.copy(Aiweb::AuthzContract::AUTHZ_ACTION_REQUIRED_ROLES)
     end
 
     def engine_run_local_backend_artifact_acl_policy
-      {
-        "policy" => "local_backend_artifact_acl_v1",
-        "default_role" => "viewer",
-        "sensitive_artifact_role" => "operator",
-        "approval_artifact_role" => "admin",
-        "sensitive_categories" => %w[diffs logs approvals sensitive_run_artifacts]
-      }
+      Aiweb::AuthzContract.copy(Aiweb::AuthzContract::ARTIFACT_ACL_POLICY)
     end
 
     def engine_run_authz_contract
@@ -1125,49 +1100,8 @@ module Aiweb
         "mode" => "local_project",
         "local_api_token_required" => true,
         "run_id_is_not_authority" => true,
-        "saas_required_claims" => %w[tenant_id project_id user_id],
-        "local_backend_claim_enforced_mode" => {
-          "available" => true,
-          "enable_with" => "AIWEB_DAEMON_AUTHZ_MODE=claims, AIWEB_DAEMON_AUTHZ_MODE=jwt_hs256, AIWEB_DAEMON_AUTHZ_MODE=jwt_rs256_jwks, or AIWEB_DAEMON_AUTHZ_MODE=session_token",
-          "supported_authz_modes" => %w[local_token claims jwt_hs256 jwt_rs256_jwks session_token],
-          "unsupported_authz_modes_fail_closed_for_project_routes" => true,
-          "jwt_hs256_status" => "local_hs256_supported_with_server_secret",
-          "jwt_hs256_secret_env" => "AIWEB_DAEMON_JWT_HS256_SECRET",
-          "jwt_hs256_required_claims" => %w[tenant_id project_id user_id],
-          "jwt_hs256_claim_aliases" => {
-            "tenant_id" => %w[tenant_id tid],
-            "project_id" => %w[project_id pid],
-            "user_id" => %w[user_id sub]
-          },
-          "jwt_rs256_jwks_status" => "local_rs256_jwks_file_supported_no_oidc_discovery",
-          "jwt_rs256_jwks_file_env" => "AIWEB_DAEMON_JWT_RS256_JWKS_FILE",
-          "jwt_rs256_jwks_required_claims" => %w[tenant_id project_id user_id],
-          "session_token_status" => "local_hashed_session_store_supported",
-          "session_store_file_env" => "AIWEB_DAEMON_SESSION_STORE_FILE",
-          "session_token_storage" => "sha256_hash_only",
-          "session_token_required_claims" => %w[tenant_id project_id user_id],
-          "oidc_status" => "not_implemented_fail_closed",
-          "raw_jwt_oidc_status" => "unsupported_modes_fail_closed",
-          "required_headers" => %w[X-Aiweb-Tenant-Id X-Aiweb-Project-Id X-Aiweb-User-Id],
-          "project_id_source" => "server_configured_project_allowlist",
-          "role_source" => "server_configured_project_allowlist",
-          "project_registry_source" => "inline_env_or_file_json",
-          "project_registry_policy" => {
-            "policy" => "local_backend_project_registry_v1",
-            "sources" => %w[AIWEB_DAEMON_AUTHZ_PROJECTS AIWEB_DAEMON_AUTHZ_PROJECTS_FILE],
-            "file_format" => "json",
-            "supports_tenant_members" => true,
-            "supports_project_members" => true,
-            "role_source" => "server_configured_project_allowlist"
-          },
-          "role_hierarchy" => %w[viewer operator admin],
-          "route_required_roles" => engine_run_local_backend_route_required_roles,
-          "artifact_acl_policy" => engine_run_local_backend_artifact_acl_policy,
-          "audit_path" => ".ai-web/authz/audit.jsonl",
-          "project_allowlist_env" => "AIWEB_DAEMON_AUTHZ_PROJECTS",
-          "project_registry_file_env" => "AIWEB_DAEMON_AUTHZ_PROJECTS_FILE",
-          "server_project_allowlist_required" => true
-        },
+        "saas_required_claims" => Aiweb::AuthzContract.copy(Aiweb::AuthzContract::REQUIRED_CLAIMS),
+        "local_backend_claim_enforced_mode" => Aiweb::AuthzContract.local_backend_claim_enforced_mode(route_required_roles: engine_run_local_backend_route_required_roles),
         "permission_checks" => engine_run_local_backend_route_permissions.keys,
         "approval_scope_binds" => %w[approver_identity tenant_id project_id run_id capability_hash expiry single_use exact_capability],
         "tenant_scoped_artifacts" => %w[events artifacts screenshots logs diffs approvals checkpoints],
@@ -1189,54 +1123,7 @@ module Aiweb
           "artifact_scope" => relative(paths.fetch(:run_dir)),
           "diff_scope" => ".ai-web/diffs"
         },
-        "local_backend_enforcement" => {
-          "api_token_required_for_api_routes" => true,
-          "approval_token_required_for_approved_execution" => true,
-          "safe_project_path_required" => true,
-          "artifact_reference_must_be_project_relative" => true,
-          "raw_run_id_without_project_path_is_rejected" => true,
-          "claim_enforced_project_authz_available" => true,
-          "claim_enforced_mode_required_for_remote_exposure" => true,
-          "supported_authz_modes" => %w[local_token claims jwt_hs256 jwt_rs256_jwks session_token],
-          "unsupported_authz_modes_fail_closed_for_project_routes" => true,
-          "jwt_hs256_status" => "local_hs256_supported_with_server_secret",
-          "jwt_hs256_secret_env" => "AIWEB_DAEMON_JWT_HS256_SECRET",
-          "jwt_hs256_required_claims" => %w[tenant_id project_id user_id],
-          "jwt_hs256_claim_aliases" => {
-            "tenant_id" => %w[tenant_id tid],
-            "project_id" => %w[project_id pid],
-            "user_id" => %w[user_id sub]
-          },
-          "jwt_rs256_jwks_status" => "local_rs256_jwks_file_supported_no_oidc_discovery",
-          "jwt_rs256_jwks_file_env" => "AIWEB_DAEMON_JWT_RS256_JWKS_FILE",
-          "jwt_rs256_jwks_required_claims" => %w[tenant_id project_id user_id],
-          "session_token_status" => "local_hashed_session_store_supported",
-          "session_store_file_env" => "AIWEB_DAEMON_SESSION_STORE_FILE",
-          "session_token_storage" => "sha256_hash_only",
-          "session_token_required_claims" => %w[tenant_id project_id user_id],
-          "oidc_status" => "not_implemented_fail_closed",
-          "raw_jwt_oidc_status" => "unsupported_modes_fail_closed",
-          "claim_headers" => %w[X-Aiweb-Tenant-Id X-Aiweb-Project-Id X-Aiweb-User-Id],
-          "project_id_source" => "server_configured_project_allowlist",
-          "role_source" => "server_configured_project_allowlist",
-          "project_registry_source" => "inline_env_or_file_json",
-          "project_registry_policy" => {
-            "policy" => "local_backend_project_registry_v1",
-            "sources" => %w[AIWEB_DAEMON_AUTHZ_PROJECTS AIWEB_DAEMON_AUTHZ_PROJECTS_FILE],
-            "file_format" => "json",
-            "supports_tenant_members" => true,
-            "supports_project_members" => true,
-            "role_source" => "server_configured_project_allowlist"
-          },
-          "role_hierarchy" => %w[viewer operator admin],
-          "route_required_roles" => engine_run_local_backend_route_required_roles,
-          "artifact_acl_policy" => engine_run_local_backend_artifact_acl_policy,
-          "audit_path" => ".ai-web/authz/audit.jsonl",
-          "server_project_allowlist_required" => true,
-          "project_allowlist_env" => "AIWEB_DAEMON_AUTHZ_PROJECTS",
-          "project_registry_file_env" => "AIWEB_DAEMON_AUTHZ_PROJECTS_FILE",
-          "route_permissions" => engine_run_local_backend_route_permissions
-        },
+        "local_backend_enforcement" => Aiweb::AuthzContract.local_backend_enforcement(route_required_roles: engine_run_local_backend_route_required_roles, route_permissions: engine_run_local_backend_route_permissions),
         "current_execution" => {
           "agent" => agent,
           "engine_mode" => mode,
@@ -1244,7 +1131,7 @@ module Aiweb
           "approved_flag" => approved,
           "approval_scope" => "single_run_single_capability"
         },
-        "saas_required_claims" => %w[tenant_id project_id user_id],
+        "saas_required_claims" => Aiweb::AuthzContract.copy(Aiweb::AuthzContract::REQUIRED_CLAIMS),
         "saas_claims_observed" => [],
         "remote_exposure_status" => "blocked_until_tenant_project_user_claims_are_enforced",
         "blocking_issues" => [
