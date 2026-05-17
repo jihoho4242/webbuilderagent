@@ -183,7 +183,7 @@ module Aiweb
         side_effect_surface_entry(rel, source, index + 1, matched.source, line, lines, index)
       end
       (regex_entries + side_effect_surface_backtick_entries_for(rel, source, lines) + side_effect_surface_command_form_entries_for(rel, source, lines))
-        .uniq { |entry| [entry["path"], entry["line"], entry["snippet"]] }
+        .uniq { |entry| side_effect_surface_entry_key(entry) }
     rescue SystemCallError, Encoding::InvalidByteSequenceError
       []
     end
@@ -278,6 +278,33 @@ module Aiweb
         "broker" => classification["broker"],
         "rationale" => classification.fetch("rationale")
       }.compact
+    end
+
+    def side_effect_surface_entry_key(entry)
+      [
+        entry.fetch("path"),
+        entry.fetch("line"),
+        side_effect_surface_pattern_family(entry.fetch("pattern"), entry.fetch("snippet", ""))
+      ]
+    end
+
+    def side_effect_surface_pattern_family(pattern, snippet)
+      pattern = pattern.to_s
+      snippet = snippet.to_s
+      return "ruby_system" if pattern.include?("ruby_command_form_system")
+      return "ruby_spawn" if pattern.include?("ruby_command_form_spawn")
+      return "ruby_exec" if pattern.include?("ruby_command_form_exec")
+      return "ruby_percent_x_command" if pattern == "ruby_percent_x_command"
+      return "ruby_backtick_command" if pattern == "ruby_backtick_command"
+      return "open3" if pattern.include?("Open3")
+      return "net_http" if pattern.include?("Net::HTTP")
+      return "io_popen" if pattern.include?("IO\\.popen")
+      return "process_spawn" if pattern.include?("Process\\.spawn") || snippet.match?(/\bProcess\.spawn\b/)
+      return "ruby_system" if snippet.match?(/(?<![.\w-])system\b|\bKernel\.system\b/) || pattern.include?("system")
+      return "ruby_spawn" if snippet.match?(/(?<![.\w-])spawn\b|\bKernel\.spawn\b/) || pattern.include?("spawn")
+      return "ruby_exec" if snippet.match?(/(?<![.\w-])exec\b|\bKernel\.exec\b/) || pattern.include?("exec")
+
+      pattern
     end
 
     def side_effect_surface_relative(path, base_root)

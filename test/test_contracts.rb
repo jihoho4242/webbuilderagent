@@ -152,6 +152,21 @@ class AiwebContractTest < Minitest::Test
     end
   end
 
+  def test_side_effect_surface_audit_counts_multiple_command_forms_on_one_line
+    Dir.mktmpdir do |dir|
+      FileUtils.mkdir_p(File.join(dir, "lib"))
+      File.write(File.join(dir, "lib", "compound_process_forms.rb"), "system \"echo first\"; spawn \"echo second\"\n")
+
+      audit = Aiweb::Project.new(dir).send(:side_effect_surface_audit)
+      project_entries = audit.fetch("entries").select { |entry| entry["source"] == "project_root" && entry["path"] == "lib/compound_process_forms.rb" }
+
+      assert_equal 2, project_entries.length
+      assert_equal %w[unclassified unclassified], project_entries.map { |entry| entry.fetch("coverage_status") }
+      assert project_entries.map { |entry| entry.fetch("pattern") }.any? { |pattern| pattern.include?("system") }
+      assert project_entries.map { |entry| entry.fetch("pattern") }.any? { |pattern| pattern.include?("spawn") }
+    end
+  end
+
   def test_side_effect_surface_audit_covers_project_script_task_files
     Dir.mktmpdir do |dir|
       FileUtils.mkdir_p(File.join(dir, "scripts"))
