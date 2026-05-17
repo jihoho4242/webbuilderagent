@@ -159,20 +159,7 @@ module Aiweb
         end
         project.scaffold(profile: opts[:profile] || "D", dry_run: @dry_run, force: opts[:force])
       when "setup"
-        opts = parse_options do |o, options|
-          o.on("--install") { options[:install] = true }
-          o.on("--approved") { options[:approved] = true }
-          o.on("--allow-lifecycle-scripts") { options[:allow_lifecycle_scripts] = true }
-          o.on("--audit-exception PATH") { |v| options[:audit_exception_path] = v }
-        end
-        unless @argv.empty?
-          raise UserError.new("setup does not accept extra positional arguments: #{@argv.join(", ")}", EXIT_VALIDATION_FAILED)
-        end
-        unless opts[:install]
-          raise UserError.new("setup requires --install", EXIT_VALIDATION_FAILED)
-        end
-
-        dispatch_setup(opts)
+        dispatch_setup_command
       when "supabase-secret-qa"
         opts = parse_options do |o, options|
           o.on("--force") { options[:force] = true }
@@ -544,6 +531,23 @@ module Aiweb
       raise unless unsafe_deploy_error?(e)
 
       unsafe_deploy_blocked_payload(target, e.message)
+    end
+
+    def dispatch_setup_command
+      opts = parse_options do |o, options|
+        o.on("--install") { options[:install] = true }
+        o.on("--approved") { options[:approved] = true }
+        o.on("--allow-lifecycle-scripts") { options[:allow_lifecycle_scripts] = true }
+        o.on("--audit-exception PATH") { |v| options[:audit_exception_path] = v }
+      end
+      unless @argv.empty?
+        raise UserError.new("setup does not accept extra positional arguments: #{@argv.join(", ")}", EXIT_VALIDATION_FAILED)
+      end
+      unless opts[:install]
+        raise UserError.new("setup requires --install", EXIT_VALIDATION_FAILED)
+      end
+
+      dispatch_setup(opts)
     end
 
     def dispatch_setup(opts)

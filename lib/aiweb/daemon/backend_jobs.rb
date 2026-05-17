@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require_relative "../redaction"
+
 module Aiweb
   module BackendJobs
     def enqueue_engine_run_job(project_path:, run_id:, bridge_kwargs:, resume_from: nil)
@@ -215,29 +217,11 @@ module Aiweb
     end
 
     def backend_redact_event_value(value, depth = 0)
-      return "[redacted-depth-limit]" if depth > 8
-
-      case value
-      when Hash
-        value.each_with_object({}) do |(key, item), memo|
-          key = key.to_s
-          memo[key] = key.match?(/secret|token|password|api[_-]?key|credential/i) ? "[redacted]" : backend_redact_event_value(item, depth + 1)
-        end
-      when Array
-        value.map { |item| backend_redact_event_value(item, depth + 1) }
-      when String
-        backend_redact_event_text(value)
-      else
-        value
-      end
+      Aiweb::Redaction.redact_event_value(value, depth: depth)
     end
 
     def backend_redact_event_text(value)
-      text = value.to_s
-      pattern = self.class.const_defined?(:SECRET_VALUE_PATTERN) ? self.class::SECRET_VALUE_PATTERN : /a^/
-      text = text.gsub(pattern, "[redacted]")
-      text = text.gsub(/\b[A-Z0-9_]*(?:SECRET|TOKEN|PASSWORD|PRIVATE[_-]?KEY|API[_-]?KEY|CREDENTIAL)[A-Z0-9_]*=[^\s]+/i, "[redacted]")
-      text.gsub(/([?&](?:access_token|api[_-]?key|key|password|secret|token)=)[^&\s]+/i, "\\1[redacted]")
+      Aiweb::Redaction.redact_event_text(value)
     end
 
     def backend_next_event_seq(path)

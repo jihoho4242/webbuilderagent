@@ -5,6 +5,8 @@ require "json"
 require "securerandom"
 require "time"
 
+require_relative "../redaction"
+
 module Aiweb
   class CodexCliBridge
     DEFAULT_ALLOWED_COMMANDS = %w[
@@ -20,9 +22,6 @@ module Aiweb
     BACKEND_CONTROLLED_ARG_PATTERN = /\A--(?:path(?:=|\z)|json\z|dry-run\z|approved\z)/.freeze
     COMMAND_TIMEOUT_SECONDS = 180
     READ_ONLY_COMMANDS = %w[status runtime-plan scaffold-status run-status run-timeline observability-summary qa-report].freeze
-    BROKER_SECRET_INLINE_ARG_PATTERN = /\A--?[^=\s]*(?:token|secret|client[-_]?secret|password|passwd|api[-_]?key|auth|authorization|credential|private[-_]?key)[^=\s]*=/i.freeze
-    BROKER_SECRET_FLAG_ARG_PATTERN = /\A--?[^=\s]*(?:token|secret|client[-_]?secret|password|passwd|api[-_]?key|auth|authorization|credential|private[-_]?key)[^=\s]*\z/i.freeze
-
     attr_reader :engine_root, :aiweb_bin, :allowed_commands, :command_timeout
 
     def initialize(engine_root: File.expand_path("../../..", __dir__), allowed_commands: DEFAULT_ALLOWED_COMMANDS, command_timeout: COMMAND_TIMEOUT_SECONDS)
@@ -293,17 +292,7 @@ module Aiweb
     end
 
     def redact_broker_command(command)
-      previous = nil
-      Array(command).map do |part|
-        value = part.to_s
-        redacted = broker_secret_arg?(value, previous) ? "[REDACTED]" : value
-        previous = value
-        redacted
-      end
-    end
-
-    def broker_secret_arg?(value, previous)
-      value.match?(BROKER_SECRET_INLINE_ARG_PATTERN) || previous.to_s.match?(BROKER_SECRET_FLAG_ARG_PATTERN)
+      Aiweb::Redaction.redact_command(command)
     end
 
     def relative_to_project(project_path, path)

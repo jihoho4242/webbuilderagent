@@ -16,6 +16,7 @@ require "uri"
 require "yaml"
 
 require_relative "errors"
+require_relative "redaction"
 require_relative "archetypes"
 require_relative "design_brief"
 require_relative "design_candidate_generator"

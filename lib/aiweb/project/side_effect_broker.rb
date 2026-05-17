@@ -95,58 +95,11 @@ module Aiweb
     end
 
     def redact_side_effect_command(command)
-      previous = nil
-      Array(command).map do |part|
-        value = part.to_s
-        redacted = side_effect_secret_arg?(value, previous) ? "[REDACTED]" : value
-        previous = value
-        redacted
-      end
+      Aiweb::Redaction.redact_command(command)
     end
 
     def redact_side_effect_process_output(text)
-      in_private_key_block = false
-      line_redacted = text.to_s.lines.map do |line|
-        if in_private_key_block
-          in_private_key_block = false if side_effect_private_key_end_line?(line)
-          side_effect_redacted_line(line)
-        elsif side_effect_secret_assignment_line?(line) || side_effect_private_key_begin_line?(line)
-          in_private_key_block = true if side_effect_private_key_begin_line?(line) && !side_effect_private_key_end_line?(line)
-          side_effect_redacted_line(line)
-        else
-          line
-        end
-      end.join
-      redacted = agent_run_redact_process_output(line_redacted)
-      redacted = redacted.gsub(/(Authorization:\s*Bearer\s+)[^\s]+/i, "\\1[redacted]")
-      redacted = redacted.gsub(/\b([A-Z0-9_]*(?:SECRET|TOKEN|PASSWORD|PASSWD|PRIVATE[_-]?KEY|API[_-]?KEY|CREDENTIAL|AUTH)[A-Z0-9_]*\s*:\s*)[^\s]+/i, "\\1[redacted]")
-      redacted = redacted.gsub(/\b((?:access[_-]?token|api[_-]?key|key|password|secret|token|credential|authorization)\s*:\s*)[^\s]+/i, "\\1[redacted]")
-      redacted = redacted.gsub(/([?&](?:access_token|api[_-]?key|key|password|secret|token|signature)=)[^&\s]+/i, "\\1[redacted]")
-      redacted.gsub(%r{(?<![\w.-])\.env(?:\.[A-Za-z0-9_-]+)?(?=$|[/:;,\s'"`)\]])}, "[excluded unsafe environment-file reference]")
-    end
-
-    def side_effect_secret_arg?(value, previous)
-      return true if value.match?(/\A--?[^=\s]*(?:token|secret|client[-_]?secret|password|passwd|api[-_]?key|auth|authorization|credential|private[-_]?key)[^=\s]*=/i)
-      return true if previous.to_s.match?(/\A--?[^=\s]*(?:token|secret|client[-_]?secret|password|passwd|api[-_]?key|auth|authorization|credential|private[-_]?key)[^=\s]*\z/i)
-
-      false
-    end
-
-    def side_effect_secret_assignment_line?(line)
-      line.to_s.match?(/\b(?:KEY|[A-Z0-9_]*(?:SECRET|TOKEN|PASSWORD|PASSWD|PRIVATE[_-]?KEY|API[_-]?KEY|CREDENTIAL|AUTH)[A-Z0-9_]*|access[_-]?token|api[_-]?key|password|secret|token|credential|authorization)\s*[:=]/i) ||
-        line.to_s.match?(/Authorization:\s*Bearer\s+/i)
-    end
-
-    def side_effect_private_key_begin_line?(line)
-      line.to_s.match?(/-----BEGIN [A-Z ]*PRIVATE KEY-----/i)
-    end
-
-    def side_effect_private_key_end_line?(line)
-      line.to_s.match?(/-----END [A-Z ]*PRIVATE KEY-----/i)
-    end
-
-    def side_effect_redacted_line(line)
-      line.to_s.end_with?("\n") ? "[redacted]\n" : "[redacted]"
+      Aiweb::Redaction.redact_process_output(text, base_redactor: ->(value) { agent_run_redact_process_output(value) })
     end
 
     def side_effect_broker_path_allowed?(path)
@@ -341,6 +294,9 @@ module Aiweb
       end
       if %w[aiweb 웹빌더].include?(path) && line.match?(/\A\s*exec\s+/) && side_effect_surface_safe_launcher_exec?(path, line)
         return side_effect_classification("local_cli_launcher_wrapper", "documented_exception", nil, "root launcher delegates to the repo-local aiweb executable")
+      end
+      if path.end_with?("lib/aiweb/project/browser_observer_script.js")
+        return side_effect_classification("local_browser_observer_template_literal", "documented_exception", nil, "browser observer JavaScript is written by engine-run and executed only through the local browser-observation path; JavaScript template literals are not shell execution")
       end
       return side_effect_classification("brokered_backend_cli_bridge", "brokered", "aiweb.backend.side_effect_broker", "backend bridge writes broker events before Open3.popen3") if path.end_with?("lib/aiweb/daemon/cli_bridge.rb") && line.include?("Open3.popen3")
       if path.end_with?("lib/aiweb/lazyweb_client.rb") && line.match?(/Net::HTTP/)

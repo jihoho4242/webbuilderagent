@@ -13,6 +13,7 @@ require "time"
 require "uri"
 
 require_relative "errors"
+require_relative "redaction"
 require_relative "daemon/cli_bridge"
 require_relative "daemon/backend_artifacts"
 require_relative "daemon/backend_jobs"

@@ -2,6 +2,7 @@
 
 require_relative "aiweb/errors"
 require_relative "aiweb/version"
+require_relative "aiweb/redaction"
 require_relative "aiweb/profiles"
 require_relative "aiweb/archetypes"
 require_relative "aiweb/intent_router"

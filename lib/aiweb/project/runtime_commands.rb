@@ -66,18 +66,19 @@ module Aiweb
 
       timestamp = Time.now.utc.strftime("%Y%m%dT%H%M%S%6NZ")
       run_id = "setup-#{timestamp}-#{SecureRandom.hex(4)}"
-      run_dir = File.join(aiweb_dir, "runs", run_id)
-      artifacts_dir = File.join(run_dir, "artifacts")
-      package_cache_dir = File.join(run_dir, "package-cache")
-      stdout_path = File.join(run_dir, "stdout.log")
-      stderr_path = File.join(run_dir, "stderr.log")
-      metadata_path = File.join(run_dir, "setup.json")
-      side_effect_broker_path = File.join(run_dir, "side-effect-broker.jsonl")
-      supply_chain_gate_path = File.join(artifacts_dir, "supply-chain-gate.json")
-      sbom_path = File.join(artifacts_dir, "sbom.json")
-      cyclonedx_sbom_path = File.join(artifacts_dir, "sbom.cyclonedx.json")
-      spdx_sbom_path = File.join(artifacts_dir, "sbom.spdx.json")
-      package_audit_path = File.join(artifacts_dir, "package-audit.json")
+      setup_paths = setup_install_run_paths(run_id)
+      run_dir = setup_paths.fetch(:run_dir)
+      artifacts_dir = setup_paths.fetch(:artifacts_dir)
+      package_cache_dir = setup_paths.fetch(:package_cache_dir)
+      stdout_path = setup_paths.fetch(:stdout_path)
+      stderr_path = setup_paths.fetch(:stderr_path)
+      metadata_path = setup_paths.fetch(:metadata_path)
+      side_effect_broker_path = setup_paths.fetch(:side_effect_broker_path)
+      supply_chain_gate_path = setup_paths.fetch(:supply_chain_gate_path)
+      sbom_path = setup_paths.fetch(:sbom_path)
+      cyclonedx_sbom_path = setup_paths.fetch(:cyclonedx_sbom_path)
+      spdx_sbom_path = setup_paths.fetch(:spdx_sbom_path)
+      package_audit_path = setup_paths.fetch(:package_audit_path)
       command_argv = setup_install_argv(package_manager, cache_dir: relative(package_cache_dir))
       command = setup_install_command(package_manager, cache_dir: relative(package_cache_dir))
       side_effect_broker_plan = setup_side_effect_broker_plan(
@@ -88,20 +89,7 @@ module Aiweb
         blocked: false,
         blockers: []
       )
-      planned_changes = [
-        relative(run_dir),
-        relative(artifacts_dir),
-        relative(package_cache_dir),
-        relative(stdout_path),
-        relative(stderr_path),
-        relative(metadata_path),
-        relative(side_effect_broker_path),
-        relative(supply_chain_gate_path),
-        relative(sbom_path),
-        relative(cyclonedx_sbom_path),
-        relative(spdx_sbom_path),
-        relative(package_audit_path)
-      ]
+      planned_changes = setup_install_planned_changes(setup_paths)
       lifecycle_scripts = package_lifecycle_scripts
       lifecycle_warnings = package_lifecycle_script_warnings(lifecycle_scripts)
       audit_exception_plan = setup_audit_exception_plan(audit_exception_path)
@@ -502,6 +490,42 @@ module Aiweb
       end
     end
 
+
+    def setup_install_run_paths(run_id)
+      run_dir = File.join(aiweb_dir, "runs", run_id)
+      artifacts_dir = File.join(run_dir, "artifacts")
+      {
+        run_dir: run_dir,
+        artifacts_dir: artifacts_dir,
+        package_cache_dir: File.join(run_dir, "package-cache"),
+        stdout_path: File.join(run_dir, "stdout.log"),
+        stderr_path: File.join(run_dir, "stderr.log"),
+        metadata_path: File.join(run_dir, "setup.json"),
+        side_effect_broker_path: File.join(run_dir, "side-effect-broker.jsonl"),
+        supply_chain_gate_path: File.join(artifacts_dir, "supply-chain-gate.json"),
+        sbom_path: File.join(artifacts_dir, "sbom.json"),
+        cyclonedx_sbom_path: File.join(artifacts_dir, "sbom.cyclonedx.json"),
+        spdx_sbom_path: File.join(artifacts_dir, "sbom.spdx.json"),
+        package_audit_path: File.join(artifacts_dir, "package-audit.json")
+      }
+    end
+
+    def setup_install_planned_changes(paths)
+      %i[
+        run_dir
+        artifacts_dir
+        package_cache_dir
+        stdout_path
+        stderr_path
+        metadata_path
+        side_effect_broker_path
+        supply_chain_gate_path
+        sbom_path
+        cyclonedx_sbom_path
+        spdx_sbom_path
+        package_audit_path
+      ].map { |key| relative(paths.fetch(key)) }
+    end
 
     def build(dry_run: false)
       assert_initialized!
