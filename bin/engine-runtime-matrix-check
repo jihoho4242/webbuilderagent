@@ -1,0 +1,153 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+require "fileutils"
+require "json"
+require "open3"
+require "optparse"
+require "rbconfig"
+require "tmpdir"
+
+ROOT = File.expand_path("..", __dir__)
+RUBY = RbConfig.ruby
+
+options = {
+  matrix: ENV.fetch("AIWEB_ENGINE_RUN_RUNTIME_MATRIX", "docker,podman"),
+  image: ENV.fetch("AIWEB_OPENMANUS_IMAGE", "aiweb-openmanus-smoke:ci"),
+  base_image: ENV.fetch("AIWEB_RUNTIME_MATRIX_BASE_IMAGE", "python:3.12-alpine"),
+  goal: "runtime matrix smoke patch",
+  dry_run: false,
+  json: false
+}
+
+OptionParser.new do |o|
+  o.on("--matrix LIST", "Comma/space separated runtimes, default docker,podman") { |v| options[:matrix] = v }
+  o.on("--image IMAGE", "Smoke OpenManus image tag") { |v| options[:image] = v }
+  o.on("--base-image IMAGE", "Base image for generated smoke Dockerfile") { |v| options[:base_image] = v }
+  o.on("--goal GOAL", "Engine-run goal") { |v| options[:goal] = v }
+  o.on("--dry-run", "Print plan without building/running containers") { options[:dry_run] = true }
+  o.on("--json", "Emit JSON") { options[:json] = true }
+end.parse!
+
+def runtimes(text)
+  text.to_s.split(/[\s,]+/).map(&:strip).map(&:downcase).select { |runtime| %w[docker podman].include?(runtime) }.uniq
+end
+
+def executable(name)
+  ENV.fetch("PATH", "").split(File::PATH_SEPARATOR).each do |dir|
+    ["", ".cmd", ".exe", ".bat"].each do |ext|
+      path = File.join(dir, "#{name}#{ext.strip}")
+      return path if File.executable?(path) && File.file?(path)
+    end
+  end
+  nil
+end
+
+def run!(label, env, *command, chdir:)
+  stdout, stderr, status = Open3.capture3(env, *command, chdir: chdir)
+  return [stdout, stderr] if status.success?
+
+  raise "#{label} failed with exit #{status.exitstatus || "unknown"}\nSTDOUT:\n#{stdout}\nSTDERR:\n#{stderr}"
+end
+
+def current_user
+  uid = Process.respond_to?(:uid) ? Process.uid : 1000
+  gid = Process.respond_to?(:gid) ? Process.gid : uid
+  uid = 1000 if uid.to_i <= 0
+  gid = uid if gid.to_i <= 0
+  "#{uid}:#{gid}"
+end
+
+matrix = runtimes(options.fetch(:matrix))
+raise "runtime matrix is empty; expected docker, podman, or both" if matrix.empty?
+sandbox_uid, sandbox_gid = current_user.split(":", 2).map(&:to_i)
+
+plan = {
+  "schema_version" => 1,
+  "status" => "planned",
+  "matrix" => matrix,
+  "image" => options.fetch(:image),
+  "base_image" => options.fetch(:base_image),
+  "sandbox_user" => current_user,
+  "dry_run" => options.fetch(:dry_run)
+}
+
+if options[:dry_run]
+  puts(options[:json] ? JSON.pretty_generate("engine_runtime_matrix_check" => plan) : plan.map { |k, v| "#{k}: #{v}" }.join("\n"))
+  exit 0
+end
+
+missing = matrix.reject { |runtime| executable(runtime) }
+raise "missing required runtime executables: #{missing.join(", ")}" unless missing.empty?
+
+Dir.mktmpdir("aiweb-runtime-matrix") do |tmp|
+  context = File.join(tmp, "image")
+  project = File.join(tmp, "project")
+  FileUtils.mkdir_p(context)
+  File.write(File.join(context, "Dockerfile"), <<~DOCKERFILE)
+    FROM #{options.fetch(:base_image)}
+    RUN addgroup -g #{sandbox_gid} aiweb || true
+    RUN adduser -D -u #{sandbox_uid} aiweb || true
+    RUN cat > /usr/local/bin/openmanus <<'SH' && chmod +x /usr/local/bin/openmanus
+    #!/bin/sh
+    set -eu
+    mkdir -p /workspace/_aiweb
+    if [ -f /workspace/src/components/Hero.astro ]; then
+      printf '\\n<!-- runtime matrix smoke patch -->\\n' >> /workspace/src/components/Hero.astro
+    fi
+    printf '{"schema_version":1,"status":"patched","sandbox_mode":"runtime-matrix-smoke"}\\n' > "${AIWEB_OPENMANUS_RESULT_PATH:-/workspace/_aiweb/engine-result.json}"
+    echo "runtime matrix smoke openmanus"
+    SH
+  DOCKERFILE
+
+  matrix.each do |runtime|
+    run!("#{runtime} build", ENV.to_h, runtime, "build", "-t", options.fetch(:image), context, chdir: ROOT)
+  end
+
+  run!("aiweb init", ENV.to_h, RUBY, File.join(ROOT, "bin", "aiweb"), "--path", project, "init", chdir: ROOT)
+  FileUtils.mkdir_p(File.join(project, "src", "components"))
+  File.write(File.join(project, "src", "components", "Hero.astro"), "<h1>Before</h1>\n")
+
+  env = ENV.to_h.merge(
+    "AIWEB_OPENMANUS_IMAGE" => options.fetch(:image),
+    "AIWEB_ENGINE_RUN_RUNTIME_MATRIX" => matrix.join(","),
+    "AIWEB_ENGINE_RUN_SANDBOX_USER" => current_user
+  )
+  stdout, stderr = run!(
+    "aiweb engine-run runtime matrix",
+    env,
+    RUBY,
+    File.join(ROOT, "bin", "aiweb"),
+    "--json",
+    "--path",
+    project,
+    "engine-run",
+    "--goal",
+    options.fetch(:goal),
+    "--agent",
+    "openmanus",
+    "--sandbox",
+    matrix.first,
+    "--approved",
+    chdir: ROOT
+  )
+  payload = JSON.parse(stdout)
+  engine = payload.fetch("engine_run")
+  preflight = engine.fetch("sandbox_preflight")
+  matrix_evidence = preflight.fetch("runtime_matrix")
+  unless engine.fetch("status") == "passed" && matrix_evidence.fetch("status") == "passed"
+    raise "runtime matrix smoke failed\nSTDOUT:\n#{stdout}\nSTDERR:\n#{stderr}"
+  end
+
+  result = {
+    "schema_version" => 1,
+    "status" => "passed",
+    "matrix" => matrix,
+    "image" => options.fetch(:image),
+    "sandbox_user" => current_user,
+    "run_id" => engine.fetch("run_id"),
+    "runtime_matrix" => matrix_evidence,
+    "project" => project
+  }
+  puts(options[:json] ? JSON.pretty_generate("engine_runtime_matrix_check" => result) : "engine runtime matrix check passed: #{matrix.join(", ")}")
+end

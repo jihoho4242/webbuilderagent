@@ -1,0 +1,102 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://aiweb.local/schemas/engine-scheduler-service.schema.json",
+  "title": "Engine Scheduler Service",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "status",
+    "service_driver",
+    "service_type",
+    "action",
+    "decision",
+    "approved",
+    "execute",
+    "selected_run_id",
+    "service_artifact_path",
+    "ledger_path",
+    "scheduler_artifacts",
+    "derived_start_node_id",
+    "supported_continuation_start_nodes",
+    "terminal_run",
+    "node_body_executor",
+    "node_body_execution_mode",
+    "resume_command",
+    "resume_blockers",
+    "lease",
+    "limitations",
+    "blocking_issues"
+  ],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "status": { "enum": ["recorded", "blocked", "dry_run"] },
+    "service_driver": { "const": "aiweb.engine_scheduler.service.v1" },
+    "service_type": { "const": "project_local_durable_graph_scheduler_service" },
+    "action": { "enum": ["status", "tick"] },
+    "decision": { "enum": ["no_run", "noop_terminal", "blocked", "resume_ready"] },
+    "approved": { "type": "boolean" },
+    "execute": { "type": "boolean" },
+    "selected_run": { "type": ["object", "null"] },
+    "selected_run_id": { "type": ["string", "null"], "pattern": "^engine-run-" },
+    "service_artifact_path": { "type": ["string", "null"], "pattern": "^\\.ai-web/runs/.+/artifacts/scheduler-service\\.json$" },
+    "ledger_path": { "const": ".ai-web/scheduler/ledger.jsonl" },
+    "scheduler_artifacts": {
+      "type": "object",
+      "properties": {
+        "metadata_path": { "type": "string" },
+        "checkpoint_path": { "type": "string" },
+        "graph_execution_plan_path": { "type": "string" },
+        "graph_scheduler_state_path": { "type": "string" }
+      },
+      "additionalProperties": true
+    },
+    "graph_cursor": { "type": ["object", "null"] },
+    "derived_start_node_id": { "type": ["string", "null"] },
+    "supported_continuation_start_nodes": {
+      "type": "array",
+      "items": { "enum": ["preflight", "load_design_contract", "stage_workspace", "worker_act", "repair"] }
+    },
+    "terminal_run": { "type": "boolean" },
+    "node_body_executor": { "const": "engine_run_resume_bridge" },
+    "node_body_execution_mode": { "enum": ["deferred_command", "approved_inline_resume_bridge"] },
+    "resume_command": { "type": "array", "items": { "type": "string" } },
+    "resume_blockers": { "type": "array", "items": { "type": "string" } },
+    "graph_node_summary": { "type": "array", "items": { "type": "object" } },
+    "execution_attempted": { "type": "boolean" },
+    "execution_started_at": { "type": "string" },
+    "execution_finished_at": { "type": "string" },
+    "execution_status": { "type": ["string", "null"] },
+    "execution_result_summary": {
+      "type": "object",
+      "required": ["run_id", "status", "metadata_path", "checkpoint_path", "resume_from", "action_taken", "blocking_issues"],
+      "properties": {
+        "run_id": { "type": ["string", "null"] },
+        "status": { "type": ["string", "null"] },
+        "metadata_path": { "type": ["string", "null"] },
+        "checkpoint_path": { "type": ["string", "null"] },
+        "graph_execution_plan_path": { "type": ["string", "null"] },
+        "graph_scheduler_state_path": { "type": ["string", "null"] },
+        "resume_from": { "type": ["string", "null"] },
+        "action_taken": { "type": ["string", "null"] },
+        "blocking_issues": { "type": "array", "items": { "type": "string" } }
+      },
+      "additionalProperties": true
+    },
+    "execution_result": { "type": "object" },
+    "lease": {
+      "type": "object",
+      "required": ["lease_id", "run_id", "start_node_id", "status", "created_at"],
+      "properties": {
+        "lease_id": { "type": ["string", "null"] },
+        "run_id": { "type": ["string", "null"], "pattern": "^engine-run-" },
+        "start_node_id": { "type": ["string", "null"] },
+        "status": { "enum": ["available", "none"] },
+        "created_at": { "type": "string" }
+      },
+      "additionalProperties": true
+    },
+    "limitations": { "type": "array", "items": { "type": "string" } },
+    "blocking_issues": { "type": "array", "items": { "type": "string" } }
+  },
+  "additionalProperties": true
+}

@@ -7,6 +7,7 @@ require "find"
 require "json"
 require "open3"
 require "rbconfig"
+require "securerandom"
 require "set"
 require "shellwords"
 require "timeout"
@@ -26,6 +27,10 @@ require_relative "profiles"
 require_relative "project/runtime_commands"
 require_relative "project/verify_loop"
 require_relative "project/sandbox_runtime"
+require_relative "project/side_effect_broker"
+require_relative "project/mcp_broker"
+require_relative "project/graph_scheduler"
+require_relative "project/engine_scheduler_service"
 require_relative "project/design_fidelity"
 require_relative "project/agent_run"
 require_relative "project/engine_run"
@@ -37,9 +42,12 @@ module Aiweb
     include ProjectRuntimeCommands
     include ProjectVerifyLoop
     include ProjectSandboxRuntime
+    include ProjectSideEffectBroker
+    include ProjectMcpBroker
     include ProjectDesignFidelity
     include ProjectAgentRun
     include ProjectEngineRun
+    include ProjectEngineSchedulerService
     include ProjectStateBoundary
     include ProjectWorkbench
     PHASES = %w[
@@ -1453,13 +1461,14 @@ module Aiweb
       state = load_state
       ensure_pr19_deploy_defaults!(state)
       descriptor_path = DEPLOY_PROVIDER_CONFIG_PATHS.fetch(normalized_target)
-      timestamp = Time.now.utc.strftime("%Y%m%dT%H%M%SZ")
-      run_id = "deploy-#{timestamp}-#{normalized_target}"
+      timestamp = Time.now.utc.strftime("%Y%m%dT%H%M%S%6NZ")
+      run_id = "deploy-#{timestamp}-#{SecureRandom.hex(4)}-#{normalized_target}"
       run_dir = File.join(aiweb_dir, "runs", run_id)
       stdout_path = File.join(run_dir, "stdout.log")
       stderr_path = File.join(run_dir, "stderr.log")
       metadata_path = File.join(run_dir, "deploy.json")
-      planned_changes = [DEPLOY_PLAN_PATH, descriptor_path, relative(run_dir), relative(stdout_path), relative(stderr_path), relative(metadata_path)]
+      side_effect_broker_path = File.join(run_dir, "side-effect-broker.jsonl")
+      planned_changes = [DEPLOY_PLAN_PATH, descriptor_path, relative(run_dir), relative(stdout_path), relative(stderr_path), relative(metadata_path), relative(side_effect_broker_path)]
       deploy_payload = deploy_local_payload(
         normalized_target,
         state,
@@ -1470,7 +1479,8 @@ module Aiweb
         run_dir: run_dir,
         stdout_path: stdout_path,
         stderr_path: stderr_path,
-        metadata_path: metadata_path
+        metadata_path: metadata_path,
+        side_effect_broker_path: side_effect_broker_path
       )
       payload = status_hash(state: state, changed_files: [])
       payload["action_taken"] = dry_run ? "deploy dry-run planned" : "deploy blocked"
@@ -1499,11 +1509,68 @@ module Aiweb
           changes << relative(run_dir)
           started_at = now
           command = deploy_payload.fetch("command")
-          stdout, stderr, process_status = Open3.capture3(*command, chdir: root)
+          side_effect_broker_events = []
+          side_effect_context = deploy_side_effect_broker_context(
+            target: normalized_target,
+            command: command,
+            deploy_payload: deploy_payload
+          )
+          append_side_effect_broker_event(
+            side_effect_broker_path,
+            side_effect_broker_events,
+            "tool.requested",
+            side_effect_context.merge(
+              "requested_at" => started_at,
+              "dry_run" => false
+            )
+          )
+          append_side_effect_broker_event(
+            side_effect_broker_path,
+            side_effect_broker_events,
+            "policy.decision",
+            side_effect_context.merge(
+              "decision" => "allow",
+              "reason" => "explicit --approved deploy with passing verify-loop evidence and ready provider CLI"
+            )
+          )
+          append_side_effect_broker_event(
+            side_effect_broker_path,
+            side_effect_broker_events,
+            "tool.started",
+            side_effect_context.merge("started_at" => started_at)
+          )
+          stdout, stderr, process_status = begin
+            Open3.capture3(*command, chdir: root)
+          rescue StandardError => error
+            append_side_effect_broker_event(
+              side_effect_broker_path,
+              side_effect_broker_events,
+              "tool.failed",
+              side_effect_context.merge(
+                "finished_at" => now,
+                "error_class" => error.class.name,
+                "error_message" => error.message.to_s[0, 240]
+              )
+            )
+            raise
+          end
           status = process_status.success? ? "passed" : "failed"
+          append_side_effect_broker_event(
+            side_effect_broker_path,
+            side_effect_broker_events,
+            "tool.finished",
+            side_effect_context.merge(
+              "finished_at" => now,
+              "status" => status,
+              "exit_code" => process_status.exitstatus
+            )
+          )
           blocking_issues = process_status.success? ? [] : ["#{command.first} exited with status #{process_status.exitstatus}"]
+          stdout = redact_side_effect_process_output(stdout)
+          stderr = redact_side_effect_process_output(stderr)
           changes << write_file(stdout_path, stdout, false)
           changes << write_file(stderr_path, stderr, false)
+          changes << relative(side_effect_broker_path)
           deploy_payload = deploy_payload.merge(
             "status" => status,
             "started_at" => started_at,
@@ -1512,11 +1579,20 @@ module Aiweb
             "stdout_log" => relative(stdout_path),
             "stderr_log" => relative(stderr_path),
             "metadata_path" => relative(metadata_path),
+            "side_effect_broker_path" => relative(side_effect_broker_path),
+            "side_effect_broker_events" => side_effect_broker_events,
+            "side_effect_broker" => deploy_payload.fetch("side_effect_broker").merge(
+              "status" => status,
+              "events_recorded" => true,
+              "events_path" => relative(side_effect_broker_path),
+              "event_count" => side_effect_broker_events.length
+            ),
             "blocking_issues" => blocking_issues,
             "provider_executed" => true,
             "provider_cli_invoked" => true,
             "external_deploy_performed" => process_status.success?,
-            "network_calls_performed" => process_status.success?,
+            "network_calls_performed" => true,
+            "network_call_status" => process_status.success? ? "performed" : "attempted_unknown_result",
             "writes_performed" => true
           )
           changes << write_json(metadata_path, deploy_payload, false)
@@ -2334,7 +2410,9 @@ module Aiweb
         payload["design_research"] = design_research_summary(state).merge(
           "planned_queries" => Array(result.dig("latest", "queries")),
           "planned_artifact_paths" => paths.values,
-          "token_configured" => true
+          "token_configured" => true,
+          "side_effect_broker" => result["side_effect_broker"],
+          "side_effect_broker_events" => result["side_effect_broker_events"]
         )
         payload["next_action"] = "review .ai-web/design-reference-brief.md, then continue with aiweb design-system resolve"
       end
@@ -2707,7 +2785,7 @@ module Aiweb
       }
     end
 
-    def deploy_local_payload(target, state, dry_run:, force:, approved:, run_id:, run_dir:, stdout_path:, stderr_path:, metadata_path:)
+    def deploy_local_payload(target, state, dry_run:, force:, approved:, run_id:, run_dir:, stdout_path:, stderr_path:, metadata_path:, side_effect_broker_path:)
       descriptor = deploy_provider_descriptor(target, state)
       command = deploy_provider_command(target, descriptor)
       verify_gate = deploy_verify_loop_gate(state, dry_run: dry_run)
@@ -2729,13 +2807,24 @@ module Aiweb
         "stdout_log" => relative(stdout_path),
         "stderr_log" => relative(stderr_path),
         "metadata_path" => relative(metadata_path),
+        "side_effect_broker_path" => relative(side_effect_broker_path),
         "planned_artifact_path" => descriptor.fetch("planned_config_path"),
         "planned_config_path" => descriptor.fetch("planned_config_path"),
-        "planned_changes" => [DEPLOY_PLAN_PATH, descriptor.fetch("planned_config_path"), relative(run_dir), relative(stdout_path), relative(stderr_path), relative(metadata_path)],
+        "planned_changes" => [DEPLOY_PLAN_PATH, descriptor.fetch("planned_config_path"), relative(run_dir), relative(stdout_path), relative(stderr_path), relative(metadata_path), relative(side_effect_broker_path)],
         "descriptor" => descriptor,
         "verify_loop_gate" => verify_gate,
         "provider_readiness" => provider_readiness,
         "command" => command,
+        "side_effect_broker" => deploy_side_effect_broker_plan(
+          target: target,
+          command: command,
+          broker_path: side_effect_broker_path,
+          dry_run: dry_run,
+          approved: approved,
+          blocked: blocked,
+          blockers: blockers
+        ),
+        "side_effect_broker_events" => [],
         "blocking_issues" => blocked ? blockers.uniq : [],
         "external_actions_allowed" => approved && verify_gate["status"] == "passed" && provider_readiness["status"] == "ready",
         "external_push_performed" => false,
@@ -3032,6 +3121,40 @@ module Aiweb
         "command" => command,
         "blocking_issues" => blockers
       }
+    end
+
+    def deploy_side_effect_broker_plan(target:, command:, broker_path:, dry_run:, approved:, blocked:, blockers:)
+      side_effect_broker_plan(
+        broker: "aiweb.deploy.side_effect_broker",
+        scope: "deploy.provider_cli",
+        target: target,
+        command: command,
+        broker_path: broker_path,
+        dry_run: dry_run,
+        approved: approved,
+        blocked: blocked,
+        blockers: blockers,
+        risk_class: "external_network_deploy",
+        policy_extra: {
+          "requires_passing_verify_loop" => true,
+          "requires_ready_provider_cli" => true
+        }
+      )
+    end
+
+    def deploy_side_effect_broker_context(target:, command:, deploy_payload:)
+      side_effect_broker_context(
+        broker: "aiweb.deploy.side_effect_broker",
+        scope: "deploy.provider_cli",
+        target: target,
+        command: command,
+        risk_class: "external_network_deploy",
+        approved: deploy_payload.fetch("approved"),
+        extra: {
+          "verify_loop_status" => deploy_payload.dig("verify_loop_gate", "status"),
+          "provider_readiness_status" => deploy_payload.dig("provider_readiness", "status")
+        }
+      )
     end
 
     def deploy_project_name

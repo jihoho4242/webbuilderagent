@@ -3,21 +3,117 @@
   "$id": "https://aiweb.local/schemas/engine-run-checkpoint.schema.json",
   "title": "Engine Run Checkpoint",
   "type": "object",
-  "required": ["schema_version", "run_id", "status", "cycle", "next_step", "workspace_path", "safe_changes", "saved_at", "opendesign_contract"],
+  "required": ["schema_version", "run_id", "status", "cycle", "next_step", "workspace_path", "safe_changes", "saved_at", "opendesign_contract", "artifact_hashes"],
   "properties": {
     "schema_version": { "const": 1 },
     "run_id": { "type": "string", "pattern": "^engine-run-" },
     "status": {
-      "enum": ["dry_run", "blocked", "running", "waiting_approval", "failed", "no_changes", "passed", "cancelled"]
+      "enum": ["dry_run", "blocked", "running", "waiting_approval", "failed", "no_changes", "passed", "cancelled", "quarantined"]
     },
     "cycle": { "type": "integer", "minimum": 0, "maximum": 10 },
     "next_step": { "type": "string", "minLength": 1 },
     "workspace_path": { "type": "string", "pattern": "^\\.ai-web/tmp/agentic/.+/workspace$" },
     "safe_changes": { "type": "array", "items": { "type": "string" } },
     "opendesign_contract": { "type": "object" },
+    "run_graph_cursor": { "type": "object" },
+    "run_graph": {
+      "type": "object",
+      "required": ["nodes", "executor_contract"],
+      "properties": {
+        "executor_contract": {
+          "type": "object",
+          "required": ["executor_type", "node_order", "checkpoint_policy", "resume_strategy"],
+          "properties": {
+            "executor_type": { "const": "sequential_durable_node_executor" },
+            "node_order": { "type": "array", "items": { "type": "string" } },
+            "checkpoint_policy": { "type": "string" },
+            "resume_strategy": { "type": "string" }
+          },
+          "additionalProperties": true
+        },
+        "nodes": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["node_id", "state", "executor", "replay_policy"],
+            "properties": {
+              "node_id": { "type": "string" },
+              "executor": { "type": "object", "required": ["executor_id", "handler", "tool_broker_required"], "additionalProperties": true },
+              "replay_policy": { "type": "object", "required": ["requires_artifact_hash_validation", "replay_guard"], "additionalProperties": true }
+            },
+            "additionalProperties": true
+          }
+        }
+      },
+      "additionalProperties": true
+    },
+    "artifact_hashes": {
+      "type": "object",
+      "propertyNames": {
+        "enum": [
+          "staged_manifest",
+          "graph_execution_plan",
+          "graph_scheduler_state",
+          "opendesign_contract",
+          "project_index",
+          "run_memory",
+          "authz_enforcement",
+          "worker_adapter_registry",
+          "sandbox_preflight",
+          "supply_chain_gate",
+          "supply_chain_sbom",
+          "supply_chain_audit",
+          "verification",
+          "preview",
+          "browser_evidence",
+          "design_verdict",
+          "design_fidelity",
+          "design_fixture",
+          "eval_benchmark",
+          "quarantine",
+          "diff"
+        ]
+      },
+      "properties": {
+        "staged_manifest": { "$ref": "#/$defs/artifact_hash" },
+        "graph_execution_plan": { "$ref": "#/$defs/artifact_hash" },
+        "graph_scheduler_state": { "$ref": "#/$defs/artifact_hash" },
+        "opendesign_contract": { "$ref": "#/$defs/artifact_hash" },
+        "project_index": { "$ref": "#/$defs/artifact_hash" },
+        "run_memory": { "$ref": "#/$defs/artifact_hash" },
+        "authz_enforcement": { "$ref": "#/$defs/artifact_hash" },
+        "worker_adapter_registry": { "$ref": "#/$defs/artifact_hash" },
+        "sandbox_preflight": { "$ref": "#/$defs/artifact_hash" },
+        "supply_chain_gate": { "$ref": "#/$defs/artifact_hash" },
+        "supply_chain_sbom": { "$ref": "#/$defs/artifact_hash" },
+        "supply_chain_audit": { "$ref": "#/$defs/artifact_hash" },
+        "verification": { "$ref": "#/$defs/artifact_hash" },
+        "preview": { "$ref": "#/$defs/artifact_hash" },
+        "browser_evidence": { "$ref": "#/$defs/artifact_hash" },
+        "design_verdict": { "$ref": "#/$defs/artifact_hash" },
+        "design_fidelity": { "$ref": "#/$defs/artifact_hash" },
+        "design_fixture": { "$ref": "#/$defs/artifact_hash" },
+        "eval_benchmark": { "$ref": "#/$defs/artifact_hash" },
+        "quarantine": { "$ref": "#/$defs/artifact_hash" },
+        "diff": { "$ref": "#/$defs/artifact_hash" }
+      },
+      "additionalProperties": false
+    },
     "goal": { "type": "string" },
     "resume_from": { "type": "string" },
     "saved_at": { "type": "string", "minLength": 1 }
+  },
+  "$defs": {
+    "artifact_hash": {
+      "type": "object",
+      "required": ["path", "sha256", "bytes"],
+      "properties": {
+        "path": { "type": "string", "pattern": "^\\.ai-web/" },
+        "sha256": { "type": "string", "pattern": "^sha256:[a-f0-9]{64}$" },
+        "bytes": { "type": "integer", "minimum": 0 }
+      },
+      "additionalProperties": false
+    }
   },
   "additionalProperties": true
 }

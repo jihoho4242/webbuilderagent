@@ -1,0 +1,65 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://aiweb.local/schemas/local-backend-authz-audit.schema.json",
+  "title": "Local Backend Authorization Audit Event",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "event_type",
+    "recorded_at",
+    "decision",
+    "action",
+    "project_id",
+    "tenant_id_hash",
+    "user_id_hash",
+    "required_role",
+    "granted_roles",
+    "authz_mode",
+    "role_source",
+    "audit_path",
+    "reason"
+  ],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "event_type": { "const": "backend.authz.decision" },
+    "recorded_at": { "type": "string", "minLength": 1 },
+    "decision": { "enum": ["allowed", "denied"] },
+    "action": {
+      "enum": [
+        "view_status",
+        "view_workbench",
+        "view_console",
+        "view_runs",
+        "view_run",
+        "view_events",
+        "view_approvals",
+        "view_job_status",
+        "view_job_timeline",
+        "view_job_summary",
+        "view_artifact",
+        "command",
+        "codex_agent_run",
+        "run_start",
+        "approve",
+        "resume",
+        "cancel",
+        "copy_back"
+      ]
+    },
+    "project_id": { "type": ["string", "null"] },
+    "tenant_id_hash": { "type": ["string", "null"], "pattern": "^sha256:[a-f0-9]{16}$" },
+    "user_id_hash": { "type": ["string", "null"], "pattern": "^sha256:[a-f0-9]{16}$" },
+    "required_role": { "enum": ["viewer", "operator", "admin"] },
+    "granted_roles": {
+      "type": "array",
+      "items": { "enum": ["viewer", "operator", "admin"] }
+    },
+    "authz_mode": { "enum": ["claims", "jwt_hs256", "jwt_rs256_jwks", "session_token"] },
+    "role_source": { "const": "server_configured_project_allowlist" },
+    "audit_path": { "const": ".ai-web/authz/audit.jsonl" },
+    "artifact_path": { "type": "string" },
+    "artifact_acl_category": { "enum": ["standard_safe_artifact", "sensitive_run_artifact"] },
+    "reason": { "type": "string" }
+  },
+  "additionalProperties": false
+}

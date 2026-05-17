@@ -22,13 +22,13 @@ module Aiweb
     EXIT_UNSAFE_EXTERNAL_ACTION = 5
     EXIT_INTERNAL_ERROR = 10
 
-    MUTATION_COMMANDS = %w[start init interview run run-cancel run-resume engine-run agent-run verify-loop ingest-reference ingest-design next-task qa-checklist qa-report repair advance rollback resolve-blocker snapshot design-brief design-research design-system design-prompt design select-design scaffold setup build preview qa-playwright browser-qa qa-screenshot screenshot-qa qa-a11y a11y-qa qa-lighthouse lighthouse-qa visual-critique visual-polish workbench component-map visual-edit supabase-secret-qa supabase-local-verify github-sync deploy-plan deploy daemon backend].freeze
+    MUTATION_COMMANDS = %w[start init interview run run-cancel run-resume engine-run engine-scheduler mcp-broker agent-run verify-loop eval-baseline human-baseline ingest-reference ingest-design next-task qa-checklist qa-report repair advance rollback resolve-blocker snapshot design-brief design-research design-system design-prompt design select-design scaffold setup build preview qa-playwright browser-qa qa-screenshot screenshot-qa qa-a11y a11y-qa qa-lighthouse lighthouse-qa visual-critique visual-polish workbench component-map visual-edit supabase-secret-qa supabase-local-verify github-sync deploy-plan deploy daemon backend].freeze
     RUNTIME_PLAN_COMMANDS = %w[runtime-plan scaffold-status].freeze
     REGISTRY_COMMANDS = %w[design-systems skills craft].freeze
     WEBBUILDER_COMMANDS = %w[
       help --help -h version --version
       start init status runtime-plan scaffold-status setup build preview interview run run-status run-timeline timeline observability-summary summary run-cancel run-resume design-brief design-system design-prompt design select-design scaffold supabase-secret-qa supabase-local-verify ingest-design next-task
-      engine-run agent-run verify-loop qa-checklist qa-report repair qa-playwright qa-screenshot qa-a11y qa-lighthouse visual-critique visual-polish advance rollback resolve-blocker snapshot
+      engine-run engine-scheduler mcp-broker agent-run verify-loop eval-baseline human-baseline qa-checklist qa-report repair qa-playwright qa-screenshot qa-a11y qa-lighthouse visual-critique visual-polish advance rollback resolve-blocker snapshot
       workbench component-map visual-edit github-sync deploy-plan deploy design-systems skills craft intent
     ].freeze
 
@@ -88,10 +88,19 @@ module Aiweb
         when "--path"
           value = @argv.shift
           raise OptionParser::MissingArgument, "--path" if value.to_s.empty?
+          if command_local_path_option?(kept)
+            kept << arg
+            kept << value
+            next
+          end
           raise UserError.new("unsafe --path target blocked: .env/.env.* paths are not allowed", EXIT_UNSAFE_EXTERNAL_ACTION) if unsafe_env_path?(value)
 
           @root = File.expand_path(value)
         when /\A--path=(.+)\z/
+          if command_local_path_option?(kept)
+            kept << arg
+            next
+          end
           raise UserError.new("unsafe --path target blocked: .env/.env.* paths are not allowed", EXIT_UNSAFE_EXTERNAL_ACTION) if unsafe_env_path?($1)
 
           @root = File.expand_path($1)
@@ -100,6 +109,10 @@ module Aiweb
         end
       end
       @argv = kept
+    end
+
+    def command_local_path_option?(kept_args)
+      %w[eval-baseline human-baseline].include?(kept_args.first)
     end
 
   end

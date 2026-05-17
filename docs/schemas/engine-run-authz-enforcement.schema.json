@@ -1,0 +1,260 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://aiweb.local/schemas/engine-run-authz-enforcement.schema.json",
+  "title": "Engine Run Authorization Enforcement",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "run_id",
+    "recorded_at",
+    "mode",
+    "run_id_is_not_authority",
+    "project_scope",
+    "local_backend_enforcement",
+    "current_execution",
+    "saas_required_claims",
+    "saas_claims_observed",
+    "remote_exposure_status",
+    "blocking_issues"
+  ],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "run_id": { "type": "string", "pattern": "^engine-run-" },
+    "recorded_at": { "type": "string", "minLength": 1 },
+    "mode": { "const": "local_project" },
+    "run_id_is_not_authority": { "const": true },
+    "project_scope": {
+      "type": "object",
+      "required": ["project_root", "workspace_path", "run_dir", "artifact_scope", "diff_scope"],
+      "additionalProperties": true
+    },
+    "local_backend_enforcement": {
+      "type": "object",
+      "required": [
+        "api_token_required_for_api_routes",
+        "approval_token_required_for_approved_execution",
+        "safe_project_path_required",
+        "artifact_reference_must_be_project_relative",
+        "raw_run_id_without_project_path_is_rejected",
+        "claim_enforced_project_authz_available",
+        "claim_enforced_mode_required_for_remote_exposure",
+        "supported_authz_modes",
+        "unsupported_authz_modes_fail_closed_for_project_routes",
+        "jwt_hs256_status",
+        "jwt_hs256_secret_env",
+        "jwt_hs256_required_claims",
+        "jwt_hs256_claim_aliases",
+        "jwt_rs256_jwks_status",
+        "jwt_rs256_jwks_file_env",
+        "jwt_rs256_jwks_required_claims",
+        "session_token_status",
+        "session_store_file_env",
+        "session_token_storage",
+        "session_token_required_claims",
+        "oidc_status",
+        "raw_jwt_oidc_status",
+        "claim_headers",
+        "project_id_source",
+        "role_source",
+        "project_registry_source",
+        "project_registry_policy",
+        "role_hierarchy",
+        "route_required_roles",
+        "artifact_acl_policy",
+        "audit_path",
+        "server_project_allowlist_required",
+        "project_allowlist_env",
+        "project_registry_file_env",
+        "route_permissions"
+      ],
+      "properties": {
+        "api_token_required_for_api_routes": { "const": true },
+        "approval_token_required_for_approved_execution": { "const": true },
+        "safe_project_path_required": { "const": true },
+        "artifact_reference_must_be_project_relative": { "const": true },
+        "raw_run_id_without_project_path_is_rejected": { "const": true },
+        "claim_enforced_project_authz_available": { "const": true },
+        "claim_enforced_mode_required_for_remote_exposure": { "const": true },
+        "supported_authz_modes": {
+          "type": "array",
+          "items": { "enum": ["local_token", "claims", "jwt_hs256", "jwt_rs256_jwks", "session_token"] },
+          "minItems": 5
+        },
+        "unsupported_authz_modes_fail_closed_for_project_routes": { "const": true },
+        "jwt_hs256_status": { "const": "local_hs256_supported_with_server_secret" },
+        "jwt_hs256_secret_env": { "const": "AIWEB_DAEMON_JWT_HS256_SECRET" },
+        "jwt_hs256_required_claims": {
+          "type": "array",
+          "items": { "enum": ["tenant_id", "project_id", "user_id"] },
+          "minItems": 3
+        },
+        "jwt_hs256_claim_aliases": {
+          "type": "object",
+          "required": ["tenant_id", "project_id", "user_id"],
+          "properties": {
+            "tenant_id": {
+              "type": "array",
+              "items": { "enum": ["tenant_id", "tid"] },
+              "minItems": 2
+            },
+            "project_id": {
+              "type": "array",
+              "items": { "enum": ["project_id", "pid"] },
+              "minItems": 2
+            },
+            "user_id": {
+              "type": "array",
+              "items": { "enum": ["user_id", "sub"] },
+              "minItems": 2
+            }
+          },
+          "additionalProperties": false
+        },
+        "jwt_rs256_jwks_status": { "const": "local_rs256_jwks_file_supported_no_oidc_discovery" },
+        "jwt_rs256_jwks_file_env": { "const": "AIWEB_DAEMON_JWT_RS256_JWKS_FILE" },
+        "jwt_rs256_jwks_required_claims": {
+          "type": "array",
+          "items": { "enum": ["tenant_id", "project_id", "user_id"] },
+          "minItems": 3
+        },
+        "session_token_status": { "const": "local_hashed_session_store_supported" },
+        "session_store_file_env": { "const": "AIWEB_DAEMON_SESSION_STORE_FILE" },
+        "session_token_storage": { "const": "sha256_hash_only" },
+        "session_token_required_claims": {
+          "type": "array",
+          "items": { "enum": ["tenant_id", "project_id", "user_id"] },
+          "minItems": 3
+        },
+        "oidc_status": { "const": "not_implemented_fail_closed" },
+        "raw_jwt_oidc_status": { "const": "unsupported_modes_fail_closed" },
+        "claim_headers": {
+          "type": "array",
+          "items": { "enum": ["X-Aiweb-Tenant-Id", "X-Aiweb-Project-Id", "X-Aiweb-User-Id"] },
+          "minItems": 3
+        },
+        "project_id_source": { "const": "server_configured_project_allowlist" },
+        "role_source": { "const": "server_configured_project_allowlist" },
+        "project_registry_source": { "const": "inline_env_or_file_json" },
+        "project_registry_policy": {
+          "type": "object",
+          "required": ["policy", "sources", "file_format", "supports_tenant_members", "supports_project_members", "role_source"],
+          "properties": {
+            "policy": { "const": "local_backend_project_registry_v1" },
+            "sources": {
+              "type": "array",
+              "items": { "enum": ["AIWEB_DAEMON_AUTHZ_PROJECTS", "AIWEB_DAEMON_AUTHZ_PROJECTS_FILE"] },
+              "minItems": 2
+            },
+            "file_format": { "const": "json" },
+            "supports_tenant_members": { "const": true },
+            "supports_project_members": { "const": true },
+            "role_source": { "const": "server_configured_project_allowlist" }
+          },
+          "additionalProperties": true
+        },
+        "role_hierarchy": {
+          "type": "array",
+          "items": { "enum": ["viewer", "operator", "admin"] },
+          "minItems": 3
+        },
+        "route_required_roles": {
+          "type": "object",
+          "additionalProperties": { "enum": ["viewer", "operator", "admin"] }
+        },
+        "artifact_acl_policy": {
+          "type": "object",
+          "required": ["policy", "default_role", "sensitive_artifact_role", "approval_artifact_role"],
+          "properties": {
+            "policy": { "const": "local_backend_artifact_acl_v1" },
+            "default_role": { "const": "viewer" },
+            "sensitive_artifact_role": { "const": "operator" },
+            "approval_artifact_role": { "const": "admin" }
+          },
+          "additionalProperties": true
+        },
+        "audit_path": { "const": ".ai-web/authz/audit.jsonl" },
+        "server_project_allowlist_required": { "const": true },
+        "project_allowlist_env": { "const": "AIWEB_DAEMON_AUTHZ_PROJECTS" },
+        "project_registry_file_env": { "const": "AIWEB_DAEMON_AUTHZ_PROJECTS_FILE" },
+        "route_permissions": {
+          "type": "object",
+          "required": [
+            "view_status",
+            "view_workbench",
+            "view_console",
+            "view_runs",
+            "view_run",
+            "view_events",
+            "view_approvals",
+            "view_job_status",
+            "view_job_timeline",
+            "view_job_summary",
+            "view_artifact",
+            "command",
+            "codex_agent_run",
+            "run_start",
+            "approve",
+            "resume",
+            "cancel",
+            "copy_back"
+          ],
+          "properties": {
+            "view_status": { "$ref": "#/$defs/permission_list" },
+            "view_workbench": { "$ref": "#/$defs/permission_list" },
+            "view_console": { "$ref": "#/$defs/permission_list" },
+            "view_runs": { "$ref": "#/$defs/permission_list" },
+            "view_run": { "$ref": "#/$defs/permission_list" },
+            "view_events": { "$ref": "#/$defs/permission_list" },
+            "view_approvals": { "$ref": "#/$defs/permission_list" },
+            "view_job_status": { "$ref": "#/$defs/permission_list" },
+            "view_job_timeline": { "$ref": "#/$defs/permission_list" },
+            "view_job_summary": { "$ref": "#/$defs/permission_list" },
+            "view_artifact": { "$ref": "#/$defs/permission_list" },
+            "command": { "$ref": "#/$defs/permission_list" },
+            "codex_agent_run": { "$ref": "#/$defs/permission_list" },
+            "run_start": { "$ref": "#/$defs/permission_list" },
+            "approve": { "$ref": "#/$defs/permission_list" },
+            "resume": { "$ref": "#/$defs/permission_list" },
+            "cancel": { "$ref": "#/$defs/permission_list" },
+            "copy_back": { "$ref": "#/$defs/permission_list" }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": true
+    },
+    "current_execution": { "type": "object" },
+    "saas_required_claims": {
+      "type": "array",
+      "items": { "enum": ["tenant_id", "project_id", "user_id"] },
+      "minItems": 3
+    },
+    "saas_claims_observed": { "type": "array" },
+    "remote_exposure_status": { "const": "blocked_until_tenant_project_user_claims_are_enforced" },
+    "blocking_issues": { "type": "array", "items": { "type": "string" } }
+  },
+  "additionalProperties": true,
+  "$defs": {
+    "permission_list": {
+      "type": "array",
+      "items": {
+        "enum": [
+          "api_token",
+          "approval_token",
+          "project_path",
+          "run_id",
+          "artifact_path",
+          "capability_hash",
+          "safe_change_policy",
+          "approval_record",
+          "tenant_claim",
+          "project_claim",
+          "user_claim",
+          "role_acl",
+          "audit_event"
+        ]
+      },
+      "minItems": 1
+    }
+  }
+}

@@ -11,6 +11,7 @@ module Aiweb
         "--read-only",
         "--cap-drop", "ALL",
         "--security-opt", "no-new-privileges",
+        "--user", sandbox_runtime_user,
         "--pids-limit", pids_limit.to_s,
         "--memory", memory.to_s,
         "--cpus", cpus.to_s,
@@ -33,6 +34,8 @@ module Aiweb
       blockers << "#{label} command must use --read-only root filesystem" unless argv.include?("--read-only")
       blockers << "#{label} command must drop all capabilities" unless sandbox_runtime_argv_option_value(argv, "--cap-drop") == "ALL"
       blockers << "#{label} command must set no-new-privileges" unless sandbox_runtime_argv_option_value(argv, "--security-opt") == "no-new-privileges"
+      user = sandbox_runtime_argv_option_value(argv, "--user")
+      blockers << "#{label} command must run as a non-root numeric user" if user.to_s.empty? || user.to_s.match?(/\A(?:0(?::0)?|root)(?::|$)/i)
       blockers << "#{label} command must set --pids-limit" if sandbox_runtime_argv_option_value(argv, "--pids-limit").to_s.empty?
       blockers << "#{label} command must set --memory" if sandbox_runtime_argv_option_value(argv, "--memory").to_s.empty?
       blockers << "#{label} command must set --cpus" if sandbox_runtime_argv_option_value(argv, "--cpus").to_s.empty?
@@ -41,6 +44,12 @@ module Aiweb
       blockers.concat(sandbox_runtime_mount_blockers(argv, workspace_dir, label: label))
       blockers.concat(sandbox_runtime_env_blockers(argv, required_env, label: label))
       blockers.uniq
+    end
+
+    def sandbox_runtime_user
+      configured = ENV["AIWEB_ENGINE_RUN_SANDBOX_USER"].to_s.strip
+      configured = ENV["AIWEB_SANDBOX_USER"].to_s.strip if configured.empty?
+      configured.empty? ? "1000:1000" : configured
     end
 
     def sandbox_runtime_env_flags(env)
@@ -77,8 +86,7 @@ module Aiweb
       mounts.each do |mount|
         next if mount.match?(%r{:/workspace:rw\z})
 
-        host = mount.sub(/:.+\z/, "")
-        target = mount.sub(/\A#{Regexp.escape(host)}:/, "").split(":").first.to_s
+        target = sandbox_runtime_mount_target(mount)
         next if target == "/workspace"
 
         blockers << "#{label} command contains unapproved mount target: #{target}"
@@ -108,6 +116,20 @@ module Aiweb
         values << value.delete_prefix("#{flag}=") if value.start_with?("#{flag}=")
       end
       values
+    end
+
+    def sandbox_runtime_mount_host(mount)
+      parts = mount.to_s.split(":")
+      return "" if parts.length < 3
+
+      parts[0...-2].join(":")
+    end
+
+    def sandbox_runtime_mount_target(mount)
+      parts = mount.to_s.split(":")
+      return "" if parts.length < 2
+
+      parts[-2].to_s
     end
   end
 end

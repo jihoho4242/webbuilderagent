@@ -18,37 +18,1207 @@
     "blocking_issues"
   ],
   "properties": {
-    "schema_version": { "const": 1 },
-    "run_id": { "type": "string", "pattern": "^engine-run-" },
-    "status": {
-      "enum": ["dry_run", "blocked", "running", "waiting_approval", "failed", "no_changes", "passed", "cancelled"]
+    "schema_version": {
+      "const": 1
     },
-    "mode": { "enum": ["safe_patch", "agentic_local", "external_approval"] },
-    "agent": { "enum": ["codex", "openmanus"] },
-    "sandbox": { "type": ["string", "null"], "enum": ["docker", "podman", null] },
-    "approved": { "type": "boolean" },
-    "dry_run": { "type": "boolean" },
-    "capability": { "$ref": "engine-run-approval.schema.json" },
-    "approval_hash": { "type": "string", "minLength": 32 },
-    "events_path": { "type": "string", "pattern": "^\\.ai-web/runs/.+/events\\.jsonl$" },
-    "approval_path": { "type": "string", "pattern": "^\\.ai-web/runs/.+/approvals\\.jsonl$" },
-    "checkpoint_path": { "type": "string", "pattern": "^\\.ai-web/runs/.+/checkpoint\\.json$" },
-    "workspace_path": { "type": "string", "pattern": "^\\.ai-web/tmp/agentic/.+/workspace$" },
-    "agent_result_path": { "type": ["string", "null"], "pattern": "^\\.ai-web/runs/.+/artifacts/agent-result\\.json$" },
-    "verification_path": { "type": ["string", "null"], "pattern": "^\\.ai-web/runs/.+/qa/verification\\.json$" },
-    "preview_path": { "type": ["string", "null"], "pattern": "^\\.ai-web/runs/.+/qa/preview\\.json$" },
-    "screenshot_evidence_path": { "type": ["string", "null"], "pattern": "^\\.ai-web/runs/.+/qa/screenshots\\.json$" },
-    "design_verdict_path": { "type": ["string", "null"], "pattern": "^\\.ai-web/runs/.+/qa/design-verdict\\.json$" },
-    "design_fidelity_path": { "type": ["string", "null"], "pattern": "^\\.ai-web/runs/.+/qa/design-fidelity\\.json$" },
-    "opendesign_contract_path": { "type": ["string", "null"], "pattern": "^\\.ai-web/runs/.+/artifacts/opendesign-contract\\.json$" },
-    "opendesign_contract": { "type": "object" },
-    "copy_back_policy": { "type": ["object", "null"] },
-    "verification": { "type": ["object", "null"] },
-    "preview": { "type": ["object", "null"] },
-    "screenshot_evidence": { "type": ["object", "null"] },
-    "design_verdict": { "type": ["object", "null"] },
-    "design_fidelity": { "type": ["object", "null"] },
-    "blocking_issues": { "type": "array", "items": { "type": "string" } }
+    "run_id": {
+      "type": "string",
+      "pattern": "^engine-run-"
+    },
+    "status": {
+      "enum": [
+        "dry_run",
+        "blocked",
+        "running",
+        "waiting_approval",
+        "failed",
+        "no_changes",
+        "passed",
+        "cancelled",
+        "quarantined"
+      ]
+    },
+    "mode": {
+      "enum": [
+        "safe_patch",
+        "agentic_local",
+        "external_approval"
+      ]
+    },
+    "agent": {
+      "enum": [
+        "codex",
+        "openmanus",
+        "openhands",
+        "langgraph",
+        "openai_agents_sdk"
+      ]
+    },
+    "sandbox": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "enum": [
+        "docker",
+        "podman",
+        null
+      ]
+    },
+    "approved": {
+      "type": "boolean"
+    },
+    "dry_run": {
+      "type": "boolean"
+    },
+    "capability": {
+      "$ref": "engine-run-approval.schema.json"
+    },
+    "approval_hash": {
+      "type": "string",
+      "minLength": 32
+    },
+    "events_path": {
+      "type": "string",
+      "pattern": "^\\.ai-web/runs/.+/events\\.jsonl$"
+    },
+    "approval_path": {
+      "type": "string",
+      "pattern": "^\\.ai-web/runs/.+/approvals\\.jsonl$"
+    },
+    "checkpoint_path": {
+      "type": "string",
+      "pattern": "^\\.ai-web/runs/.+/checkpoint\\.json$"
+    },
+    "workspace_path": {
+      "type": "string",
+      "pattern": "^\\.ai-web/tmp/agentic/.+/workspace$"
+    },
+    "worker_adapter_registry_path": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "pattern": "^\\.ai-web/runs/.+/artifacts/worker-adapter-registry\\.json$"
+    },
+    "graph_execution_plan_path": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "pattern": "^\\.ai-web/runs/.+/artifacts/graph-execution-plan\\.json$"
+    },
+    "graph_scheduler_state_path": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "pattern": "^\\.ai-web/runs/.+/artifacts/graph-scheduler-state\\.json$"
+    },
+    "worker_adapter_contract_path": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "pattern": "^\\.ai-web/runs/.+/artifacts/worker-adapter-contract\\.json$"
+    },
+    "agent_result_path": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "pattern": "^\\.ai-web/runs/.+/artifacts/agent-result\\.json$"
+    },
+    "project_index_path": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "pattern": "^\\.ai-web/runs/.+/artifacts/project-index\\.json$"
+    },
+    "run_memory_path": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "pattern": "^\\.ai-web/runs/.+/artifacts/run-memory\\.json$"
+    },
+    "authz_enforcement_path": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "pattern": "^\\.ai-web/runs/.+/artifacts/authz-enforcement\\.json$"
+    },
+    "sandbox_preflight_path": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "pattern": "^\\.ai-web/runs/.+/artifacts/sandbox-preflight\\.json$"
+    },
+    "supply_chain_gate_path": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "pattern": "^\\.ai-web/runs/.+/artifacts/supply-chain-gate\\.json$"
+    },
+    "quarantine_path": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "pattern": "^\\.ai-web/runs/.+/artifacts/quarantine\\.json$"
+    },
+    "verification_path": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "pattern": "^\\.ai-web/runs/.+/qa/verification\\.json$"
+    },
+    "preview_path": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "pattern": "^\\.ai-web/runs/.+/qa/preview\\.json$"
+    },
+    "screenshot_evidence_path": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "pattern": "^\\.ai-web/runs/.+/qa/screenshots\\.json$"
+    },
+    "design_verdict_path": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "pattern": "^\\.ai-web/runs/.+/qa/design-verdict\\.json$"
+    },
+    "design_fidelity_path": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "pattern": "^\\.ai-web/runs/.+/qa/design-fidelity\\.json$"
+    },
+    "design_fixture_path": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "pattern": "^\\.ai-web/runs/.+/qa/design-fixture\\.json$"
+    },
+    "eval_benchmark_path": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "pattern": "^\\.ai-web/runs/.+/qa/eval-benchmark\\.json$"
+    },
+    "opendesign_contract_path": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "pattern": "^\\.ai-web/runs/.+/artifacts/opendesign-contract\\.json$"
+    },
+    "opendesign_contract": {
+      "type": "object"
+    },
+    "copy_back_policy": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "properties": {
+        "approval_requests": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "id",
+              "type",
+              "status",
+              "why_needed",
+              "risk",
+              "capability_unlocked",
+              "approval_scope",
+              "requires"
+            ],
+            "properties": {
+              "id": {
+                "type": "string",
+                "pattern": "^approval-"
+              },
+              "type": {
+                "enum": [
+                  "package_install",
+                  "external_network",
+                  "deploy",
+                  "git_push",
+                  "mcp_connectors",
+                  "copy_back_change",
+                  "elevated_action"
+                ]
+              },
+              "status": {
+                "enum": [
+                  "pending",
+                  "approved",
+                  "denied",
+                  "expired"
+                ]
+              },
+              "why_needed": {
+                "type": "string"
+              },
+              "risk": {
+                "type": "string"
+              },
+              "capability_unlocked": {
+                "type": "string"
+              },
+              "approval_scope": {
+                "type": "string"
+              },
+              "affected_paths": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "requires": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            },
+            "additionalProperties": true
+          }
+        }
+      },
+      "additionalProperties": true
+    },
+    "run_graph": {
+      "anyOf": [
+        {
+          "type": "object",
+          "required": [
+            "nodes",
+            "executor_contract"
+          ],
+          "properties": {
+            "executor_contract": {
+              "type": "object",
+              "required": [
+                "executor_type",
+                "node_order",
+                "checkpoint_policy",
+                "resume_strategy"
+              ],
+              "properties": {
+                "executor_type": {
+                  "const": "sequential_durable_node_executor"
+                },
+                "node_order": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "checkpoint_policy": {
+                  "type": "string"
+                },
+                "resume_strategy": {
+                  "type": "string"
+                }
+              },
+              "additionalProperties": true
+            },
+            "nodes": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "required": [
+                  "node_id",
+                  "state",
+                  "executor",
+                  "replay_policy"
+                ],
+                "properties": {
+                  "node_id": {
+                    "type": "string"
+                  },
+                  "executor": {
+                    "type": "object",
+                    "required": [
+                      "executor_id",
+                      "handler",
+                      "tool_broker_required"
+                    ],
+                    "additionalProperties": true
+                  },
+                  "replay_policy": {
+                    "type": "object",
+                    "required": [
+                      "requires_artifact_hash_validation",
+                      "replay_guard"
+                    ],
+                    "additionalProperties": true
+                  }
+                },
+                "additionalProperties": true
+              }
+            }
+          },
+          "additionalProperties": true
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "graph_execution_plan": {
+      "anyOf": [
+        {
+          "type": "object",
+          "required": [
+            "schema_version",
+            "scheduler_type",
+            "execution_driver",
+            "scheduler_runtime",
+            "state_owner",
+            "executor_source",
+            "executor_type",
+            "node_order",
+            "start_node_id",
+            "node_invocations",
+            "validation"
+          ],
+          "properties": {
+            "schema_version": {
+              "const": 1
+            },
+            "scheduler_type": {
+              "const": "sequential_durable_node_scheduler"
+            },
+            "execution_driver": {
+              "const": "aiweb.graph_scheduler.runtime.v1"
+            },
+            "scheduler_runtime": {
+              "const": "Aiweb::GraphSchedulerRuntime"
+            },
+            "state_owner": {
+              "const": "graph_scheduler_runtime"
+            },
+            "executor_source": {
+              "const": "run_graph.executor_contract"
+            },
+            "executor_type": {
+              "const": "sequential_durable_node_executor"
+            },
+            "node_order": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "start_node_id": {
+              "type": "string"
+            },
+            "node_invocations": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "required": [
+                  "node_id",
+                  "handler",
+                  "executor_id",
+                  "side_effect_boundary",
+                  "tool_broker_required",
+                  "replay_policy"
+                ],
+                "properties": {
+                  "node_id": {
+                    "type": "string"
+                  },
+                  "handler": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "executor_id": {
+                    "type": "string",
+                    "pattern": "^engine_run\\."
+                  },
+                  "side_effect_boundary": {
+                    "type": "string"
+                  },
+                  "tool_broker_required": {
+                    "type": "boolean"
+                  },
+                  "replay_policy": {
+                    "type": "object",
+                    "required": [
+                      "requires_artifact_hash_validation"
+                    ],
+                    "additionalProperties": true
+                  }
+                },
+                "additionalProperties": true
+              }
+            },
+            "validation": {
+              "type": "object",
+              "required": [
+                "node_order_matches_graph",
+                "all_handlers_present",
+                "all_side_effect_nodes_gated",
+                "all_replay_policies_require_artifact_hash_validation",
+                "runtime_owns_retry_replay_cursor_checkpoint"
+              ],
+              "properties": {
+                "node_order_matches_graph": {
+                  "const": true
+                },
+                "all_handlers_present": {
+                  "const": true
+                },
+                "all_side_effect_nodes_gated": {
+                  "const": true
+                },
+                "all_replay_policies_require_artifact_hash_validation": {
+                  "const": true
+                },
+                "runtime_owns_retry_replay_cursor_checkpoint": {
+                  "const": true
+                }
+              },
+              "additionalProperties": true
+            }
+          },
+          "additionalProperties": true
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "graph_scheduler_state": {
+      "anyOf": [
+        {
+          "type": "object",
+          "required": [
+            "schema_version",
+            "scheduler_type",
+            "execution_driver",
+            "scheduler_runtime",
+            "state_owner",
+            "graph_execution_plan_ref",
+            "start_node_id",
+            "status",
+            "cursor",
+            "checkpoint_ref",
+            "retry_replay_cursor_checkpoint_owned",
+            "node_order",
+            "nodes",
+            "transitions"
+          ],
+          "properties": {
+            "schema_version": {
+              "const": 1
+            },
+            "scheduler_type": {
+              "const": "sequential_durable_node_scheduler_state"
+            },
+            "execution_driver": {
+              "const": "aiweb.graph_scheduler.runtime.v1"
+            },
+            "scheduler_runtime": {
+              "const": "Aiweb::GraphSchedulerRuntime"
+            },
+            "state_owner": {
+              "const": "graph_scheduler_runtime"
+            },
+            "graph_execution_plan_ref": {
+              "type": "string",
+              "pattern": "^\\.ai-web/runs/.+/artifacts/graph-execution-plan\\.json$"
+            },
+            "start_node_id": {
+              "type": "string"
+            },
+            "status": {
+              "enum": [
+                "running",
+                "blocked",
+                "waiting_approval",
+                "failed",
+                "no_changes",
+                "passed",
+                "quarantined"
+              ]
+            },
+            "cursor": {
+              "type": [
+                "object",
+                "null"
+              ]
+            },
+            "checkpoint_ref": {
+              "type": "string",
+              "pattern": "^\\.ai-web/runs/.+/checkpoint\\.json$"
+            },
+            "retry_replay_cursor_checkpoint_owned": {
+              "const": true
+            },
+            "node_execution_mode": {
+              "const": "delegates_node_body_to_registered_engine_handlers"
+            },
+            "node_order": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "nodes": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "required": [
+                  "node_id",
+                  "state",
+                  "attempt",
+                  "handler",
+                  "side_effect_boundary",
+                  "tool_broker_required"
+                ],
+                "properties": {
+                  "node_id": {
+                    "type": "string"
+                  },
+                  "state": {
+                    "type": "string"
+                  },
+                  "attempt": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "handler": {
+                    "type": "string"
+                  },
+                  "side_effect_boundary": {
+                    "type": "string"
+                  },
+                  "tool_broker_required": {
+                    "type": "boolean"
+                  }
+                },
+                "additionalProperties": true
+              }
+            },
+            "transitions": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "required": [
+                  "seq",
+                  "node_id",
+                  "state",
+                  "attempt",
+                  "handler"
+                ],
+                "properties": {
+                  "seq": {
+                    "type": "integer",
+                    "minimum": 1
+                  },
+                  "node_id": {
+                    "type": "string"
+                  },
+                  "state": {
+                    "type": "string"
+                  },
+                  "attempt": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "handler": {
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": true
+              }
+            }
+          },
+          "additionalProperties": true
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "tool_broker": {
+      "anyOf": [
+        {
+          "type": "object",
+          "required": [
+            "schema_version",
+            "deny_by_default",
+            "side_effect_surface_audit",
+            "runtime_broker_enforcement"
+          ],
+          "properties": {
+            "schema_version": {
+              "const": 1
+            },
+            "deny_by_default": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "side_effect_surface_audit": {
+              "type": "object",
+              "required": [
+                "schema_version",
+                "scanner",
+                "scope",
+                "coverage_status",
+                "entry_count",
+                "unclassified_count",
+                "policy",
+                "roots",
+                "scanned_globs",
+                "scanner_limitations",
+                "entries"
+              ],
+              "properties": {
+                "schema_version": {
+                  "const": 1
+                },
+                "scanner": {
+                  "const": "aiweb.side_effect_surface_audit.v1"
+                },
+                "scope": {
+                  "const": "runtime_and_project_task_static_process_and_network_surface"
+                },
+                "coverage_status": {
+                  "enum": [
+                    "classified",
+                    "unclassified"
+                  ]
+                },
+                "entry_count": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "unclassified_count": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "policy": {
+                  "type": "object",
+                  "required": [
+                    "new_direct_side_effects_must_be_classified",
+                    "unclassified_blocks_claiming_universal_broker"
+                  ],
+                  "properties": {
+                    "new_direct_side_effects_must_be_classified": {
+                      "const": true
+                    },
+                    "unclassified_blocks_claiming_universal_broker": {
+                      "const": true
+                    }
+                  },
+                  "additionalProperties": true
+                },
+                "roots": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "required": [
+                      "source",
+                      "path"
+                    ],
+                    "properties": {
+                      "source": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "path": {
+                        "type": "string",
+                        "minLength": 1
+                      }
+                    },
+                    "additionalProperties": true
+                  }
+                },
+                "scanned_globs": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "allOf": [
+                    {
+                      "contains": {
+                        "const": "bin/**/*"
+                      }
+                    },
+                    {
+                      "contains": {
+                        "const": "lib/**/*"
+                      }
+                    },
+                    {
+                      "contains": {
+                        "const": "scripts/**/*"
+                      }
+                    },
+                    {
+                      "contains": {
+                        "const": "tasks/**/*"
+                      }
+                    },
+                    {
+                      "contains": {
+                        "const": "Rakefile"
+                      }
+                    },
+                    {
+                      "contains": {
+                        "const": "*.rake"
+                      }
+                    },
+                    {
+                      "contains": {
+                        "const": "*.gemspec"
+                      }
+                    },
+                    {
+                      "contains": {
+                        "const": "Gemfile"
+                      }
+                    },
+                    {
+                      "contains": {
+                        "const": "aiweb"
+                      }
+                    },
+                    {
+                      "contains": {
+                        "const": "\uc6f9\ube4c\ub354"
+                      }
+                    }
+                  ]
+                },
+                "scanner_limitations": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "minItems": 1
+                },
+                "entries": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "required": [
+                      "path",
+                      "source",
+                      "line",
+                      "pattern",
+                      "classification",
+                      "coverage_status",
+                      "rationale"
+                    ],
+                    "properties": {
+                      "path": {
+                        "type": "string"
+                      },
+                      "source": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "line": {
+                        "type": "integer",
+                        "minimum": 1
+                      },
+                      "classification": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "coverage_status": {
+                        "enum": [
+                          "brokered",
+                          "documented_exception",
+                          "unclassified"
+                        ]
+                      },
+                      "broker": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "rationale": {
+                        "type": "string",
+                        "minLength": 1
+                      }
+                    },
+                    "additionalProperties": true
+                  }
+                }
+              },
+              "additionalProperties": true
+            },
+            "runtime_broker_enforcement": {
+              "type": "object",
+              "required": [
+                "schema_version",
+                "status",
+                "deny_by_default_surfaces",
+                "executable_without_broker_count",
+                "universal_broker_claim",
+                "known_mcp_broker_drivers",
+                "surfaces",
+                "remaining_gaps"
+              ],
+              "properties": {
+                "schema_version": {
+                  "const": 1
+                },
+                "status": {
+                  "enum": [
+                    "partial_enforcement",
+                    "universal_enforcement"
+                  ]
+                },
+                "deny_by_default_surfaces": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  },
+                  "allOf": [
+                    {
+                      "contains": {
+                        "const": "mcp_connectors"
+                      }
+                    },
+                    {
+                      "contains": {
+                        "const": "future_adapters"
+                      }
+                    },
+                    {
+                      "contains": {
+                        "const": "elevated_runners"
+                      }
+                    }
+                  ]
+                },
+                "executable_without_broker_count": {
+                  "const": 0
+                },
+                "universal_broker_claim": {
+                  "const": false
+                },
+                "known_mcp_broker_drivers": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "required": [
+                      "server",
+                      "broker_id",
+                      "scope",
+                      "status",
+                      "evidence",
+                      "limitations"
+                    ],
+                    "properties": {
+                      "server": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "broker_id": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "scope": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "status": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "evidence": {
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        }
+                      },
+                      "limitations": {
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        }
+                      }
+                    },
+                    "additionalProperties": true
+                  },
+                  "allOf": [
+                    {
+                      "contains": {
+                        "type": "object",
+                        "required": [
+                          "server",
+                          "broker_id"
+                        ],
+                        "properties": {
+                          "server": {
+                            "const": "lazyweb"
+                          },
+                          "broker_id": {
+                            "const": "aiweb.lazyweb.side_effect_broker"
+                          }
+                        }
+                      }
+                    },
+                    {
+                      "contains": {
+                        "type": "object",
+                        "required": [
+                          "server",
+                          "broker_id"
+                        ],
+                        "properties": {
+                          "server": {
+                            "const": "lazyweb"
+                          },
+                          "broker_id": {
+                            "const": "aiweb.implementation_mcp_broker"
+                          }
+                        }
+                      }
+                    },
+                    {
+                      "contains": {
+                        "type": "object",
+                        "required": [
+                          "server",
+                          "broker_id",
+                          "scope",
+                          "status"
+                        ],
+                        "properties": {
+                          "server": {
+                            "const": "project_files"
+                          },
+                          "broker_id": {
+                            "const": "aiweb.implementation_mcp_broker"
+                          },
+                          "scope": {
+                            "const": "implementation_worker.mcp.project_files"
+                          },
+                          "status": {
+                            "const": "implemented_for_approved_project_file_metadata_list_excerpt_search"
+                          }
+                        }
+                      }
+                    }
+                  ]
+                },
+                "surfaces": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "required": [
+                      "surface",
+                      "status",
+                      "broker_id",
+                      "policy"
+                    ],
+                    "properties": {
+                      "surface": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "status": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "broker_id": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "evidence": {
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        }
+                      },
+                      "policy": {
+                        "type": "string",
+                        "minLength": 1
+                      }
+                    },
+                    "additionalProperties": true
+                  }
+                },
+                "remaining_gaps": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              },
+              "additionalProperties": true
+            }
+          },
+          "additionalProperties": true
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "authz_contract": {
+      "type": [
+        "object",
+        "null"
+      ]
+    },
+    "authz_enforcement": {
+      "anyOf": [
+        {
+          "$ref": "engine-run-authz-enforcement.schema.json"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "retention_redaction_policy": {
+      "type": [
+        "object",
+        "null"
+      ]
+    },
+    "project_index": {
+      "type": [
+        "object",
+        "null"
+      ]
+    },
+    "run_memory": {
+      "anyOf": [
+        {
+          "$ref": "engine-run-memory.schema.json"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "worker_adapter_registry": {
+      "anyOf": [
+        {
+          "$ref": "engine-run-worker-adapter-registry.schema.json"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "supply_chain_gate": {
+      "anyOf": [
+        {
+          "$ref": "engine-run-supply-chain-gate.schema.json"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "sandbox_preflight": {
+      "anyOf": [
+        {
+          "$ref": "sandbox-preflight.schema.json"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "verification": {
+      "type": [
+        "object",
+        "null"
+      ]
+    },
+    "preview": {
+      "type": [
+        "object",
+        "null"
+      ]
+    },
+    "screenshot_evidence": {
+      "anyOf": [
+        {
+          "$ref": "browser-evidence.schema.json"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "design_verdict": {
+      "type": [
+        "object",
+        "null"
+      ]
+    },
+    "design_fidelity": {
+      "type": [
+        "object",
+        "null"
+      ]
+    },
+    "design_fixture": {
+      "type": [
+        "object",
+        "null"
+      ]
+    },
+    "eval_benchmark": {
+      "anyOf": [
+        {
+          "$ref": "engine-run-eval-benchmark.schema.json"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "quarantine": {
+      "type": [
+        "object",
+        "null"
+      ]
+    },
+    "blocking_issues": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
   },
   "additionalProperties": true
 }

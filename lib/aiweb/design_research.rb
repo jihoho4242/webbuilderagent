@@ -2,6 +2,7 @@
 
 require "json"
 require "fileutils"
+require "securerandom"
 require "time"
 
 require_relative "lazyweb_client"
@@ -65,6 +66,14 @@ module Aiweb
         "configured" => configured?,
         "network_planned" => false,
         "writes_planned" => false,
+        "side_effect_broker" => {
+          "schema_version" => 1,
+          "broker" => "aiweb.lazyweb.side_effect_broker",
+          "scope" => "external_http.lazyweb_mcp",
+          "status" => "planned",
+          "events_recorded" => false,
+          "events_path" => nil
+        },
         "planned_queries" => planned_queries(intent: intent, design_brief: design_brief),
         "planned_artifact_paths" => artifact_paths,
         "limit" => Integer(limit)
@@ -72,6 +81,7 @@ module Aiweb
     end
 
     def run(intent:, design_brief: nil, policy: "opportunistic", limit: 8)
+      broker = install_lazyweb_audit_sink
       queries = planned_queries(intent: intent, design_brief: design_brief)
       results = queries.flat_map do |query|
         client.search(query: query, limit: per_query_limit(limit, queries.length), max_per_company: 1).map do |item|
@@ -88,7 +98,9 @@ module Aiweb
         "results" => results_payload(results),
         "pattern_matrix" => matrix,
         "design_reference_brief" => brief,
-        "changed_files" => write_artifacts(latest: latest, results: results_payload(results), matrix: matrix, brief: brief)
+        "side_effect_broker" => broker ? lazyweb_broker_summary(broker) : nil,
+        "side_effect_broker_events" => broker ? broker.fetch(:events) : [],
+        "changed_files" => write_artifacts(latest: latest, results: results_payload(results), matrix: matrix, brief: brief, broker: broker)
       }
     end
 
@@ -229,7 +241,7 @@ module Aiweb
       }
     end
 
-    def write_artifacts(latest:, results:, matrix:, brief:)
+    def write_artifacts(latest:, results:, matrix:, brief:, broker: nil)
       files = {
         LATEST_PATH => JSON.pretty_generate(latest) + "\n",
         RESULTS_PATH => JSON.pretty_generate(results) + "\n",
@@ -241,7 +253,43 @@ module Aiweb
         FileUtils.mkdir_p(File.dirname(path))
         File.write(path, content)
       end
-      files.keys
+      changes = files.keys
+      changes << relative_to_root(broker.fetch(:path)) if broker && !broker.fetch(:events).empty?
+      changes
+    end
+
+    def install_lazyweb_audit_sink
+      return nil unless client.respond_to?(:audit_sink=)
+
+      broker = {
+        path: File.join(root, ".ai-web", "runs", "lazyweb-research-#{timestamp_slug}-#{SecureRandom.hex(4)}", "side-effect-broker.jsonl"),
+        events: []
+      }
+      client.audit_sink = lambda do |event|
+        broker.fetch(:events) << event
+        FileUtils.mkdir_p(File.dirname(broker.fetch(:path)))
+        File.open(broker.fetch(:path), "a") do |file|
+          file.write(JSON.generate(event))
+          file.write("\n")
+        end
+      end
+      broker
+    end
+
+    def lazyweb_broker_summary(broker)
+      {
+        "schema_version" => 1,
+        "broker" => "aiweb.lazyweb.side_effect_broker",
+        "scope" => "external_http.lazyweb_mcp",
+        "status" => broker.fetch(:events).any? { |event| event["status"] == "failed" } ? "failed" : "recorded",
+        "events_recorded" => !broker.fetch(:events).empty?,
+        "events_path" => relative_to_root(broker.fetch(:path)),
+        "event_count" => broker.fetch(:events).length
+      }
+    end
+
+    def relative_to_root(path)
+      File.expand_path(path).sub(%r{\A#{Regexp.escape(root)}[\\/]?}, "").tr("\\", "/")
     end
 
     def accepted_patterns(description)
@@ -267,6 +315,10 @@ module Aiweb
 
     def timestamp
       clock.now.utc.iso8601
+    end
+
+    def timestamp_slug
+      clock.now.utc.strftime("%Y%m%dT%H%M%S.%6NZ")
     end
   end
 end

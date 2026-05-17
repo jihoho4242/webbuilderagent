@@ -19,7 +19,15 @@ Approved execution requires:
 2. A matching `docker` or `podman` executable on `PATH`.
 3. An OpenManus image, defaulting to `openmanus:latest` or overridden by `AIWEB_OPENMANUS_IMAGE`.
 
-aiweb constructs the sandbox argv itself and validates that it includes `--network none`, `--read-only`, `--cap-drop ALL`, `--security-opt no-new-privileges`, process/memory/CPU limits, a restricted `/tmp` tmpfs, and exactly one writable host mount: the staging workspace mounted at `/workspace:rw`.
+aiweb constructs the sandbox argv itself and validates that it includes `--network none`, `--read-only`, `--cap-drop ALL`, `--security-opt no-new-privileges`, non-root `--user`, process/memory/CPU limits, a restricted `/tmp` tmpfs, and exactly one writable host mount: the staging workspace mounted at `/workspace:rw`.
+
+Sandbox validation is fail-closed and evidence-based. A real run is blocked unless the adapter can produce preflight evidence with generated argv, resolved executable path, container image reference/digest evidence, runtime container id via `--cidfile` and post-run `docker|podman inspect` HostConfig cross-check proving network none, read-only rootfs, cap-drop ALL, no-new-privileges, non-root user, exactly one writable `/workspace` bind, and `/workspace` source matching the staged workspace, inside-container self-attestation (container hostname, effective user, env guards, workspace writability, read-only root check, `/proc/self/status` no-new-privs/seccomp/capability evidence, `/proc/self/cgroup` evidence, mountinfo excerpt), rootless/rootful observation, host and inside mounts, network mode plus an inside-container egress-denial probe, effective capabilities, seccomp/AppArmor profile where available, cgroup CPU/memory/PID limits, tmpfs configuration, and negative checks proving no project root, `.git`, `.env*`, cloud credentials, browser profiles, or host home directories are mounted. Empty, malformed, or digestless image inspect output blocks the run before worker execution.
+
+Set `AIWEB_ENGINE_RUN_RUNTIME_MATRIX=docker,podman` or `AIWEB_ENGINE_RUN_REQUIRE_RUNTIME_MATRIX=1` when a release gate must prove the same sandbox command shape, image availability, runtime info, inside-container self-attestation, egress denial, and post-run inspect evidence across both Docker and Podman. Matrix failure or an unsupported matrix runtime name blocks worker execution before copy-back.
+
+`bin/engine-runtime-matrix-check` is the real-runtime smoke lane for CI/release use. It builds a minimal local OpenManus-compatible smoke image for each requested runtime, creates a temporary aiweb project, runs `engine-run` with the Docker/Podman matrix enabled, and fails unless `sandbox-preflight.json.runtime_matrix.status` is `passed`. The default CI workflow runs this smoke lane on `push`, `pull_request`, and manual `workflow_dispatch`, then uploads `.ai-web/ci/engine-runtime-matrix-smoke.json` as release evidence.
+
+`openmanus:latest` is acceptable only as a local development default. Production-ready configurations should pin a prepared local image by digest and record that digest in preflight evidence before worker execution. Set `AIWEB_OPENMANUS_REQUIRE_DIGEST=1`, `AIWEB_REQUIRE_PINNED_OPENMANUS_IMAGE=1`, `AIWEB_ENGINE_RUN_STRICT_SANDBOX=1`, or `AIWEB_ENV=production`/`AIWEB_RUNTIME_ENV=production` to fail closed unless `AIWEB_OPENMANUS_IMAGE` is `name@sha256:<digest>`.
 
 The container receives only aiweb contract variables:
 
@@ -37,6 +45,10 @@ The container receives only aiweb contract variables:
 - `AIWEB_NETWORK_ALLOWED=0`
 - `AIWEB_MCP_ALLOWED=0`
 - `AIWEB_ENV_ACCESS_ALLOWED=0`
+- `AIWEB_TOOL_BROKER_EVENTS_PATH`
+- `PATH` with `/workspace/_aiweb/tool-broker-bin` first for engine-run and OpenManus agent-run staged workers
+
+The staged `_aiweb/tool-broker-bin` directory contains deny-by-default shims for package install commands, external-network tools, deploy/provider CLIs, `git push`, and raw environment reads. Package-manager and git shims fail closed when any argument requests package installation (`add`, `install`, `i`) or `git push`, so flag-prefixed forms such as `npm --loglevel silly install`, `npm --prefix . install`, `git --work-tree . push`, and `git -C repo push` are blocked before delegation. A shim block exits non-zero, writes a structured tool-broker event inside the workspace, and is surfaced as `tool.blocked` plus a pending elevated approval request before copy-back. OpenManus agent-run also copies this workspace event stream to `.ai-web/runs/<run-id>/tool-broker-events.jsonl` as host-side evidence and fails before source copy-back when prohibited staged actions are observed.
 
 ## Context Schema
 
@@ -66,6 +78,13 @@ The context manifest must include:
   "sandbox_mode": "docker",
   "sandbox_required": true,
   "forbidden_actions": ["read_env", "install", "deploy", "external_network", "mcp_tools", "modify_unlisted_files"],
+  "tool_broker": {
+    "events_path": "_aiweb/tool-broker-events.jsonl",
+    "host_evidence_path": ".ai-web/runs/agent-run-20260512T000000Z/tool-broker-events.jsonl",
+    "bin_path": "_aiweb/tool-broker-bin",
+    "path_prepend_required": true,
+    "blocks": ["package_install", "external_network", "deploy", "provider_cli", "git_push", "env_read"]
+  },
   "expected_output": "source changes inside the isolated workspace only"
 }
 ```
@@ -97,6 +116,7 @@ The normalized result must include:
     "validator_result": ".ai-web/runs/agent-run-20260512T000000Z/openmanus-validator.json",
     "network_log": ".ai-web/runs/agent-run-20260512T000000Z/network.log",
     "browser_request_log": ".ai-web/runs/agent-run-20260512T000000Z/browser-requests.log",
+    "tool_broker_log": ".ai-web/runs/agent-run-20260512T000000Z/tool-broker-events.jsonl",
     "denied_access_log": ".ai-web/runs/agent-run-20260512T000000Z/denied-access.log"
   }
 }

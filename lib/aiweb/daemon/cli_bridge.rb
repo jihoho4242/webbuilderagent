@@ -1,5 +1,10 @@
 # frozen_string_literal: true
 
+require "fileutils"
+require "json"
+require "securerandom"
+require "time"
+
 module Aiweb
   class CodexCliBridge
     DEFAULT_ALLOWED_COMMANDS = %w[
@@ -14,6 +19,9 @@ module Aiweb
     UNSAFE_ARG_PATTERN = /(?:\A|=|[\x00\/\\])\.env(?:\.|\z|[\/\\])/.freeze
     BACKEND_CONTROLLED_ARG_PATTERN = /\A--(?:path(?:=|\z)|json\z|dry-run\z|approved\z)/.freeze
     COMMAND_TIMEOUT_SECONDS = 180
+    READ_ONLY_COMMANDS = %w[status runtime-plan scaffold-status run-status run-timeline observability-summary qa-report].freeze
+    BROKER_SECRET_INLINE_ARG_PATTERN = /\A--?[^=\s]*(?:token|secret|client[-_]?secret|password|passwd|api[-_]?key|auth|authorization|credential|private[-_]?key)[^=\s]*=/i.freeze
+    BROKER_SECRET_FLAG_ARG_PATTERN = /\A--?[^=\s]*(?:token|secret|client[-_]?secret|password|passwd|api[-_]?key|auth|authorization|credential|private[-_]?key)[^=\s]*\z/i.freeze
 
     attr_reader :engine_root, :aiweb_bin, :allowed_commands, :command_timeout
 
@@ -46,10 +54,12 @@ module Aiweb
         "frontend-supplied backend flags (--path, --json, --dry-run, --approved) are rejected inside command args",
         ".env and .env.* path segments are rejected before bridge execution",
         "bridge commands time out instead of blocking the backend indefinitely",
+        "backend bridge command execution is recorded through aiweb.backend.side_effect_broker evidence before process launch",
         "approved agent-run/setup/verify-loop execution requires a matching X-Aiweb-Approval-Token header or the API token when no separate approval token is configured",
         "engine-run is called by the dedicated backend job API; frontend generic command requests for engine-run are rejected",
         "engine-run exposes the agentic sandbox task runtime through structured command envelopes",
         "agent-run maps to aiweb agent-run --agent codex|openmanus and keeps approval semantics",
+          "engine-run maps to aiweb engine-run --agent codex|openmanus|openhands|langgraph|openai_agents_sdk and keeps sandbox approval semantics",
         "deploy is exposed as dry-run planning only through this bridge"
       ]
     end
@@ -62,7 +72,6 @@ module Aiweb
 
       args = normalize_args(args)
       validate_args!(args)
-      raise UserError.new("bridge deploy is dry-run only", 5) if command == "deploy" && !dry_run
 
       argv = [RbConfig.ruby, aiweb_bin, "--path", project_path, command]
       argv.concat(args)
@@ -70,8 +79,19 @@ module Aiweb
       argv << "--dry-run" if dry_run
       argv << "--json"
 
+      blocking_issues = []
+      blocking_issues << "bridge deploy is dry-run only" if command == "deploy" && !dry_run
+      broker = bridge_broker_start(project_path: project_path, command: command, args: args, argv: argv, dry_run: dry_run, approved: approved, blocking_issues: blocking_issues)
+      if blocking_issues.any?
+        bridge_broker_blocked(broker, blocking_issues)
+        raise UserError.new(blocking_issues.first, 5)
+      end
+
       stdout, stderr, status = capture_argv(argv)
+      bridge_broker_finished(broker, status)
       parsed = parse_json(stdout)
+      public_args = redact_broker_command(args)
+      public_argv = redact_broker_command(argv)
       {
         "schema_version" => 1,
         "status" => status.success? ? "passed" : "failed",
@@ -79,15 +99,20 @@ module Aiweb
         "bridge" => metadata.merge(
           "project_path" => project_path,
           "command" => command,
-          "args" => args,
+          "args" => public_args,
           "dry_run" => dry_run,
           "approved" => approved,
-          "argv" => argv
+          "argv" => public_argv,
+          "side_effect_broker" => bridge_broker_summary(broker),
+          "side_effect_broker_events" => broker.fetch(:events)
         ),
         "stdout_json" => parsed,
         "stdout" => parsed ? nil : stdout.to_s[0, 20_000],
         "stderr" => stderr.to_s[0, 20_000]
       }
+    rescue StandardError => e
+      bridge_broker_failed(broker, e) if defined?(broker) && broker
+      raise
     end
 
     def agent_run(project_path:, task: "latest", agent: "codex", sandbox: nil, dry_run: true, approved: false)
@@ -113,9 +138,9 @@ module Aiweb
       sandbox_name = sandbox.to_s.strip.downcase
       cycles = parse_max_cycles(max_cycles)
       requested_run_id = run_id.to_s.strip
-      raise UserError.new("bridge engine-run agent must be codex or openmanus", 5) unless %w[codex openmanus].include?(agent_name)
+      raise UserError.new("bridge engine-run agent must be codex, openmanus, openhands, langgraph, or openai_agents_sdk", 5) unless %w[codex openmanus openhands langgraph openai_agents_sdk].include?(agent_name)
       raise UserError.new("bridge engine-run mode must be safe_patch, agentic_local, or external_approval", 5) unless %w[safe_patch agentic_local external_approval].include?(mode_name)
-      raise UserError.new("bridge engine-run sandbox is only supported with openmanus", 5) if !sandbox_name.empty? && agent_name != "openmanus"
+      raise UserError.new("bridge engine-run sandbox is only supported with openmanus, openhands, langgraph, or openai_agents_sdk", 5) if !sandbox_name.empty? && !%w[openmanus openhands langgraph openai_agents_sdk].include?(agent_name)
       raise UserError.new("bridge engine-run sandbox must be docker or podman", 5) unless sandbox_name.empty? || %w[docker podman].include?(sandbox_name)
       validate_run_id!(requested_run_id, "engine-run run_id") unless requested_run_id.empty?
 
@@ -149,6 +174,140 @@ module Aiweb
       JSON.parse(stdout)
     rescue JSON::ParserError
       nil
+    end
+
+    def bridge_broker_start(project_path:, command:, args:, argv:, dry_run:, approved:, blocking_issues:)
+      broker = {
+        broker: "aiweb.backend.side_effect_broker",
+        scope: "backend.aiweb_cli",
+        project_path: project_path,
+        command_name: command,
+        command: redact_broker_command(argv),
+        dry_run: dry_run,
+        approved: approved,
+        persist: bridge_broker_persist?(command, dry_run, approved, blocking_issues),
+        path: bridge_broker_path(project_path),
+        events: []
+      }
+      decision = blocking_issues.any? ? "deny" : "allow"
+      append_bridge_broker_event(broker, "tool.requested", "requested backend aiweb cli execution")
+      append_bridge_broker_event(
+        broker,
+        "policy.decision",
+        "backend bridge policy decision",
+        "decision" => decision,
+        "reason" => decision == "allow" ? "command is allowlisted and backend-controlled flags were validated" : blocking_issues.join("; "),
+        "blocking_issues" => blocking_issues
+      )
+      append_bridge_broker_event(broker, "tool.started", "starting backend aiweb cli execution") if blocking_issues.empty?
+      broker
+    end
+
+    def bridge_broker_persist?(command, dry_run, approved, blocking_issues)
+      return true if blocking_issues.any?
+      return false if dry_run
+      return true if approved
+      return false if READ_ONLY_COMMANDS.include?(command.to_s)
+
+      true
+    end
+
+    def bridge_broker_path(project_path)
+      run_id = "backend-bridge-#{Time.now.utc.strftime("%Y%m%dT%H%M%S.%6NZ")}-#{SecureRandom.hex(4)}"
+      File.join(project_path, ".ai-web", "runs", run_id, "side-effect-broker.jsonl")
+    end
+
+    def append_bridge_broker_event(broker, event, message, extra = {})
+      payload = {
+        "schema_version" => 1,
+        "event" => event,
+        "created_at" => Time.now.utc.iso8601(6),
+        "broker" => broker.fetch(:broker),
+        "scope" => broker.fetch(:scope),
+        "target" => broker.fetch(:command_name),
+        "tool" => File.basename(aiweb_bin),
+        "command" => broker.fetch(:command),
+        "dry_run" => broker.fetch(:dry_run),
+        "approved" => broker.fetch(:approved),
+        "message" => message
+      }.merge(extra)
+      broker.fetch(:events) << payload
+      return payload unless broker.fetch(:persist)
+
+      FileUtils.mkdir_p(File.dirname(broker.fetch(:path)))
+      File.open(broker.fetch(:path), "a") do |file|
+        file.write(JSON.generate(payload))
+        file.write("\n")
+      end
+      payload
+    end
+
+    def bridge_broker_finished(broker, status)
+      append_bridge_broker_event(
+        broker,
+        "tool.finished",
+        "finished backend aiweb cli execution",
+        "status" => status&.success? ? "passed" : "failed",
+        "exit_code" => status&.exitstatus
+      )
+    end
+
+    def bridge_broker_blocked(broker, blocking_issues)
+      append_bridge_broker_event(
+        broker,
+        "tool.blocked",
+        "blocked backend aiweb cli execution",
+        "status" => "blocked",
+        "blocking_issues" => blocking_issues
+      )
+    end
+
+    def bridge_broker_failed(broker, error)
+      return if broker.fetch(:events).any? { |event| %w[tool.finished tool.failed tool.blocked].include?(event["event"]) }
+
+      append_bridge_broker_event(
+        broker,
+        "tool.failed",
+        "failed backend aiweb cli execution",
+        "status" => "failed",
+        "error_class" => error.class.name,
+        "error" => error.message.to_s[0, 500]
+      )
+    end
+
+    def bridge_broker_summary(broker)
+      {
+        "schema_version" => 1,
+        "broker" => broker.fetch(:broker),
+        "scope" => broker.fetch(:scope),
+        "status" => broker.fetch(:events).last.to_h["event"] == "tool.finished" ? broker.fetch(:events).last.to_h["status"] : "blocked",
+        "events_recorded" => broker.fetch(:persist),
+        "events_path" => broker.fetch(:persist) ? relative_to_project(broker.fetch(:project_path), broker.fetch(:path)) : nil,
+        "event_count" => broker.fetch(:events).length,
+        "target" => broker.fetch(:command_name),
+        "tool" => File.basename(aiweb_bin),
+        "command" => broker.fetch(:command),
+        "dry_run" => broker.fetch(:dry_run),
+        "approved" => broker.fetch(:approved)
+      }.compact
+    end
+
+    def redact_broker_command(command)
+      previous = nil
+      Array(command).map do |part|
+        value = part.to_s
+        redacted = broker_secret_arg?(value, previous) ? "[REDACTED]" : value
+        previous = value
+        redacted
+      end
+    end
+
+    def broker_secret_arg?(value, previous)
+      value.match?(BROKER_SECRET_INLINE_ARG_PATTERN) || previous.to_s.match?(BROKER_SECRET_FLAG_ARG_PATTERN)
+    end
+
+    def relative_to_project(project_path, path)
+      File.expand_path(path).sub(%r{\A#{Regexp.escape(File.expand_path(project_path))}[\\/]?}, "").tr("\\", "/")
     end
 
     def capture_argv(argv)

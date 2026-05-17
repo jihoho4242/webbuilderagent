@@ -1,0 +1,505 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://aiweb.local/schemas/engine-run-worker-adapter-registry.schema.json",
+  "title": "Engine Run Worker Adapter Registry",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "protocol_version",
+    "selected_adapter",
+    "selected_adapter_status",
+    "selected_adapter_executable",
+    "selected_adapter_blocking_issues",
+    "required_api",
+    "selection_policy",
+    "adapters",
+    "runtime_broker_enforcement",
+    "interchangeability_claim",
+    "blocking_policy"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "protocol_version": {
+      "const": "worker-adapter-v1"
+    },
+    "selected_adapter": {
+      "enum": [
+        "codex",
+        "openmanus",
+        "openhands",
+        "langgraph",
+        "openai_agents_sdk"
+      ]
+    },
+    "selected_adapter_status": {
+      "enum": [
+        "implemented_container_worker",
+        "implemented_requires_docker_or_podman",
+        "delegated_safe_patch_only",
+        "blocked_unsandboxed_agentic_local",
+        "unsupported",
+        "experimental_container_worker",
+        "experimental_requires_docker_or_podman"
+      ]
+    },
+    "selected_adapter_executable": {
+      "type": "boolean"
+    },
+    "selected_adapter_blocking_issues": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "required_api": {
+      "type": "array",
+      "items": {
+        "enum": [
+          "prepare",
+          "act",
+          "observe",
+          "cancel",
+          "resume",
+          "finalize"
+        ]
+      },
+      "minItems": 6
+    },
+    "selection_policy": {
+      "type": "object"
+    },
+    "adapters": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "id",
+          "status",
+          "executable",
+          "execution_blocked",
+          "blocking_issues",
+          "api",
+          "modes",
+          "runtime_boundary",
+          "broker_contract",
+          "input_refs_only",
+          "output_contract",
+          "evidence_artifacts",
+          "limitations",
+          "sandbox_preflight",
+          "result_schema",
+          "driver_readiness"
+        ],
+        "properties": {
+          "id": {
+            "enum": [
+              "openmanus",
+              "codex",
+              "openhands",
+              "langgraph",
+              "openai_agents_sdk"
+            ]
+          },
+          "status": {
+            "enum": [
+              "implemented_container_worker",
+              "implemented_requires_docker_or_podman",
+              "delegated_safe_patch_only",
+              "planned_contract_only",
+              "experimental_container_worker",
+              "experimental_requires_docker_or_podman"
+            ]
+          },
+          "executable": {
+            "type": "boolean"
+          },
+          "execution_blocked": {
+            "type": "boolean"
+          },
+          "blocking_issues": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "api": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "modes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "runtime_boundary": {
+            "type": "string",
+            "minLength": 1
+          },
+          "command_driver": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "broker_contract": {
+            "type": "object",
+            "required": [
+              "required",
+              "broker_id",
+              "event_flow",
+              "enforcement_status",
+              "evidence_artifacts",
+              "fail_closed_on_missing_broker_driver"
+            ],
+            "properties": {
+              "required": {
+                "const": true
+              },
+              "broker_id": {
+                "type": "string",
+                "minLength": 1
+              },
+              "event_flow": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "contains": {
+                  "const": "policy.decision"
+                }
+              },
+              "enforcement_status": {
+                "enum": [
+                  "enforced",
+                  "delegated_safe_patch_bounded",
+                  "fail_closed_until_broker_driver"
+                ]
+              },
+              "evidence_artifacts": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "fail_closed_on_missing_broker_driver": {
+                "const": true
+              }
+            },
+            "additionalProperties": true
+          },
+          "input_refs_only": {
+            "const": true
+          },
+          "output_contract": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "evidence_artifacts": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "limitations": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "sandbox_preflight": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "result_schema": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "driver_readiness": {
+            "type": "object",
+            "required": [
+              "schema_version",
+              "state",
+              "required_artifacts",
+              "missing_artifacts",
+              "executable_now",
+              "transition_gate",
+              "next_required_evidence",
+              "limitations"
+            ],
+            "properties": {
+              "schema_version": {
+                "const": 1
+              },
+              "state": {
+                "enum": [
+                  "ready",
+                  "experimental_ready",
+                  "executable_but_incomplete",
+                  "blocked_missing_driver_artifacts"
+                ]
+              },
+              "required_artifacts": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "missing_artifacts": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "executable_now": {
+                "type": "boolean"
+              },
+              "transition_gate": {
+                "enum": [
+                  "driver_may_execute_under_adapter_status_policy",
+                  "fail_closed_until_missing_artifacts_exist"
+                ]
+              },
+              "next_required_evidence": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "limitations": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            },
+            "additionalProperties": true
+          }
+        },
+        "additionalProperties": true
+      }
+    },
+    "runtime_broker_enforcement": {
+      "type": "object",
+      "required": [
+        "schema_version",
+        "status",
+        "deny_by_default_surfaces",
+        "executable_without_broker_count",
+        "universal_broker_claim",
+        "known_mcp_broker_drivers",
+        "surfaces",
+        "remaining_gaps"
+      ],
+      "properties": {
+        "schema_version": {
+          "const": 1
+        },
+        "status": {
+          "enum": [
+            "partial_enforcement",
+            "universal_enforcement"
+          ]
+        },
+        "deny_by_default_surfaces": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "allOf": [
+            {
+              "contains": {
+                "const": "mcp_connectors"
+              }
+            },
+            {
+              "contains": {
+                "const": "future_adapters"
+              }
+            },
+            {
+              "contains": {
+                "const": "elevated_runners"
+              }
+            }
+          ]
+        },
+        "executable_without_broker_count": {
+          "const": 0
+        },
+        "universal_broker_claim": {
+          "const": false
+        },
+        "known_mcp_broker_drivers": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "server",
+              "broker_id",
+              "scope",
+              "status",
+              "evidence",
+              "limitations"
+            ],
+            "properties": {
+              "server": {
+                "type": "string",
+                "minLength": 1
+              },
+              "broker_id": {
+                "type": "string",
+                "minLength": 1
+              },
+              "scope": {
+                "type": "string",
+                "minLength": 1
+              },
+              "status": {
+                "type": "string",
+                "minLength": 1
+              },
+              "evidence": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "limitations": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            },
+            "additionalProperties": true
+          },
+          "allOf": [
+            {
+              "contains": {
+                "type": "object",
+                "required": [
+                  "server",
+                  "broker_id"
+                ],
+                "properties": {
+                  "server": {
+                    "const": "lazyweb"
+                  },
+                  "broker_id": {
+                    "const": "aiweb.lazyweb.side_effect_broker"
+                  }
+                }
+              }
+            },
+            {
+              "contains": {
+                "type": "object",
+                "required": [
+                  "server",
+                  "broker_id"
+                ],
+                "properties": {
+                  "server": {
+                    "const": "lazyweb"
+                  },
+                  "broker_id": {
+                    "const": "aiweb.implementation_mcp_broker"
+                  }
+                }
+              }
+            },
+            {
+              "contains": {
+                "type": "object",
+                "required": [
+                  "server",
+                  "broker_id",
+                  "scope",
+                  "status"
+                ],
+                "properties": {
+                  "server": {
+                    "const": "project_files"
+                  },
+                  "broker_id": {
+                    "const": "aiweb.implementation_mcp_broker"
+                  },
+                  "scope": {
+                    "const": "implementation_worker.mcp.project_files"
+                  },
+                  "status": {
+                    "const": "implemented_for_approved_project_file_metadata_list_excerpt_search"
+                  }
+                }
+              }
+            }
+          ]
+        },
+        "surfaces": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "surface",
+              "status",
+              "broker_id",
+              "policy"
+            ],
+            "properties": {
+              "surface": {
+                "type": "string",
+                "minLength": 1
+              },
+              "status": {
+                "type": "string",
+                "minLength": 1
+              },
+              "broker_id": {
+                "type": "string",
+                "minLength": 1
+              },
+              "evidence": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "policy": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "additionalProperties": true
+          }
+        },
+        "remaining_gaps": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "additionalProperties": true
+    },
+    "interchangeability_claim": {
+      "type": "string",
+      "minLength": 1
+    },
+    "blocking_policy": {
+      "type": "string",
+      "minLength": 1
+    }
+  },
+  "additionalProperties": true
+}

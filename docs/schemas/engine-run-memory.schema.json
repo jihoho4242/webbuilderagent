@@ -1,0 +1,58 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://aiweb.local/schemas/engine-run-memory.schema.json",
+  "title": "Engine Run Memory",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "run_id",
+    "recorded_at",
+    "goal",
+    "status",
+    "retrieval_strategy",
+    "rag_status",
+    "rag_gap",
+    "memory_records",
+    "memory_record_count",
+    "evidence_refs",
+    "worker_handoff"
+  ],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "run_id": { "type": "string", "pattern": "^engine-run-" },
+    "recorded_at": { "type": "string", "minLength": 1 },
+    "goal": { "type": "string" },
+    "status": { "const": "ready" },
+    "retrieval_strategy": { "const": "bounded_lexical_cards" },
+    "rag_status": { "enum": ["not_configured", "configured"] },
+    "rag_gap": { "type": "string" },
+    "memory_records": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "kind", "key", "summary", "payload"],
+        "properties": {
+          "id": { "type": "string", "pattern": "^mem-[a-f0-9]{16}$" },
+          "kind": { "type": "string" },
+          "key": { "type": "string" },
+          "summary": { "type": "string" },
+          "payload": { "type": "object" }
+        },
+        "additionalProperties": true
+      }
+    },
+    "memory_record_count": { "type": "integer", "minimum": 0 },
+    "evidence_refs": { "type": "object" },
+    "worker_handoff": {
+      "type": "object",
+      "required": ["workspace_path", "allowed_use", "must_not_contain"],
+      "properties": {
+        "workspace_path": { "const": "_aiweb/run-memory.json" },
+        "allowed_use": { "type": "string" },
+        "must_not_contain": { "type": "array", "items": { "type": "string" } }
+      },
+      "additionalProperties": true
+    }
+  },
+  "additionalProperties": true
+}

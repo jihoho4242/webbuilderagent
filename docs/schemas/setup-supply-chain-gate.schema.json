@@ -1,0 +1,214 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://aiweb.local/schemas/setup-supply-chain-gate.schema.json",
+  "title": "Setup Supply Chain Gate",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "status",
+    "recorded_at",
+    "package_manager",
+    "exact_command",
+    "install_status",
+    "clean_cache_install",
+    "dependency_diff",
+    "sbom",
+    "audit",
+    "vulnerability_copy_back_gate",
+    "network_allowlist_enforcement",
+    "lifecycle_sandbox_gate",
+    "execution_evidence",
+    "evidence_refs",
+    "blocking_issues"
+  ],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "status": { "enum": ["planned", "ready", "passed", "blocked", "failed"] },
+    "recorded_at": { "type": "string", "minLength": 1 },
+    "package_manager": { "enum": ["pnpm"] },
+    "exact_command": { "type": "array", "items": { "type": "string" } },
+    "install_status": { "type": ["string", "null"], "enum": ["passed", "blocked", "failed", null] },
+    "clean_cache_install": {
+      "type": "object",
+      "required": ["status", "isolated_cache_dir", "registry_allowlist", "network_allowlist", "network_policy", "command_policy", "lifecycle_script_policy", "default_install_lifecycle_execution", "default_command_uses_ignore_scripts"],
+      "properties": {
+        "status": { "enum": ["planned", "ready", "passed", "blocked", "failed", "executed"] },
+        "isolated_cache_dir": { "type": "string", "minLength": 1 },
+        "registry_allowlist": {
+          "type": "array",
+          "items": { "const": "https://registry.npmjs.org/" }
+        },
+        "network_allowlist": {
+          "type": "array",
+          "items": { "const": "registry.npmjs.org" }
+        },
+        "network_policy": { "type": "string", "minLength": 1 },
+        "command_policy": { "type": "string", "minLength": 1 },
+        "lifecycle_script_policy": { "type": "string", "minLength": 1 },
+        "default_install_lifecycle_execution": { "const": false },
+        "default_command_uses_ignore_scripts": { "type": "boolean" }
+      },
+      "additionalProperties": true
+    },
+    "dependency_diff": {
+      "type": "object",
+      "required": ["status", "semantic_dependency_diff", "lockfile_semantic_diff", "lockfile_diff", "package_file_diff", "required_outputs"],
+      "properties": {
+        "status": { "enum": ["planned", "ready", "unchanged", "changed", "blocked"] },
+        "required_outputs": {
+          "type": "array",
+          "items": { "type": "string" },
+          "contains": { "const": "network_allowlist_enforcement" }
+        }
+      },
+      "additionalProperties": true
+    },
+    "sbom": {
+      "type": "object",
+      "required": ["status", "artifact_path", "standard_format", "standard_artifact_path", "spdx_format", "spdx_artifact_path"],
+      "properties": {
+        "status": { "enum": ["planned", "ready", "generated", "failed", "not_executed"] },
+        "standard_format": { "const": "CycloneDX 1.5 JSON" },
+        "spdx_format": { "const": "SPDX 2.3 JSON" }
+      },
+      "additionalProperties": true
+    },
+    "audit": {
+      "type": "object",
+      "required": ["status", "artifact_path", "severity_counts", "active_findings", "audit_exception", "command"],
+      "properties": {
+        "status": { "enum": ["planned", "ready", "passed", "blocked", "failed", "not_executed"] }
+      },
+      "additionalProperties": true
+    },
+    "vulnerability_copy_back_gate": {
+      "type": "object",
+      "required": ["status", "blocked_severities", "policy", "audit_exception"],
+      "properties": {
+        "status": { "enum": ["planned", "accepted_risk", "passed", "blocked", "failed", "not_executed"] },
+        "blocked_severities": { "type": "array", "items": { "enum": ["critical", "high"] } }
+      },
+      "additionalProperties": true
+    },
+    "network_allowlist_enforcement": {
+      "type": "object",
+      "required": ["status", "policy", "allowlist_hosts", "registry_allowlist", "before_violations", "after_violations"],
+      "properties": {
+        "status": { "enum": ["passed", "blocked"] },
+        "allowlist_hosts": { "type": "array", "items": { "const": "registry.npmjs.org" } },
+        "registry_allowlist": { "type": "array", "items": { "const": "https://registry.npmjs.org/" } },
+        "before_violations": { "type": "array" },
+        "after_violations": { "type": "array" }
+      },
+      "additionalProperties": true
+    },
+    "lifecycle_sandbox_gate": {
+      "type": "object",
+      "required": [
+        "schema_version",
+        "policy",
+        "status",
+        "lifecycle_scripts_present",
+        "lifecycle_scripts",
+        "lifecycle_enabled_requested",
+        "lifecycle_enabled_execution_available",
+        "default_install_lifecycle_execution",
+        "default_command_uses_ignore_scripts",
+        "lifecycle_enabled_install_status",
+        "lifecycle_enabled_block_reason",
+        "requested_command_policy",
+        "egress_firewall",
+        "default_install_sandbox_attestation",
+        "required_sandbox_evidence"
+      ],
+      "properties": {
+        "schema_version": { "const": 1 },
+        "policy": { "const": "aiweb.setup.lifecycle_sandbox_gate.v1" },
+        "status": { "enum": ["not_required", "blocked_until_sandbox_and_egress_firewall"] },
+        "lifecycle_scripts_present": { "type": "boolean" },
+        "lifecycle_scripts": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["script", "command", "command_sha256"],
+            "properties": {
+              "script": { "enum": ["preinstall", "install", "postinstall", "prepare"] },
+              "command": { "type": "string" },
+              "command_sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" }
+            },
+            "additionalProperties": true
+          }
+        },
+        "lifecycle_enabled_requested": { "type": "boolean" },
+        "lifecycle_enabled_execution_available": { "const": false },
+        "default_install_lifecycle_execution": { "const": false },
+        "default_command_uses_ignore_scripts": { "type": "boolean" },
+        "lifecycle_enabled_install_status": { "enum": ["not_required", "blocked_until_sandbox_and_egress_firewall"] },
+        "lifecycle_enabled_block_reason": { "type": ["string", "null"] },
+        "requested_command_policy": { "const": "fail_closed_until_lifecycle_sandbox_driver_and_egress_firewall_exist" },
+        "egress_firewall": {
+          "type": "object",
+          "required": ["external_network_allowed"],
+          "properties": {
+            "external_network_allowed": { "const": false },
+            "network_refs_static_allowlist_enforced": { "const": true },
+            "default_install_os_egress_firewall_status": { "const": "not_installed" },
+            "default_install_egress_probe_status": { "const": "not_run_for_host_package_manager" },
+            "lifecycle_enabled_egress_firewall_required": { "const": true }
+          },
+          "additionalProperties": true
+        },
+        "default_install_sandbox_attestation": {
+          "type": "object",
+          "required": ["status", "mode", "filesystem_isolation", "lifecycle_scripts_executed", "dot_env_access_by_lifecycle_scripts", "package_manager_process_uses_unsetenv_others", "child_env_policy", "limitations"],
+          "properties": {
+            "status": { "enum": ["passed", "blocked"] },
+            "mode": { "const": "host_package_manager_with_lifecycle_scripts_disabled" },
+            "filesystem_isolation": { "const": "not_claimed_for_default_install" },
+            "lifecycle_scripts_executed": { "const": false },
+            "dot_env_access_by_lifecycle_scripts": { "const": false },
+            "package_manager_process_uses_unsetenv_others": { "const": true },
+            "child_env_policy": {
+              "type": "object",
+              "required": ["unsetenv_others", "allowed_env_keys", "secret_parent_env_keys_stripped", "secret_values_recorded", "aiweb_setup_approved"],
+              "properties": {
+                "unsetenv_others": { "const": true },
+                "allowed_env_keys": { "type": "array", "items": { "type": "string" } },
+                "secret_parent_env_keys_stripped": { "type": "array", "items": { "type": "string" } },
+                "secret_values_recorded": { "const": false },
+                "aiweb_setup_approved": { "const": true }
+              },
+              "additionalProperties": true
+            },
+            "limitations": { "type": "array", "items": { "type": "string" } }
+          },
+          "additionalProperties": true
+        },
+        "required_sandbox_evidence": {
+          "type": "object",
+          "required": ["egress_firewall_default_deny", "dot_env_reads_allowed", "workspace_escape_allowed", "required_artifacts"],
+          "properties": {
+            "egress_firewall_default_deny": { "const": true },
+            "dot_env_reads_allowed": { "const": false },
+            "workspace_escape_allowed": { "const": false },
+            "required_artifacts": { "type": "array", "contains": { "const": "egress-firewall-log.json" } }
+          },
+          "additionalProperties": true
+        }
+      },
+      "additionalProperties": true
+    },
+    "execution_evidence": {
+      "type": "object",
+      "required": ["status", "artifacts"],
+      "properties": {
+        "status": { "enum": ["executed", "blocked", "planned", "not_executed"] },
+        "artifacts": { "type": "array", "items": { "type": "string" } }
+      },
+      "additionalProperties": true
+    },
+    "evidence_refs": { "type": "object" },
+    "blocking_issues": { "type": "array", "items": { "type": "string" } }
+  },
+  "additionalProperties": true
+}

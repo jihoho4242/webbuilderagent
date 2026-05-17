@@ -1,0 +1,368 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://aiweb.local/schemas/implementation-mcp-broker.schema.json",
+  "title": "Implementation MCP Broker",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "run_id",
+    "status",
+    "broker_driver",
+    "scope",
+    "server",
+    "tool",
+    "arguments",
+    "endpoint",
+    "credential_source",
+    "delegated_identity",
+    "network_destinations",
+    "output_redaction",
+    "per_call_audit",
+    "side_effect_broker_path",
+    "metadata_path",
+    "side_effect_broker",
+    "connector_policy",
+    "blocking_issues",
+    "limitations"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "run_id": {
+      "type": "string",
+      "pattern": "^mcp-broker-"
+    },
+    "status": {
+      "enum": [
+        "planned",
+        "ready",
+        "blocked",
+        "passed",
+        "failed"
+      ]
+    },
+    "broker_driver": {
+      "const": "aiweb.implementation_mcp_broker"
+    },
+    "scope": {
+      "enum": [
+        "implementation_worker.mcp.lazyweb",
+        "implementation_worker.mcp.project_files",
+        "implementation_worker.mcp.denied"
+      ]
+    },
+    "server": {
+      "type": "string",
+      "minLength": 1
+    },
+    "tool": {
+      "type": "string",
+      "minLength": 1
+    },
+    "arguments": {
+      "type": "object"
+    },
+    "endpoint": {
+      "type": "string"
+    },
+    "credential_source": {
+      "type": "string",
+      "minLength": 1
+    },
+    "delegated_identity": {
+      "type": "string",
+      "minLength": 1
+    },
+    "network_destinations": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "output_redaction": {
+      "type": "string",
+      "minLength": 1
+    },
+    "per_call_audit": {
+      "const": true
+    },
+    "side_effect_broker_path": {
+      "type": "string",
+      "pattern": "^\\.ai-web/runs/mcp-broker-.+/side-effect-broker\\.jsonl$"
+    },
+    "metadata_path": {
+      "type": "string",
+      "pattern": "^\\.ai-web/runs/mcp-broker-.+/mcp-broker\\.json$"
+    },
+    "side_effect_broker": {
+      "type": "object",
+      "required": [
+        "schema_version",
+        "broker",
+        "scope",
+        "status",
+        "events_recorded",
+        "events_path",
+        "event_count",
+        "target",
+        "tool",
+        "command",
+        "risk_class",
+        "requires_approval",
+        "approved",
+        "policy"
+      ],
+      "properties": {
+        "schema_version": {
+          "const": 1
+        },
+        "broker": {
+          "const": "aiweb.implementation_mcp_broker"
+        },
+        "scope": {
+          "enum": [
+            "implementation_worker.mcp.lazyweb",
+            "implementation_worker.mcp.project_files",
+            "implementation_worker.mcp.denied"
+          ]
+        },
+        "status": {
+          "enum": [
+            "planned",
+            "ready",
+            "blocked",
+            "passed",
+            "failed"
+          ]
+        },
+        "events_recorded": {
+          "type": "boolean"
+        },
+        "events_path": {
+          "type": "string"
+        },
+        "event_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "target": {
+          "type": "string"
+        },
+        "tool": {
+          "type": "string"
+        },
+        "command": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "risk_class": {
+          "const": "delegated_identity_and_connector_data_access"
+        },
+        "requires_approval": {
+          "const": true
+        },
+        "approved": {
+          "type": "boolean"
+        },
+        "policy": {
+          "type": "object",
+          "required": [
+            "decision",
+            "allowed_server",
+            "allowed_servers",
+            "allowed_tools",
+            "allowed_args_schema",
+            "credential_source",
+            "delegated_identity",
+            "network_destinations",
+            "output_redaction",
+            "per_call_audit",
+            "connector_policy",
+            "connector_driver_status",
+            "missing_driver_required_fields",
+            "deny_by_default_for_unknown_connectors"
+          ],
+          "properties": {
+            "decision": {
+              "enum": [
+                "plan-only",
+                "deny",
+                "allow"
+              ]
+            },
+            "allowed_server": {
+              "type": "string",
+              "minLength": 1
+            },
+            "allowed_tools": {
+              "type": "array",
+              "items": {
+                "enum": [
+                  "lazyweb_health",
+                  "lazyweb_search",
+                  "project_file_metadata",
+                  "project_file_list",
+                  "project_file_excerpt",
+                  "project_file_search"
+                ]
+              }
+            },
+            "allowed_args_schema": {
+              "type": "object"
+            },
+            "credential_source": {
+              "type": "string"
+            },
+            "delegated_identity": {
+              "type": "string"
+            },
+            "network_destinations": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "output_redaction": {
+              "type": "string"
+            },
+            "per_call_audit": {
+              "const": true
+            },
+            "connector_policy": {
+              "$ref": "#/$defs/connector_policy"
+            },
+            "connector_driver_status": {
+              "enum": [
+                "implemented_for_approved_lazyweb_health_search",
+                "implemented_for_approved_project_file_metadata",
+                "implemented_for_approved_project_file_list",
+                "implemented_for_approved_project_file_excerpt",
+                "implemented_for_approved_project_file_search",
+                "missing_broker_driver_fail_closed"
+              ]
+            },
+            "missing_driver_required_fields": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "deny_by_default_for_unknown_connectors": {
+              "const": true
+            },
+            "blocking_issues": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "allowed_servers": {
+              "type": "array",
+              "items": {
+                "enum": [
+                  "lazyweb",
+                  "project_files"
+                ]
+              },
+              "minItems": 1
+            }
+          },
+          "additionalProperties": true
+        }
+      },
+      "additionalProperties": true
+    },
+    "connector_policy": {
+      "$ref": "#/$defs/connector_policy"
+    },
+    "blocking_issues": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "result": {},
+    "limitations": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "contains": {
+        "const": "not a generic MCP connector runner"
+      }
+    }
+  },
+  "$defs": {
+    "connector_policy": {
+      "type": "object",
+      "required": [
+        "policy",
+        "server",
+        "tool",
+        "known_driver",
+        "driver_status",
+        "fail_closed",
+        "deny_by_default_for_unknown_connectors",
+        "missing_driver_required_fields"
+      ],
+      "properties": {
+        "policy": {
+          "const": "aiweb.implementation_mcp_broker.connector_policy.v1"
+        },
+        "server": {
+          "type": "string",
+          "minLength": 1
+        },
+        "tool": {
+          "type": "string",
+          "minLength": 1
+        },
+        "known_driver": {
+          "type": "boolean"
+        },
+        "driver_status": {
+          "enum": [
+            "implemented_for_approved_lazyweb_health_search",
+            "implemented_for_approved_project_file_metadata",
+            "implemented_for_approved_project_file_list",
+            "implemented_for_approved_project_file_excerpt",
+            "implemented_for_approved_project_file_search",
+            "missing_broker_driver_fail_closed"
+          ]
+        },
+        "fail_closed": {
+          "type": "boolean"
+        },
+        "deny_by_default_for_unknown_connectors": {
+          "const": true
+        },
+        "missing_driver_required_fields": {
+          "type": "array",
+          "items": {
+            "enum": [
+              "mcp_server",
+              "tool_names",
+              "allowed_args_schema",
+              "credential_source",
+              "delegated_identity",
+              "network_destinations",
+              "output_redaction",
+              "per_call_audit",
+              "side_effect_broker_path",
+              "result_schema",
+              "rollback_or_replay_policy"
+            ]
+          }
+        },
+        "implemented_driver": {
+          "type": "object"
+        }
+      },
+      "additionalProperties": true
+    }
+  },
+  "additionalProperties": true
+}

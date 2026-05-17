@@ -4,6 +4,7 @@ require "json"
 require "tmpdir"
 
 require_relative "support/test_helper"
+require_relative "support/fake_mcp_http_server"
 
 require "aiweb/design_research"
 
@@ -95,6 +96,54 @@ class DesignResearchTest < Minitest::Test
       brief = File.read(File.join(dir, ".ai-web/design-reference-brief.md"))
       assert_includes brief, "Reference-backed Pattern Constraints"
       assert_includes brief, "Implementation agents must not call Lazyweb"
+    end
+  end
+
+  def test_run_with_real_lazyweb_client_persists_external_http_broker_evidence
+    responses = lambda do |payload|
+      case payload.fetch("method")
+      when "initialize"
+        { "jsonrpc" => "2.0", "id" => payload.fetch("id"), "result" => { "capabilities" => {} } }
+      when "notifications/initialized"
+        { "jsonrpc" => "2.0", "result" => {} }
+      when "tools/call"
+        {
+          "jsonrpc" => "2.0",
+          "id" => payload.fetch("id"),
+          "result" => {
+            "content" => [{ "type" => "text", "text" => JSON.generate("results" => [
+              { "screenshot_id" => "lazy-1", "company" => "Acme", "vision_description" => "Hero CTA pricing layout" }
+            ]) }]
+          }
+        }
+      else
+        flunk "unexpected MCP method #{payload.fetch("method")}"
+      end
+    end
+
+    FakeMcpHttpServer.open(responses) do |endpoint, _received|
+      Dir.mktmpdir("design-research-") do |dir|
+        client = Aiweb::LazywebClient.new(endpoint: "#{endpoint}?token=secret-token", token: "secret-token", timeout_seconds: 5)
+        research = Aiweb::DesignResearch.new(root: dir, client: client, clock: FakeClock.new(Time.utc(2026, 5, 4, 14, 0, 0)))
+
+        payload = research.run(
+          intent: { "original_intent" => "developer API monitoring SaaS", "market_archetype" => "saas", "archetype" => "landing-page" },
+          policy: "opportunistic",
+          limit: 2
+        )
+
+        broker = payload.fetch("side_effect_broker")
+        assert_equal "aiweb.lazyweb.side_effect_broker", broker.fetch("broker")
+        assert_equal true, broker.fetch("events_recorded")
+        assert_match(%r{\A\.ai-web/runs/lazyweb-research-[^/]+/side-effect-broker\.jsonl\z}, broker.fetch("events_path"))
+        assert_includes payload.fetch("changed_files"), broker.fetch("events_path")
+        events = File.readlines(File.join(dir, broker.fetch("events_path")), chomp: true).map { |line| JSON.parse(line) }
+        assert_includes events.map { |event| event.fetch("event") }, "tool.requested"
+        assert_includes events.map { |event| event.fetch("event") }, "tool.finished"
+        encoded = JSON.generate(events)
+        refute_includes encoded, "secret-token"
+        assert_includes encoded, "[REDACTED]"
+      end
     end
   end
 

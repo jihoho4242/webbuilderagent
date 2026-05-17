@@ -39,6 +39,9 @@ module Aiweb
         "AIWEB_OPENMANUS_WORKSPACE" => "/workspace",
         "AIWEB_OPENMANUS_RESULT_PATH" => "/workspace/_aiweb/openmanus-result.json",
         "AIWEB_OPENMANUS_SANDBOX" => sandbox.to_s,
+        "AIWEB_TOOL_BROKER_EVENTS_PATH" => "/workspace/_aiweb/tool-broker-events.jsonl",
+        "AIWEB_TOOL_BROKER_REAL_PATH" => "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+        "PATH" => "/workspace/_aiweb/tool-broker-bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
         "HOME" => "/workspace/_aiweb/home",
         "USERPROFILE" => "/workspace/_aiweb/home",
         "TMPDIR" => "/workspace/_aiweb/tmp",
@@ -75,6 +78,8 @@ module Aiweb
         required_env: {
         "AIWEB_AGENT_RUN_CONTEXT_PATH" => "/workspace/_aiweb/openmanus-context.json",
         "AIWEB_OPENMANUS_RESULT_PATH" => "/workspace/_aiweb/openmanus-result.json",
+        "AIWEB_TOOL_BROKER_EVENTS_PATH" => "/workspace/_aiweb/tool-broker-events.jsonl",
+        "PATH" => "/workspace/_aiweb/tool-broker-bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
         "AIWEB_NETWORK_ALLOWED" => "0",
         "AIWEB_MCP_ALLOWED" => "0",
         "AIWEB_ENV_ACCESS_ALLOWED" => "0"
@@ -183,7 +188,7 @@ module Aiweb
       end.uniq
     end
 
-    def agent_run_openmanus_contract(run_id:, run_dir:, context_path:, prompt_path:, validator_path:, result_path:, network_log_path:, browser_log_path:, denied_access_log_path:, task_source:, context:, source_paths:, command:, dry_run:, approved:)
+    def agent_run_openmanus_contract(run_id:, run_dir:, context_path:, prompt_path:, validator_path:, result_path:, network_log_path:, browser_log_path:, denied_access_log_path:, tool_broker_log_path:, task_source:, context:, source_paths:, command:, dry_run:, approved:)
       workspace_dir = File.join(aiweb_dir, "tmp", "openmanus", run_id)
       selected_file = Array(context["selected_design_files"]).find { |file| file["kind"] == "selected_candidate" }
       source_hashes = source_paths.each_with_object({}) do |path, memo|
@@ -216,6 +221,13 @@ module Aiweb
         "sandbox_mode" => agent_run_openmanus_sandbox_mode(command),
         "sandbox_required" => true,
         "forbidden_actions" => %w[read_env install deploy external_network mcp_tools modify_unlisted_files],
+        "tool_broker" => {
+          "events_path" => "_aiweb/tool-broker-events.jsonl",
+          "host_evidence_path" => relative(tool_broker_log_path),
+          "bin_path" => "_aiweb/tool-broker-bin",
+          "path_prepend_required" => true,
+          "blocks" => %w[package_install external_network deploy provider_cli git_push env_read]
+        },
         "expected_output" => "source changes inside the isolated workspace only"
       }
 
@@ -244,7 +256,7 @@ module Aiweb
       }
     end
 
-    def agent_run_openmanus(state:, task_source:, context:, source_paths:, run_id:, run_dir:, stdout_path:, stderr_path:, metadata_path:, diff_path:, context_path:, prompt_path:, validator_path:, result_path:, network_log_path:, browser_log_path:, denied_access_log_path:, command:, contract:)
+    def agent_run_openmanus(state:, task_source:, context:, source_paths:, run_id:, run_dir:, stdout_path:, stderr_path:, metadata_path:, diff_path:, context_path:, prompt_path:, validator_path:, result_path:, network_log_path:, browser_log_path:, denied_access_log_path:, tool_broker_log_path:, command:, contract:)
       changes = []
       payload = nil
       mutation(dry_run: false) do
@@ -269,7 +281,11 @@ module Aiweb
         changes << write_file(prompt_path, prompt, false)
         workspace_blockers = agent_run_prepare_openmanus_workspace(workspace_dir, source_paths)
         changes << relative(workspace_dir)
-        changes << write_json(File.join(workspace_dir, "_aiweb", "openmanus-context.json"), contract.fetch("context"), false) if workspace_blockers.empty?
+        if workspace_blockers.empty?
+          engine_run_prepare_workspace_tool_broker(workspace_dir)
+          changes << relative(File.join(workspace_dir, "_aiweb", "tool-broker-bin"))
+          changes << write_json(File.join(workspace_dir, "_aiweb", "openmanus-context.json"), contract.fetch("context"), false)
+        end
         before_snapshot = agent_run_workspace_snapshot
 
         if workspace_blockers.empty?
@@ -289,6 +305,11 @@ module Aiweb
           stderr = agent_run_redact_process_output(result.fetch(:stderr))
           exit_code = result[:exit_code]
           blocking_issues.concat(result.fetch(:blocking_issues))
+          tool_broker_events = engine_run_workspace_tool_broker_events(workspace_dir)
+          unless tool_broker_events.empty?
+            blocked = tool_broker_events.map { |event| [event["risk_class"], event["tool_name"]].compact.join(":") }.reject(&:empty?).join(", ")
+            blocking_issues << "openmanus tool broker blocked prohibited staged action: #{blocked}"
+          end
           openmanus_report, report_blockers = agent_run_read_openmanus_report(workspace_result_path, source_paths)
           blocking_issues.concat(report_blockers)
           after_snapshot = agent_run_workspace_snapshot
@@ -324,6 +345,7 @@ module Aiweb
         changes << write_file(stderr_path, stderr, false)
         changes << write_file(network_log_path, "network_allowed=false\n", false)
         changes << write_file(browser_log_path, "browser_navigation_allowed=localhost-only\n", false)
+        changes << write_file(tool_broker_log_path, agent_run_openmanus_tool_broker_log(workspace_dir), false)
         changes << write_file(denied_access_log_path, blocking_issues.join("\n") + (blocking_issues.empty? ? "" : "\n"), false)
         diff_patch, diff_changed_files = if status == "passed" || status == "no_changes"
                                            agent_run_source_diff(source_paths)
@@ -361,6 +383,7 @@ module Aiweb
           network_log_path: relative(network_log_path),
           browser_log_path: relative(browser_log_path),
           denied_access_log_path: relative(denied_access_log_path),
+          tool_broker_log_path: relative(tool_broker_log_path),
           openmanus_report: openmanus_report
         )
         changes << write_json(result_path, result_payload, false)
@@ -599,7 +622,7 @@ module Aiweb
       false
     end
 
-    def agent_run_openmanus_result_payload(status:, exit_code:, changed_source_files:, diff_path:, patch_hash:, base_hashes:, blocking_issues:, stdout_path:, stderr_path:, context_path:, validator_path:, network_log_path:, browser_log_path:, denied_access_log_path:, openmanus_report: nil)
+    def agent_run_openmanus_result_payload(status:, exit_code:, changed_source_files:, diff_path:, patch_hash:, base_hashes:, blocking_issues:, stdout_path:, stderr_path:, context_path:, validator_path:, network_log_path:, browser_log_path:, denied_access_log_path:, tool_broker_log_path:, openmanus_report: nil)
       {
         "schema_version" => 1,
         "status" => status,
@@ -623,6 +646,7 @@ module Aiweb
           "validator_result" => validator_path,
           "network_log" => network_log_path,
           "browser_request_log" => browser_log_path,
+          "tool_broker_log" => tool_broker_log_path,
           "denied_access_log" => denied_access_log_path
         }
       }
@@ -642,6 +666,8 @@ module Aiweb
         "AIWEB_OPENMANUS_WORKSPACE" => workspace_dir,
         "AIWEB_OPENMANUS_RESULT_PATH" => result_path,
         "AIWEB_OPENMANUS_SANDBOX" => sandbox_mode,
+        "AIWEB_TOOL_BROKER_EVENTS_PATH" => File.join(workspace_dir, "_aiweb", "tool-broker-events.jsonl"),
+        "AIWEB_TOOL_BROKER_REAL_PATH" => ENV.fetch("PATH", ""),
         "HOME" => File.join(workspace_dir, "_aiweb", "home"),
         "USERPROFILE" => File.join(workspace_dir, "_aiweb", "home"),
         "TMPDIR" => File.join(workspace_dir, "_aiweb", "tmp"),
@@ -651,6 +677,13 @@ module Aiweb
         "AIWEB_MCP_ALLOWED" => "0",
         "AIWEB_ENV_ACCESS_ALLOWED" => "0"
       )
+    end
+
+    def agent_run_openmanus_tool_broker_log(workspace_dir)
+      events = engine_run_workspace_tool_broker_events(workspace_dir)
+      return "" if events.empty?
+
+      events.map { |event| JSON.generate(engine_run_redact_event_value(event)) }.join("\n") + "\n"
     end
 
     def agent_run_kill_process(pid)

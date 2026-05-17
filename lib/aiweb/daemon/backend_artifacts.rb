@@ -26,8 +26,9 @@ module Aiweb
             "openmanus_readiness" => true,
             "run_detail" => true,
             "event_polling" => true,
+            "event_sse" => true,
             "diff_artifacts" => true,
-            "sse" => false,
+            "sse" => true,
             "websocket" => false
           }
         }
@@ -83,6 +84,11 @@ module Aiweb
 
     def run_typed_panels(root, _run_id, metadata, artifact_refs, events_payload, approvals)
       {
+        "eval_benchmark" => run_json_panel(root, metadata["eval_benchmark_path"], metadata["eval_benchmark"]),
+        "supply_chain_gate" => run_json_panel(root, metadata["supply_chain_gate_path"], metadata["supply_chain_gate"]),
+        "run_memory" => run_json_panel(root, metadata["run_memory_path"], metadata["run_memory"]),
+        "authz_enforcement" => run_json_panel(root, metadata["authz_enforcement_path"], metadata["authz_enforcement"]),
+        "worker_adapter_registry" => run_json_panel(root, metadata["worker_adapter_registry_path"], metadata["worker_adapter_registry"]),
         "design_verdict" => run_json_panel(root, metadata["design_verdict_path"], metadata["design_verdict"]),
         "screenshots" => run_screenshots_panel(root, metadata["screenshot_evidence_path"], metadata["screenshot_evidence"]),
         "preview" => run_json_panel(root, metadata["preview_path"], metadata["preview"]),
@@ -162,9 +168,57 @@ module Aiweb
       }
     end
 
-    def artifact_payload(path, artifact)
+    def run_events_sse_body(path, run_id, cursor, limit, wait_ms = nil)
+      stream = run_stream_payload(path, run_id, cursor, limit, wait_ms)
+      chunks = []
+      chunks << sse_comment("aiweb engine-run events")
+      chunks << sse_event(
+        event: "aiweb.run.meta",
+        id: stream.fetch("cursor"),
+        data: stream.slice("schema_version", "status", "project_path", "run_id", "events_path", "stream_mode", "wait_ms", "cursor", "next_cursor", "has_more", "total_count").merge("stream_mode" => "sse")
+      )
+      stream.fetch("events").each do |event|
+        chunks << sse_event(
+          event: event.fetch("type", "aiweb.event"),
+          id: event.fetch("seq", stream.fetch("next_cursor")),
+          data: event
+        )
+      end
+      chunks << sse_event(
+        event: "aiweb.run.cursor",
+        id: stream.fetch("next_cursor"),
+        data: {
+          "schema_version" => 1,
+          "run_id" => stream.fetch("run_id"),
+          "cursor" => stream.fetch("cursor"),
+          "next_cursor" => stream.fetch("next_cursor"),
+          "has_more" => stream.fetch("has_more"),
+          "total_count" => stream.fetch("total_count")
+        }
+      )
+      chunks.join
+    end
+
+    def sse_comment(text)
+      ": #{text.to_s.gsub(/[\r\n]+/, " ")}\n\n"
+    end
+
+    def sse_event(event:, id:, data:)
+      body = +""
+      body << "event: #{event.to_s.gsub(/[^A-Za-z0-9_.-]/, "-")}\n"
+      body << "id: #{id}\n"
+      JSON.generate(data).each_line do |line|
+        body << "data: #{line.chomp}\n"
+      end
+      body << "\n"
+      body
+    end
+
+    def artifact_payload(path, artifact, headers: nil)
       root = safe_project_path(path)
       relative = safe_artifact_path!(root, artifact)
+      artifact_acl = artifact_acl_classification(relative)
+      validate_artifact_acl!(root, relative, headers, artifact_acl) if headers
       full = File.join(root, relative)
       raise UserError.new("artifact does not exist: #{relative}", 1) unless File.file?(full)
       safe_artifact_realpath!(root, full, relative)
@@ -185,6 +239,7 @@ module Aiweb
           "size_bytes" => size,
           "sha256" => Digest::SHA256.file(full).hexdigest,
           "media_type" => artifact_media_type(relative),
+          "acl" => artifact_acl,
           "redacted" => redacted != raw || content != raw,
           "content" => content,
           "json" => parsed
@@ -313,6 +368,25 @@ module Aiweb
       return "diff" if key == "diff_path" || relative.end_with?(".patch")
 
       key.sub(/_path\z/, "")
+    end
+
+    def artifact_acl_classification(relative)
+      normalized = relative.to_s.tr("\\", "/")
+      required_role = if normalized.match?(%r{\A\.ai-web/runs/[^/]+/approvals\.jsonl\z})
+                        "admin"
+                      elsif normalized.start_with?(".ai-web/diffs/") ||
+                          normalized.match?(%r{\A\.ai-web/runs/[^/]+/logs/}) ||
+                          normalized.match?(%r{\A\.ai-web/runs/[^/]+/artifacts/(?:agent-result|authz-enforcement|sandbox-preflight|supply-chain-gate|worker-adapter|mcp-broker|side-effect-broker)[A-Za-z0-9_.-]*\.(?:json|jsonl|log|txt|md)\z})
+                        "operator"
+                      else
+                        "viewer"
+                      end
+      {
+        "policy" => "local_backend_artifact_acl_v1",
+        "required_role" => required_role,
+        "category" => required_role == "viewer" ? "standard_safe_artifact" : "sensitive_run_artifact",
+        "reason" => required_role == "viewer" ? "safe artifact allowlist and viewer role are sufficient" : "logs, diffs, approvals, and sensitive run artifacts require elevated project role"
+      }
     end
 
     def safe_artifact_path!(root, artifact)

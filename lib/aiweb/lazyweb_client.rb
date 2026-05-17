@@ -3,6 +3,7 @@
 require "json"
 require "net/http"
 require "securerandom"
+require "time"
 require "timeout"
 require "uri"
 
@@ -16,12 +17,15 @@ module Aiweb
     class ConfigurationError < Error; end
     class ProtocolError < Error; end
 
-    attr_reader :endpoint, :timeout_seconds
+    attr_reader :endpoint, :timeout_seconds, :audit_events
+    attr_writer :audit_sink
 
-    def initialize(endpoint: DEFAULT_ENDPOINT, token: nil, timeout_seconds: 45, token_sources: TOKEN_SOURCES)
+    def initialize(endpoint: DEFAULT_ENDPOINT, token: nil, timeout_seconds: 45, token_sources: TOKEN_SOURCES, audit_sink: nil)
       @endpoint = endpoint.to_s
       @timeout_seconds = Integer(timeout_seconds)
       @token = present(token) || resolve_token(token_sources)
+      @audit_sink = audit_sink
+      @audit_events = []
       raise ArgumentError, "timeout_seconds must be positive" unless @timeout_seconds.positive?
       raise ArgumentError, "endpoint is required" if @endpoint.strip.empty?
     end
@@ -53,10 +57,11 @@ module Aiweb
     def self.redact(value, token = nil)
       redacted = value.to_s.dup
       [token, ENV["LAZYWEB_MCP_TOKEN"]].compact.map(&:to_s).reject(&:empty?).uniq.each do |secret|
-        redacted.gsub!(secret, REDACTED)
+      redacted.gsub!(secret, REDACTED)
       end
+      redacted.gsub!(%r{((?:https?|mcp)://)([^@\s/]+)@}i, "\\1#{REDACTED}@")
       redacted.gsub!(/(Authorization:\s*Bearer\s+)[^\s]+/i, "\\1#{REDACTED}")
-      redacted.gsub!(/([?&](?:token|access_token|signature|X-Amz-Signature)=)[^&\s]+/i, "\\1#{REDACTED}")
+      redacted.gsub!(/([?&](?:token|access_token|api[_-]?key|key|secret|password|credential|auth|authorization|signature|X-Amz-Signature)=)[^&\s]+/i, "\\1#{REDACTED}")
       redacted
     end
 
@@ -117,6 +122,10 @@ module Aiweb
       request["Authorization"] = "Bearer #{@token}" if configured?
       request.body = JSON.generate(payload)
 
+      audit = audit_event_base(payload, uri)
+      emit_audit_event("tool.requested", audit.merge("message" => "requested Lazyweb MCP HTTP call"))
+      emit_audit_event("policy.decision", audit.merge("message" => "Lazyweb MCP endpoint allowed by configured design-research adapter", "decision" => "allow"))
+      emit_audit_event("tool.started", audit.merge("message" => "starting Lazyweb MCP HTTP call"))
       response = nil
       Timeout.timeout(timeout_seconds) do
         Net::HTTP.start(uri.hostname, uri.port, use_ssl: uri.scheme == "https", read_timeout: timeout_seconds, open_timeout: timeout_seconds) do |http|
@@ -124,14 +133,53 @@ module Aiweb
         end
       end
       unless response.is_a?(Net::HTTPSuccess)
+        emit_lazyweb_terminal_failure(audit, "finished Lazyweb MCP HTTP call", "http_status" => response&.code.to_s)
         raise ProtocolError, self.class.redact("Lazyweb MCP HTTP #{response.code}: #{response.body}", @token)
       end
 
-      parse_response_body(response.body)
+      parsed = parse_response_body(response.body)
+      emit_audit_event("tool.finished", audit.merge("message" => "finished Lazyweb MCP HTTP call", "status" => "passed", "http_status" => response.code.to_s))
+      parsed
     rescue JSON::ParserError => e
+      emit_lazyweb_terminal_failure(audit, "failed to parse Lazyweb MCP HTTP response", "error_class" => e.class.name) if defined?(audit) && audit
       raise ProtocolError, self.class.redact("Lazyweb MCP returned invalid JSON: #{e.message}", @token)
     rescue Timeout::Error
+      emit_lazyweb_terminal_failure(audit, "Lazyweb MCP request timed out", "error_class" => "Timeout::Error") if defined?(audit) && audit
       raise ProtocolError, "Lazyweb MCP request timed out after #{timeout_seconds}s"
+    rescue StandardError => e
+      emit_lazyweb_terminal_failure(audit, "failed Lazyweb MCP HTTP call", "error_class" => e.class.name) if defined?(audit) && audit
+      raise
+    end
+
+    def audit_event_base(payload, uri)
+      {
+        "schema_version" => 1,
+        "broker" => "aiweb.lazyweb.side_effect_broker",
+        "scope" => "external_http.lazyweb_mcp",
+        "target" => payload["method"].to_s,
+        "tool" => "Net::HTTP",
+        "endpoint" => self.class.redact(uri.to_s, @token),
+        "host" => uri.hostname.to_s,
+        "method" => "POST",
+        "jsonrpc_method" => payload["method"].to_s,
+        "request_id" => payload["id"].to_s.empty? ? "notification-#{SecureRandom.uuid}" : payload["id"].to_s,
+        "timeout_seconds" => timeout_seconds,
+        "requires_token" => true,
+        "token_configured" => configured?
+      }
+    end
+
+    def emit_audit_event(event, payload)
+      record = payload.merge("event" => event, "created_at" => Time.now.utc.iso8601(6))
+      @audit_events << record
+      @audit_sink&.call(record)
+      record
+    end
+
+    def emit_lazyweb_terminal_failure(audit, message, extra = {})
+      return if @audit_events.reverse.any? { |event| %w[tool.finished tool.failed tool.blocked].include?(event["event"]) && event["request_id"] == audit["request_id"] }
+
+      emit_audit_event("tool.failed", audit.merge("message" => message, "status" => "failed").merge(extra))
     end
 
     def parse_response_body(body)

@@ -29,6 +29,7 @@ module Aiweb
       openmanus_network_log_path = File.join(run_dir, "network.log")
       openmanus_browser_log_path = File.join(run_dir, "browser-requests.log")
       openmanus_denied_access_log_path = File.join(run_dir, "denied-access.log")
+      openmanus_tool_broker_log_path = File.join(run_dir, "tool-broker-events.jsonl")
       openmanus_workspace_path = File.join(aiweb_dir, "tmp", "openmanus", run_id)
       openmanus_sandbox = agent_name == "openmanus" ? agent_run_openmanus_sandbox_name(sandbox) : nil
       blockers = []
@@ -118,7 +119,8 @@ module Aiweb
           relative(openmanus_result_path),
           relative(openmanus_network_log_path),
           relative(openmanus_browser_log_path),
-          relative(openmanus_denied_access_log_path)
+          relative(openmanus_denied_access_log_path),
+          relative(openmanus_tool_broker_log_path)
         ])
       end
 
@@ -132,6 +134,7 @@ module Aiweb
         network_log_path: openmanus_network_log_path,
         browser_log_path: openmanus_browser_log_path,
         denied_access_log_path: openmanus_denied_access_log_path,
+        tool_broker_log_path: openmanus_tool_broker_log_path,
         task_source: task_source,
         context: context,
         source_paths: source_paths,
@@ -195,6 +198,7 @@ module Aiweb
           network_log_path: openmanus_network_log_path,
           browser_log_path: openmanus_browser_log_path,
           denied_access_log_path: openmanus_denied_access_log_path,
+          tool_broker_log_path: openmanus_tool_broker_log_path,
           command: agent_command,
           contract: openmanus_contract
         )

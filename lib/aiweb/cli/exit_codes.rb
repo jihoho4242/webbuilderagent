@@ -109,9 +109,43 @@ module Aiweb
       status = result.dig("engine_run", "status").to_s
       return EXIT_SUCCESS if %w[dry_run planned passed no_changes cancelled].include?(status)
       return EXIT_UNSAFE_EXTERNAL_ACTION if status == "waiting_approval"
+      return EXIT_UNSAFE_EXTERNAL_ACTION if status == "quarantined"
       if status == "blocked"
         issues = ((result.dig("engine_run", "blocking_issues") || []) + (result["blocking_issues"] || [])).join(" ")
         return EXIT_UNSAFE_EXTERNAL_ACTION if issues.match?(/approved|approval|unsafe|\.env|credential|secret|network|deploy|provider|git push|openmanus|image/i)
+      end
+
+      EXIT_VALIDATION_FAILED
+    end
+
+    def engine_scheduler_exit_code(result)
+      status = result.dig("engine_scheduler", "status").to_s
+      return EXIT_SUCCESS if %w[recorded dry_run].include?(status)
+      if status == "blocked"
+        issues = ((result.dig("engine_scheduler", "blocking_issues") || []) + (result["blocking_issues"] || [])).join(" ")
+        return EXIT_UNSAFE_EXTERNAL_ACTION if issues.match?(/approved|approval|execute|unsafe/i)
+      end
+
+      EXIT_VALIDATION_FAILED
+    end
+
+    def mcp_broker_exit_code(result)
+      status = result.dig("mcp_broker", "status").to_s
+      return EXIT_SUCCESS if %w[planned passed].include?(status)
+      if %w[blocked failed].include?(status)
+        issues = ((result.dig("mcp_broker", "blocking_issues") || []) + (result["blocking_issues"] || [])).join(" ")
+        return EXIT_UNSAFE_EXTERNAL_ACTION if issues.match?(/approved|approval|credential|token|MCP|connector|network|failed/i)
+      end
+
+      EXIT_VALIDATION_FAILED
+    end
+
+    def eval_baseline_exit_code(result)
+      status = result.dig("eval_baseline", "status").to_s
+      return EXIT_SUCCESS if %w[validated imported created dry_run planned].include?(status)
+      if status == "blocked"
+        issues = ((result.dig("eval_baseline", "blocking_issues") || []) + (result["blocking_issues"] || [])).join(" ")
+        return EXIT_UNSAFE_EXTERNAL_ACTION if issues.match?(/approved|approval|unsafe|\.env|secret|credential/i)
       end
 
       EXIT_VALIDATION_FAILED
@@ -200,7 +234,10 @@ module Aiweb
       return EXIT_SUCCESS if %w[run-timeline timeline observability-summary summary].include?(command)
       return setup_exit_code(result) if command == "setup"
       return engine_run_exit_code(result) if command == "engine-run"
+      return engine_scheduler_exit_code(result) if command == "engine-scheduler"
+      return mcp_broker_exit_code(result) if command == "mcp-broker"
       return agent_run_exit_code(result) if command == "agent-run"
+      return eval_baseline_exit_code(result) if %w[eval-baseline human-baseline].include?(command)
       return build_exit_code(result) if command == "build"
       return preview_exit_code(result) if command == "preview"
       return qa_playwright_exit_code(result) if %w[qa-playwright browser-qa].include?(command)
@@ -219,7 +256,7 @@ module Aiweb
       return deploy_exit_code(result) if command == "deploy"
       return supabase_secret_qa_exit_code(result) if command == "supabase-secret-qa"
       return supabase_local_verify_exit_code(result) if command == "supabase-local-verify"
-      return EXIT_SUCCESS if %w[help version status start init interview run run-status run-timeline timeline observability-summary summary run-cancel run-resume engine-run agent-run verify-loop design-brief design-research design-system design-prompt design select-design scaffold ingest-reference ingest-design next-task qa-checklist qa-report rollback resolve-blocker snapshot visual-critique visual-polish component-map visual-edit].include?(command)
+      return EXIT_SUCCESS if %w[help version status start init interview run run-status run-timeline timeline observability-summary summary run-cancel run-resume engine-run engine-scheduler mcp-broker agent-run eval-baseline human-baseline verify-loop design-brief design-research design-system design-prompt design select-design scaffold ingest-reference ingest-design next-task qa-checklist qa-report rollback resolve-blocker snapshot visual-critique visual-polish component-map visual-edit].include?(command)
       if command == "advance" && result["action_taken"] == "advance blocked"
         issue = result["blocking_issues"].join(" ")
         return EXIT_BUDGET_BLOCKED if issue =~ /budget|candidate cap|design generation cap/i

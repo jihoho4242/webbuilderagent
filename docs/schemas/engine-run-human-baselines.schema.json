@@ -1,0 +1,104 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://aiweb.local/schemas/engine-run-human-baselines.schema.json",
+  "title": "Engine Run Human Baselines",
+  "type": "object",
+  "required": ["schema_version", "fixtures"],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "corpus_metadata": {
+      "type": "object",
+      "properties": {
+        "source": { "type": "string" },
+        "collected_at": { "type": "string" },
+        "review_protocol": { "type": "string" },
+        "reviewer_count": { "type": "integer", "minimum": 1 }
+      },
+      "additionalProperties": true
+    },
+    "corpus_readiness": { "$ref": "#/$defs/corpus_readiness" },
+    "fixtures": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": { "$ref": "#/$defs/baseline" }
+        },
+        {
+          "type": "array",
+          "items": { "$ref": "#/$defs/baseline" }
+        }
+      ]
+    }
+  },
+  "$defs": {
+    "score": { "type": "number", "minimum": 0, "maximum": 100 },
+    "corpus_readiness": {
+      "type": "object",
+      "required": [
+        "status",
+        "production_ready",
+        "multi_fixture_required_for_production",
+        "minimum_calibrated_fixture_count",
+        "calibrated_fixture_count",
+        "unique_reviewer_count",
+        "blocking_issues"
+      ],
+      "properties": {
+        "status": {
+          "enum": [
+            "production_ready_multi_fixture",
+            "calibrated_but_not_production_corpus",
+            "not_human_calibrated",
+            "blocked"
+          ]
+        },
+        "production_ready": { "type": "boolean" },
+        "multi_fixture_required_for_production": { "const": true },
+        "minimum_calibrated_fixture_count": { "const": 2 },
+        "fixture_count": { "type": "integer", "minimum": 0 },
+        "calibrated_fixture_count": { "type": "integer", "minimum": 0 },
+        "declared_reviewer_count": { "type": ["integer", "null"], "minimum": 0 },
+        "unique_reviewer_count": { "type": "integer", "minimum": 0 },
+        "reviewer_ids": { "type": "array", "items": { "type": "string" } },
+        "score_axes": { "type": "array", "items": { "type": "string" } },
+        "blocking_issues": { "type": "array", "items": { "type": "string" } }
+      },
+      "additionalProperties": true
+    },
+    "baseline": {
+      "type": "object",
+      "required": ["average_score"],
+      "properties": {
+        "fixture_id": { "type": "string", "pattern": "^design-fixture-[a-f0-9]{16}$" },
+        "average_score": { "$ref": "#/$defs/score" },
+        "reviewer_count": { "type": "integer", "minimum": 0 },
+        "source": { "type": "string" },
+        "review_protocol": { "type": "string" },
+        "human_scores": {
+          "type": "object",
+          "minProperties": 1,
+          "additionalProperties": { "$ref": "#/$defs/score" }
+        },
+        "human_ratings": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "properties": {
+              "reviewer_id": { "type": "string" },
+              "overall_score": { "$ref": "#/$defs/score" },
+              "scores": {
+                "type": "object",
+                "additionalProperties": { "$ref": "#/$defs/score" }
+              },
+              "notes": { "type": "string" }
+            },
+            "additionalProperties": true
+          }
+        }
+      },
+      "additionalProperties": true
+    }
+  },
+  "additionalProperties": false
+}

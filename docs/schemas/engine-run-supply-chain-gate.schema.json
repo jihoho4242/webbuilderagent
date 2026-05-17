@@ -1,0 +1,182 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://aiweb.local/schemas/engine-run-supply-chain-gate.schema.json",
+  "title": "Engine Run Supply Chain Gate",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "status",
+    "recorded_at",
+    "required",
+    "package_manager",
+    "package_install_requests",
+    "requested_actions",
+    "clean_cache_install",
+    "dependency_diff",
+    "sbom",
+    "audit",
+    "vulnerability_copy_back_gate",
+    "lifecycle_sandbox_gate",
+    "execution_evidence",
+    "evidence_refs",
+    "blocking_issues"
+  ],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "status": { "enum": ["skipped", "waiting_approval", "blocked"] },
+    "recorded_at": { "type": "string", "minLength": 1 },
+    "required": { "type": "boolean" },
+    "package_manager": { "enum": ["npm", "pnpm", "yarn", "bun"] },
+    "package_install_requests": {
+      "type": "object",
+      "required": ["count", "items"],
+      "properties": {
+        "count": { "type": "integer", "minimum": 0 },
+        "items": { "type": "array" }
+      },
+      "additionalProperties": true
+    },
+    "requested_actions": { "type": "array" },
+    "clean_cache_install": {
+      "type": "object",
+      "required": ["required", "status", "isolated_cache_dir", "network_policy", "lifecycle_script_policy", "command_policy", "default_install_lifecycle_execution", "default_command_uses_ignore_scripts"],
+      "properties": {
+        "required": { "type": "boolean" },
+        "status": { "enum": ["pending_approval", "not_executed_pending_approval", "skipped"] },
+        "isolated_cache_dir": { "const": "_aiweb/package-cache" },
+        "network_policy": { "type": "string" },
+        "lifecycle_script_policy": { "type": "string" },
+        "command_policy": { "type": "string" },
+        "default_install_lifecycle_execution": { "const": false },
+        "default_command_uses_ignore_scripts": { "type": "boolean" }
+      },
+      "additionalProperties": true
+    },
+    "dependency_diff": {
+      "type": "object",
+      "required": ["status", "baseline", "package_file_diff", "required_outputs"],
+      "properties": {
+        "status": { "enum": ["pending_approval", "skipped", "blocked"] },
+        "baseline": { "type": "object" },
+        "package_file_diff": { "type": "array" },
+        "required_outputs": { "type": "array", "items": { "type": "string" } }
+      },
+      "additionalProperties": true
+    },
+    "sbom": {
+      "type": "object",
+      "required": ["status", "required", "accepted_formats", "artifact_path"],
+      "properties": {
+        "status": { "enum": ["pending_approval", "not_executed_pending_approval", "skipped"] },
+        "required": { "type": "boolean" },
+        "accepted_formats": { "type": "array", "items": { "type": "string" } },
+        "artifact_path": { "type": "string", "pattern": "^\\.ai-web/runs/.+/artifacts/sbom\\.json$" }
+      },
+      "additionalProperties": true
+    },
+    "audit": {
+      "type": "object",
+      "required": ["status", "required", "commands", "artifact_path"],
+      "properties": {
+        "status": { "enum": ["pending_approval", "not_executed_pending_approval", "skipped"] },
+        "required": { "type": "boolean" },
+        "commands": { "type": "array", "items": { "type": "string" } },
+        "artifact_path": { "type": "string", "pattern": "^\\.ai-web/runs/.+/artifacts/package-audit\\.json$" }
+      },
+      "additionalProperties": true
+    },
+    "vulnerability_copy_back_gate": {
+      "type": "object",
+      "required": ["status", "policy", "blocked_severities"],
+      "properties": {
+        "status": { "enum": ["pending_approval", "skipped"] },
+        "policy": { "type": "string" },
+        "blocked_severities": { "type": "array", "items": { "enum": ["critical", "high", "moderate", "low"] } }
+      },
+      "additionalProperties": true
+    },
+    "lifecycle_sandbox_gate": {
+      "type": "object",
+      "required": [
+        "schema_version",
+        "policy",
+        "status",
+        "lifecycle_scripts_present",
+        "lifecycle_scripts",
+        "default_install_lifecycle_execution",
+        "default_command_uses_ignore_scripts",
+        "lifecycle_enabled_install_status",
+        "egress_firewall",
+        "required_sandbox_evidence"
+      ],
+      "properties": {
+        "schema_version": { "const": 1 },
+        "policy": { "const": "aiweb.engine_run.lifecycle_sandbox_gate.v1" },
+        "status": { "enum": ["not_required", "blocked_until_sandbox_and_egress_firewall"] },
+        "lifecycle_scripts_present": { "type": "boolean" },
+        "lifecycle_scripts": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["script", "command", "command_sha256"],
+            "properties": {
+              "script": { "enum": ["preinstall", "install", "postinstall", "prepare"] },
+              "command": { "type": "string" },
+              "command_sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" }
+            },
+            "additionalProperties": true
+          }
+        },
+        "default_install_lifecycle_execution": { "const": false },
+        "default_command_uses_ignore_scripts": { "type": "boolean" },
+        "lifecycle_enabled_install_status": { "enum": ["not_required", "blocked_until_sandbox_and_egress_firewall"] },
+        "egress_firewall": {
+          "type": "object",
+          "required": ["external_network_allowed"],
+          "properties": {
+            "external_network_allowed": { "const": false }
+          },
+          "additionalProperties": true
+        },
+        "required_sandbox_evidence": {
+          "type": "object",
+          "required": ["egress_firewall_default_deny", "dot_env_reads_allowed", "workspace_escape_allowed", "required_artifacts"],
+          "properties": {
+            "egress_firewall_default_deny": { "const": true },
+            "dot_env_reads_allowed": { "const": false },
+            "workspace_escape_allowed": { "const": false },
+            "required_artifacts": { "type": "array", "contains": { "const": "egress-firewall-log.json" } }
+          },
+          "additionalProperties": true
+        }
+      },
+      "additionalProperties": true
+    },
+    "network_allowlist_enforcement": {
+      "type": "object",
+      "required": ["status", "policy", "allowlist_hosts"],
+      "properties": {
+        "status": { "enum": ["passed", "blocked", "pending_approval", "skipped"] },
+        "policy": { "type": "string", "minLength": 1 },
+        "allowlist_hosts": { "type": "array", "items": { "type": "string" } },
+        "registry_allowlist": { "type": "array", "items": { "type": "string" } },
+        "before_violations": { "type": "array" },
+        "after_violations": { "type": "array" }
+      },
+      "additionalProperties": true
+    },
+    "execution_evidence": {
+      "type": "object",
+      "required": ["status", "artifacts", "reason"],
+      "properties": {
+        "status": { "enum": ["not_executed_pending_approval", "skipped", "executed", "blocked"] },
+        "artifacts": { "type": "array", "items": { "type": "string", "pattern": "^\\.ai-web/runs/.+/artifacts/(?:sbom|package-audit)\\.json$" } },
+        "reason": { "type": "string" }
+      },
+      "additionalProperties": true
+    },
+    "evidence_refs": { "type": "object" },
+    "blocking_issues": { "type": "array", "items": { "type": "string" } }
+  },
+  "additionalProperties": true
+}

@@ -1,0 +1,72 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://aiweb.local/schemas/engine-run-openai-agents-sdk-result.schema.json",
+  "title": "Engine Run OpenAI Agents SDK Worker Adapter Result",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "adapter",
+    "status",
+    "structured_events",
+    "artifact_refs",
+    "changed_file_manifest",
+    "proposed_tool_requests",
+    "risk_notes",
+    "blocking_issues"
+  ],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "adapter": { "const": "openai_agents_sdk" },
+    "status": {
+      "enum": ["patched", "no_changes", "blocked", "failed", "reported"]
+    },
+    "structured_events": {
+      "type": "array",
+      "items": { "type": "object" }
+    },
+    "artifact_refs": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "pattern": "^(?:_aiweb/|src/|app/|components/|pages/|styles/|test/|tests/|public/|lib/|package\\.json$)"
+      }
+    },
+    "changed_file_manifest": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "not": {
+          "anyOf": [
+            { "pattern": "^/" },
+            { "pattern": "^[A-Za-z]:[\\\\/]" },
+            { "pattern": "(?:^|/)\\.env(?:\\.|/|$)" }
+          ]
+        }
+      }
+    },
+    "proposed_tool_requests": {
+      "type": "array",
+      "items": { "type": "object" }
+    },
+    "risk_notes": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "blocking_issues": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "sdk_trace": {
+      "type": "object",
+      "properties": {
+        "api": { "type": "string" },
+        "agent_class": { "type": "string" },
+        "runner_has_run_sync": { "type": "boolean" },
+        "model_call_attempted": { "type": "boolean" },
+        "model_call_allowed": { "type": "boolean" }
+      },
+      "additionalProperties": true
+    }
+  },
+  "additionalProperties": true
+}

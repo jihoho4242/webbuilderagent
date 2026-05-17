@@ -1,0 +1,186 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://aiweb.local/schemas/engine-scheduler-daemon.schema.json",
+  "title": "Engine Scheduler Daemon",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "status",
+    "daemon_driver",
+    "service_driver",
+    "service_type",
+    "action",
+    "decision",
+    "mode",
+    "run_selector",
+    "selected_run_id",
+    "approved",
+    "execute",
+    "dry_run",
+    "max_ticks",
+    "interval_seconds",
+    "tick_count",
+    "stop_reason",
+    "daemon_artifact_path",
+    "heartbeat_path",
+    "worker_pool_path",
+    "leases_path",
+    "queue_ledger_path",
+    "ledger_path",
+    "worker_pool",
+    "heartbeat",
+    "leases",
+    "queue_events",
+    "ticks",
+    "service_records",
+    "blocking_issues",
+    "limitations"
+  ],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "status": { "enum": ["recorded", "blocked", "dry_run"] },
+    "daemon_driver": { "const": "aiweb.engine_scheduler.daemon.v1" },
+    "service_driver": { "const": "aiweb.engine_scheduler.service.v1" },
+    "service_type": { "const": "project_local_durable_graph_scheduler_daemon" },
+    "action": { "const": "daemon" },
+    "decision": { "enum": ["daemon_recorded", "blocked"] },
+    "mode": { "enum": ["foreground_bounded_loop", "foreground_long_running_loop"] },
+    "run_selector": { "type": "string" },
+    "selected_run_id": { "type": ["string", "null"], "pattern": "^engine-run-" },
+    "derived_start_node_id": { "type": ["string", "null"] },
+    "approved": { "type": "boolean" },
+    "execute": { "type": "boolean" },
+    "dry_run": { "type": "boolean" },
+    "max_ticks": { "type": "integer", "minimum": 0, "maximum": 1000 },
+    "interval_seconds": { "type": "number", "minimum": 0, "maximum": 60 },
+    "tick_count": { "type": "integer", "minimum": 1 },
+    "stop_reason": {
+      "enum": ["no_selected_run", "terminal_or_no_runnable_work", "blocked", "resume_ready_deferred", "resume_ready_execute_pending", "resume_ready_executed", "max_ticks_reached", "interrupted_or_unbounded_loop_exit"]
+    },
+    "daemon_artifact_path": { "const": ".ai-web/scheduler/daemon.json" },
+    "heartbeat_path": { "const": ".ai-web/scheduler/daemon-heartbeat.json" },
+    "worker_pool_path": { "const": ".ai-web/scheduler/worker-pool.json" },
+    "leases_path": { "const": ".ai-web/scheduler/leases.json" },
+    "queue_ledger_path": { "const": ".ai-web/scheduler/queue-ledger.jsonl" },
+    "ledger_path": { "const": ".ai-web/scheduler/ledger.jsonl" },
+    "execution_attempted": { "type": "boolean" },
+    "execution_status": { "enum": ["completed", "completed_with_nonpassing_status"] },
+    "execution_summary": {
+      "type": "object",
+      "required": ["service_count", "services"],
+      "properties": {
+        "service_count": { "type": "integer", "minimum": 1 },
+        "services": { "type": "array", "items": { "type": "object" } }
+      },
+      "additionalProperties": true
+    },
+    "execution_queue_events": { "type": "array", "items": { "type": "object" } },
+    "worker_pool": {
+      "type": "object",
+      "required": ["schema_version", "pool_driver", "pool_type", "status", "max_workers", "active_lease_count", "concurrency_enforced", "queue_policy", "lease_policy", "stale_lease_recovery_policy", "lease_timeout_seconds", "executor", "distributed", "worker_slots", "active_leases", "limitations"],
+      "properties": {
+        "schema_version": { "const": 1 },
+        "pool_driver": { "const": "aiweb.engine_scheduler.worker_pool.v1" },
+        "pool_type": { "const": "project_local_scheduler_worker_pool_contract" },
+        "status": { "const": "recorded" },
+        "max_workers": { "type": "integer", "minimum": 1, "maximum": 16 },
+        "active_lease_count": { "type": "integer", "minimum": 0 },
+        "concurrency_enforced": { "type": "boolean" },
+        "queue_policy": { "const": "explicit_or_latest_engine_run_only" },
+        "lease_policy": { "const": "single_start_node_lease_per_run" },
+        "stale_lease_recovery_policy": { "const": "expired_or_ttl_elapsed_active_lease_may_be_reclaimed" },
+        "lease_timeout_seconds": { "const": 300 },
+        "executor": { "const": "engine_run_resume_bridge" },
+        "distributed": { "const": false },
+        "worker_slots": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "required": ["slot_id", "state", "run_id", "lease_id"],
+            "properties": {
+              "slot_id": { "type": "string" },
+              "state": { "enum": ["available", "claimed", "running", "blocked"] },
+              "run_id": { "type": ["string", "null"] },
+              "lease_id": { "type": ["string", "null"] }
+            },
+            "additionalProperties": true
+          }
+        },
+        "active_leases": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["lease_id", "claim_key", "run_id", "start_node_id", "state", "claimed_at", "expires_at", "worker_slot_id", "duplicate_claim_prevented"],
+            "properties": {
+              "lease_id": { "type": ["string", "null"] },
+              "claim_key": { "type": "string" },
+              "run_id": { "type": "string", "pattern": "^engine-run-" },
+              "start_node_id": { "type": "string" },
+              "state": { "enum": ["claimed_deferred", "running", "renewed", "released", "expired", "failed"] },
+              "claimed_at": { "type": "string" },
+              "expires_at": { "type": "string" },
+              "worker_slot_id": { "type": ["string", "null"] },
+              "duplicate_claim_prevented": { "const": true }
+            },
+            "additionalProperties": true
+          }
+        },
+        "limitations": { "type": "array", "items": { "type": "string" } }
+      },
+      "additionalProperties": true
+    },
+    "heartbeat": {
+      "type": "object",
+      "required": ["schema_version", "daemon_driver", "status", "pid", "selected_run_id", "tick_count", "stop_reason", "active_lease_count", "recorded_at"],
+      "properties": {
+        "schema_version": { "const": 1 },
+        "daemon_driver": { "const": "aiweb.engine_scheduler.daemon.v1" },
+        "status": { "enum": ["recorded", "blocked", "dry_run"] },
+        "pid": { "type": "integer" },
+        "selected_run_id": { "type": ["string", "null"] },
+        "tick_count": { "type": "integer", "minimum": 1 },
+        "stop_reason": { "type": "string" },
+        "active_lease_count": { "type": "integer", "minimum": 0 },
+        "recorded_at": { "type": "string" }
+      },
+      "additionalProperties": true
+    },
+    "leases": {
+      "type": "object",
+      "required": ["schema_version", "lease_driver", "status", "active_lease_count", "leases", "duplicate_claims_blocked", "stale_lease_recovery_policy", "stale_lease_timeout_seconds", "stale_leases_recovered"],
+      "properties": {
+        "schema_version": { "const": 1 },
+        "lease_driver": { "const": "aiweb.engine_scheduler.worker_pool.v1" },
+        "status": { "enum": ["recorded", "blocked", "dry_run"] },
+        "active_lease_count": { "type": "integer", "minimum": 0 },
+        "leases": { "type": "array", "items": { "type": "object" } },
+        "duplicate_claims_blocked": { "type": "array", "items": { "type": "object" } },
+        "stale_lease_recovery_policy": { "const": "expired_or_ttl_elapsed_active_lease_may_be_reclaimed" },
+        "stale_lease_timeout_seconds": { "const": 300 },
+        "stale_leases_recovered": { "type": "array", "items": { "type": "object" } }
+      },
+      "additionalProperties": true
+    },
+    "queue_events": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["schema_version", "event_type", "status", "recorded_at"],
+        "properties": {
+          "schema_version": { "const": 1 },
+          "event_type": { "enum": ["scheduler.tick", "scheduler.lease.claimed", "scheduler.lease.blocked", "scheduler.lease.released", "scheduler.lease.stale_recovered", "scheduler.execution.finished"] },
+          "status": { "enum": ["recorded", "blocked", "dry_run"] },
+          "recorded_at": { "type": "string" }
+        },
+        "additionalProperties": true
+      }
+    },
+    "ticks": { "type": "array", "minItems": 1, "items": { "type": "object" } },
+    "service_records": { "type": "array", "minItems": 1, "items": { "type": "object" } },
+    "blocking_issues": { "type": "array", "items": { "type": "string" } },
+    "limitations": { "type": "array", "items": { "type": "string" } }
+  },
+  "additionalProperties": true
+}

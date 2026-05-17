@@ -27,3 +27,36 @@ jobs:
 
       - name: Run repository checks
         run: ruby bin/check
+
+  engine-runtime-matrix-smoke:
+    name: Engine runtime matrix smoke (Docker/Podman)
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Ruby
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: "3.4"
+
+      - name: Install Podman
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y podman
+
+      - name: Run real Docker/Podman engine runtime matrix smoke
+        shell: bash
+        run: |
+          set -o pipefail
+          mkdir -p .ai-web/ci
+          ruby bin/engine-runtime-matrix-check --json | tee .ai-web/ci/engine-runtime-matrix-smoke.json
+
+      - name: Upload runtime matrix evidence
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: engine-runtime-matrix-smoke
+          path: .ai-web/ci/engine-runtime-matrix-smoke.json
+          if-no-files-found: error

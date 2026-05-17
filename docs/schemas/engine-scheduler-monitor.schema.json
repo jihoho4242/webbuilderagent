@@ -1,0 +1,387 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://aiweb.local/schemas/engine-scheduler-monitor.schema.json",
+  "title": "Engine Scheduler Monitor",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "status",
+    "health_status",
+    "monitor_driver",
+    "daemon_driver",
+    "worker_pool_driver",
+    "supervisor_driver",
+    "service_type",
+    "action",
+    "dry_run",
+    "monitor_artifact_path",
+    "recorded_at",
+    "checks",
+    "production_readiness",
+    "limitations",
+    "blocking_issues"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "status": {
+      "enum": [
+        "recorded",
+        "dry_run"
+      ]
+    },
+    "health_status": {
+      "enum": [
+        "healthy",
+        "degraded",
+        "missing"
+      ]
+    },
+    "monitor_driver": {
+      "const": "aiweb.engine_scheduler.monitor.v1"
+    },
+    "daemon_driver": {
+      "const": "aiweb.engine_scheduler.daemon.v1"
+    },
+    "worker_pool_driver": {
+      "const": "aiweb.engine_scheduler.worker_pool.v1"
+    },
+    "supervisor_driver": {
+      "const": "aiweb.engine_scheduler.supervisor.v1"
+    },
+    "service_type": {
+      "const": "project_local_scheduler_monitor"
+    },
+    "action": {
+      "const": "monitor"
+    },
+    "dry_run": {
+      "type": "boolean"
+    },
+    "monitor_artifact_path": {
+      "const": ".ai-web/scheduler/monitor.json"
+    },
+    "recorded_at": {
+      "type": "string"
+    },
+    "checks": {
+      "type": "object",
+      "required": [
+        "heartbeat",
+        "leases",
+        "queue_ledger",
+        "worker_pool",
+        "supervisor"
+      ],
+      "properties": {
+        "heartbeat": {
+          "type": "object",
+          "required": [
+            "path",
+            "present",
+            "status",
+            "timeout_seconds"
+          ],
+          "properties": {
+            "path": {
+              "const": ".ai-web/scheduler/daemon-heartbeat.json"
+            },
+            "present": {
+              "type": "boolean"
+            },
+            "status": {
+              "enum": [
+                "fresh",
+                "stale",
+                "missing",
+                "invalid"
+              ]
+            },
+            "recorded_at": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "age_seconds": {
+              "type": [
+                "number",
+                "null"
+              ]
+            },
+            "timeout_seconds": {
+              "const": 300
+            },
+            "pid": {
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "selected_run_id": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "stop_reason": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "active_lease_count": {
+              "type": [
+                "integer",
+                "null"
+              ]
+            }
+          },
+          "additionalProperties": true
+        },
+        "leases": {
+          "type": "object",
+          "required": [
+            "path",
+            "present",
+            "status",
+            "active_lease_count",
+            "stale_active_lease_count",
+            "duplicate_active_claim_count"
+          ],
+          "properties": {
+            "path": {
+              "const": ".ai-web/scheduler/leases.json"
+            },
+            "present": {
+              "type": "boolean"
+            },
+            "status": {
+              "enum": [
+                "healthy",
+                "degraded",
+                "missing"
+              ]
+            },
+            "active_lease_count": {
+              "type": "integer"
+            },
+            "stale_active_lease_count": {
+              "type": "integer"
+            },
+            "duplicate_active_claim_count": {
+              "type": "integer"
+            },
+            "duplicate_claim_keys": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "stale_claim_keys": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          },
+          "additionalProperties": true
+        },
+        "queue_ledger": {
+          "type": "object",
+          "required": [
+            "path",
+            "present",
+            "status",
+            "event_count",
+            "parse_error_count"
+          ],
+          "properties": {
+            "path": {
+              "const": ".ai-web/scheduler/queue-ledger.jsonl"
+            },
+            "present": {
+              "type": "boolean"
+            },
+            "status": {
+              "enum": [
+                "healthy",
+                "degraded",
+                "missing"
+              ]
+            },
+            "event_count": {
+              "type": "integer"
+            },
+            "parse_error_count": {
+              "type": "integer"
+            },
+            "last_event_type": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "last_recorded_at": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "additionalProperties": true
+        },
+        "worker_pool": {
+          "type": "object",
+          "required": [
+            "path",
+            "present",
+            "status",
+            "concurrency_enforced"
+          ],
+          "properties": {
+            "path": {
+              "const": ".ai-web/scheduler/worker-pool.json"
+            },
+            "present": {
+              "type": "boolean"
+            },
+            "status": {
+              "enum": [
+                "healthy",
+                "degraded",
+                "missing"
+              ]
+            },
+            "pool_driver": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "max_workers": {
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "active_lease_count": {
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "concurrency_enforced": {
+              "type": [
+                "boolean",
+                "null"
+              ]
+            },
+            "distributed": {
+              "type": [
+                "boolean",
+                "null"
+              ]
+            }
+          },
+          "additionalProperties": true
+        },
+        "supervisor": {
+          "type": "object",
+          "required": [
+            "path",
+            "present",
+            "status",
+            "os_service_installed_observed"
+          ],
+          "properties": {
+            "path": {
+              "const": ".ai-web/scheduler/supervisor.json"
+            },
+            "present": {
+              "type": "boolean"
+            },
+            "status": {
+              "enum": [
+                "contract_only",
+                "missing"
+              ]
+            },
+            "install_status": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "install_performed": {
+              "type": [
+                "boolean",
+                "null"
+              ]
+            },
+            "os_service_installed_observed": {
+              "const": false
+            },
+            "supervisor_contract_recorded": {
+              "type": [
+                "boolean",
+                "null"
+              ]
+            },
+            "distributed_worker_cluster": {
+              "type": [
+                "boolean",
+                "null"
+              ]
+            }
+          },
+          "additionalProperties": true
+        }
+      },
+      "additionalProperties": false
+    },
+    "production_readiness": {
+      "type": "object",
+      "required": [
+        "monitor_artifact_recorded",
+        "os_service_health_observed",
+        "distributed_worker_cluster",
+        "remote_queue",
+        "node_body_executor"
+      ],
+      "properties": {
+        "monitor_artifact_recorded": {
+          "type": "boolean"
+        },
+        "os_service_health_observed": {
+          "const": false
+        },
+        "distributed_worker_cluster": {
+          "const": false
+        },
+        "remote_queue": {
+          "const": false
+        },
+        "node_body_executor": {
+          "const": "engine_run_resume_bridge"
+        }
+      },
+      "additionalProperties": false
+    },
+    "limitations": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "string"
+      }
+    },
+    "blocking_issues": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
+  },
+  "additionalProperties": true
+}

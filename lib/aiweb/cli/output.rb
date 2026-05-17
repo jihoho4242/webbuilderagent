@@ -21,8 +21,18 @@ module Aiweb
           observability-summary [--limit N] (alias: summary)
           run-cancel [--run-id active|ID] [--force]
           run-resume [--run-id latest|ID]
-          engine-run [--goal "..."] [--agent codex|openmanus] [--mode safe_patch|agentic_local] [--sandbox docker|podman] [--max-cycles N] [--run-id RUN_ID] [--approved] [--approval-hash HASH]
+          engine-run [--goal "..."] [--agent codex|openmanus|openhands|langgraph|openai_agents_sdk] [--mode safe_patch|agentic_local] [--sandbox docker|podman] [--max-cycles N] [--run-id RUN_ID] [--approved] [--approval-hash HASH]
           engine-run --dry-run
+          engine-scheduler status [--run-id latest|ID]
+          engine-scheduler tick [--run-id latest|ID] [--approved] [--execute]
+          engine-scheduler daemon [--run-id latest|ID] [--max-ticks N] [--interval-seconds N] [--workers N] [--approved] [--execute]
+          engine-scheduler supervisor [--run-id latest|ID] [--max-ticks 0] [--interval-seconds N] [--workers N]
+          engine-scheduler monitor [--dry-run]
+          mcp-broker call --server lazyweb --tool lazyweb_health|lazyweb_search [--query QUERY] [--limit N] [--endpoint URL] [--approved]
+          mcp-broker call --server project_files --tool project_file_metadata|project_file_list|project_file_excerpt|project_file_search --query RELATIVE_PATH_OR_SEARCH [--limit N] [--approved]
+          eval-baseline validate [--path .ai-web/eval/human-baselines.json] [--fixture-id design-fixture-...]
+          eval-baseline review-pack [--fixture-id design-fixture-...] [--output .ai-web/eval/human-review-pack.json]
+          eval-baseline import --path .ai-web/eval/candidate-human-baselines.json --approved
           design-brief [--force]
           design-research [--provider lazyweb] [--policy off|opportunistic|required] [--limit N] [--force]
           design-system resolve [--force]
@@ -32,7 +42,7 @@ module Aiweb
           scaffold --profile D [--force]
           scaffold --profile S [--force]
           setup --install --dry-run
-          setup --install --approved
+          setup --install --approved [--allow-lifecycle-scripts] [--audit-exception .ai-web/approvals/setup-audit-exception.json]
           supabase-secret-qa [--force]
           supabase-local-verify [--force]
           runtime-plan (alias: scaffold-status)
@@ -81,12 +91,15 @@ module Aiweb
           design: creates deterministic HTML design candidates without app scaffold
           select-design: records selected HTML candidate without overwriting DESIGN.md
           scaffold: creates Profile D Astro-style static app skeleton or Profile S local Next.js + Supabase SSR scaffold without installing packages, creating .env.example, contacting Supabase, deploying, or running build/preview
-          setup --install: PR20 dependency install surface; --dry-run writes nothing and reports planned pnpm install/log paths, while a real install requires --approved, records stdout/stderr/setup metadata under .ai-web/runs/setup-<timestamp>/, warns on lifecycle scripts, updates safe setup state, and never builds/previews/runs QA/deploys or reads .env/.env.*
+          setup --install: PR20 dependency install surface; --dry-run writes nothing and reports planned pnpm install/log paths, while a real install requires --approved, records stdout/stderr/setup metadata under .ai-web/runs/setup-<timestamp>/, warns on lifecycle scripts, updates safe setup state, and never builds/previews/runs QA/deploys or reads .env/.env.*; --allow-lifecycle-scripts is fail-closed until sandbox and egress-firewall evidence exists; critical/high audit findings stay blocked unless --audit-exception points to an approved .ai-web/approvals JSON file with expiry and rollback plan
           supabase-secret-qa: reruns local-only Profile S secret guard QA against safe scaffold/template paths, including supabase/env.example.template, and records .ai-web/qa/supabase-secret-qa.json; --dry-run writes nothing and never reads .env/.env.*
           supabase-local-verify: verifies generated Profile S files, safe Supabase template, migrations/RLS/storage docs, and SSR client/server stubs locally, records .ai-web/qa/supabase-local-verify.json, and never creates hosted Supabase projects, runs provider CLI/network, deploys, installs, builds, previews, or reads .env/.env.*
           runtime-plan/scaffold-status: read-only runtime readiness metadata; does not install or launch Node
           run-status/run-cancel/run-resume: local run lifecycle control plane backed by .ai-web/runs/active-run.json plus per-run lifecycle/cancel/resume descriptors; status is read-only, cancel/resume support --dry-run no-write planning, cancellation is observed at lifecycle checkpoints, and resume records a descriptor without launching provider or agent commands
-          engine-run: Manus-style engine-first task runtime; --dry-run writes nothing and returns a capability envelope, planned run artifacts, event/checkpoint paths, and approval hash; approved agentic_local runs stage a filtered sandbox workspace, let codex/openmanus work there, run local verification where available, then copy back only validated safe source changes while network/install/deploy/provider CLI/git push remain elevated-approval actions
+          engine-run: Manus-style engine-first task runtime; --dry-run writes nothing and returns a capability envelope, planned run artifacts, event/checkpoint paths, and approval hash; approved agentic_local runs stage a filtered sandbox workspace, let codex/openmanus/experimental OpenHands/LangGraph/OpenAI Agents SDK work there, run local verification where available, then copy back only validated safe source changes while network/install/deploy/provider CLI/git push remain elevated-approval actions
+          engine-scheduler: project-local durable graph scheduler service surface; status is read-only, tick records .ai-web/runs/<run-id>/artifacts/scheduler-service.json plus .ai-web/scheduler/ledger.jsonl, daemon records .ai-web/scheduler/daemon.json plus heartbeat/worker-pool artifacts for a foreground loop, supervisor records .ai-web/scheduler/supervisor.json with external service-unit/runbook templates but does not install OS services, monitor records .ai-web/scheduler/monitor.json health evidence over heartbeat/leases/queue/worker-pool artifacts, and --execute resumes through the explicit engine-run bridge only with --approved
+          mcp-broker: approved implementation-worker MCP connector broker for Lazyweb health/search plus project_files metadata/list/bounded-excerpt/bounded-literal-search only; --dry-run writes nothing, unapproved calls write deny/block audit evidence only, unknown connectors record a missing-driver fail-closed contract, approved Lazyweb calls require configured credentials, approved project_files calls use no credentials/network and return metadata or safe bounded excerpts/search matches only, redact endpoint/token/output, and record .ai-web/runs/mcp-broker-*/mcp-broker.json plus side-effect-broker.jsonl
+          eval-baseline: creates human review packs and validates/imports a human-calibrated eval baseline corpus under .ai-web/eval; review-pack writes placeholders only, validate records redacted validation evidence only, import requires --approved, rejects .env/.env.* paths, raw secrets, invalid 0..100 scores, and non-human-calibrated corpora, and never fabricates reviewer evidence
           run-timeline/observability-summary: read-only timeline and compact observability rollups over safe .ai-web/runs JSON evidence; caps --limit at 50, redacts secret-like keys and .env paths, writes nothing, and launches no processes
           build: runs the scaffolded Astro build only after runtime-plan is ready and records .ai-web/runs logs
           preview: starts/stops the local scaffold dev server after runtime-plan is ready; --dry-run does not write files or launch Node
@@ -166,7 +179,10 @@ module Aiweb
       return human_intent_result(result) if result["intent"]
       return human_runtime_plan_result(result) if result["runtime_plan"]
       return human_verify_loop_result(result) if result["verify_loop"]
+      return human_engine_scheduler_result(result) if result["engine_scheduler"]
+      return human_mcp_broker_result(result) if result["mcp_broker"]
       return human_agent_run_result(result) if result["agent_run"]
+      return human_eval_baseline_result(result) if result["eval_baseline"]
       return human_repair_result(result) if result["repair_loop"]
       return human_qa_screenshot_result(result) if result["screenshot_qa"]
       return human_visual_critique_result(result) if result["visual_critique"]
@@ -186,6 +202,37 @@ module Aiweb
       [
         "Current phase: #{result["current_phase"] || "n/a"}",
         "Action taken: #{result["action_taken"] || "n/a"}",
+        "Artifacts changed: #{changed.empty? ? "none" : changed.join(", ")}",
+        "Blocking issues: #{blockers.empty? ? "none" : blockers.join("; ")}",
+        "Next command: #{result["next_action"] || "n/a"}"
+      ].join("\n")
+    end
+
+    def human_engine_scheduler_result(result)
+      scheduler = result.fetch("engine_scheduler")
+      changed = result["changed_files"] || result["artifacts_changed"] || []
+      blockers = scheduler["blocking_issues"] || result["blocking_issues"] || []
+      [
+        "Engine scheduler: #{scheduler["status"] || "n/a"}",
+        "Decision: #{scheduler["decision"] || "n/a"}",
+        "Run: #{scheduler["selected_run_id"] || "none"}",
+        "Start node: #{scheduler["derived_start_node_id"] || "none"}",
+        ("Daemon: #{scheduler["daemon_driver"]} ticks=#{scheduler["tick_count"]} stop=#{scheduler["stop_reason"]}" if scheduler["daemon_driver"]),
+        ("Supervisor: #{scheduler["supervisor_driver"]} install=#{scheduler["install_status"] || "n/a"}" if scheduler["supervisor_driver"]),
+        "Artifacts changed: #{changed.empty? ? "none" : changed.join(", ")}",
+        "Blocking issues: #{blockers.empty? ? "none" : blockers.join("; ")}",
+        "Next command: #{result["next_action"] || "n/a"}"
+      ].compact.join("\n")
+    end
+
+    def human_mcp_broker_result(result)
+      broker = result.fetch("mcp_broker")
+      changed = result["changed_files"] || result["artifacts_changed"] || []
+      blockers = broker["blocking_issues"] || result["blocking_issues"] || []
+      [
+        "MCP broker: #{broker["status"] || "n/a"}",
+        "Server/tool: #{broker["server"] || "n/a"}/#{broker["tool"] || "n/a"}",
+        "Broker: #{broker["broker_driver"] || "n/a"}",
         "Artifacts changed: #{changed.empty? ? "none" : changed.join(", ")}",
         "Blocking issues: #{blockers.empty? ? "none" : blockers.join("; ")}",
         "Next command: #{result["next_action"] || "n/a"}"
@@ -502,6 +549,29 @@ module Aiweb
         "Command: #{agent_run["command"] || "n/a"}",
         "Artifacts changed: #{changed.empty? ? "none" : changed.join(", ")}",
         "Agent run paths: #{paths.empty? ? "none" : paths.join(", ")}",
+        "Blocking issues: #{blockers.empty? ? "none" : blockers.join("; ")}",
+        "Next command: #{result["next_action"] || "n/a"}"
+      ].join("\n")
+    end
+
+    def human_eval_baseline_result(result)
+      baseline = result.fetch("eval_baseline")
+      changed = result["changed_files"] || result["artifacts_changed"] || []
+      blockers = baseline["blocking_issues"] || result["blocking_issues"] || []
+      paths = []
+      %w[source_path target_path validation_path review_pack_path planned_target_path planned_validation_path planned_review_pack_path candidate_path].each do |key|
+        value = baseline[key]
+        paths << "#{key}=#{value}" unless value.to_s.empty?
+      end
+      [
+        "Eval baseline: #{baseline["status"] || "n/a"}",
+        "Action: #{baseline["action"] || "n/a"}",
+        "Dry run: #{baseline.key?("dry_run") ? baseline["dry_run"] : "n/a"}",
+        "Approved: #{baseline.key?("approved") ? baseline["approved"] : "n/a"}",
+        "Fixtures checked: #{baseline["fixture_count"] || 0}",
+        "Calibrated fixtures: #{baseline["calibrated_fixture_count"] || 0}",
+        "Artifacts changed: #{changed.empty? ? "none" : changed.join(", ")}",
+        "Paths: #{paths.empty? ? "none" : paths.join(", ")}",
         "Blocking issues: #{blockers.empty? ? "none" : blockers.join("; ")}",
         "Next command: #{result["next_action"] || "n/a"}"
       ].join("\n")

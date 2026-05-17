@@ -1,0 +1,217 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://aiweb.local/schemas/sandbox-preflight.schema.json",
+  "title": "Engine Run Sandbox Preflight",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "status",
+    "generated_argv",
+    "resolved_executable_path",
+    "container_image",
+    "container_image_digest",
+    "container_image_inspect",
+    "runtime_info",
+    "runtime_matrix",
+    "inside_container_probe",
+    "container_id",
+    "runtime_container_inspect",
+    "effective_user",
+    "security_attestation",
+    "host_mounts",
+    "inside_mounts",
+    "network_mode",
+    "sandbox_user",
+    "egress_denial_probe",
+    "capabilities",
+    "resource_limits",
+    "negative_checks",
+    "preflight_warnings",
+    "blocking_issues"
+  ],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "status": { "enum": ["passed", "failed", "skipped"] },
+    "generated_argv": { "type": "array", "items": { "type": "string" } },
+    "resolved_executable_path": { "type": ["string", "null"] },
+    "container_image": { "type": ["string", "null"] },
+    "container_image_digest_required": { "type": "boolean" },
+    "container_image_digest_policy_source": { "type": "array", "items": { "type": "string" } },
+    "container_image_reference_pinned": { "type": "boolean" },
+    "container_image_digest": { "type": ["string", "null"] },
+    "container_image_inspect": { "type": "object" },
+    "runtime_info": { "type": "object" },
+    "runtime_matrix": {
+      "type": "object",
+      "required": ["status", "required", "selected_runtime", "requested_runtimes", "entries", "blocking_issues"],
+      "properties": {
+        "schema_version": { "const": 1 },
+        "status": { "enum": ["passed", "failed", "partial", "skipped"] },
+        "required": { "type": "boolean" },
+        "policy_source": { "type": "array", "items": { "type": "string" } },
+        "selected_runtime": { "type": ["string", "null"] },
+        "requested_runtimes": { "type": "array", "items": { "enum": ["docker", "podman"] } },
+        "entries": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["runtime", "status", "blocking_issues"],
+            "properties": {
+              "runtime": { "enum": ["docker", "podman"] },
+              "status": { "enum": ["passed", "failed"] },
+              "runtime_container_id": { "type": ["string", "null"] },
+              "runtime_container_inspect": { "type": "object" },
+              "security_attestation": { "$ref": "#/$defs/security_attestation" },
+              "egress_denial_probe": { "$ref": "#/$defs/egress_denial_probe" },
+              "effective_user": {
+                "anyOf": [
+                  { "type": "object" },
+                  { "type": "string" },
+                  { "type": "null" }
+                ]
+              },
+              "blocking_issues": { "type": "array", "items": { "type": "string" } }
+            },
+            "additionalProperties": true
+          }
+        },
+        "blocking_issues": { "type": "array", "items": { "type": "string" } }
+      },
+      "additionalProperties": true
+    },
+    "inside_container_probe": {
+      "type": "object",
+      "required": ["schema_version", "status"],
+      "properties": {
+        "schema_version": { "const": 1 },
+        "status": { "enum": ["passed", "failed", "skipped", "not_observed"] },
+        "runtime_container_id": { "type": ["string", "null"] },
+        "container_id": { "type": ["string", "null"] },
+        "effective_user": {
+          "type": "object",
+          "properties": {
+            "uid": { "type": ["integer", "null"] },
+            "gid": { "type": ["integer", "null"] },
+            "name": { "type": ["string", "null"] }
+          },
+          "additionalProperties": true
+        },
+        "env_guards": { "type": "object" },
+        "workspace_writable": { "type": "boolean" },
+        "root_filesystem_write_blocked": { "type": "boolean" },
+        "security_attestation": { "$ref": "#/$defs/security_attestation" },
+        "cgroup": {
+          "type": "object",
+          "properties": {
+            "source": { "const": "/proc/self/cgroup" },
+            "lines": { "type": "array", "items": { "type": "string" } }
+          },
+          "additionalProperties": true
+        },
+        "mountinfo_excerpt": {
+          "type": "object",
+          "properties": {
+            "source": { "const": "/proc/self/mountinfo" },
+            "lines": { "type": "array", "items": { "type": "string" } }
+          },
+          "additionalProperties": true
+        },
+        "egress_denial_probe": { "$ref": "#/$defs/egress_denial_probe" }
+      },
+      "additionalProperties": true
+    },
+    "container_id": { "type": ["string", "null"] },
+    "container_hostname": { "type": ["string", "null"] },
+    "runtime_container_inspect": {
+      "type": "object",
+      "required": ["status"],
+      "properties": {
+        "status": { "enum": ["passed", "failed", "not_observed"] },
+        "blocking_issues": { "type": "array", "items": { "type": "string" } },
+        "container_id": { "type": ["string", "null"] },
+        "name": { "type": ["string", "null"] },
+        "image": { "type": ["string", "null"] },
+        "state": { "type": "object" },
+        "config_user": { "type": ["string", "null"] },
+        "expected_workspace_source": { "type": ["string", "null"] },
+        "host_config": {
+          "type": "object",
+          "properties": {
+            "network_mode": { "type": ["string", "null"] },
+            "readonly_rootfs": { "type": ["boolean", "null"] },
+            "cap_drop": { "type": "array", "items": { "type": "string" } },
+            "security_opt": { "type": "array", "items": { "type": "string" } },
+            "pids_limit": { "type": ["integer", "null"] },
+            "memory": { "type": ["integer", "null"] },
+            "nano_cpus": { "type": ["integer", "null"] }
+          },
+          "additionalProperties": true
+        },
+        "apparmor_profile": { "type": ["string", "null"] },
+        "process_label": { "type": ["string", "null"] },
+        "mounts": { "type": "array", "items": { "type": "object" } }
+      },
+      "additionalProperties": true
+    },
+    "effective_user": {
+      "anyOf": [
+        { "type": "object" },
+        { "type": "string" },
+        { "type": "null" }
+      ]
+    },
+    "security_attestation": { "$ref": "#/$defs/security_attestation" },
+    "host_mounts": { "type": "array", "items": { "type": "string" } },
+    "inside_mounts": { "type": "array", "items": { "type": "string" } },
+    "workspace_mount": { "type": ["string", "null"] },
+    "network_mode": { "type": ["string", "null"] },
+    "sandbox_user": { "type": ["string", "null"] },
+    "egress_denial_probe": { "$ref": "#/$defs/egress_denial_probe" },
+    "capabilities": { "type": "object" },
+    "seccomp_apparmor_profile": {
+      "anyOf": [
+        { "type": "string" },
+        { "type": "array", "items": { "type": "string" } },
+        { "type": "null" }
+      ]
+    },
+    "resource_limits": { "type": "object" },
+    "negative_checks": { "type": "object" },
+    "preflight_warnings": { "type": "array", "items": { "type": "string" } },
+    "blocking_issues": { "type": "array", "items": { "type": "string" } }
+  },
+  "$defs": {
+    "security_attestation": {
+      "type": "object",
+      "required": ["status", "source", "no_new_privs_enabled", "seccomp_filtering", "cap_eff_zero"],
+      "properties": {
+        "status": { "enum": ["passed", "failed", "not_observed"] },
+        "source": { "const": "/proc/self/status" },
+        "no_new_privs": { "type": ["string", "null"] },
+        "no_new_privs_enabled": { "type": "boolean" },
+        "seccomp": { "type": ["string", "null"] },
+        "seccomp_filtering": { "type": "boolean" },
+        "seccomp_filters": { "type": ["string", "null"] },
+        "cap_eff": { "type": ["string", "null"] },
+        "cap_eff_zero": { "type": "boolean" },
+        "cap_prm": { "type": ["string", "null"] },
+        "cap_bnd": { "type": ["string", "null"] }
+      },
+      "additionalProperties": true
+    },
+    "egress_denial_probe": {
+      "type": "object",
+      "required": ["status", "method"],
+      "properties": {
+        "status": { "enum": ["passed", "failed", "configured", "missing", "not_observed"] },
+        "method": { "type": "string" },
+        "target": { "type": "string" },
+        "observed": { "type": "string" },
+        "error_class": { "type": "string" },
+        "error": { "type": "string" }
+      },
+      "additionalProperties": true
+    }
+  },
+  "additionalProperties": true
+}

@@ -1,0 +1,70 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://aiweb.local/schemas/engine-run-langgraph-result.schema.json",
+  "title": "Engine Run LangGraph Worker Adapter Result",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "adapter",
+    "status",
+    "structured_events",
+    "artifact_refs",
+    "changed_file_manifest",
+    "proposed_tool_requests",
+    "risk_notes",
+    "blocking_issues"
+  ],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "adapter": { "const": "langgraph" },
+    "status": {
+      "enum": ["patched", "no_changes", "blocked", "failed", "reported"]
+    },
+    "structured_events": {
+      "type": "array",
+      "items": { "type": "object" }
+    },
+    "artifact_refs": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "pattern": "^(?:_aiweb/|src/|app/|components/|pages/|styles/|test/|tests/|public/|lib/|package\\.json$)"
+      }
+    },
+    "changed_file_manifest": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "not": {
+          "anyOf": [
+            { "pattern": "^/" },
+            { "pattern": "^[A-Za-z]:[\\\\/]" },
+            { "pattern": "(?:^|/)\\.env(?:\\.|/|$)" }
+          ]
+        }
+      }
+    },
+    "proposed_tool_requests": {
+      "type": "array",
+      "items": { "type": "object" }
+    },
+    "risk_notes": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "blocking_issues": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "graph_trace": {
+      "type": "object",
+      "properties": {
+        "api": { "type": "string" },
+        "nodes": { "type": "array", "items": { "type": "string" } },
+        "edges": { "type": "array", "items": { "type": "array" } }
+      },
+      "additionalProperties": true
+    }
+  },
+  "additionalProperties": true
+}

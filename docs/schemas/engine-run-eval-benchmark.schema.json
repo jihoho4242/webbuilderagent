@@ -1,0 +1,104 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://aiweb.local/schemas/engine-run-eval-benchmark.schema.json",
+  "title": "Engine Run Eval Benchmark",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "status",
+    "benchmark_id",
+    "recorded_at",
+    "human_calibration_status",
+    "baseline_source",
+    "thresholds",
+    "viewport_matrix",
+    "metrics",
+    "current_scores",
+    "regression_gate",
+    "repair_cycles",
+    "approval_count",
+    "unsafe_action_blocked",
+    "time_to_pass",
+    "token_tool_cost",
+    "evidence_refs",
+    "blocking_issues"
+  ],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "status": { "enum": ["passed", "failed", "blocked", "skipped"] },
+    "benchmark_id": { "type": "string", "pattern": "^eval-benchmark-[a-f0-9]{16}$" },
+    "recorded_at": { "type": "string", "minLength": 1 },
+    "fixture_id": { "type": ["string", "null"], "pattern": "^design-fixture-" },
+    "human_calibration_status": { "enum": ["missing", "seeded", "calibrated", "invalid"] },
+    "baseline_source": { "type": "object" },
+    "thresholds": {
+      "type": "object",
+      "required": [
+        "task_success_required",
+        "build_pass_required_when_script_exists",
+        "test_pass_required_when_script_exists",
+        "browser_evidence_required_when_design_ready",
+        "human_calibration_required_for_claiming_human_grade_eval"
+      ],
+      "additionalProperties": true
+    },
+    "viewport_matrix": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["viewport", "status"],
+        "properties": {
+          "viewport": { "type": "string" },
+          "expected": { "type": ["string", "null"] },
+          "evidence_required": { "type": "array", "items": { "type": "string" } },
+          "screenshot_path": { "type": ["string", "null"] },
+          "screenshot_sha256": { "type": ["string", "null"], "pattern": "^sha256:[a-f0-9]{64}$" },
+          "status": { "enum": ["captured", "missing"] }
+        },
+        "additionalProperties": true
+      }
+    },
+    "metrics": {
+      "type": "object",
+      "required": [
+        "task_success",
+        "build_pass",
+        "test_pass",
+        "visual_fidelity",
+        "interaction_pass",
+        "action_recovery_pass",
+        "browser_action_loop_pass",
+        "a11y_pass",
+        "browser_console_clean",
+        "browser_network_clean",
+        "repair_cycles",
+        "approval_count",
+        "unsafe_action_blocked",
+        "preview_ready"
+      ],
+      "additionalProperties": true
+    },
+    "current_scores": { "type": "object" },
+    "regression_gate": {
+      "type": "object",
+      "required": ["status", "enforced", "mode", "human_calibration_status", "checked_metrics", "blocking_issues"],
+      "properties": {
+        "status": { "enum": ["passed", "failed", "skipped"] },
+        "enforced": { "type": "boolean" },
+        "mode": { "enum": ["human_calibrated_thresholds", "evidence_gate_only_no_human_baseline"] },
+        "human_calibration_status": { "enum": ["missing", "seeded", "calibrated", "invalid"] },
+        "checked_metrics": { "type": "array", "items": { "type": "string" } },
+        "blocking_issues": { "type": "array", "items": { "type": "string" } }
+      },
+      "additionalProperties": true
+    },
+    "repair_cycles": { "type": "integer", "minimum": 0 },
+    "approval_count": { "type": "integer", "minimum": 0 },
+    "unsafe_action_blocked": { "type": "boolean" },
+    "time_to_pass": { "type": "object" },
+    "token_tool_cost": { "type": "object" },
+    "evidence_refs": { "type": "object" },
+    "blocking_issues": { "type": "array", "items": { "type": "string" } }
+  },
+  "additionalProperties": true
+}

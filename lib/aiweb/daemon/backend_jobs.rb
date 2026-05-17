@@ -173,16 +173,71 @@ module Aiweb
 
     def backend_append_event(path, type, message, data = {})
       FileUtils.mkdir_p(File.dirname(path))
+      seq = backend_next_event_seq(path)
+      run_id = data.fetch(:run_id, data.fetch("run_id", File.basename(File.dirname(path)))).to_s
       event = {
         "schema_version" => 1,
-        "seq" => backend_next_event_seq(path),
+        "seq" => seq,
+        "run_id" => run_id,
+        "actor" => "aiweb.engine_run",
+        "phase" => type.to_s.split(".").first.to_s,
+        "trace_span_id" => "span-#{seq.to_s.rjust(6, "0")}-#{type.to_s.gsub(/[^a-z0-9]+/i, "-")}",
         "type" => type,
-        "message" => message,
+        "message" => backend_redact_event_text(message.to_s),
         "at" => now_utc,
-        "data" => data
+        "data" => backend_redact_event_value(data),
+        "redaction_status" => "redacted_at_source",
+        "previous_event_hash" => backend_previous_event_hash(path)
       }
+      event["event_hash"] = backend_event_hash(event)
       File.open(path, "a") { |file| file.write(JSON.generate(event) + "\n") }
       event
+    end
+
+    def backend_previous_event_hash(path)
+      return nil unless File.file?(path)
+
+      File.readlines(path).reverse_each do |line|
+        parsed = JSON.parse(line)
+        hash = parsed["event_hash"].to_s
+        return hash if hash.match?(/\Asha256:[a-f0-9]{64}\z/)
+      rescue JSON::ParserError
+        next
+      end
+      nil
+    rescue SystemCallError
+      nil
+    end
+
+    def backend_event_hash(event)
+      payload = event.reject { |key, _value| key == "event_hash" }
+      "sha256:#{Digest::SHA256.hexdigest(JSON.generate(payload))}"
+    end
+
+    def backend_redact_event_value(value, depth = 0)
+      return "[redacted-depth-limit]" if depth > 8
+
+      case value
+      when Hash
+        value.each_with_object({}) do |(key, item), memo|
+          key = key.to_s
+          memo[key] = key.match?(/secret|token|password|api[_-]?key|credential/i) ? "[redacted]" : backend_redact_event_value(item, depth + 1)
+        end
+      when Array
+        value.map { |item| backend_redact_event_value(item, depth + 1) }
+      when String
+        backend_redact_event_text(value)
+      else
+        value
+      end
+    end
+
+    def backend_redact_event_text(value)
+      text = value.to_s
+      pattern = self.class.const_defined?(:SECRET_VALUE_PATTERN) ? self.class::SECRET_VALUE_PATTERN : /a^/
+      text = text.gsub(pattern, "[redacted]")
+      text = text.gsub(/\b[A-Z0-9_]*(?:SECRET|TOKEN|PASSWORD|PRIVATE[_-]?KEY|API[_-]?KEY|CREDENTIAL)[A-Z0-9_]*=[^\s]+/i, "[redacted]")
+      text.gsub(/([?&](?:access_token|api[_-]?key|key|password|secret|token)=)[^&\s]+/i, "\\1[redacted]")
     end
 
     def backend_next_event_seq(path)

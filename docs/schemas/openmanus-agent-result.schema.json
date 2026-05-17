@@ -53,6 +53,7 @@
         "validator_result",
         "network_log",
         "browser_request_log",
+        "tool_broker_log",
         "denied_access_log"
       ],
       "additionalProperties": { "type": ["string", "null"] }

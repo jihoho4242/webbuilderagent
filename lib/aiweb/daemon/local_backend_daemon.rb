@@ -55,8 +55,22 @@ module Aiweb
         return
       end
       body = read_body(client, headers)
-      status, payload = app.call(method.to_s, target.to_s, headers, body)
-      write_json(client, status, payload, origin: headers["origin"])
+      status, payload, response = app.call(method.to_s, target.to_s, headers, body)
+      if response.to_h["content_type"] == "text/event-stream"
+        write_text(
+          client,
+          status,
+          payload.to_s,
+          content_type: "text/event-stream",
+          origin: headers["origin"],
+          extra_headers: {
+            "Cache-Control" => response.to_h.fetch("cache_control", "no-cache"),
+            "X-Accel-Buffering" => response.to_h.fetch("x_accel_buffering", "no")
+          }
+        )
+      else
+        write_json(client, status, payload, origin: headers["origin"])
+      end
     rescue UserError => e
       status = e.exit_code == 5 ? 403 : 400
       write_json(client, status, "schema_version" => 1, "status" => "error", "error" => e.message, "blocking_issues" => [e.message])
@@ -129,7 +143,10 @@ module Aiweb
     end
 
     def write_json(client, status, payload, origin: nil)
-      body = JSON.generate(payload)
+      write_text(client, status, JSON.generate(payload), content_type: "application/json", origin: origin)
+    end
+
+    def write_text(client, status, body, content_type:, origin: nil, extra_headers: {})
       reason = status == 200 ? "OK" : (status == 204 ? "No Content" : "Error")
       cors_origin = LocalBackendApp.allowed_origin?(origin) && !origin.to_s.strip.empty? ? origin.to_s.strip : nil
       cors_headers = +""
@@ -137,12 +154,19 @@ module Aiweb
         cors_headers << "Access-Control-Allow-Origin: #{cors_origin}\r\n"
         cors_headers << "Vary: Origin\r\n"
       end
+      response_headers = +""
+      extra_headers.each do |name, value|
+        next if name.to_s.empty? || value.to_s.empty?
+
+        response_headers << "#{name}: #{value}\r\n"
+      end
       client.write(
         "HTTP/1.1 #{status} #{reason}\r\n" \
-        "Content-Type: application/json\r\n" \
+        "Content-Type: #{content_type}\r\n" \
         "#{cors_headers}" \
+        "#{response_headers}" \
         "Access-Control-Allow-Methods: GET, POST, OPTIONS\r\n" \
-        "Access-Control-Allow-Headers: Content-Type, X-Aiweb-Token, X-Aiweb-Approval-Token\r\n" \
+        "Access-Control-Allow-Headers: Content-Type, Authorization, X-Aiweb-Token, X-Aiweb-Approval-Token, #{LocalBackendApp::CLAIM_HEADER_NAMES.join(", ")}\r\n" \
         "Content-Length: #{body.bytesize}\r\n" \
         "Connection: close\r\n" \
         "\r\n" \
