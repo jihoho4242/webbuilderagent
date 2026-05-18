@@ -332,10 +332,10 @@ module Aiweb
       if path.end_with?("lib/aiweb/project/deploy.rb") && line.include?("Open3.capture3") && context.include?("append_side_effect_broker_event")
         return side_effect_classification("brokered_deploy_provider_cli", "brokered", "aiweb.deploy.side_effect_broker", "deploy provider CLI execution is gated by approval/provenance checks and emits side-effect broker events")
       end
-      if path.end_with?("lib/aiweb/project/deploy.rb") && line.match?(/git.*status/)
+      if (path.end_with?("lib/aiweb/project/deploy.rb") || path.end_with?("lib/aiweb/project/deploy/provenance.rb")) && line.match?(/git.*status/)
         return side_effect_classification("local_read_only_git_provenance", "documented_exception", nil, "git status subprocess is local read-only deploy provenance collection")
       end
-      if path.end_with?("lib/aiweb/project/deploy.rb") && line.include?("Open3.capture3")
+      if (path.end_with?("lib/aiweb/project/deploy.rb") || path.end_with?("lib/aiweb/project/deploy/provenance.rb")) && line.include?("Open3.capture3")
         return side_effect_classification("local_tool_version_probe", "documented_exception", nil, "tool version subprocesses are short local readiness probes with a timeout and clean environment")
       end
       if path.end_with?("lib/aiweb/project/agent_run/openmanus.rb") && line.include?("image\", \"inspect")
@@ -344,7 +344,7 @@ module Aiweb
       if path.end_with?("lib/aiweb/project/agent_run/openmanus.rb") && line.include?("Open3.popen3")
         return side_effect_classification("brokered_openmanus_sandbox_subprocess", "brokered", "aiweb.openmanus.tool_broker", "OpenManus runs in an aiweb-managed sandbox with clean environment, network disabled, PATH-prepended tool broker, and copied-back scoped outputs")
       end
-      if path.end_with?("lib/aiweb/project/runtime_commands/setup.rb") && line.include?("Open3.capture3") && context.include?("append_side_effect_broker_event")
+      if (path.end_with?("lib/aiweb/project/runtime_commands/setup.rb") || path.end_with?("lib/aiweb/project/runtime_commands/setup/supply_chain.rb")) && line.include?("Open3.capture3") && context.include?("append_side_effect_broker_event")
         return side_effect_classification("brokered_setup_supply_chain_command", "brokered", "aiweb.setup.side_effect_broker", "setup package-manager/SBOM/audit subprocess is surrounded by broker events")
       end
       if path.end_with?("lib/aiweb/project/runtime_commands.rb") && line.include?("system(")
@@ -380,7 +380,7 @@ module Aiweb
       if path.end_with?("lib/aiweb/project/agent_run.rb") && line.match?(/git.*diff|git.*status/)
         return side_effect_classification("local_read_only_git_evidence", "documented_exception", nil, "git diff/status subprocesses are local read-only evidence collection for bounded agent-run")
       end
-      if path.end_with?("lib/aiweb/project/agent_run.rb") && line.include?("Open3.capture3")
+      if (path.end_with?("lib/aiweb/project/agent_run.rb") || path.end_with?("lib/aiweb/project/agent_run/codex_runner.rb")) && line.include?("Open3.capture3")
         return side_effect_classification("legacy_agent_run_worker_subprocess", "documented_exception", nil, "legacy agent-run worker subprocess is bounded by agent-run context and OpenManus tool-broker log evidence; not a universal broker path")
       end
       if path.end_with?("lib/aiweb/project/runtime_commands.rb") && line.include?("Open3.capture3")
