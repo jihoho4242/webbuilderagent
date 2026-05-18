@@ -28,6 +28,15 @@ module Aiweb
       EXIT_VALIDATION_FAILED
     end
 
+    def agent_exit_code(result)
+      status = result.dig("agent_runtime", "status").to_s
+      return EXIT_SUCCESS if %w[complete partial_not_complete].include?(status)
+      return EXIT_PHASE_BLOCKED if status == "blocked"
+      return EXIT_VALIDATION_FAILED if status == "failed_validation"
+
+      EXIT_SUCCESS
+    end
+
     def build_exit_code(result)
       result.dig("build", "status") == "passed" || result.dig("build", "status") == "dry_run" ? EXIT_SUCCESS : EXIT_VALIDATION_FAILED
     end
@@ -228,7 +237,7 @@ module Aiweb
 
         return EXIT_VALIDATION_FAILED
       end
-      return result.dig("runtime_plan", "readiness") == "ready" ? EXIT_SUCCESS : EXIT_VALIDATION_FAILED if RUNTIME_PLAN_COMMANDS.include?(command)
+      return %w[ready local_planning_only].include?(result.dig("runtime_plan", "readiness")) ? EXIT_SUCCESS : EXIT_VALIDATION_FAILED if RUNTIME_PLAN_COMMANDS.include?(command)
       return EXIT_SUCCESS if REGISTRY_COMMANDS.include?(command) || command == "intent"
       return run_lifecycle_exit_code(result) if %w[run-status run-cancel run-resume].include?(command)
       return EXIT_SUCCESS if %w[run-timeline timeline observability-summary summary].include?(command)
@@ -236,6 +245,7 @@ module Aiweb
       return engine_run_exit_code(result) if command == "engine-run"
       return engine_scheduler_exit_code(result) if command == "engine-scheduler"
       return mcp_broker_exit_code(result) if command == "mcp-broker"
+      return agent_exit_code(result) if command == "agent"
       return agent_run_exit_code(result) if command == "agent-run"
       return eval_baseline_exit_code(result) if %w[eval-baseline human-baseline].include?(command)
       return build_exit_code(result) if command == "build"

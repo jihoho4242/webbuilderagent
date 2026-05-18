@@ -10,8 +10,8 @@ module Aiweb
         aiweb — AI Web Director CLI
 
         Commands:
-          start [--path PATH] --idea "..." [--profile A|B|C|D] [--no-advance]
-          init [--profile A|B|C|D]
+          start [--path PATH] --idea "..." [--profile A|B|C|D|S] [--no-advance]
+          init [--profile A|B|C|D|S]
           status
           interview --idea "..."
           intent route --idea "..."
@@ -22,6 +22,7 @@ module Aiweb
           run-cancel [--run-id active|ID] [--force]
           run-resume [--run-id latest|ID]
           engine-run [--goal "..."] [--agent codex|openmanus|openhands|langgraph|openai_agents_sdk] [--mode safe_patch|agentic_local] [--sandbox docker|podman] [--max-cycles N] [--run-id RUN_ID] [--approved] [--approval-hash HASH]
+          agent "..." [--mode plan-only|supervised|autonomous-local] [--profile D|S] [--max-steps N] [--approved] [--dry-run]
           engine-run --dry-run
           engine-scheduler status [--run-id latest|ID]
           engine-scheduler tick [--run-id latest|ID] [--approved] [--execute]
@@ -94,16 +95,17 @@ module Aiweb
           setup --install: PR20 dependency install surface; --dry-run writes nothing and reports planned pnpm install/log paths, while a real install requires --approved, records stdout/stderr/setup metadata under .ai-web/runs/setup-<timestamp>/, warns on lifecycle scripts, updates safe setup state, and never builds/previews/runs QA/deploys or reads .env/.env.*; --allow-lifecycle-scripts is fail-closed until sandbox and egress-firewall evidence exists; critical/high audit findings stay blocked unless --audit-exception points to an approved .ai-web/approvals JSON file with expiry and rollback plan
           supabase-secret-qa: reruns local-only Profile S secret guard QA against safe scaffold/template paths, including supabase/env.example.template, and records .ai-web/qa/supabase-secret-qa.json; --dry-run writes nothing and never reads .env/.env.*
           supabase-local-verify: verifies generated Profile S files, safe Supabase template, migrations/RLS/storage docs, and SSR client/server stubs locally, records .ai-web/qa/supabase-local-verify.json, and never creates hosted Supabase projects, runs provider CLI/network, deploys, installs, builds, previews, or reads .env/.env.*
-          runtime-plan/scaffold-status: read-only runtime readiness metadata; does not install or launch Node
+          runtime-plan/scaffold-status: read-only profile-aware runtime readiness metadata; Profile D reports build/preview/browser QA readiness and Profile S reports local-only Supabase verification readiness without installing or launching Node
           run-status/run-cancel/run-resume: local run lifecycle control plane backed by .ai-web/runs/active-run.json plus per-run lifecycle/cancel/resume descriptors; status is read-only, cancel/resume support --dry-run no-write planning, cancellation is observed at lifecycle checkpoints, and resume records a descriptor without launching provider or agent commands
           engine-run: Manus-style engine-first task runtime; --dry-run writes nothing and returns a capability envelope, planned run artifacts, event/checkpoint paths, and approval hash; approved agentic_local runs stage a filtered sandbox workspace, let codex/openmanus/experimental OpenHands/LangGraph/OpenAI Agents SDK work there, run local verification where available, then copy back only validated safe source changes while network/install/deploy/provider CLI/git push remain elevated-approval actions
           engine-scheduler: project-local durable graph scheduler service surface; status is read-only, tick records .ai-web/runs/<run-id>/artifacts/scheduler-service.json plus .ai-web/scheduler/ledger.jsonl, daemon records .ai-web/scheduler/daemon.json plus heartbeat/worker-pool artifacts for a foreground loop, supervisor records .ai-web/scheduler/supervisor.json with external service-unit/runbook templates but does not install OS services, monitor records .ai-web/scheduler/monitor.json health evidence over heartbeat/leases/queue/worker-pool artifacts, and --execute resumes through the explicit engine-run bridge only with --approved
           mcp-broker: approved implementation-worker MCP connector broker for Lazyweb health/search plus project_files metadata/list/bounded-excerpt/bounded-literal-search only; --dry-run writes nothing, unapproved calls write deny/block audit evidence only, unknown connectors record a missing-driver fail-closed contract, approved Lazyweb calls require configured credentials, approved project_files calls use no credentials/network and return metadata or safe bounded excerpts/search matches only, redact endpoint/token/output, and record .ai-web/runs/mcp-broker-*/mcp-broker.json plus side-effect-broker.jsonl
           eval-baseline: creates human review packs and validates/imports a human-calibrated eval baseline corpus under .ai-web/eval; review-pack writes placeholders only, validate records redacted validation evidence only, import requires --approved, rejects .env/.env.* paths, raw secrets, invalid 0..100 scores, and non-human-calibrated corpora, and never fabricates reviewer evidence
           run-timeline/observability-summary: read-only timeline and compact observability rollups over safe .ai-web/runs JSON evidence; caps --limit at 50, redacts secret-like keys and .env paths, writes nothing, and launches no processes
-          build: runs the scaffolded Astro build only after runtime-plan is ready and records .ai-web/runs logs
+          build: runs the scaffolded Astro build for Profile D only after runtime-plan is ready and records .ai-web/runs logs; Profile S remains local-verify-only until safe placeholder-env build support is explicitly implemented
           preview: starts/stops the local scaffold dev server after runtime-plan is ready; --dry-run does not write files or launch Node
-          agent-run: runs an approved local source-patch agent task packet for repair / visual-polish / visual-edit evidence with logs and diff artifacts; --agent supports codex or openmanus; OpenManus approved runs require --sandbox docker|podman; --dry-run does not write files or launch a process
+          agent: goal-driven supervised local web-building loop facade over AgentRuntime; plan-only/dry-run writes no source, supervised runs local checks only when --approved is supplied, autonomous-local may run bounded local build/preview/browser QA, and source mutation remains manifest/verifier gated
+          agent-run: advanced bounded safe execution slot for approved local source-patch task packets used by repair / visual-polish / visual-edit evidence with logs and diff artifacts; --agent supports codex or openmanus; OpenManus approved runs require --sandbox docker|podman; --dry-run does not write files or launch a process
           qa-playwright: runs safe local Playwright QA browser checks against localhost/127.0.0.1 preview; --dry-run does not write files or launch Node
           qa-screenshot: captures safe local screenshot evidence for mobile/tablet/desktop from localhost/127.0.0.1 preview; --dry-run does not write files, launch browsers, install packages, or start preview
           qa-a11y: runs safe local axe accessibility QA against localhost/127.0.0.1 preview; --dry-run does not write files or launch Node
@@ -181,6 +183,7 @@ module Aiweb
       return human_verify_loop_result(result) if result["verify_loop"]
       return human_engine_scheduler_result(result) if result["engine_scheduler"]
       return human_mcp_broker_result(result) if result["mcp_broker"]
+      return human_agent_runtime_result(result) if result["agent_runtime"]
       return human_agent_run_result(result) if result["agent_run"]
       return human_eval_baseline_result(result) if result["eval_baseline"]
       return human_repair_result(result) if result["repair_loop"]
@@ -549,6 +552,28 @@ module Aiweb
         "Command: #{agent_run["command"] || "n/a"}",
         "Artifacts changed: #{changed.empty? ? "none" : changed.join(", ")}",
         "Agent run paths: #{paths.empty? ? "none" : paths.join(", ")}",
+        "Blocking issues: #{blockers.empty? ? "none" : blockers.join("; ")}",
+        "Next command: #{result["next_action"] || "n/a"}"
+      ].join("\n")
+    end
+
+    def human_agent_runtime_result(result)
+      runtime = result.fetch("agent_runtime")
+      session = runtime["agent_session"] || result["agent_session"] || {}
+      artifacts = runtime["artifacts"] || {}
+      blockers = runtime["blocking_issues"] || result["blocking_issues"] || []
+      steps = Array(runtime["steps"]).map { |step| step["tool"] || step["name"] }.compact
+      tool_statuses = Array(runtime["toolResults"]).map { |tool| "#{tool["tool"]}=#{tool["status"]}" }
+      [
+        "Agent runtime: #{runtime["status"] || "n/a"}",
+        "Goal: #{session["goal"] || "n/a"}",
+        "Mode/profile/approved: #{runtime["mode"] || session["mode"] || "n/a"}/#{runtime["profile"] || session["profile"] || "n/a"}/#{session.key?("approved") ? session["approved"] : "n/a"}",
+        "Planned tools: #{steps.empty? ? "none" : steps.join(", ")}",
+        "Tool results: #{tool_statuses.empty? ? "none" : tool_statuses.join(", ")}",
+        "Browser QA: #{runtime.dig("browserQa", "status") || "n/a"}",
+        "Patch manifest: #{runtime.dig("patchManifest", "verifier_decision") || "n/a"}",
+        "Run dir: #{artifacts["run_dir"] || session.dig("artifact_paths", "run_dir") || "n/a"}",
+        "Final report: #{artifacts["final_report"] || session.dig("artifact_paths", "final_report") || "n/a"}",
         "Blocking issues: #{blockers.empty? ? "none" : blockers.join("; ")}",
         "Next command: #{result["next_action"] || "n/a"}"
       ].join("\n")

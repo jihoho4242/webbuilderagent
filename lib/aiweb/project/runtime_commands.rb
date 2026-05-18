@@ -1,6 +1,8 @@
 # frozen_string_literal: true
 
 require "digest"
+require_relative "../profile_policy"
+require_relative "../runtime"
 require_relative "runtime_commands/qa_artifacts"
 module Aiweb
   module ProjectRuntimeCommands
@@ -9,12 +11,13 @@ module Aiweb
       ensure_scaffold_state_defaults!(state) if state
 
       scaffold = runtime_scaffold_summary(state)
+      contract = runtime_profile_contract(scaffold)
       metadata = runtime_metadata_summary(scaffold)
       design = runtime_design_summary(state, metadata)
-      package_json = runtime_package_json_summary
-      missing_files = self.class::SCAFFOLD_PROFILE_D_REQUIRED_FILES.reject { |path| File.exist?(File.join(root, path)) }
-      blockers = runtime_plan_blockers(state, state_error, scaffold, metadata, design, package_json, missing_files)
-      readiness = blockers.empty? ? "ready" : "blocked"
+      package_json = runtime_package_json_summary(contract)
+      missing_files = runtime_missing_required_files(contract)
+      blockers = runtime_plan_blockers(state, state_error, scaffold, metadata, design, package_json, missing_files, contract)
+      readiness = blockers.empty? ? runtime_contract_readiness(contract) : "blocked"
 
       {
         "schema_version" => 1,
@@ -25,6 +28,7 @@ module Aiweb
         "missing_artifacts" => state ? [] : [".ai-web/state.yaml"],
         "runtime_plan" => {
           "readiness" => readiness,
+          "profile_contract" => contract ? contract.to_h : runtime_unsupported_profile_contract(scaffold),
           "scaffold" => scaffold,
           "metadata" => metadata,
           "package_json" => package_json,
@@ -32,7 +36,7 @@ module Aiweb
           "missing_required_scaffold_files" => missing_files,
           "blockers" => blockers
         },
-        "next_action" => readiness == "ready" ? "runtime tools may inspect scripts next; do not install packages or launch Node from this read-only check" : "resolve blockers, then rerun aiweb runtime-plan"
+        "next_action" => runtime_plan_next_action(readiness)
       }
     end
 
@@ -54,11 +58,13 @@ module Aiweb
       ensure_scaffold_state_defaults!(state) if state
       ensure_setup_state_defaults!(state) if state
       scaffold = runtime_scaffold_summary(state)
+      contract = runtime_profile_contract(scaffold)
       metadata = runtime_metadata_summary(scaffold)
       design = runtime_design_summary(state, metadata)
-      package_json = runtime_package_json_summary
-      missing_files = self.class::SCAFFOLD_PROFILE_D_REQUIRED_FILES.reject { |path| File.exist?(File.join(root, path)) }
-      blockers = runtime_plan_blockers(state, state_error, scaffold, metadata, design, package_json, missing_files)
+      package_json = runtime_package_json_summary(contract)
+      missing_files = runtime_missing_required_files(contract)
+      blockers = runtime_plan_blockers(state, state_error, scaffold, metadata, design, package_json, missing_files, contract)
+      blockers.concat(runtime_capability_blockers(contract, :setup))
       package_manager = setup_package_manager(scaffold, metadata, package_json)
       command = setup_install_command(package_manager)
       blockers << "setup install currently supports pnpm only; detected #{package_manager.inspect}" unless package_manager == "pnpm"
@@ -533,11 +539,13 @@ module Aiweb
       state, state_error = runtime_state_snapshot
       ensure_scaffold_state_defaults!(state) if state
       scaffold = runtime_scaffold_summary(state)
+      contract = runtime_profile_contract(scaffold)
       metadata = runtime_metadata_summary(scaffold)
       design = runtime_design_summary(state, metadata)
-      package_json = runtime_package_json_summary
-      missing_files = self.class::SCAFFOLD_PROFILE_D_REQUIRED_FILES.reject { |path| File.exist?(File.join(root, path)) }
-      blockers = runtime_plan_blockers(state, state_error, scaffold, metadata, design, package_json, missing_files)
+      package_json = runtime_package_json_summary(contract)
+      missing_files = runtime_missing_required_files(contract)
+      blockers = runtime_plan_blockers(state, state_error, scaffold, metadata, design, package_json, missing_files, contract)
+      blockers.concat(runtime_capability_blockers(contract, :build))
       return build_blocked_payload(state, blockers, dry_run: dry_run) unless blockers.empty?
 
       run_id = "build-#{Time.now.utc.strftime("%Y%m%dT%H%M%SZ")}"
@@ -589,10 +597,14 @@ module Aiweb
           blocking_issues << "node_modules is missing; run pnpm install outside aiweb build after reviewing package.json, then rerun."
           stderr = blocking_issues.join("\n") + "\n"
         else
-          stdout, stderr, process_status = Open3.capture3(command, chdir: root)
-          exit_code = process_status.exitstatus
-          status = process_status.success? ? "passed" : "failed"
-          blocking_issues << "#{command} failed with exit code #{exit_code}" unless process_status.success?
+          result = runtime_process_runner.capture(
+            Aiweb::Runtime::CommandSpec.new(argv: build_command_argv(command), cwd: root, timeout: 180, description: command)
+          )
+          stdout = result.stdout
+          stderr = result.stderr
+          exit_code = result.exit_code
+          status = result.success? ? "passed" : "failed"
+          blocking_issues << "#{command} failed with exit code #{exit_code}" unless result.success?
         end
 
         changes << write_file(stdout_path, stdout, false)
@@ -630,11 +642,13 @@ module Aiweb
       state, state_error = runtime_state_snapshot
       ensure_scaffold_state_defaults!(state) if state
       scaffold = runtime_scaffold_summary(state)
+      contract = runtime_profile_contract(scaffold)
       metadata = runtime_metadata_summary(scaffold)
       design = runtime_design_summary(state, metadata)
-      package_json = runtime_package_json_summary
-      missing_files = self.class::SCAFFOLD_PROFILE_D_REQUIRED_FILES.reject { |path| File.exist?(File.join(root, path)) }
-      blockers = runtime_plan_blockers(state, state_error, scaffold, metadata, design, package_json, missing_files)
+      package_json = runtime_package_json_summary(contract)
+      missing_files = runtime_missing_required_files(contract)
+      blockers = runtime_plan_blockers(state, state_error, scaffold, metadata, design, package_json, missing_files, contract)
+      blockers.concat(runtime_capability_blockers(contract, :preview))
       return preview_blocked_payload(state, blockers, dry_run: dry_run) unless blockers.empty?
 
       running = running_preview_metadata
@@ -753,11 +767,13 @@ module Aiweb
 
       ensure_scaffold_state_defaults!(state) if state
       scaffold = runtime_scaffold_summary(state)
+      contract = runtime_profile_contract(scaffold)
       metadata = runtime_metadata_summary(scaffold)
       design = runtime_design_summary(state, metadata)
-      package_json = runtime_package_json_summary
-      missing_files = self.class::SCAFFOLD_PROFILE_D_REQUIRED_FILES.reject { |path| File.exist?(File.join(root, path)) }
-      blockers = runtime_plan_blockers(state, state_error, scaffold, metadata, design, package_json, missing_files)
+      package_json = runtime_package_json_summary(contract)
+      missing_files = runtime_missing_required_files(contract)
+      blockers = runtime_plan_blockers(state, state_error, scaffold, metadata, design, package_json, missing_files, contract)
+      blockers.concat(runtime_capability_blockers(contract, :browser_qa))
       return qa_playwright_blocked_payload(state, blockers, dry_run: dry_run, command: qa_playwright_command(nil), target: nil) unless blockers.empty?
 
       preview = running_preview_metadata
@@ -840,10 +856,20 @@ module Aiweb
           blocking_issues << "pnpm executable is missing; install project dependencies outside aiweb qa-playwright, then rerun."
           stderr = blocking_issues.join("\n") + "\n"
         else
-          stdout, stderr, process_status = Open3.capture3({ "PLAYWRIGHT_BASE_URL" => target["url"] }, "pnpm", "exec", "playwright", "test", relative(spec_path), "--reporter=json", chdir: root)
-          exit_code = process_status.exitstatus
-          status = process_status.success? ? "passed" : "failed"
-          blocking_issues << "#{command} failed with exit code #{exit_code}" unless process_status.success?
+          result = runtime_process_runner.capture(
+            Aiweb::Runtime::CommandSpec.new(
+              argv: ["pnpm", "exec", "playwright", "test", relative(spec_path), "--reporter=json"],
+              cwd: root,
+              env: runtime_tool_env({ "PLAYWRIGHT_BASE_URL" => target["url"] }, passthrough: %w[PLAYWRIGHT_FAKE_STATUS]),
+              timeout: 180,
+              description: command
+            )
+          )
+          stdout = result.stdout
+          stderr = result.stderr
+          exit_code = result.exit_code
+          status = result.success? ? "passed" : "failed"
+          blocking_issues << "#{command} failed with exit code #{exit_code}" unless result.success?
         end
 
         finished_at = Time.now.utc
@@ -909,11 +935,13 @@ module Aiweb
 
       ensure_scaffold_state_defaults!(state) if state
       scaffold = runtime_scaffold_summary(state)
+      contract = runtime_profile_contract(scaffold)
       metadata = runtime_metadata_summary(scaffold)
       design = runtime_design_summary(state, metadata)
-      package_json = runtime_package_json_summary
-      missing_files = self.class::SCAFFOLD_PROFILE_D_REQUIRED_FILES.reject { |path| File.exist?(File.join(root, path)) }
-      blockers = runtime_plan_blockers(state, state_error, scaffold, metadata, design, package_json, missing_files)
+      package_json = runtime_package_json_summary(contract)
+      missing_files = runtime_missing_required_files(contract)
+      blockers = runtime_plan_blockers(state, state_error, scaffold, metadata, design, package_json, missing_files, contract)
+      blockers.concat(runtime_capability_blockers(contract, :browser_qa))
       return qa_screenshot_blocked_payload(state, blockers, dry_run: dry_run, command: qa_screenshot_command(nil, nil, nil), target: nil) unless blockers.empty?
 
       preview = running_preview_metadata
@@ -1019,13 +1047,23 @@ module Aiweb
           qa_screenshot_viewports.each do |viewport|
             output_path = screenshot_paths.fetch(viewport.fetch("name"))
             command_parts = qa_screenshot_command_parts(target["url"], viewport, relative(output_path))
-            stdout, stderr, process_status = Open3.capture3({ "AIWEB_QA_SCREENSHOT_URL" => target["url"] }, *command_parts, chdir: root)
+            result = runtime_process_runner.capture(
+              Aiweb::Runtime::CommandSpec.new(
+                argv: command_parts,
+                cwd: root,
+                env: runtime_tool_env({ "AIWEB_QA_SCREENSHOT_URL" => target["url"] }, passthrough: %w[QA_SCREENSHOT_FAKE_STATUS]),
+                timeout: 180,
+                description: command_parts.join(" ")
+              )
+            )
+            stdout = result.stdout
+            stderr = result.stderr
             stdout_chunks << "$ #{command_parts.join(" ")}\n#{stdout}"
             stderr_chunks << "$ #{command_parts.join(" ")}\n#{stderr}"
-            unless process_status.success?
-              exit_code = process_status.exitstatus
-              status = "failed"
-              blocking_issues << "#{command_parts.join(" ")} failed with exit code #{exit_code}"
+            unless result.success?
+              exit_code = result.exit_code
+              status = result.status
+              blocking_issues << "#{command_parts.join(" ")} failed with exit code #{exit_code || result.status}"
               break
             end
           end
@@ -1962,11 +2000,12 @@ module Aiweb
       state, state_error = runtime_state_snapshot
       ensure_scaffold_state_defaults!(state) if state
       scaffold = runtime_scaffold_summary(state)
+      contract = runtime_profile_contract(scaffold)
       metadata = runtime_metadata_summary(scaffold)
       design = runtime_design_summary(state, metadata)
-      package_json = runtime_package_json_summary
-      missing_files = self.class::SCAFFOLD_PROFILE_D_REQUIRED_FILES.reject { |path| File.exist?(File.join(root, path)) }
-      package_blockers = runtime_plan_blockers(state, state_error, scaffold, metadata, design, package_json, missing_files).select do |issue|
+      package_json = runtime_package_json_summary(contract)
+      missing_files = runtime_missing_required_files(contract)
+      package_blockers = runtime_plan_blockers(state, state_error, scaffold, metadata, design, package_json, missing_files, contract).select do |issue|
         issue.to_s.match?(/package\.json|package manager|dependency|script|lockfile/i)
       end
       package_blockers.each do |issue|
@@ -3245,12 +3284,71 @@ module Aiweb
       [nil, "Cannot parse .ai-web/state.yaml: #{e.message}"]
     end
 
+    def runtime_profile_contract(scaffold)
+      Aiweb::ProfilePolicy::Resolver.fetch(scaffold["profile"].to_s)
+    end
+
+    def runtime_contract_readiness(contract)
+      contract&.runtime_readiness || "blocked"
+    end
+
+    def runtime_plan_next_action(readiness)
+      case readiness
+      when "ready"
+        "runtime tools may inspect scripts next; do not install packages or launch Node from this read-only check"
+      when "local_planning_only"
+        "use local verification/reporting surfaces for this profile; build/preview/browser QA remain intentionally unsupported"
+      else
+        "resolve blockers, then rerun aiweb runtime-plan"
+      end
+    end
+
+    def runtime_unsupported_profile_contract(scaffold)
+      {
+        "id" => scaffold["profile"],
+        "runtime_readiness" => "unsupported",
+        "supported_runtime_profiles" => %w[D S],
+        "blocking_issues" => ["Runtime contract is only implemented for Profile D or Profile S"]
+      }
+    end
+
+    def runtime_missing_required_files(contract)
+      return [] unless contract
+
+      contract.required_files.reject { |path| File.exist?(File.join(root, path)) }
+    end
+
+    def runtime_capability_blockers(contract, capability)
+      return ["Runtime contract is not implemented for this profile; supported runtime profiles are D and S."] unless contract
+      return [] if contract.supports?(capability)
+
+      ["Profile #{contract.id} does not support #{capability} in the current runtime contract; use local verification/reporting surfaces instead."]
+    end
+
+    def runtime_process_runner
+      @runtime_process_runner ||= Aiweb::Runtime::ProcessRunner.new
+    end
+
+    def runtime_tool_env(values = {}, passthrough: [])
+      values = values.transform_keys(&:to_s)
+      passthrough.each do |key|
+        values[key.to_s] = ENV[key.to_s] if ENV.key?(key.to_s)
+      end
+      values
+    end
+
+    def build_command_argv(command)
+      parts = command.to_s.split(/\s+/).reject(&:empty?)
+      parts.empty? ? ["pnpm", "build"] : parts
+    end
+
     def runtime_scaffold_summary(state)
       implementation = state&.fetch("implementation", {}) || {}
-      metadata_path = runtime_scaffold_metadata_path(implementation["scaffold_metadata_path"])
+      profile = implementation["scaffold_profile"] || implementation["stack_profile"]
+      metadata_path = runtime_scaffold_metadata_path(implementation["scaffold_metadata_path"], profile: profile)
       {
         "scaffold_created" => implementation["scaffold_created"] == true,
-        "profile" => implementation["scaffold_profile"] || implementation["stack_profile"],
+        "profile" => profile,
         "framework" => implementation["scaffold_framework"],
         "package_manager" => implementation["scaffold_package_manager"],
         "dev_command" => implementation["scaffold_dev_command"],
@@ -3262,9 +3360,11 @@ module Aiweb
       }
     end
 
-    def runtime_scaffold_metadata_path(state_value)
+    def runtime_scaffold_metadata_path(state_value, profile: nil)
+      contract = Aiweb::ProfilePolicy::Resolver.fetch(profile.to_s)
+      expected_path = contract&.metadata_path || self.class::SCAFFOLD_PROFILE_D_METADATA_PATH
       raw = state_value.to_s.strip
-      return { "path" => self.class::SCAFFOLD_PROFILE_D_METADATA_PATH, "state_value" => nil, "safe" => true, "error" => nil } if raw.empty?
+      return { "path" => expected_path, "state_value" => nil, "safe" => true, "error" => nil } if raw.empty?
 
       normalized = raw.tr("\\", "/")
       normalized = normalized.sub(%r{\A(?:\./)+}, "")
@@ -3275,8 +3375,8 @@ module Aiweb
                 "scaffold metadata path must not contain traversal"
               elsif parts.any? { |part| part.start_with?(".env") }
                 "scaffold metadata path must not reference .env files"
-              elsif normalized != self.class::SCAFFOLD_PROFILE_D_METADATA_PATH
-                "scaffold metadata path must be #{self.class::SCAFFOLD_PROFILE_D_METADATA_PATH}"
+              elsif normalized != expected_path
+                "scaffold metadata path must be #{expected_path}"
               end
 
       {
@@ -3394,14 +3494,16 @@ module Aiweb
       candidates.find { |path| File.file?(path) } || candidates.first
     end
 
-    def runtime_package_json_summary
+    def runtime_package_json_summary(contract = nil)
+      expected_scripts = contract&.expected_scripts || {}
+      expected_dependencies = Array(contract&.expected_dependencies)
       path = File.join(root, "package.json")
       summary = {
         "path" => "package.json",
         "present" => File.file?(path),
         "valid_json" => false,
-        "scripts" => runtime_expected_map(self.class::PROFILE_D_EXPECTED_SCRIPTS),
-        "dependencies" => runtime_expected_map(self.class::PROFILE_D_EXPECTED_DEPENDENCIES.to_h { |name| [name, "present"] }),
+        "scripts" => runtime_expected_map(expected_scripts),
+        "dependencies" => runtime_expected_map(expected_dependencies.to_h { |name| [name, "present"] }),
         "package_manager" => nil,
         "error" => nil
       }
@@ -3417,7 +3519,7 @@ module Aiweb
       dependencies = data["dependencies"].is_a?(Hash) ? data["dependencies"] : {}
       summary["valid_json"] = true
       summary["package_manager"] = data["packageManager"].to_s.split("@").first unless data["packageManager"].to_s.strip.empty?
-      summary["scripts"] = self.class::PROFILE_D_EXPECTED_SCRIPTS.each_with_object({}) do |(name, expected), memo|
+      summary["scripts"] = expected_scripts.each_with_object({}) do |(name, expected), memo|
         actual = scripts[name]
         memo[name] = {
           "expected" => expected,
@@ -3426,7 +3528,7 @@ module Aiweb
           "matches" => actual == expected
         }
       end
-      summary["dependencies"] = self.class::PROFILE_D_EXPECTED_DEPENDENCIES.each_with_object({}) do |name, memo|
+      summary["dependencies"] = expected_dependencies.each_with_object({}) do |name, memo|
         actual = dependencies[name]
         memo[name] = {
           "expected" => "present",
@@ -3454,51 +3556,53 @@ module Aiweb
       end
     end
 
-    def runtime_plan_blockers(state, state_error, scaffold, metadata, design, package_json, missing_files)
+    def runtime_plan_blockers(state, state_error, scaffold, metadata, design, package_json, missing_files, contract)
       blockers = []
       blockers << state_error if state_error
       unless scaffold["scaffold_created"]
-        blockers << "Scaffold has not been created; run aiweb scaffold --profile D after selecting a design candidate."
+        blockers << "Scaffold has not been created; run aiweb scaffold --profile D or --profile S after completing the required planning gates."
       end
-      if scaffold["profile"].to_s != "D"
-        blockers << "Runtime plan currently expects Profile D; run aiweb scaffold --profile D or repair implementation.scaffold_profile."
+      if contract.nil?
+        blockers << "Runtime contract for Profile #{scaffold["profile"].inspect} is not implemented; supported runtime profiles are D and S."
+        return blockers.compact.uniq
+      end
+      if scaffold["profile"].to_s != contract.id
+        blockers << "Runtime contract mismatch: state requested Profile #{scaffold["profile"].inspect}, but resolved #{contract.id.inspect}."
       end
       unless scaffold["metadata_path_safe"]
-        blockers << "Unsafe scaffold metadata path #{scaffold["metadata_path_state_value"].inspect}: #{scaffold["metadata_path_error"]}. Runtime plan only reads #{self.class::SCAFFOLD_PROFILE_D_METADATA_PATH}."
+        blockers << "Unsafe scaffold metadata path #{scaffold["metadata_path_state_value"].inspect}: #{scaffold["metadata_path_error"]}. Runtime plan only reads #{contract.metadata_path}."
       end
-      blockers << "Scaffold metadata .ai-web/scaffold-profile-D.json is missing; rerun aiweb scaffold --profile D after reviewing existing files." if scaffold["metadata_path_safe"] && !metadata["present"]
+      blockers << "Scaffold metadata #{contract.metadata_path} is missing; rerun aiweb scaffold --profile #{contract.id} after reviewing existing files." if scaffold["metadata_path_safe"] && !metadata["present"]
       blockers << "Scaffold metadata #{metadata["path"]} is malformed: #{metadata["error"]}" if metadata["present"] && !metadata["valid_json"]
-      runtime_expected_metadata_blockers(scaffold, metadata).each { |blocker| blockers << blocker } if metadata["valid_json"]
-      runtime_selected_design_drift_blockers(design).each { |blocker| blockers << blocker }
-      unless design["design_md_present"]
-        blockers << "Design source .ai-web/DESIGN.md is missing; run aiweb design-system resolve or restore the approved design source."
+      runtime_expected_metadata_blockers(scaffold, metadata, contract).each { |blocker| blockers << blocker } if metadata["valid_json"]
+
+      if contract.id == "D"
+        runtime_selected_design_drift_blockers(design, contract).each { |blocker| blockers << blocker }
+        unless design["design_md_present"]
+          blockers << "Design source .ai-web/DESIGN.md is missing; run aiweb design-system resolve or restore the approved design source."
+        end
+        if design["design_md_present"] && !design["design_md_substantive"]
+          blockers << "Design source .ai-web/DESIGN.md is stub-like; provide substantive design constraints before runtime QA."
+        end
+        if design["selected_candidate"].to_s.empty?
+          blockers << "No selected design candidate recorded; run aiweb design --candidates 3 then aiweb select-design candidate-01|candidate-02|candidate-03."
+        elsif !design["selected_candidate_present"]
+          blockers << "Selected design candidate artifact #{design["selected_candidate_path"] || design["selected_candidate"]} is missing; rerun aiweb design --candidates 3 or select an existing candidate."
+        end
       end
-      if design["design_md_present"] && !design["design_md_substantive"]
-        blockers << "Design source .ai-web/DESIGN.md is stub-like; provide substantive design constraints before runtime QA."
-      end
-      if design["selected_candidate"].to_s.empty?
-        blockers << "No selected design candidate recorded; run aiweb design --candidates 3 then aiweb select-design candidate-01|candidate-02|candidate-03."
-      elsif !design["selected_candidate_present"]
-        blockers << "Selected design candidate artifact #{design["selected_candidate_path"] || design["selected_candidate"]} is missing; rerun aiweb design --candidates 3 or select an existing candidate."
-      end
+
       missing_files.each do |path|
-        blockers << "Required scaffold file #{path} is missing; rerun aiweb scaffold --profile D to complete safe missing files."
+        blockers << "Required scaffold file #{path} is missing for Profile #{contract.id}; rerun aiweb scaffold --profile #{contract.id} to complete safe missing files."
       end
-      runtime_package_blockers(package_json).each { |blocker| blockers << blocker }
+      runtime_package_blockers(package_json, contract).each { |blocker| blockers << blocker }
       blockers.compact.uniq
     end
 
-    def runtime_expected_metadata_blockers(scaffold, metadata)
-      expected = {
-        "profile" => "D",
-        "framework" => "Astro",
-        "package_manager" => "pnpm",
-        "dev_command" => "pnpm dev",
-        "build_command" => "pnpm build"
-      }
+    def runtime_expected_metadata_blockers(scaffold, metadata, contract)
+      expected = contract.expected_metadata
       expected.each_with_object([]) do |(key, value), blockers|
         actual = metadata[key]
-        blockers << "Scaffold metadata #{key} should be #{value.inspect}, found #{actual.inspect}; rerun aiweb scaffold --profile D or repair metadata." unless actual == value
+        blockers << "Scaffold metadata #{key} should be #{value.inspect}, found #{actual.inspect}; rerun aiweb scaffold --profile #{contract.id} or repair metadata." unless actual == value
         state_actual = scaffold[key]
         next if state_actual.to_s.empty? || state_actual == actual
 
@@ -3506,7 +3610,7 @@ module Aiweb
       end
     end
 
-    def runtime_selected_design_drift_blockers(design)
+    def runtime_selected_design_drift_blockers(design, contract = Aiweb::ProfilePolicy::ProfileD.contract)
       blockers = []
       state_selected = design["state_selected_candidate"].to_s.strip
       metadata_selected = design["metadata_selected_candidate"].to_s.strip
@@ -3516,9 +3620,9 @@ module Aiweb
       if state_selected.empty? && !metadata_selected.empty?
         blockers << "Selected design drift: state design_candidates.selected_candidate is missing but scaffold metadata selected_candidate is #{metadata_selected.inspect}; reselect the intended candidate and rerun aiweb scaffold --profile D, or repair .ai-web/state.yaml."
       elsif !state_selected.empty? && metadata_selected.empty?
-        blockers << "Selected design drift: state design_candidates.selected_candidate is #{state_selected.inspect} but scaffold metadata selected_candidate is missing; rerun aiweb scaffold --profile D or repair #{self.class::SCAFFOLD_PROFILE_D_METADATA_PATH}."
+        blockers << "Selected design drift: state design_candidates.selected_candidate is #{state_selected.inspect} but scaffold metadata selected_candidate is missing; rerun aiweb scaffold --profile #{contract.id} or repair #{contract.metadata_path}."
       elsif state_selected != metadata_selected
-        blockers << "Selected design drift: state design_candidates.selected_candidate (#{state_selected.inspect}) does not match scaffold metadata selected_candidate (#{metadata_selected.inspect}); reselect the intended candidate and rerun aiweb scaffold --profile D, or repair .ai-web/state.yaml and #{self.class::SCAFFOLD_PROFILE_D_METADATA_PATH}."
+        blockers << "Selected design drift: state design_candidates.selected_candidate (#{state_selected.inspect}) does not match scaffold metadata selected_candidate (#{metadata_selected.inspect}); reselect the intended candidate and rerun aiweb scaffold --profile D, or repair .ai-web/state.yaml and #{contract.metadata_path}."
       end
 
       if generated["present"] && !generated["valid_json"]
@@ -3538,10 +3642,10 @@ module Aiweb
       blockers
     end
 
-    def runtime_package_blockers(package_json)
+    def runtime_package_blockers(package_json, contract)
       blockers = []
       unless package_json["present"]
-        blockers << "package.json is missing; rerun aiweb scaffold --profile D before runtime tools."
+        blockers << "package.json is missing; rerun aiweb scaffold --profile #{contract.id} before runtime tools."
         return blockers
       end
       unless package_json["valid_json"]
@@ -3554,7 +3658,7 @@ module Aiweb
         end
       end
       package_json.fetch("dependencies").each do |name, status|
-        blockers << "package.json dependency #{name.inspect} is missing; restore Profile D scaffold dependencies." unless status["present"]
+        blockers << "package.json dependency #{name.inspect} is missing; restore Profile #{contract.id} scaffold dependencies." unless status["present"]
       end
       blockers
     end

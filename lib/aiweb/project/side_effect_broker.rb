@@ -356,6 +356,9 @@ module Aiweb
       if path.end_with?("lib/aiweb/project/runtime_commands/qa_artifacts.rb") && line.include?("Open3.capture3")
         return side_effect_classification("local_qa_artifact_runner", "documented_exception", nil, "QA artifact subprocess is a local static/browser verification command writing run evidence")
       end
+      if path.end_with?("lib/aiweb/runtime/process_runner.rb") && line.match?(/Open3\.(?:capture3|popen3)/)
+        return side_effect_classification("central_runtime_process_runner", "brokered", "aiweb.runtime.process_runner", "central CommandSpec/ProcessRunner executes argv-only local commands with scrubbed environment, timeout, output caps, and redaction")
+      end
       if path.end_with?("lib/aiweb/project/engine_run.rb") && line.include?("Open3.popen3")
         return side_effect_classification("brokered_engine_run_capture_command", "brokered", "aiweb.engine_run.tool_broker", "engine_run_capture_command is invoked with staged tool-broker PATH and emits workspace tool-broker events")
       end

@@ -14,7 +14,7 @@ module Aiweb
       run-status run-timeline observability-summary run-cancel run-resume
       design-system design-prompt design select-design ingest-reference scaffold setup build preview qa-playwright
       qa-screenshot qa-a11y qa-lighthouse visual-critique repair visual-polish workbench
-      component-map visual-edit engine-run agent-run verify-loop github-sync deploy-plan deploy qa-checklist qa-report
+      component-map visual-edit engine-run agent agent-run verify-loop github-sync deploy-plan deploy qa-checklist qa-report
       next-task advance rollback resolve-blocker snapshot supabase-secret-qa
     ].freeze
 
@@ -54,7 +54,7 @@ module Aiweb
         ".env and .env.* path segments are rejected before bridge execution",
         "bridge commands time out instead of blocking the backend indefinitely",
         "backend bridge command execution is recorded through aiweb.backend.side_effect_broker evidence before process launch",
-        "approved agent-run/setup/verify-loop execution requires a matching X-Aiweb-Approval-Token header or the API token when no separate approval token is configured",
+        "approved agent/agent-run/setup/verify-loop execution requires a matching X-Aiweb-Approval-Token header or the API token when no separate approval token is configured",
         "engine-run is called by the dedicated backend job API; frontend generic command requests for engine-run are rejected",
         "engine-run exposes the agentic sandbox task runtime through structured command envelopes",
         "agent-run maps to aiweb agent-run --agent codex|openmanus and keeps approval semantics",
@@ -74,7 +74,7 @@ module Aiweb
 
       argv = [RbConfig.ruby, aiweb_bin, "--path", project_path, command]
       argv.concat(args)
-      argv << "--approved" if %w[agent-run engine-run setup verify-loop].include?(command) && approved
+      argv << "--approved" if %w[agent agent-run engine-run setup verify-loop].include?(command) && approved
       argv << "--dry-run" if dry_run
       argv << "--json"
 

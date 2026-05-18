@@ -93,6 +93,8 @@ module Aiweb
         dispatch_engine_scheduler
       when "mcp-broker"
         dispatch_mcp_broker
+      when "agent"
+        dispatch_agent
       when "agent-run"
         dispatch_agent_run
       when "eval-baseline", "human-baseline"
@@ -494,7 +496,7 @@ module Aiweb
       value = path.to_s.strip
       return false if value.empty? || value == "latest"
 
-      File.basename(value).match?(/\A\.env(?:\.|\z)/)
+      Aiweb::Runtime::PathPolicy.unsafe_env_path?(value)
     end
 
     def parse_browser_qa_options(command)
@@ -585,6 +587,27 @@ module Aiweb
       call_project_adapter(:agent_run, { task: task, agent: agent, sandbox: sandbox.empty? ? nil : sandbox, approved: approved, dry_run: @dry_run }).tap do |result|
         normalize_agent_run_payload!(result, task: task, agent: agent, approved: approved, dry_run: @dry_run)
       end
+    end
+
+    def dispatch_agent
+      opts = parse_options do |o, options|
+        o.on("--goal GOAL") { |v| options[:goal] = v }
+        o.on("--mode MODE") { |v| options[:mode] = v }
+        o.on("--profile PROFILE") { |v| options[:profile] = v }
+        o.on("--max-steps N") { |v| options[:max_steps] = parse_positive_integer(v, "--max-steps") }
+        o.on("--approved") { options[:approved] = true }
+      end
+      opts[:goal] ||= @argv.join(" ")
+      @argv.clear
+      mode = opts[:mode].to_s.strip.empty? ? "plan-only" : opts[:mode].to_s.strip
+      project.agent(
+        goal: opts[:goal],
+        mode: mode,
+        profile: opts[:profile],
+        max_steps: opts[:max_steps] || 20,
+        approved: !!opts[:approved],
+        dry_run: @dry_run
+      )
     end
 
     def dispatch_eval_baseline

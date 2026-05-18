@@ -10,6 +10,7 @@ module Aiweb
       cycle_limit = verify_loop_cycle_limit(max_cycles)
       implementation_agent = verify_loop_agent(agent, state)
       implementation_sandbox = verify_loop_sandbox(sandbox, implementation_agent)
+      agent_runtime_plan = verify_loop_agent_runtime_plan(cycle_limit)
       timestamp = Time.now.utc.strftime("%Y%m%dT%H%M%SZ")
       run_id = "verify-loop-#{timestamp}"
       run_dir = File.join(aiweb_dir, "runs", run_id)
@@ -31,6 +32,7 @@ module Aiweb
           blocking_issues: ["--approved is required for real verify-loop execution"],
           latest_blocker: "--approved is required for real verify-loop execution"
         )
+        metadata["agent_runtime_plan"] = agent_runtime_plan
         return verify_loop_payload(
           state: state,
           metadata: metadata,
@@ -56,6 +58,7 @@ module Aiweb
           blocking_issues: [],
           latest_blocker: nil
         )
+        metadata["agent_runtime_plan"] = agent_runtime_plan
         metadata["planned_steps"] = verify_loop_planned_steps(cycle_limit)
         metadata["steps"] = metadata.fetch("planned_steps").flat_map do |cycle|
           Array(cycle["steps"]).map { |step| { "cycle" => cycle["cycle"], "name" => step, "command" => step } }
@@ -86,6 +89,7 @@ module Aiweb
           blocking_issues: dependency_blockers,
           latest_blocker: dependency_blockers.first
         )
+        metadata["agent_runtime_plan"] = agent_runtime_plan
         return verify_loop_payload(
           state: state,
           metadata: metadata,
@@ -153,6 +157,7 @@ module Aiweb
         )
         metadata["stop_reason"] = stop_reason
         metadata["cycle_count"] = cycles.length
+        metadata["agent_runtime_plan"] = agent_runtime_plan
         changed_files << write_json(metadata_path, metadata, false)
 
         state["implementation"]["latest_verify_loop"] = relative(metadata_path)
@@ -258,11 +263,15 @@ module Aiweb
       state, state_error = runtime_state_snapshot
       ensure_scaffold_state_defaults!(state) if state
       scaffold = runtime_scaffold_summary(state)
+      contract = runtime_profile_contract(scaffold)
       metadata = runtime_metadata_summary(scaffold)
       design = runtime_design_summary(state, metadata)
-      package_json = runtime_package_json_summary
-      missing_files = self.class::SCAFFOLD_PROFILE_D_REQUIRED_FILES.reject { |path| File.exist?(File.join(root, path)) }
-      blockers = runtime_plan_blockers(state, state_error, scaffold, metadata, design, package_json, missing_files)
+      package_json = runtime_package_json_summary(contract)
+      missing_files = runtime_missing_required_files(contract)
+      blockers = runtime_plan_blockers(state, state_error, scaffold, metadata, design, package_json, missing_files, contract)
+      blockers.concat(runtime_capability_blockers(contract, :build))
+      blockers.concat(runtime_capability_blockers(contract, :preview))
+      blockers.concat(runtime_capability_blockers(contract, :browser_qa))
       blockers << "pnpm executable is missing; run aiweb setup --install --approved after installing pnpm locally, then rerun verify-loop." if executable_path("pnpm").nil?
       blockers << "node_modules is missing; run aiweb setup --install --approved before verify-loop." unless File.directory?(File.join(root, "node_modules"))
       {
@@ -273,6 +282,22 @@ module Aiweb
         blockers << "local #{tool} executable is missing under node_modules/.bin; run aiweb setup --install --approved before verify-loop." if path.nil?
       end
       blockers.compact.uniq
+    end
+
+    def verify_loop_agent_runtime_plan(cycle_limit)
+      Aiweb::AgentRuntime::Loop.new(self).run(
+        goal: "verify local web-building loop for #{cycle_limit} cycle(s)",
+        mode: "plan-only",
+        profile: nil,
+        max_steps: cycle_limit,
+        approved: false,
+        dry_run: true
+      ).fetch("agent_runtime")
+    rescue StandardError => e
+      {
+        "status" => "blocked",
+        "blocking_issues" => ["AgentRuntime plan unavailable: #{e.class}: #{e.message}"]
+      }
     end
 
     def verify_loop_run_metadata(run_id:, status:, max_cycles:, agent:, sandbox:, approved:, dry_run:, run_dir:, metadata_path:, cycles:, blocking_issues:, latest_blocker:, provenance: nil)

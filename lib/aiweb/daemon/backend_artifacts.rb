@@ -302,7 +302,7 @@ module Aiweb
 
     def run_metadata_summary(root, run_id)
       run_dir = File.join(root, ".ai-web", "runs", run_id)
-      preferred = %w[engine-run.json agent-run.json verify-loop.json setup.json build.json preview.json]
+      preferred = %w[final-report.json agent-session.json engine-run.json agent-run.json verify-loop.json setup.json build.json preview.json]
       file = preferred.map { |name| File.join(run_dir, name) }.find { |candidate| File.file?(candidate) }
       file ||= Dir.glob(File.join(run_dir, "*.json")).sort.first
       raise UserError.new("run metadata does not exist: #{run_id}", 1) unless file

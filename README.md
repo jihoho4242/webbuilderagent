@@ -1,8 +1,8 @@
 # AI Web Director CLI
 
-This repository currently ships a working **AI Web Director CLI**. It is the baseline orchestration layer for an AI-assisted webbuilding flow, not a full app generator yet.
+This repository currently ships a working **AI Web Director CLI**: a supervised local web-building agent/director for planning, scaffold orchestration, evidence capture, local QA, and bounded repair handoff. It is not an unsupervised one-prompt production app generator.
 
-Today the CLI manages the project director workspace: `.ai-web` state, phase gates, quality approvals, task packets, QA reports, rollback/blocker state, and snapshots. It can guide a web project through planning, design prompt handoff, implementation task sequencing, QA evidence, and recovery decisions. It does **not** currently generate a complete runnable website or application scaffold for you.
+Today the CLI manages the project director workspace: `.ai-web` state, phase gates, quality approvals, task packets, runtime profile contracts, QA reports, agent-session artifacts, rollback/blocker state, and snapshots. It can guide a web project through planning, scaffold/runtime readiness, design prompt handoff, supervised agent planning, implementation task sequencing, QA evidence, and recovery decisions. It still does **not** silently create hosted provider resources, read secrets, deploy, or behave as an unsupervised full-stack SaaS generator.
 
 ## Current scope
 
@@ -63,7 +63,7 @@ Do **not** use GPT Image 2/reference images as direct implementation-agent input
 17. Use `run-status`, `run-cancel`, and `run-resume` to inspect, request cancellation, or record a safe resume descriptor for long local runs.
 18. Use `run-timeline` and `observability-summary` to audit recent local evidence before deciding the next supervised action.
 
-The current Director CLI is the foundation for that loop: state, gates, QA contracts, snapshots, local preview evidence, bounded repair-loop records, visual polish records/tasks/snapshots, component maps, targeted visual edit handoff records, local-only Profile S Supabase scaffold/secret-QA records, verify-loop evidence, and gated deploy-adapter boundaries are in place before the system grows into richer end-to-end generation and source repair automation. It is not yet a full app generator.
+The current Director CLI is the foundation for that loop: state, gates, profile-aware runtime contracts, agent-session artifacts, QA contracts, snapshots, local preview evidence, bounded repair-loop records, visual polish records/tasks/snapshots, component maps, targeted visual edit handoff records, local-only Profile S Supabase scaffold/secret-QA records, verify-loop evidence, and gated deploy-adapter boundaries are in place before the system grows into richer end-to-end generation and source repair automation. It remains supervised and local-first, not an unsupervised full app generator.
 
 The intended product surface is eventually a browser Workbench, not terminal UX. This repository is intentionally backend-first right now: `aiweb daemon --dry-run --json` exposes the backend/API contract that a later design-approved frontend should call. The daemon keeps the Ruby Director engine as the backend source of truth and uses guarded `agent-run` jobs for codex/openmanus source patching.
 
@@ -92,13 +92,24 @@ Low-level equivalent:
   --idea "프리미엄 비즈니스/서비스 웹사이트. 핵심 가치, 서비스 소개, 고객 사례, 상담 문의 섹션이 있는 고품질 랜딩 사이트."
 ```
 
-`start` creates the target folder, initializes profile D by default, drafts the first interview artifacts, and advances to the phase-0.25 quality gate.
+`start` creates the target folder, asks the intent router to recommend a stack profile unless `--profile` is provided, drafts the first interview artifacts, and advances to the phase-0.25 quality gate. Content/docs/SEO work usually routes to Profile D; explicit Supabase/RLS/storage/upload work routes to Profile S; regulated auth/payment/account-heavy work can still route to safer app profiles.
 Use `--path` on later commands to keep working against that generated project:
 
 ```bash
 ./bin/aiweb --path ~/Desktop/aiweb-premium-service-site status
 ./bin/aiweb --path ~/Desktop/aiweb-premium-service-site advance
 ```
+
+After scaffold/runtime readiness exists, the supervised agent facade can record a profile-aware local plan and evidence artifacts:
+
+```bash
+./bin/aiweb --path ~/Desktop/aiweb-premium-service-site agent "verify and improve this site" --mode plan-only --json
+./bin/aiweb --path ~/Desktop/aiweb-premium-service-site agent "verify local Supabase scaffold" --mode supervised --profile S --json
+./bin/aiweb --path ~/Desktop/aiweb-premium-service-site agent "run approved local QA gates" --mode supervised --approved --json
+웹빌더 --path ~/Desktop/aiweb-premium-service-site agent "QA 계획 세워줘" --mode plan-only
+```
+
+`agent` is the goal-driven observe/plan/act/verify/reflect facade. It writes `.ai-web/runs/agent-session-*/agent-session.json`, `timeline.jsonl`, `tool-result-*.json`, `source-patch-manifest.json`, `browser-qa-feedback.json`, and `final-report.json` for real supervised runs. `plan-only` and global `--dry-run` do not mutate source. In `supervised` mode, local runtime actions such as build/preview/browser QA wait for `--approved`; `autonomous-local` can run bounded local runtime actions, while source mutation remains manifest/verifier gated. Deploy/provider actions and `.env` access remain blocked.
 
 After the scaffold runtime plan reports `ready`, PR20 can install project dependencies with explicit approval:
 
@@ -206,7 +217,7 @@ PR16 adds the local Workbench UI foundation as a static artifact export:
 웹빌더 --path ~/Desktop/aiweb-premium-service-site workbench --serve --dry-run
 ```
 
-`workbench --dry-run` is a no-write planning path: it reports `workbench.status: planned`, the panel list, declarative control descriptors, and planned `.ai-web/workbench/index.html` / `.ai-web/workbench/workbench.json` paths without creating files or changing `.ai-web/state.yaml`. A real `workbench --export` may write only the Workbench HTML and JSON manifest under `.ai-web/workbench/`; it summarizes existing Director artifacts for panels such as chat/control, plan/artifacts, design candidates, selected `DESIGN.md`, preview, file tree, QA results, visual critique, run timeline, and verify-loop status. Workbench controls are descriptors for existing CLI/daemon commands (`aiweb run`, `aiweb design`, `aiweb build`, `aiweb preview`, `aiweb qa-playwright`, `aiweb visual-critique`, `aiweb repair`, `aiweb visual-polish`, `aiweb verify-loop --max-cycles 3`, `aiweb component-map`, `aiweb visual-edit --target DATA_AIWEB_ID --prompt TEXT`) and do not directly write state. Export executes no controls, launches no preview/browser/QA/daemon, installs no packages, calls no network/AI services, and writes no files outside `.ai-web/workbench/index.html` and `.ai-web/workbench/workbench.json`. `workbench --serve --dry-run` plans host/port plus `.ai-web/runs/workbench-serve-*` evidence paths without writes or process execution. `workbench --serve --approved` writes the same Workbench artifacts, starts a localhost/127.0.0.1-only static server, and records `workbench-serve.json` metadata under `.ai-web/runs/workbench-serve-*`; it still executes no Workbench controls and does not mutate `.ai-web/state.yaml`. The file tree and summaries intentionally exclude `.env`, `.env.*`, `.git`, `node_modules`, and bulky generated directories so local secrets are not surfaced.
+`workbench --dry-run` is a no-write planning path: it reports `workbench.status: planned`, the panel list, declarative control descriptors, and planned `.ai-web/workbench/index.html` / `.ai-web/workbench/workbench.json` paths without creating files or changing `.ai-web/state.yaml`. A real `workbench --export` may write only the Workbench HTML and JSON manifest under `.ai-web/workbench/`; it summarizes existing Director artifacts for panels such as chat/control, plan/artifacts, design candidates, selected `DESIGN.md`, preview, file tree, QA results, visual critique, latest AgentRuntime report, run timeline, and verify-loop status. Workbench controls are descriptors for existing CLI/daemon commands (`aiweb agent "Improve this local site" --mode supervised`, `aiweb run`, `aiweb design`, `aiweb build`, `aiweb preview`, `aiweb qa-playwright`, `aiweb visual-critique`, `aiweb repair`, `aiweb visual-polish`, `aiweb verify-loop --max-cycles 3`, `aiweb component-map`, `aiweb visual-edit --target DATA_AIWEB_ID --prompt TEXT`) and do not directly write state. Export executes no controls, launches no preview/browser/QA/daemon, installs no packages, calls no network/AI services, and writes no files outside `.ai-web/workbench/index.html` and `.ai-web/workbench/workbench.json`. `workbench --serve --dry-run` plans host/port plus `.ai-web/runs/workbench-serve-*` evidence paths without writes or process execution. `workbench --serve --approved` writes the same Workbench artifacts, starts a localhost/127.0.0.1-only static server, and records `workbench-serve.json` metadata under `.ai-web/runs/workbench-serve-*`; it still executes no Workbench controls and does not mutate `.ai-web/state.yaml`. The file tree and summaries intentionally exclude `.env`, `.env.*`, `.git`, `node_modules`, and bulky generated directories so local secrets are not surfaced.
 
 PR29 adds a local run lifecycle control plane:
 
@@ -331,6 +342,7 @@ Phase-sensitive commands are guarded by the Director state machine:
 ./bin/aiweb agent-run --task latest --agent codex --dry-run
 ./bin/aiweb agent-run --task latest --agent openmanus --dry-run
 ./bin/aiweb verify-loop --max-cycles 3 --dry-run
+./bin/aiweb agent "verify this local scaffold" --mode plan-only --json
 ./bin/aiweb run-status --json
 ./bin/aiweb run-timeline --limit 20 --json
 ./bin/aiweb observability-summary --limit 20 --json

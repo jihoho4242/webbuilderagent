@@ -10,11 +10,13 @@ module Aiweb
       state, state_error = runtime_state_snapshot
       ensure_scaffold_state_defaults!(state) if state
       scaffold = runtime_scaffold_summary(state)
+      contract = runtime_profile_contract(scaffold)
       metadata = runtime_metadata_summary(scaffold)
       design = runtime_design_summary(state, metadata)
-      package_json = runtime_package_json_summary
-      missing_files = self.class::SCAFFOLD_PROFILE_D_REQUIRED_FILES.reject { |path| File.exist?(File.join(root, path)) }
-      blockers = runtime_plan_blockers(state, state_error, scaffold, metadata, design, package_json, missing_files)
+      package_json = runtime_package_json_summary(contract)
+      missing_files = runtime_missing_required_files(contract)
+      blockers = runtime_plan_blockers(state, state_error, scaffold, metadata, design, package_json, missing_files, contract)
+      blockers.concat(runtime_capability_blockers(contract, :browser_qa))
       return qa_static_blocked_payload(key, label, state, blockers, dry_run: dry_run, command: qa_static_command(executable, nil, nil), target: nil) unless blockers.empty?
 
       preview = running_preview_metadata
@@ -96,10 +98,20 @@ module Aiweb
           blocking_issues << "pnpm executable is missing; install project dependencies outside aiweb #{key.tr('_', '-')}, then rerun."
           stderr = blocking_issues.join("\n") + "\n"
         else
-          stdout, stderr, process_status = Open3.capture3({ "AIWEB_QA_URL" => target["url"] }, *qa_static_command_parts(executable, target["url"], relative(tool_report_path)), chdir: root)
-          exit_code = process_status.exitstatus
-          status = process_status.success? ? "passed" : "failed"
-          blocking_issues << "#{command} failed with exit code #{exit_code}" unless process_status.success?
+          result = runtime_process_runner.capture(
+            Aiweb::Runtime::CommandSpec.new(
+              argv: qa_static_command_parts(executable, target["url"], relative(tool_report_path)),
+              cwd: root,
+              env: runtime_tool_env({ "AIWEB_QA_URL" => target["url"] }, passthrough: %w[AIWEB_STATIC_QA_STATUS A11Y_FAKE_STATUS LIGHTHOUSE_FAKE_STATUS]),
+              timeout: 180,
+              description: command
+            )
+          )
+          stdout = result.stdout
+          stderr = result.stderr
+          exit_code = result.exit_code
+          status = result.success? ? "passed" : result.status
+          blocking_issues << "#{command} failed with exit code #{exit_code || result.status}" unless result.success?
         end
 
         finished_at = Time.now.utc

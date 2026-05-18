@@ -94,8 +94,14 @@ module Aiweb
       콘텐츠 블로그 글 아티클 뉴스 자료 리소스 가이드 매거진 발행 출판 SEO 문서 지식 라이브러리 뉴스레터
     ].freeze
 
+    PROFILE_S_TERMS = %w[
+      supabase rls storage postgres postgresql magic-link magiclink upload uploads bucket buckets row-level-security
+      수파베이스 스토리지 업로드 버킷
+    ].freeze
+
     SAFETY_TERMS = %w[
       finance financial medical healthcare health legal law insurance bank banking payment payments checkout account accounts order orders broker trading investment invest stock stocks loan tax regulated compliance credential token password pii phi
+      hospital clinic dental dentist dermatology dermatologist orthopedics orthopedic ophthalmology ophthalmologist internal-medicine pediatrics pediatric ent physical-therapy physiotherapy therapy therapist care appointment
       금융 재무 의료 건강 병원 클리닉 클리닉웹사이트 진료 치료 도수치료 법률 법 변호사 보험 은행 결제 계좌 계정 주문 증권 투자 주식 대출 세금 세무 규제 개인정보 인증 토큰 비밀번호
       치과 피부과 한의원 의원 정형외과 내과 외과 안과 이비인후과 산부인과 소아과 정신건강의학과 신경외과 재활의학과 가정의학과 비뇨의학과 성형외과 요양병원 약국
     ].freeze
@@ -129,7 +135,7 @@ module Aiweb
     end
 
     def self.normalize_idea(idea)
-      idea.to_s.strip.gsub(/\s+/, " ")
+      normalize_text(idea).strip.gsub(/\s+/, " ")
     end
 
     def self.scores_for(text)
@@ -149,9 +155,10 @@ module Aiweb
 
     def self.recommended_profile(text, archetype)
       downcased = text.downcase
+      return "S" if PROFILE_S_TERMS.any? { |term| keyword_match?(downcased, term) }
       return "A" if PROFILE_A_TERMS.any? { |term| keyword_match?(downcased, term) }
       return "C" if archetype == "ecommerce"
-      return "D" if PROFILE_D_TERMS.any? { |term| keyword_match?(downcased, term) }
+      return "D" if archetype != "service" && PROFILE_D_TERMS.any? { |term| keyword_match?(downcased, term) }
 
       "B"
     end
@@ -166,6 +173,8 @@ module Aiweb
         "Hybrid Rails main app + Cloudflare edge"
       when "D"
         "Astro + MDX/Content Collections + Cloudflare Pages + Tailwind"
+      when "S"
+        "Next.js App Router + Supabase SSR local scaffold"
       else
         "Astro + Cloudflare Pages + Tailwind"
       end
@@ -182,7 +191,7 @@ module Aiweb
     end
 
     def self.keyword_match?(downcased_text, term)
-      needle = term.downcase
+      needle = normalize_text(term).downcase
       if ascii_word?(needle)
         downcased_text.match?(/(?<![a-z0-9])#{Regexp.escape(needle)}(?![a-z0-9])/)
       else
@@ -192,6 +201,12 @@ module Aiweb
 
     def self.ascii_word?(term)
       term.match?(/\A[a-z0-9][a-z0-9-]*\z/i)
+    end
+
+    def self.normalize_text(value)
+      value.to_s.encode(Encoding::UTF_8, invalid: :replace, undef: :replace, replace: "")
+    rescue Encoding::UndefinedConversionError, Encoding::InvalidByteSequenceError
+      value.to_s.encode(Encoding::UTF_8, value.to_s.encoding, invalid: :replace, undef: :replace, replace: "")
     end
   end
 end

@@ -370,9 +370,9 @@ module Aiweb
 
     def workbench_control_side_effects(command)
       text = command.to_s
-      mutates = text.match?(/\b(?:run|design|build|preview|qa-|visual-critique|repair|visual-polish|verify-loop|component-map|visual-edit)\b/)
-      launches = text.match?(/\b(?:build|preview|qa-|verify-loop)\b/)
-      approval = text.match?(/\b(?:verify-loop|visual-polish|visual-edit)\b/)
+      mutates = text.match?(/\b(?:agent|run|design|build|preview|qa-|visual-critique|repair|visual-polish|verify-loop|component-map|visual-edit)\b/)
+      launches = text.match?(/\b(?:agent|build|preview|qa-|verify-loop)\b/)
+      approval = text.match?(/\b(?:agent|verify-loop|visual-polish|visual-edit)\b/)
       {
         "mutates_state" => mutates,
         "launches_process" => launches,
@@ -405,6 +405,8 @@ module Aiweb
       when "visual_critique"
         path = state&.dig("qa", "latest_visual_critique") || latest_visual_critique_artifact
         { "status" => path ? "ready" : "empty", "latest" => path ? workbench_json_summary(path) : nil }
+      when "agent_runtime"
+        workbench_agent_runtime_status(state)
       when "run_timeline"
         { "status" => "ready", "runs" => workbench_run_timeline }
       when "verify_loop_status"
@@ -513,6 +515,26 @@ module Aiweb
         "latest_blocker" => implementation["latest_blocker"],
         "latest" => latest
       }
+    end
+
+    def workbench_agent_runtime_status(state)
+      implementation = state&.dig("implementation").is_a?(Hash) ? state.dig("implementation") : {}
+      latest_path = implementation["latest_agent_runtime"]
+      latest_path ||= latest_agent_runtime_report_path
+      latest = latest_path && !unsafe_env_path?(latest_path) ? workbench_json_summary(latest_path, allow_runs: true) : nil
+      {
+        "status" => implementation["agent_runtime_status"] || (latest ? latest["status"] : "empty"),
+        "latest_agent_runtime" => latest_path,
+        "run_id" => implementation["agent_runtime_run_id"] || latest&.dig("agent_session", "run_id"),
+        "mode" => implementation["agent_runtime_mode"] || latest&.dig("mode"),
+        "profile" => implementation["agent_runtime_profile"] || latest&.dig("profile"),
+        "latest" => latest
+      }
+    end
+
+    def latest_agent_runtime_report_path
+      path = Dir.glob(File.join(aiweb_dir, "runs", "agent-session-*", "final-report.json")).sort.last
+      path ? relative(path) : nil
     end
 
     def workbench_latest_json(pattern)

@@ -26,6 +26,9 @@ require_relative "design_system_resolver"
 require_relative "intent_router"
 require_relative "lazyweb_client"
 require_relative "profiles"
+require_relative "profile_policy"
+require_relative "runtime"
+require_relative "agent_runtime"
 require_relative "project/runtime_commands"
 require_relative "project/verify_loop"
 require_relative "project/sandbox_runtime"
@@ -36,6 +39,7 @@ require_relative "project/engine_scheduler_service"
 require_relative "project/run_lifecycle"
 require_relative "project/design_fidelity"
 require_relative "project/agent_run"
+require_relative "project/agent_runtime_facade"
 require_relative "project/engine_run"
 require_relative "project/state"
 require_relative "project/workbench"
@@ -49,6 +53,7 @@ module Aiweb
     include ProjectMcpBroker
     include ProjectDesignFidelity
     include ProjectAgentRun
+    include ProjectAgentRuntimeFacade
     include ProjectEngineRun
     include ProjectEngineSchedulerService
     include ProjectRunLifecycle
@@ -120,11 +125,13 @@ module Aiweb
       file_tree
       qa_results
       visual_critique
+      agent_runtime
       run_timeline
       verify_loop_status
     ].freeze
 
     WORKBENCH_CONTROLS = [
+      ["agent", "Run supervised agent", "aiweb agent \"Improve this local site\" --mode supervised"],
       ["run", "Run director", "aiweb run"],
       ["design", "Generate design candidates", "aiweb design"],
       ["build", "Plan or run scaffold build", "aiweb build"],
@@ -3282,12 +3289,11 @@ module Aiweb
     end
 
     def unsafe_env_path?(relative_path)
-      relative_path.to_s.tr("\\", "/").split("/").any? { |part| part.start_with?(".env") }
+      Aiweb::Runtime::PathPolicy.unsafe_env_path?(relative_path)
     end
 
     def secret_looking_path?(relative_path)
-      normalized = relative_path.to_s.tr("\\", "/").sub(%r{\A(?:\./)+}, "")
-      normalized.match?(SECRET_LOOKING_PATH_PATTERN)
+      Aiweb::Runtime::PathPolicy.secret_looking_path?(relative_path)
     end
 
     def package_json_profile_s(context)

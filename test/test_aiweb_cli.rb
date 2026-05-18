@@ -10472,6 +10472,7 @@ class AiwebCliTest < Minitest::Test
         file_tree
         qa_results
         visual_critique
+        agent_runtime
         run_timeline
         verify_loop_status
       ]
@@ -10481,6 +10482,7 @@ class AiwebCliTest < Minitest::Test
 
       controls = payload.dig("workbench", "controls")
       expected_controls = [
+        "aiweb agent \"Improve this local site\" --mode supervised",
         "aiweb run",
         "aiweb design",
         "aiweb build",
