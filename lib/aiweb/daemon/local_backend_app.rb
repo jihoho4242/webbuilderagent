@@ -258,61 +258,79 @@ module Aiweb
       path, query = split_target(target)
       return json(204, {}) if method == "OPTIONS"
       validate_api_token!(headers) if path.start_with?("/api/")
-      case [method, path]
-      when ["GET", "/health"]
-        json(200, health_payload)
-      when ["GET", "/api/engine"]
-        json(200, engine_payload)
-      when ["GET", "/api/engine/openmanus-readiness"]
-        json(200, openmanus_readiness_payload(check_image: true))
-      when ["GET", "/api/project/status"]
-        json(200, bridge_run(project_path: authorized_project_path!(query["path"], headers, action: "view_status"), command: "status"))
-      when ["GET", "/api/project/workbench"]
-        json(200, bridge_run(project_path: authorized_project_path!(query["path"], headers, action: "view_workbench"), command: "workbench", args: [], dry_run: true))
-      when ["GET", "/api/project/console"]
-        json(200, console_payload(authorized_project_path!(query["path"], headers, action: "view_console")))
-      when ["GET", "/api/project/runs"]
-        json(200, runs_payload(authorized_project_path!(query["path"], headers, action: "view_runs")))
-      when ["GET", "/api/project/run"]
-        json(200, run_detail_payload(authorized_project_path!(query["path"], headers, action: "view_run"), query["run_id"] || query["run"]))
-      when ["GET", "/api/project/run-stream"]
-        json(200, run_stream_payload(authorized_project_path!(query["path"], headers, action: "view_events"), query["run_id"] || query["run"], query["cursor"], query["limit"], query["wait_ms"]))
-      when ["GET", "/api/project/run-events-sse"]
-        sse(200, run_events_sse_body(authorized_project_path!(query["path"], headers, action: "view_events"), query["run_id"] || query["run"], query["cursor"], query["limit"], query["wait_ms"]))
-      when ["GET", "/api/project/run-events"]
-        json(200, run_events_payload(authorized_project_path!(query["path"], headers, action: "view_events"), query["run_id"] || query["run"]))
-      when ["GET", "/api/project/approvals"]
-        json(200, approvals_payload(authorized_project_path!(query["path"], headers, action: "view_approvals")))
-      when ["GET", "/api/project/job/status"]
-        json(200, job_status_payload(authorized_project_path!(query["path"], headers, action: "view_job_status"), query["run_id"] || query["run"]))
-      when ["GET", "/api/project/job/timeline"]
-        json(200, job_timeline_payload(authorized_project_path!(query["path"], headers, action: "view_job_timeline"), query["limit"]))
-      when ["GET", "/api/project/job/summary"]
-        json(200, job_summary_payload(authorized_project_path!(query["path"], headers, action: "view_job_summary"), query["limit"]))
-      when ["GET", "/api/project/artifact"]
-        artifact_root = authorized_project_path!(query["path"], headers, action: "view_artifact")
-        json(200, artifact_payload(artifact_root, query["artifact"] || query["file"] || query["artifact_path"], headers: headers))
-      when ["POST", "/api/project/command"]
-        json(200, command_payload(parse_body(body), headers))
-      when ["POST", "/api/engine/run"]
-        json(200, engine_run_payload(parse_body(body), headers))
-      when ["POST", "/api/engine/approve"]
-        json(200, engine_approve_payload(parse_body(body), headers))
-      when ["POST", "/api/project/job/cancel"]
-        json(200, job_cancel_payload(parse_body(body), headers))
-      when ["POST", "/api/project/job/resume"]
-        json(200, job_resume_payload(parse_body(body), headers))
-      when ["POST", "/api/codex/agent-run"]
-        json(200, codex_agent_run_payload(parse_body(body), headers))
-      else
-        json(404, error_payload("route not found: #{method} #{path}", 404))
-      end
+      route_response(method, path, query, headers, body)
     rescue UserError => e
       json(e.exit_code == 5 ? 403 : 400, error_payload(e.message, e.exit_code))
     rescue JSON::ParserError => e
       json(400, error_payload("invalid JSON body: #{e.message}", 1))
     rescue StandardError => e
       json(500, error_payload("#{e.class}: #{e.message}", 10))
+    end
+
+    def route_response(method, path, query, headers, body)
+      return get_route_response(path, query, headers) if method == "GET"
+      return post_route_response(path, headers, body) if method == "POST"
+
+      json(404, error_payload("route not found: #{method} #{path}", 404))
+    end
+
+    def get_route_response(path, query, headers)
+      case path
+      when "/health"
+        json(200, health_payload)
+      when "/api/engine"
+        json(200, engine_payload)
+      when "/api/engine/openmanus-readiness"
+        json(200, openmanus_readiness_payload(check_image: true))
+      when "/api/project/status"
+        json(200, bridge_run(project_path: authorized_project_path!(query["path"], headers, action: "view_status"), command: "status"))
+      when "/api/project/workbench"
+        json(200, bridge_run(project_path: authorized_project_path!(query["path"], headers, action: "view_workbench"), command: "workbench", args: [], dry_run: true))
+      when "/api/project/console"
+        json(200, console_payload(authorized_project_path!(query["path"], headers, action: "view_console")))
+      when "/api/project/runs"
+        json(200, runs_payload(authorized_project_path!(query["path"], headers, action: "view_runs")))
+      when "/api/project/run"
+        json(200, run_detail_payload(authorized_project_path!(query["path"], headers, action: "view_run"), query["run_id"] || query["run"]))
+      when "/api/project/run-stream"
+        json(200, run_stream_payload(authorized_project_path!(query["path"], headers, action: "view_events"), query["run_id"] || query["run"], query["cursor"], query["limit"], query["wait_ms"]))
+      when "/api/project/run-events-sse"
+        sse(200, run_events_sse_body(authorized_project_path!(query["path"], headers, action: "view_events"), query["run_id"] || query["run"], query["cursor"], query["limit"], query["wait_ms"]))
+      when "/api/project/run-events"
+        json(200, run_events_payload(authorized_project_path!(query["path"], headers, action: "view_events"), query["run_id"] || query["run"]))
+      when "/api/project/approvals"
+        json(200, approvals_payload(authorized_project_path!(query["path"], headers, action: "view_approvals")))
+      when "/api/project/job/status"
+        json(200, job_status_payload(authorized_project_path!(query["path"], headers, action: "view_job_status"), query["run_id"] || query["run"]))
+      when "/api/project/job/timeline"
+        json(200, job_timeline_payload(authorized_project_path!(query["path"], headers, action: "view_job_timeline"), query["limit"]))
+      when "/api/project/job/summary"
+        json(200, job_summary_payload(authorized_project_path!(query["path"], headers, action: "view_job_summary"), query["limit"]))
+      when "/api/project/artifact"
+        artifact_root = authorized_project_path!(query["path"], headers, action: "view_artifact")
+        json(200, artifact_payload(artifact_root, query["artifact"] || query["file"] || query["artifact_path"], headers: headers))
+      else
+        json(404, error_payload("route not found: GET #{path}", 404))
+      end
+    end
+
+    def post_route_response(path, headers, body)
+      case path
+      when "/api/project/command"
+        json(200, command_payload(parse_body(body), headers))
+      when "/api/engine/run"
+        json(200, engine_run_payload(parse_body(body), headers))
+      when "/api/engine/approve"
+        json(200, engine_approve_payload(parse_body(body), headers))
+      when "/api/project/job/cancel"
+        json(200, job_cancel_payload(parse_body(body), headers))
+      when "/api/project/job/resume"
+        json(200, job_resume_payload(parse_body(body), headers))
+      when "/api/codex/agent-run"
+        json(200, codex_agent_run_payload(parse_body(body), headers))
+      else
+        json(404, error_payload("route not found: POST #{path}", 404))
+      end
     end
 
     private

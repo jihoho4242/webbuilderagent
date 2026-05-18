@@ -305,7 +305,7 @@ module Aiweb
 
       def implementation_mcp_project_file_normalized_path(value)
         value.to_s.tr("\\", "/").sub(%r{\A(?:\./)+}, "").strip
-    end
+      end
     end
   end
 end

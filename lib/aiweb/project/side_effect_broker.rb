@@ -347,9 +347,6 @@ module Aiweb
       if path.end_with?("lib/aiweb/project/runtime_commands.rb") && line.include?("Open3.capture3") && context.include?("append_side_effect_broker_event")
         return side_effect_classification("brokered_setup_supply_chain_command", "brokered", "aiweb.setup.side_effect_broker", "setup package-manager/SBOM/audit subprocess is surrounded by broker events")
       end
-      if path.end_with?("lib/aiweb/project/runtime_commands.rb") && line.include?("Process.spawn")
-        return side_effect_classification("local_preview_server_process", "documented_exception", nil, "preview server subprocess is local-only, logged under .ai-web/runs, and gated by existing dependency checks")
-      end
       if path.end_with?("lib/aiweb/project/runtime_commands.rb") && line.include?("system(")
         return side_effect_classification("local_process_tree_cleanup", "documented_exception", nil, "taskkill/system calls are local cleanup fallbacks for preview process trees")
       end
@@ -359,20 +356,20 @@ module Aiweb
       if path.end_with?("lib/aiweb/runtime/process_runner.rb") && line.match?(/Open3\.(?:capture3|popen3)/)
         return side_effect_classification("central_runtime_process_runner", "brokered", "aiweb.runtime.process_runner", "central CommandSpec/ProcessRunner executes argv-only local commands with scrubbed environment, timeout, output caps, and redaction")
       end
+      if path.end_with?("lib/aiweb/runtime/process_launcher.rb") && line.include?("def spawn")
+        return side_effect_classification("central_runtime_process_launcher_api", "brokered", "aiweb.runtime.process_launcher", "central ProcessLauncher API is the named boundary for long-running local argv subprocesses")
+      end
+      if path.end_with?("lib/aiweb/runtime/process_launcher.rb") && line.include?("Process.spawn")
+        return side_effect_classification("central_runtime_process_launcher", "brokered", "aiweb.runtime.process_launcher", "central ProcessLauncher starts long-running local argv commands with scrubbed environment and explicit stdio")
+      end
       if path.end_with?("lib/aiweb/project/engine_run.rb") && line.include?("Open3.popen3")
         return side_effect_classification("brokered_engine_run_capture_command", "brokered", "aiweb.engine_run.tool_broker", "engine_run_capture_command is invoked with staged tool-broker PATH and emits workspace tool-broker events")
       end
-      if path.end_with?("lib/aiweb/project/engine_run.rb") && line.match?(/exec "\$dir\/\$TOOL_NAME"/)
+      if path.end_with?("lib/aiweb/project/engine_run/generated_sources.rb") && line.match?(/exec "\$dir\/\$TOOL_NAME"/)
         return side_effect_classification("brokered_generated_tool_broker_delegate", "brokered", "aiweb.engine_run.tool_broker", "generated POSIX tool-broker shim delegates only after package/git/external-network block checks")
-      end
-      if path.end_with?("lib/aiweb/project/engine_run.rb") && line.include?("Process.spawn")
-        return side_effect_classification("local_engine_run_preview_server", "documented_exception", nil, "engine-run preview server is a local subprocess with stdout/stderr evidence and localhost URL probing")
       end
       if path.end_with?("lib/aiweb/project/engine_run.rb") && line.include?("Open3.capture3")
         return side_effect_classification("sandbox_runtime_attestation_exception", "documented_exception", nil, "Docker/Podman inspect/info/rm commands are local runtime-attestation probes, redacted, and recorded in sandbox-preflight evidence")
-      end
-      if path.end_with?("lib/aiweb/project/workbench.rb") && line.include?("Process.spawn")
-        return side_effect_classification("local_workbench_server_process", "documented_exception", nil, "workbench serve starts a local development server with stdout/stderr logs")
       end
       if path.end_with?("lib/aiweb/project/agent_run.rb") && line.match?(/git.*diff|git.*status/)
         return side_effect_classification("local_read_only_git_evidence", "documented_exception", nil, "git diff/status subprocesses are local read-only evidence collection for bounded agent-run")

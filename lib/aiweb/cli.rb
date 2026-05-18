@@ -9,6 +9,7 @@ require_relative "project"
 require_relative "registry"
 require_relative "intent_router"
 require_relative "cli/dispatch"
+require_relative "cli/help_text"
 require_relative "cli/output"
 require_relative "cli/exit_codes"
 

@@ -7,16 +7,15 @@ require_relative "runtime_commands/qa_artifacts"
 module Aiweb
   module ProjectRuntimeCommands
     def runtime_plan
-      state, state_error = runtime_state_snapshot
-      ensure_scaffold_state_defaults!(state) if state
-
-      scaffold = runtime_scaffold_summary(state)
-      contract = runtime_profile_contract(scaffold)
-      metadata = runtime_metadata_summary(scaffold)
-      design = runtime_design_summary(state, metadata)
-      package_json = runtime_package_json_summary(contract)
-      missing_files = runtime_missing_required_files(contract)
-      blockers = runtime_plan_blockers(state, state_error, scaffold, metadata, design, package_json, missing_files, contract)
+      context = runtime_readiness_context
+      state = context.fetch(:state)
+      scaffold = context.fetch(:scaffold)
+      contract = context.fetch(:contract)
+      metadata = context.fetch(:metadata)
+      design = context.fetch(:design)
+      package_json = context.fetch(:package_json)
+      missing_files = context.fetch(:missing_files)
+      blockers = context.fetch(:blockers)
       readiness = blockers.empty? ? runtime_contract_readiness(contract) : "blocked"
 
       {
@@ -536,16 +535,10 @@ module Aiweb
     def build(dry_run: false)
       assert_initialized!
 
-      state, state_error = runtime_state_snapshot
-      ensure_scaffold_state_defaults!(state) if state
-      scaffold = runtime_scaffold_summary(state)
-      contract = runtime_profile_contract(scaffold)
-      metadata = runtime_metadata_summary(scaffold)
-      design = runtime_design_summary(state, metadata)
-      package_json = runtime_package_json_summary(contract)
-      missing_files = runtime_missing_required_files(contract)
-      blockers = runtime_plan_blockers(state, state_error, scaffold, metadata, design, package_json, missing_files, contract)
-      blockers.concat(runtime_capability_blockers(contract, :build))
+      context = runtime_readiness_context(capability: :build)
+      state = context.fetch(:state)
+      scaffold = context.fetch(:scaffold)
+      blockers = context.fetch(:blockers)
       return build_blocked_payload(state, blockers, dry_run: dry_run) unless blockers.empty?
 
       run_id = "build-#{Time.now.utc.strftime("%Y%m%dT%H%M%SZ")}"
@@ -639,16 +632,10 @@ module Aiweb
 
       return stop_preview(dry_run: dry_run) if stop
 
-      state, state_error = runtime_state_snapshot
-      ensure_scaffold_state_defaults!(state) if state
-      scaffold = runtime_scaffold_summary(state)
-      contract = runtime_profile_contract(scaffold)
-      metadata = runtime_metadata_summary(scaffold)
-      design = runtime_design_summary(state, metadata)
-      package_json = runtime_package_json_summary(contract)
-      missing_files = runtime_missing_required_files(contract)
-      blockers = runtime_plan_blockers(state, state_error, scaffold, metadata, design, package_json, missing_files, contract)
-      blockers.concat(runtime_capability_blockers(contract, :preview))
+      context = runtime_readiness_context(capability: :preview)
+      state = context.fetch(:state)
+      scaffold = context.fetch(:scaffold)
+      blockers = context.fetch(:blockers)
       return preview_blocked_payload(state, blockers, dry_run: dry_run) unless blockers.empty?
 
       running = running_preview_metadata
@@ -714,14 +701,12 @@ module Aiweb
           stdout_file = File.open(stdout_path, "ab")
           stderr_file = File.open(stderr_path, "ab")
           begin
-            pid = Process.spawn(
-              subprocess_path_env,
-              *preview_command_argv(command),
-              chdir: root,
-              in: File::NULL,
-              out: stdout_file,
-              err: stderr_file,
-              unsetenv_others: true
+            pid = Aiweb::Runtime::ProcessLauncher.spawn(
+              argv: preview_command_argv(command),
+              cwd: root,
+              env: subprocess_path_env,
+              stdout: stdout_file,
+              stderr: stderr_file
             )
             Process.detach(pid)
             status = "running"
@@ -762,18 +747,9 @@ module Aiweb
     end
 
     def qa_playwright(url: nil, task_id: nil, force: false, dry_run: false)
-      state, state_error = runtime_state_snapshot
-      return qa_playwright_blocked_payload(state, [state_error], dry_run: dry_run, command: qa_playwright_command(nil), target: nil) unless state_error.nil?
-
-      ensure_scaffold_state_defaults!(state) if state
-      scaffold = runtime_scaffold_summary(state)
-      contract = runtime_profile_contract(scaffold)
-      metadata = runtime_metadata_summary(scaffold)
-      design = runtime_design_summary(state, metadata)
-      package_json = runtime_package_json_summary(contract)
-      missing_files = runtime_missing_required_files(contract)
-      blockers = runtime_plan_blockers(state, state_error, scaffold, metadata, design, package_json, missing_files, contract)
-      blockers.concat(runtime_capability_blockers(contract, :browser_qa))
+      context = runtime_readiness_context(capability: :browser_qa)
+      state = context.fetch(:state)
+      blockers = context.fetch(:blockers)
       return qa_playwright_blocked_payload(state, blockers, dry_run: dry_run, command: qa_playwright_command(nil), target: nil) unless blockers.empty?
 
       preview = running_preview_metadata
@@ -930,18 +906,9 @@ module Aiweb
     end
 
     def qa_screenshot(url: nil, task_id: nil, force: false, dry_run: false)
-      state, state_error = runtime_state_snapshot
-      return qa_screenshot_blocked_payload(state, [state_error], dry_run: dry_run, command: qa_screenshot_command(nil, nil, nil), target: nil) unless state_error.nil?
-
-      ensure_scaffold_state_defaults!(state) if state
-      scaffold = runtime_scaffold_summary(state)
-      contract = runtime_profile_contract(scaffold)
-      metadata = runtime_metadata_summary(scaffold)
-      design = runtime_design_summary(state, metadata)
-      package_json = runtime_package_json_summary(contract)
-      missing_files = runtime_missing_required_files(contract)
-      blockers = runtime_plan_blockers(state, state_error, scaffold, metadata, design, package_json, missing_files, contract)
-      blockers.concat(runtime_capability_blockers(contract, :browser_qa))
+      context = runtime_readiness_context(capability: :browser_qa)
+      state = context.fetch(:state)
+      blockers = context.fetch(:blockers)
       return qa_screenshot_blocked_payload(state, blockers, dry_run: dry_run, command: qa_screenshot_command(nil, nil, nil), target: nil) unless blockers.empty?
 
       preview = running_preview_metadata
@@ -1186,6 +1153,29 @@ module Aiweb
     end
 
     private
+
+    def runtime_readiness_context(capability: nil)
+      state, state_error = runtime_state_snapshot
+      ensure_scaffold_state_defaults!(state) if state
+      scaffold = runtime_scaffold_summary(state)
+      contract = runtime_profile_contract(scaffold)
+      metadata = runtime_metadata_summary(scaffold)
+      design = runtime_design_summary(state, metadata)
+      package_json = runtime_package_json_summary(contract)
+      missing_files = runtime_missing_required_files(contract)
+      blockers = runtime_plan_blockers(state, state_error, scaffold, metadata, design, package_json, missing_files, contract)
+      blockers.concat(runtime_capability_blockers(contract, capability)) if capability
+      {
+        state: state,
+        scaffold: scaffold,
+        contract: contract,
+        metadata: metadata,
+        design: design,
+        package_json: package_json,
+        missing_files: missing_files,
+        blockers: blockers
+      }
+    end
 
     def setup_blocked_payload(state:, status:, command:, dry_run:, blocking_issues:, next_action:)
       setup_payload(

@@ -161,7 +161,12 @@ module Aiweb
         stderr_file = File.open(stderr_path, "ab")
         pid = nil
         begin
-          pid = Process.spawn(*workbench_serve_command(bind_host, bind_port), chdir: root, out: stdout_file, err: stderr_file)
+          pid = Aiweb::Runtime::ProcessLauncher.spawn(
+            argv: workbench_serve_command(bind_host, bind_port),
+            cwd: root,
+            stdout: stdout_file,
+            stderr: stderr_file
+          )
           Process.detach(pid)
         ensure
           stdout_file.close

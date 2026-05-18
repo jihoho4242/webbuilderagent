@@ -2,6 +2,36 @@
 
 module Aiweb
   module ProjectVerifyLoop
+    VERIFY_LOOP_RESULT_STATUS_KEYS = %w[
+      build
+      preview
+      playwright_qa
+      a11y_qa
+      lighthouse_qa
+      qa_screenshot
+      screenshot_qa
+      visual_critique
+      repair_loop
+      visual_polish
+      component_map
+      agent_run
+    ].freeze
+
+    VERIFY_LOOP_PASSING_STATUSES = {
+      "preview" => %w[running already_running],
+      "repair" => %w[created reused],
+      "visual-polish" => %w[created reused],
+      "component-map" => %w[created discovered ready]
+    }.freeze
+
+    VERIFY_LOOP_QA_RESULT_PATH_KEYS = %w[
+      playwright_qa
+      a11y_qa
+      lighthouse_qa
+      qa_screenshot
+      screenshot_qa
+    ].freeze
+
     def verify_loop(max_cycles: 3, agent: nil, sandbox: nil, approved: false, dry_run: false, force: false)
       assert_initialized!
 
@@ -520,48 +550,21 @@ module Aiweb
     end
 
     def verify_loop_step_status(result)
-      return result.dig("build", "status") if result["build"].is_a?(Hash)
-      return result.dig("preview", "status") if result["preview"].is_a?(Hash)
-      return result.dig("playwright_qa", "status") if result["playwright_qa"].is_a?(Hash)
-      return result.dig("a11y_qa", "status") if result["a11y_qa"].is_a?(Hash)
-      return result.dig("lighthouse_qa", "status") if result["lighthouse_qa"].is_a?(Hash)
-      return result.dig("qa_screenshot", "status") if result["qa_screenshot"].is_a?(Hash)
-      return result.dig("screenshot_qa", "status") if result["screenshot_qa"].is_a?(Hash)
-      return result.dig("visual_critique", "status") if result["visual_critique"].is_a?(Hash)
-      return result.dig("repair_loop", "status") if result["repair_loop"].is_a?(Hash)
-      return result.dig("visual_polish", "status") if result["visual_polish"].is_a?(Hash)
-      return result.dig("component_map", "status") if result["component_map"].is_a?(Hash)
-      return result.dig("agent_run", "status") if result["agent_run"].is_a?(Hash)
-
-      result["status"]
+      key = VERIFY_LOOP_RESULT_STATUS_KEYS.find { |candidate| result[candidate].is_a?(Hash) }
+      key ? result.dig(key, "status") : result["status"]
     end
 
     def verify_loop_step_passed?(result, step_name)
       status = verify_loop_step_status(result).to_s
-      case step_name
-      when "build", "qa", "qa-playwright", "qa-a11y", "qa-lighthouse", "qa-screenshot"
-        status == "passed"
-      when "preview"
-        %w[running already_running].include?(status)
-      when "visual-critique"
-        result.dig("visual_critique", "approval").to_s == "pass" || status == "passed"
-      when "repair"
-        %w[created reused].include?(status)
-      when "visual-polish"
-        %w[created reused].include?(status)
-      when "component-map"
-        %w[created discovered ready].include?(status)
-      when "agent-run"
-        status == "passed"
-      else
-        status == "passed"
-      end
+      return true if step_name == "visual-critique" && result.dig("visual_critique", "approval").to_s == "pass"
+
+      VERIFY_LOOP_PASSING_STATUSES.fetch(step_name, %w[passed]).include?(status)
     end
 
     def verify_loop_step_blocker(step_name, result)
       issues = []
       issues.concat(result["blocking_issues"]) if result["blocking_issues"].is_a?(Array)
-      %w[build preview playwright_qa a11y_qa lighthouse_qa qa_screenshot screenshot_qa visual_critique repair_loop visual_polish component_map agent_run].each do |key|
+      VERIFY_LOOP_RESULT_STATUS_KEYS.each do |key|
         issues.concat(result.dig(key, "blocking_issues")) if result.dig(key, "blocking_issues").is_a?(Array)
       end
       issues << "#{step_name} status #{verify_loop_step_status(result)}"
@@ -573,11 +576,7 @@ module Aiweb
     end
 
     def verify_loop_qa_result_path(result)
-      result.dig("playwright_qa", "result_path") ||
-        result.dig("a11y_qa", "result_path") ||
-        result.dig("lighthouse_qa", "result_path") ||
-        result.dig("qa_screenshot", "result_path") ||
-        result.dig("screenshot_qa", "result_path") ||
+      VERIFY_LOOP_QA_RESULT_PATH_KEYS.lazy.map { |key| result.dig(key, "result_path") }.find { |value| !value.to_s.empty? } ||
         result.dig("qa_result", "artifact_path") ||
         "latest"
     end

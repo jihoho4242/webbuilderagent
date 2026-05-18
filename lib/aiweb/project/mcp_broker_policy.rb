@@ -211,7 +211,7 @@ module Aiweb
         return "metadata_only_no_file_content_plus_side_effect_broker_redaction" if server == IMPLEMENTATION_MCP_PROJECT_FILES_SERVER
 
         "LazywebClient.redact plus side-effect broker redaction"
-    end
+      end
     end
   end
 end

@@ -12,15 +12,7 @@ module Aiweb
       when "version", "--version"
         base_payload("version", "aiweb #{Aiweb::VERSION}")
       when "start"
-        opts = parse_options do |o, options|
-          o.on("--path PATH") { |v| options[:path] = v }
-          o.on("--profile PROFILE") { |v| options[:profile] = v }
-          o.on("--idea IDEA") { |v| options[:idea] = v }
-          o.on("--no-advance") { options[:advance] = false }
-        end
-        opts[:idea] ||= @argv.join(" ")
-        target_root = opts[:path].to_s.strip.empty? ? @root : File.expand_path(opts[:path])
-        Project.new(target_root).start(idea: opts[:idea], profile: opts[:profile], advance: opts.fetch(:advance, true), dry_run: @dry_run)
+        dispatch_start
       when "init"
         opts = parse_options do |o, options|
           o.on("--profile PROFILE") { |v| options[:profile] = v }
@@ -47,46 +39,15 @@ module Aiweb
       when "run"
         project.run(dry_run: @dry_run)
       when "run-status"
-        opts = parse_options do |o, options|
-          o.on("--run-id ID") { |v| options[:run_id] = v }
-        end
-        unless @argv.empty?
-          raise UserError.new("run-status does not accept extra positional arguments: #{@argv.join(", ")}", EXIT_VALIDATION_FAILED)
-        end
-        project.run_status(run_id: opts[:run_id])
+        dispatch_run_status
       when "run-timeline", "timeline"
-        opts = parse_options do |o, options|
-          o.on("--limit N") { |v| options[:limit] = parse_positive_integer(v, "--limit") }
-        end
-        unless @argv.empty?
-          raise UserError.new("#{command} does not accept extra positional arguments: #{@argv.join(", ")}", EXIT_VALIDATION_FAILED)
-        end
-        project.run_timeline(limit: opts[:limit] || 20)
+        dispatch_run_timeline(command)
       when "observability-summary", "summary"
-        opts = parse_options do |o, options|
-          o.on("--limit N") { |v| options[:limit] = parse_positive_integer(v, "--limit") }
-        end
-        unless @argv.empty?
-          raise UserError.new("#{command} does not accept extra positional arguments: #{@argv.join(", ")}", EXIT_VALIDATION_FAILED)
-        end
-        project.observability_summary(limit: opts[:limit] || 20)
+        dispatch_observability_summary(command)
       when "run-cancel"
-        opts = parse_options do |o, options|
-          o.on("--run-id ID") { |v| options[:run_id] = v }
-          o.on("--force") { options[:force] = true }
-        end
-        unless @argv.empty?
-          raise UserError.new("run-cancel does not accept extra positional arguments: #{@argv.join(", ")}", EXIT_VALIDATION_FAILED)
-        end
-        project.run_cancel(run_id: opts[:run_id] || "active", force: opts[:force], dry_run: @dry_run)
+        dispatch_run_cancel
       when "run-resume"
-        opts = parse_options do |o, options|
-          o.on("--run-id ID") { |v| options[:run_id] = v }
-        end
-        unless @argv.empty?
-          raise UserError.new("run-resume does not accept extra positional arguments: #{@argv.join(", ")}", EXIT_VALIDATION_FAILED)
-        end
-        project.run_resume(run_id: opts[:run_id] || "latest", dry_run: @dry_run)
+        dispatch_run_resume
       when "engine-run"
         dispatch_engine_run
       when "engine-scheduler"
@@ -100,17 +61,7 @@ module Aiweb
       when "eval-baseline", "human-baseline"
         dispatch_eval_baseline
       when "verify-loop"
-        opts = parse_options do |o, options|
-          o.on("--max-cycles N") { |v| options[:max_cycles] = parse_positive_integer(v, "--max-cycles") }
-          o.on("--agent AGENT") { |v| options[:agent] = v }
-          o.on("--sandbox SANDBOX") { |v| options[:sandbox] = v }
-          o.on("--approved") { options[:approved] = true }
-          o.on("--force") { options[:force] = true }
-        end
-        unless @argv.empty?
-          raise UserError.new("verify-loop does not accept extra positional arguments: #{@argv.join(", ")}", EXIT_VALIDATION_FAILED)
-        end
-        project.verify_loop(max_cycles: opts[:max_cycles] || 3, agent: opts[:agent], sandbox: opts[:sandbox], approved: !!opts[:approved], force: opts[:force], dry_run: @dry_run)
+        dispatch_verify_loop
       when "design-brief"
         opts = parse_options do |o, options|
           o.on("--force") { options[:force] = true }
@@ -408,6 +359,71 @@ module Aiweb
       end
     end
 
+    def dispatch_start
+      opts = parse_options do |o, options|
+        o.on("--path PATH") { |v| options[:path] = v }
+        o.on("--profile PROFILE") { |v| options[:profile] = v }
+        o.on("--idea IDEA") { |v| options[:idea] = v }
+        o.on("--no-advance") { options[:advance] = false }
+      end
+      opts[:idea] ||= @argv.join(" ")
+      target_root = opts[:path].to_s.strip.empty? ? @root : File.expand_path(opts[:path])
+      Project.new(target_root).start(idea: opts[:idea], profile: opts[:profile], advance: opts.fetch(:advance, true), dry_run: @dry_run)
+    end
+
+    def dispatch_run_status
+      opts = parse_options do |o, options|
+        o.on("--run-id ID") { |v| options[:run_id] = v }
+      end
+      reject_extra_args!("run-status")
+      project.run_status(run_id: opts[:run_id])
+    end
+
+    def dispatch_run_timeline(command)
+      opts = parse_options do |o, options|
+        o.on("--limit N") { |v| options[:limit] = parse_positive_integer(v, "--limit") }
+      end
+      reject_extra_args!(command)
+      project.run_timeline(limit: opts[:limit] || 20)
+    end
+
+    def dispatch_observability_summary(command)
+      opts = parse_options do |o, options|
+        o.on("--limit N") { |v| options[:limit] = parse_positive_integer(v, "--limit") }
+      end
+      reject_extra_args!(command)
+      project.observability_summary(limit: opts[:limit] || 20)
+    end
+
+    def dispatch_run_cancel
+      opts = parse_options do |o, options|
+        o.on("--run-id ID") { |v| options[:run_id] = v }
+        o.on("--force") { options[:force] = true }
+      end
+      reject_extra_args!("run-cancel")
+      project.run_cancel(run_id: opts[:run_id] || "active", force: opts[:force], dry_run: @dry_run)
+    end
+
+    def dispatch_run_resume
+      opts = parse_options do |o, options|
+        o.on("--run-id ID") { |v| options[:run_id] = v }
+      end
+      reject_extra_args!("run-resume")
+      project.run_resume(run_id: opts[:run_id] || "latest", dry_run: @dry_run)
+    end
+
+    def dispatch_verify_loop
+      opts = parse_options do |o, options|
+        o.on("--max-cycles N") { |v| options[:max_cycles] = parse_positive_integer(v, "--max-cycles") }
+        o.on("--agent AGENT") { |v| options[:agent] = v }
+        o.on("--sandbox SANDBOX") { |v| options[:sandbox] = v }
+        o.on("--approved") { options[:approved] = true }
+        o.on("--force") { options[:force] = true }
+      end
+      reject_extra_args!("verify-loop")
+      project.verify_loop(max_cycles: opts[:max_cycles] || 3, agent: opts[:agent], sandbox: opts[:sandbox], approved: !!opts[:approved], force: opts[:force], dry_run: @dry_run)
+    end
+
     def dispatch_intent
       subcommand = @argv.shift || "route"
       unless subcommand == "route"
@@ -450,6 +466,12 @@ module Aiweb
       end
 
       project.design_system_resolve(dry_run: @dry_run, force: opts[:force])
+    end
+
+    def reject_extra_args!(command)
+      return if @argv.empty?
+
+      raise UserError.new("#{command} does not accept extra positional arguments: #{@argv.join(", ")}", EXIT_VALIDATION_FAILED)
     end
 
     def dispatch_registry(command)
