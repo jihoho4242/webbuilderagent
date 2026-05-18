@@ -1,0 +1,2 @@
+{"case_id": "gold-landing-001", "task_type": "landing_page_generation", "expected_evidence": ["decision_packet", "policy_decision", "browser_probe_or_not_tested"], "status": "passed"}
+{"case_id": "gold-a11y-001", "task_type": "accessibility_fix", "expected_evidence": ["a11y_findings", "bounded_patch_manifest"], "status": "passed"}

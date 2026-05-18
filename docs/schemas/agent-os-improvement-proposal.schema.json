@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://aiweb.local/schemas/agent-os-improvement-proposal.schema.json",
+  "title": "Agent OS Improvement Proposal",
+  "type": "object",
+  "required": ["schema_version", "proposal_id", "mode", "target_component", "risk_tier", "hypothesis", "eval_plan", "rollback_plan", "approval_required", "change_hash", "source_changed"],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "proposal_id": { "type": "string", "pattern": "^improvement-proposal-" },
+    "mode": { "enum": ["dry_run", "blocked", "approved_apply"] },
+    "target_component": { "type": "string" },
+    "risk_tier": { "enum": ["L0", "L1", "L2", "L3", "L4", "L5"] },
+    "hypothesis": { "type": "string" },
+    "eval_plan": { "type": "object" },
+    "rollback_plan": { "type": "object" },
+    "approval_required": { "type": "boolean" },
+    "change_hash": { "type": "string", "pattern": "^sha256:[a-f0-9]{64}$" },
+    "source_changed": { "type": "boolean" }
+  },
+  "additionalProperties": true
+}

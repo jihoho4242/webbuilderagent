@@ -8818,7 +8818,7 @@ class AiwebCliTest < Minitest::Test
     assert_includes stdout, "run-resume"
     assert_includes stdout, "run-timeline"
     assert_includes stdout, "observability-summary"
-    assert_match(/verify-loop: runs the local build -> preview -> QA -> critique -> task -> agent-run loop/i, stdout)
+    assert_match(/verify-loop: legacy ToolGateway-routed verification bundle\/probe, not the canonical agent engine/i, stdout)
 
     help_stdout, help_stderr, help_code = run_webbuilder("--help")
     assert_equal 0, help_code

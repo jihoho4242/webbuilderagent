@@ -1,0 +1,2 @@
+{"case_id": "tool-finish-001", "requested_tool": "finish", "expected_risk_tier": "L0"}
+{"case_id": "tool-build-001", "requested_tool": "build", "expected_risk_tier": "L3"}

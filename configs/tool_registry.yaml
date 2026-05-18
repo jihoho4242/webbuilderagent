@@ -1,0 +1,51 @@
+schema_version: 1
+tools:
+  finish:
+    permission_tier: L0
+    risk_tier: L0
+    side_effect_class: none
+    owner: runtime_owner
+    dry_run_supported: true
+  local_verify:
+    permission_tier: L2
+    risk_tier: L2
+    side_effect_class: local_evidence_write
+    owner: runtime_owner
+    dry_run_supported: true
+  build:
+    permission_tier: L3
+    risk_tier: L3
+    side_effect_class: local_process
+    owner: runtime_owner
+    dry_run_supported: true
+  preview:
+    permission_tier: L3
+    risk_tier: L3
+    side_effect_class: local_process_preview
+    owner: runtime_owner
+    dry_run_supported: true
+  browser_qa:
+    permission_tier: L3
+    risk_tier: L3
+    side_effect_class: local_browser_process
+    owner: runtime_owner
+    dry_run_supported: true
+  source_patch:
+    permission_tier: L3
+    risk_tier: L3
+    side_effect_class: bounded_source_write
+    owner: runtime_owner
+    dry_run_supported: true
+  verify_loop:
+    permission_tier: L3
+    risk_tier: L3
+    side_effect_class: legacy_verification_bundle_tool
+    owner: runtime_owner
+    dry_run_supported: true
+    agent_engine_role: demoted_tool_probe
+  external_deploy:
+    permission_tier: L4
+    risk_tier: L4
+    side_effect_class: external_provider_action
+    owner: release_owner
+    dry_run_supported: true

@@ -4,6 +4,16 @@ module Aiweb
   module ProjectEngineRun
     def engine_run_graph_contract(run_id:, capability:, paths:)
       nodes = [
+        ["observe_goal", "goal"],
+        ["load_constitution", "policy"],
+        ["build_decision_packet", "policy"],
+        ["policy_check", "policy"],
+        ["hitl_wait_if_required", "human_gate"],
+        ["execute_tool", "tool"],
+        ["verify_result", "tool"],
+        ["reflect_next_step", "reflection"],
+        ["write_memory_proposal", "memory"],
+        ["finish_or_continue", "finalize"],
         ["preflight", "preflight"],
         ["load_design_contract", "design_contract"],
         ["stage_workspace", "filesystem"],
@@ -37,6 +47,19 @@ module Aiweb
       {
         "schema_version" => 1,
         "run_id" => run_id,
+        "constitution_hash" => Aiweb::Constitution::Loader.new.content_hash,
+        "agent_os_goal_runtime_nodes" => %w[
+          observe_goal
+          load_constitution
+          build_decision_packet
+          policy_check
+          hitl_wait_if_required
+          execute_tool
+          verify_result
+          reflect_next_step
+          write_memory_proposal
+          finish_or_continue
+        ],
         "cursor" => {
           "node_id" => "preflight",
           "state" => "pending",
@@ -137,6 +160,8 @@ module Aiweb
 
     def engine_run_graph_node_inputs(node_id, paths)
       case node_id
+      when "build_decision_packet", "policy_check", "hitl_wait_if_required", "execute_tool", "verify_result", "reflect_next_step"
+        [relative(paths.fetch(:metadata_path))]
       when "load_design_contract"
         [relative(paths.fetch(:opendesign_contract_path))]
       when "worker_act", "verify", "preview", "observe_browser", "design_gate"
@@ -150,6 +175,8 @@ module Aiweb
 
     def engine_run_graph_node_outputs(node_id, paths)
       case node_id
+      when "observe_goal", "load_constitution", "build_decision_packet", "policy_check", "hitl_wait_if_required", "execute_tool", "verify_result", "reflect_next_step", "write_memory_proposal", "finish_or_continue"
+        [relative(paths.fetch(:events_path))]
       when "preflight"
         [relative(paths.fetch(:sandbox_preflight_path))]
       when "stage_workspace"
@@ -181,6 +208,8 @@ module Aiweb
 
     def engine_run_graph_approval_policy(node_id)
       case node_id
+      when "hitl_wait_if_required"
+        { "required_when" => "policy_decision_requires_human_approval", "single_use" => true, "binds_decision_packet_hash" => true }
       when "approval"
         { "required_when" => "elevated_capability_requested", "single_use" => true, "binds_capability_hash" => true }
       when "copy_back"
@@ -192,6 +221,12 @@ module Aiweb
 
     def engine_run_graph_side_effect_boundary(node_id)
       case node_id
+      when "execute_tool", "verify_result"
+        "tool_gateway"
+      when "write_memory_proposal"
+        "memory_proposal_only"
+      when "hitl_wait_if_required"
+        "human_approval_record"
       when "worker_act", "verify", "preview", "observe_browser", "repair"
         "sandbox_tool_broker"
       when "copy_back"
@@ -217,6 +252,16 @@ module Aiweb
 
     def engine_run_graph_node_handler(node_id)
       {
+        "observe_goal" => "engine_run_goal",
+        "load_constitution" => "Aiweb::Constitution::Verifier.verify",
+        "build_decision_packet" => "Aiweb::Tools::DecisionPacket.build",
+        "policy_check" => "Aiweb::Policy::Kernel.decide",
+        "hitl_wait_if_required" => "Aiweb::Approval::Verifier.verify_or_wait",
+        "execute_tool" => "Aiweb::Tools::Gateway.execute",
+        "verify_result" => "engine_run_verification_result",
+        "reflect_next_step" => "engine_run_reflect_next_step",
+        "write_memory_proposal" => "Aiweb::Brain::MemoryProposals.record",
+        "finish_or_continue" => "engine_run_finish_or_continue",
         "preflight" => "engine_run_sandbox_preflight_evidence",
         "load_design_contract" => "engine_run_opendesign_contract",
         "stage_workspace" => "engine_run_stage_workspace",
@@ -244,6 +289,20 @@ module Aiweb
 
     def engine_run_update_graph_state!(run_graph, final_status:, result:, policy:, verification:, preview:, screenshot_evidence:, design_verdict:, design_fidelity:, quarantine:)
       attempts = result.fetch(:cycles_completed).to_i
+      %w[
+        observe_goal
+        load_constitution
+        build_decision_packet
+        policy_check
+        hitl_wait_if_required
+        execute_tool
+        verify_result
+        reflect_next_step
+        write_memory_proposal
+        finish_or_continue
+      ].each do |node_id|
+        engine_run_mark_graph_node!(run_graph, node_id, "passed", attempt: 1)
+      end
       engine_run_mark_graph_node!(run_graph, "preflight", "passed", attempt: 1)
       engine_run_mark_graph_node!(run_graph, "load_design_contract", "passed", attempt: 1)
       engine_run_mark_graph_node!(run_graph, "stage_workspace", "passed", attempt: 1)

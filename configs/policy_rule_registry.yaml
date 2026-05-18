@@ -1,0 +1,15 @@
+schema_version: 1
+default_decision: block
+rules:
+  - id: block_secret_paths
+    match: secret_or_env_path
+    decision: block
+  - id: require_approval_for_l3
+    match: risk_tier_l3_without_approval
+    decision: approval_required
+  - id: require_hitl_for_l4_l5
+    match: risk_tier_l4_l5
+    decision: approval_required
+  - id: allow_l0_l2_local
+    match: risk_tier_l0_l2
+    decision: allow

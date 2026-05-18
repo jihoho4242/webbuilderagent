@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://aiweb.local/schemas/agent-os-brain-context-packet.schema.json",
+  "title": "Agent OS Brain Context Packet",
+  "type": "object",
+  "required": ["schema_version", "context_packet_id", "context_hash", "source", "scope", "evidence_grade", "items", "low_grade_action_use_allowed"],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "context_packet_id": { "type": "string", "pattern": "^brain-context-" },
+    "context_hash": { "type": "string", "pattern": "^sha256:[a-f0-9]{64}$" },
+    "source": { "type": "string" },
+    "scope": { "type": "string" },
+    "evidence_grade": { "enum": ["high", "medium", "low", "proposal"] },
+    "items": { "type": "array" },
+    "low_grade_action_use_allowed": { "const": false }
+  },
+  "additionalProperties": true
+}

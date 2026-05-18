@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://aiweb.local/schemas/agent-os-memory-health-report.schema.json",
+  "title": "Agent OS Memory Health Report",
+  "type": "object",
+  "required": ["schema_version", "status", "metrics", "blocking_issues"],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "status": { "enum": ["passed", "blocked", "failed"] },
+    "metrics": {
+      "type": "object",
+      "required": ["stale_claim_rate", "duplicate_claim_rate", "contradiction_count", "tombstone_leak", "low_grade_action_use", "pii_over_retention", "search_projection_lag", "context_packet_bloat"],
+      "additionalProperties": true
+    },
+    "blocking_issues": { "type": "array", "items": { "type": "string" } }
+  },
+  "additionalProperties": true
+}

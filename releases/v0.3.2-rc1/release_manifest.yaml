@@ -1,0 +1,6 @@
+---
+schema_version: 1
+release_id: v0.3.2-rc1
+release_ready: true
+constitution_hash: sha256:87f5f29f48f18135b27b12f940af93e49e9851df23cf0752d45e0ef4bc73d23c
+p5_evidence_status: passed

@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://aiweb.local/schemas/agent-os-experiment-record.schema.json",
+  "title": "Agent OS Self Improvement Experiment Record",
+  "type": "object",
+  "required": ["schema_version", "experiment_id", "proposal_id", "status", "sandbox_only", "eval_result", "promotion_allowed"],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "experiment_id": { "type": "string", "pattern": "^experiment-" },
+    "proposal_id": { "type": "string" },
+    "status": { "enum": ["planned", "blocked", "passed", "failed"] },
+    "sandbox_only": { "const": true },
+    "eval_result": { "type": "object" },
+    "promotion_allowed": { "type": "boolean" }
+  },
+  "additionalProperties": true
+}

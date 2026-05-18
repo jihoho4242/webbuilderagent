@@ -16,6 +16,7 @@ module Aiweb
           "schema_version" => 1,
           "status" => reflection.fetch("status"),
           "summary" => summary_for(reflection.fetch("status"), session: session, contract: contract, tool_results: tool_results),
+          "agent_os" => agent_os_summary(session: session, tool_results: tool_results),
           "agent_session" => session.to_h(status: reflection.fetch("status"), stop_reason: reflection.fetch("stop_reason"), profile_contract: contract),
           "profile" => observation["profile"],
           "mode" => session.mode,
@@ -44,6 +45,28 @@ module Aiweb
       end
 
       private
+
+      def agent_os_summary(session:, tool_results:)
+        constitution = Aiweb::Constitution::Verifier.new.verify
+        {
+          "schema_version" => 1,
+          "canonical_runtime" => "engine-run",
+          "agent_facade_role" => "goal_facade_compatibility_surface",
+          "split_brain_policy" => "agent artifacts must reference engine-run compatible DecisionPacket/PolicyKernel/ToolGateway evidence",
+          "constitution_hash" => constitution["content_hash"],
+          "constitution_status" => constitution["status"],
+          "tool_gateway_event_order" => tool_results.flat_map { |result| Array(result["tool_gateway_events"]).map { |event| event["event"] } },
+          "script_executor_neutralization" => {
+            "agent_runtime_top_level_engine_role" => "demoted_compatibility_facade",
+            "verify_loop_role" => "legacy_verification_bundle_tool",
+            "browser_static_scenario_role" => "deterministic_local_browser_probe"
+          },
+          "engine_run_facade" => {
+            "status" => "canonical_runtime_selected",
+            "recommended_command" => "aiweb engine-run --goal #{session.goal.inspect} --dry-run"
+          }
+        }
+      end
 
       def source_patch_manifest(session:, plan:, contract:)
         source_supported = contract&.supports?(:source_patch) == true

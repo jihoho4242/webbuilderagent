@@ -1,0 +1,16 @@
+schema_version: 1
+entities:
+- goal
+- profile
+- design_candidate
+- component
+- route
+- qa_evidence
+- policy_decision
+- approval_artifact
+- release_gate
+relationships:
+- goal_selects_profile
+- component_satisfies_design
+- qa_evidence_blocks_release
+- approval_binds_decision_packet

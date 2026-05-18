@@ -1,6 +1,8 @@
 # frozen_string_literal: true
 
 require "fileutils"
+require "digest"
+require "json"
 require "time"
 
 module Aiweb
@@ -49,13 +51,20 @@ module Aiweb
 
       def timeline_events(observation, plan, verification, reflection)
         now = Time.now.utc.iso8601
-        [
+        raw_events = [
           { "event" => "observe", "at" => now, "status" => observation.dig("runtime_plan", "readiness") },
           { "event" => "plan", "at" => now, "actions" => plan.fetch("planned_actions") },
           { "event" => "act", "at" => now, "planned_action_count" => plan.fetch("planned_actions").length },
           { "event" => "verify", "at" => now, "status" => verification.fetch("status") },
           { "event" => "reflect", "at" => now, "status" => reflection.fetch("status"), "stop_reason" => reflection.fetch("stop_reason") }
         ]
+        previous = nil
+        raw_events.map.with_index(1) do |event, index|
+          chained = event.merge("schema_version" => 1, "seq" => index, "previous_event_hash" => previous)
+          chained["event_hash"] = "sha256:#{Digest::SHA256.hexdigest(JSON.generate(chained))}"
+          previous = chained["event_hash"]
+          chained
+        end
       end
     end
   end

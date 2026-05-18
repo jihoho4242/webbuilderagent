@@ -942,6 +942,8 @@ module Aiweb
         "schema_version" => 1,
         "run_id" => run_id,
         "goal" => goal,
+        "constitution_hash" => Aiweb::Constitution::Loader.new.content_hash,
+        "policy_kernel_version" => Aiweb::Tools::DecisionPacket::POLICY_KERNEL_VERSION,
         "mode" => mode,
         "agent" => agent,
         "sandbox" => sandbox,
@@ -1138,7 +1140,7 @@ module Aiweb
       record["artifact_hashes"] = artifact_hashes.is_a?(Hash) ? artifact_hashes : {}
       if run_graph
         record["run_graph_cursor"] = run_graph["cursor"]
-        record["run_graph"] = run_graph.slice("schema_version", "run_id", "nodes", "executor_contract", "resume_policy", "side_effects_must_use_tool_broker")
+        record["run_graph"] = run_graph.slice("schema_version", "run_id", "constitution_hash", "agent_os_goal_runtime_nodes", "nodes", "executor_contract", "resume_policy", "side_effects_must_use_tool_broker")
       end
       record
     end

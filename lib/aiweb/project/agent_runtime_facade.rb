@@ -14,7 +14,7 @@ module Aiweb
         raise UserError.new("agent --mode must be plan-only, supervised, or autonomous-local", 1)
       end
 
-      Aiweb::AgentRuntime::Loop.new(self).run(
+      payload = Aiweb::AgentRuntime::Loop.new(self).run(
         goal: normalized_goal,
         mode: normalized_mode,
         profile: profile,
@@ -22,6 +22,32 @@ module Aiweb
         approved: approved,
         dry_run: dry_run || normalized_mode == "plan-only"
       )
+      payload["engine_run_facade"] = agent_engine_run_facade_plan(normalized_goal)
+      payload.dig("agent_runtime", "agent_os")["engine_run_facade"] = payload["engine_run_facade"] if payload.dig("agent_runtime", "agent_os").is_a?(Hash)
+      payload
+    end
+
+    private
+
+    def agent_engine_run_facade_plan(goal)
+      planned = engine_run(goal: goal, agent: "codex", mode: "safe_patch", dry_run: true)
+      {
+        "schema_version" => 1,
+        "canonical_runtime" => "engine-run",
+        "status" => "planned",
+        "engine_run_id" => planned.dig("engine_run", "run_id"),
+        "approval_hash" => planned.dig("engine_run", "approval_hash"),
+        "checkpoint_path" => planned.dig("engine_run", "checkpoint_path"),
+        "events_path" => planned.dig("engine_run", "events_path"),
+        "note" => "aiweb agent is a goal facade; engine-run is the canonical durable runtime"
+      }
+    rescue StandardError => e
+      {
+        "schema_version" => 1,
+        "canonical_runtime" => "engine-run",
+        "status" => "blocked",
+        "blocking_issues" => ["engine-run facade dry-run unavailable: #{e.class}: #{e.message}"]
+      }
     end
   end
 end

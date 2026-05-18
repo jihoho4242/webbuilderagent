@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://aiweb.local/schemas/agent-os-decision-packet.schema.json",
+  "title": "Agent OS Decision Packet",
+  "type": "object",
+  "required": ["schema_version", "packet_id", "run_id", "goal_hash", "constitution_hash", "policy_kernel_version", "tool_registry_version", "inputs_hash", "requested_tool", "risk_tier", "permission_tier", "expected_outputs", "approval_requirement", "idempotency_key", "replay_policy", "blockers"],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "packet_id": { "type": "string", "pattern": "^decision-packet-" },
+    "run_id": { "type": "string", "minLength": 1 },
+    "goal_hash": { "type": "string", "pattern": "^sha256:[a-f0-9]{64}$" },
+    "constitution_hash": { "type": "string", "pattern": "^sha256:[a-f0-9]{64}$" },
+    "policy_kernel_version": { "type": "string", "minLength": 1 },
+    "tool_registry_version": { "type": "string", "minLength": 1 },
+    "inputs_hash": { "type": "string", "pattern": "^sha256:[a-f0-9]{64}$" },
+    "requested_tool": { "type": "string", "minLength": 1 },
+    "risk_tier": { "enum": ["L0", "L1", "L2", "L3", "L4", "L5"] },
+    "permission_tier": { "enum": ["L0", "L1", "L2", "L3", "L4", "L5"] },
+    "expected_outputs": { "type": "array", "items": { "type": "string" } },
+    "approval_requirement": { "enum": ["none", "required", "satisfied"] },
+    "idempotency_key": { "type": "string", "pattern": "^sha256:[a-f0-9]{64}$" },
+    "replay_policy": { "type": "object", "required": ["requires_artifact_hash_validation", "side_effect_free_replay"], "additionalProperties": true },
+    "blockers": { "type": "array", "items": { "type": "string" } }
+  },
+  "additionalProperties": true
+}

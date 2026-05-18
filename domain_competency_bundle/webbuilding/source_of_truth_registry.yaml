@@ -1,0 +1,8 @@
+schema_version: 1
+sources:
+- README.md
+- .ai-web/state.yaml
+- docs/contracts/agent-os-runtime.md
+- docs/contracts/policy-kernel.md
+- docs/contracts/tool-gateway.md
+- docs/contracts/hitl-approval-v2.md

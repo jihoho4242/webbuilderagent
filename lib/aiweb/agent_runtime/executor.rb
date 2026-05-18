@@ -1,10 +1,13 @@
 # frozen_string_literal: true
 
+require "time"
+
 module Aiweb
   module AgentRuntime
     class Executor
       def initialize(project)
         @project = project
+        @gateway = Aiweb::Tools::Gateway.new
       end
 
       def execute(action, dry_run: true, mode: "plan-only", approved: false)
@@ -12,6 +15,33 @@ module Aiweb
         return planned_result(tool, action) if dry_run
         return pending_approval_result(tool, action, mode) if approval_required?(action, mode, approved)
 
+        gateway_result = @gateway.execute(
+          run_id: "agent-runtime-#{Time.now.utc.strftime("%Y%m%dT%H%M%SZ")}",
+          goal: action.fetch("reason", tool),
+          tool_name: tool,
+          inputs: action,
+          expected_outputs: [action["expected_artifact"]].compact,
+          approved: approved,
+          paths: [action["expected_artifact"]].compact
+        ) do
+          execute_gateway_allowed_tool(tool, action)
+        end
+        merge_gateway_result(tool, gateway_result)
+      end
+
+      private
+
+      def planned_result(tool, action)
+        { "tool" => tool, "status" => "planned", "dry_run" => true, "blocking_issues" => [], "action" => action }
+      end
+
+      def approval_required?(action, mode, approved)
+        return false if approved == true
+
+        action["requires_approval"] == true
+      end
+
+      def execute_gateway_allowed_tool(tool, action)
         case tool
         when "build"
           wrap_project_result(tool, @project.build(dry_run: false), "build")
@@ -30,17 +60,17 @@ module Aiweb
         end
       end
 
-      private
-
-      def planned_result(tool, action)
-        { "tool" => tool, "status" => "planned", "dry_run" => true, "blocking_issues" => [], "action" => action }
-      end
-
-      def approval_required?(action, mode, approved)
-        return false if approved == true
-        return false if mode == "autonomous-local"
-
-        action["requires_approval"] == true
+      def merge_gateway_result(tool, gateway_result)
+        result = gateway_result["tool_result"].is_a?(Hash) ? gateway_result["tool_result"] : {}
+        base = result.merge(
+          "tool" => tool,
+          "decision_packet" => gateway_result["packet"],
+          "policy_decision" => gateway_result["policy_decision"],
+          "tool_gateway_events" => gateway_result.fetch("events", [])
+        )
+        base["status"] ||= gateway_result["status"]
+        base["blocking_issues"] = (Array(base["blocking_issues"]) + Array(gateway_result["blocking_issues"])).uniq
+        base
       end
 
       def pending_approval_result(tool, action, mode)

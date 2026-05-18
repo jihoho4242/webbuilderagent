@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://aiweb.local/schemas/agent-os-tool-gateway-event.schema.json",
+  "title": "Agent OS Tool Gateway Event",
+  "type": "object",
+  "required": ["schema_version", "event", "tool_name", "packet_id", "policy_decision_id", "status", "created_at"],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "event": { "enum": ["tool.requested", "policy.decision", "tool.started", "tool.finished", "tool.blocked"] },
+    "tool_name": { "type": "string" },
+    "packet_id": { "type": "string" },
+    "policy_decision_id": { "type": "string" },
+    "status": { "type": "string" },
+    "created_at": { "type": "string" }
+  },
+  "additionalProperties": true
+}

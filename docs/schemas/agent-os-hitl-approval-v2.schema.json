@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://aiweb.local/schemas/agent-os-hitl-approval-v2.schema.json",
+  "title": "Agent OS HITL Approval Artifact v2",
+  "type": "object",
+  "required": ["schema_version", "approval_id", "run_id", "decision_packet_ids", "risk_tier", "requested_capabilities", "action_diff_hash", "args_hash", "evidence_hash", "approval_hash", "expires_at", "single_use", "consumed_at", "approver_id", "validation_hash"],
+  "properties": {
+    "schema_version": { "const": 2 },
+    "approval_id": { "type": "string", "pattern": "^approval-" },
+    "run_id": { "type": "string" },
+    "decision_packet_ids": { "type": "array", "items": { "type": "string" }, "minItems": 1 },
+    "risk_tier": { "enum": ["L0", "L1", "L2", "L3", "L4", "L5"] },
+    "requested_capabilities": { "type": "array", "items": { "type": "string" } },
+    "action_diff_hash": { "type": "string", "pattern": "^sha256:[a-f0-9]{64}$" },
+    "args_hash": { "type": "string", "pattern": "^sha256:[a-f0-9]{64}$" },
+    "evidence_hash": { "type": "string", "pattern": "^sha256:[a-f0-9]{64}$" },
+    "approval_hash": { "type": "string", "pattern": "^sha256:[a-f0-9]{64}$" },
+    "expires_at": { "type": "string" },
+    "single_use": { "const": true },
+    "consumed_at": { "type": ["string", "null"] },
+    "approver_id": { "type": "string" },
+    "second_reviewer_id": { "type": ["string", "null"] },
+    "validation_hash": { "type": "string", "pattern": "^sha256:[a-f0-9]{64}$" }
+  },
+  "additionalProperties": true
+}

@@ -1,0 +1,13 @@
+schema_version: 1
+skills:
+- goal_decomposition
+- profile_selection
+- policy_gated_tool_use
+- browser_probe_interpretation
+- a11y_repair
+- release_evidence_review
+minimum_evidence:
+- build_or_blocked_reason
+- a11y_or_not_tested_reason
+- policy_decision_event
+- final_report

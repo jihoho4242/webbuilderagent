@@ -1,0 +1,13 @@
+schema_version: 1
+tasks:
+- landing_page_generation
+- seo_content_update
+- design_polish
+- accessibility_fix
+- supabase_auth_scaffold
+- storage_upload_flow
+- qa_repair
+- deploy_readiness_review
+forbidden_claims:
+- unsupervised production generator
+- provider deploy without approval

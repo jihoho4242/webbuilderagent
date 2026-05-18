@@ -1,0 +1,4 @@
+schema_version: 1
+holdout_policy: no_prompt_leakage
+minimum_cases: 2
+calibration_target_ece_max: 0.05

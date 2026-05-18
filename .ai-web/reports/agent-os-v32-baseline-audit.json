@@ -1,0 +1,43 @@
+{
+  "schema_version": 1,
+  "created_at": "2026-05-18T00:00:00Z",
+  "status": "implementation_required",
+  "source_of_truth": [
+    "docs/goals/WEBBUILDER_AGENT_OS_V32_GOAL_PROMPT.ko.md",
+    "docs/goals/WEBBUILDER_AGENT_OS_V32_GOAL_PLAN.ko.md"
+  ],
+  "script_executor_inventory": [
+    {
+      "surface": "AgentRuntime::Loop/Planner/Executor",
+      "finding": "compatibility facade remains but top-level engine role must be demoted and ToolGateway-routed"
+    },
+    {
+      "surface": "verify-loop",
+      "finding": "legacy verification bundle; must be a ToolGateway-routed verification probe, not canonical agent engine"
+    },
+    {
+      "surface": "browser static scenario plan/results",
+      "finding": "deterministic local browser probe, not autonomous planning"
+    }
+  ],
+  "preserve_safety_substrate": [
+    ".ai-web state/gate/evidence",
+    "Profile D/S contracts",
+    "PathPolicy",
+    "EnvPolicy",
+    "ProcessRunner",
+    "engine-run checkpoint/event/hash-chain/sandbox/copy-back/eval evidence"
+  ],
+  "required_remediation": [
+    "constitution",
+    "DecisionPacket",
+    "PolicyKernel",
+    "ToolGateway",
+    "HITL v2",
+    "replay consistency",
+    "eval/red-team",
+    "Personal Brain MVP",
+    "Self-Improvement Governor",
+    "P5 release evidence"
+  ]
+}

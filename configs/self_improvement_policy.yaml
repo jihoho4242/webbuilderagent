@@ -1,0 +1,13 @@
+schema_version: 1
+default_mode: dry_run_only
+forbidden_components:
+  - constitution
+  - policy_kernel
+  - permission_tier
+  - legal_registry
+  - eval_threshold
+  - hitl_gate
+  - credential_store
+  - self_improvement_policy
+max_repair_cycles_per_signature: 3
+requires_hitl_v2_for_real_apply: true

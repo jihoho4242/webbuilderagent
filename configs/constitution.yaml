@@ -1,0 +1,32 @@
+constitution_version: "3.2.0"
+constitution_id: "webbuilderagent-agent-os-constitution-v3.2"
+immutable: true
+rules:
+  - id: NO_SELF_PERMISSION_ESCALATION
+    severity: critical
+    description: "Agents must not increase their own permission tier or tool scope."
+  - id: NO_POLICY_KERNEL_BYPASS
+    severity: critical
+    description: "Every side-effect-capable action must pass through PolicyKernel."
+  - id: NO_HITL_DOWNGRADE
+    severity: critical
+    description: "Human approval gates must not be disabled, weakened, or converted to prompt-only checks."
+  - id: NO_EVAL_THRESHOLD_DOWNGRADE
+    severity: critical
+    description: "Evaluation thresholds and release gates must not be lowered by self-improvement."
+  - id: NO_SECRET_READ
+    severity: critical
+    description: ".env, credentials, provider auth stores, and browser sessions are never readable runtime context."
+change_process:
+  requires_signed_pr: true
+  requires_security_owner: true
+  requires_two_person_review_for_l4_l5: true
+forbidden_direct_patch_components:
+  - configs/constitution.yaml
+  - configs/policy_rule_registry.yaml
+  - configs/capability_matrix.yaml
+  - configs/self_improvement_policy.yaml
+  - lib/aiweb/policy
+  - lib/aiweb/approval
+  - docs/schemas/agent-os-hitl-approval-v2.schema.json
+  - docs/schemas/agent-os-release-evidence-p5.schema.json

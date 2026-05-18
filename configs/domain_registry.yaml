@@ -1,0 +1,6 @@
+schema_version: 1
+domains:
+  webbuilding:
+    bundle_path: domain_competency_bundle/webbuilding
+    required_rubric: domain_competency_bundle/webbuilding/expert_rubric.md
+    production_ready_requires_human_baseline: true

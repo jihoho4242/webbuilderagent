@@ -1,0 +1,11 @@
+schema_version: 1
+permission_tiers:
+  L0: read_only_local_metadata
+  L1: local_artifact_read
+  L2: local_evidence_write
+  L3: local_process_browser_or_source_patch
+  L4: external_network_package_provider_deploy_git_or_mcp_credentials
+  L5: irreversible_production_account_customer_financial_or_security_action
+autonomous_local_auto_allow_max_tier: L2
+l4_l5_requires_second_reviewer: true
+secret_read_policy: block
