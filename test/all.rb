@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require_relative "test_aiweb_cli"
+require_relative "test_aiweb_cli_runtime_qa"
 require_relative "test_contracts"
 require_relative "test_schema_locks"
 require_relative "test_daemon"

@@ -6,6 +6,7 @@ require "time"
 
 require_relative "mcp_broker_drivers"
 require_relative "mcp_broker_policy"
+require_relative "mcp_broker/execution"
 
 module Aiweb
   module ProjectMcpBroker
@@ -73,29 +74,16 @@ module Aiweb
       )
       return implementation_mcp_broker_payload(record, changed_files: [], dry_run: true) if dry_run
 
-      events = []
-      mutation(dry_run: false) do
-        append_side_effect_broker_event(broker_path, events, "tool.requested", implementation_mcp_broker_event_context(request, approved: approved))
-        if blocked
-          append_side_effect_broker_event(broker_path, events, "policy.decision", implementation_mcp_broker_event_context(request, approved: approved).merge("decision" => "deny", "blocking_issues" => blockers))
-          append_side_effect_broker_event(broker_path, events, "tool.blocked", implementation_mcp_broker_event_context(request, approved: approved).merge("status" => "blocked", "blocking_issues" => blockers))
-        else
-          append_side_effect_broker_event(broker_path, events, "policy.decision", implementation_mcp_broker_event_context(request, approved: approved).merge("decision" => "allow"))
-          append_side_effect_broker_event(broker_path, events, "tool.started", implementation_mcp_broker_event_context(request, approved: approved).merge("status" => "running"))
-          begin
-            result = implementation_mcp_broker_call_driver(request)
-            record["status"] = "passed"
-            record["result"] = implementation_mcp_broker_redact_value(result)
-            append_side_effect_broker_event(broker_path, events, "tool.finished", implementation_mcp_broker_event_context(request, approved: approved).merge("status" => "passed"))
-          rescue StandardError => e
-            record["status"] = "failed"
-            record["blocking_issues"] = ["implementation MCP broker call failed: #{LazywebClient.redact("#{e.class}: #{e.message}")}"]
-            append_side_effect_broker_event(broker_path, events, "tool.failed", implementation_mcp_broker_event_context(request, approved: approved).merge("status" => "failed", "error_class" => e.class.name, "error" => LazywebClient.redact(e.message)))
-          end
-        end
-        record["side_effect_broker"] = implementation_mcp_broker_summary(broker, events)
-        write_json(metadata_path, record, false)
-      end
+      implementation_mcp_broker_execute_record(
+        record: record,
+        request: request,
+        broker: broker,
+        broker_path: broker_path,
+        metadata_path: metadata_path,
+        approved: approved,
+        blocked: blocked,
+        blockers: blockers
+      )
       implementation_mcp_broker_payload(record, changed_files: compact_changes([relative(metadata_path), relative(broker_path)]), dry_run: false)
     end
 

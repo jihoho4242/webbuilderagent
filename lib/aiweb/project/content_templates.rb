@@ -1,0 +1,541 @@
+# frozen_string_literal: true
+
+module Aiweb
+  class Project
+    private
+
+    def stack_markdown(key, data)
+      <<~MD
+        # Stack Profile #{key} — #{data[:name]}
+
+        ## Canonical default
+        #{data[:name]}
+
+        ## Scaffold target
+        #{data[:scaffold_target]}
+
+        ## Allowed override
+        #{data[:override]}
+
+        ## When to override
+        Override only when Gate 1A records the reason, affected deployment/runtime tradeoffs, and rollback path.
+
+        ## Implementation note
+        `aiweb init --profile #{key}` records this scaffold target only. Actual app scaffold happens later through a Phase 6 task packet.
+      MD
+    end
+
+    def classify_intent(idea)
+      Archetypes.classify(idea)
+    end
+
+    def gate_markdown(title, scope, status)
+      <<~MD
+        # #{title}
+
+        Status: #{status}
+        Approved at:
+        Approved by:
+
+        ## Approval scope
+        #{scope.map { |item| "- #{item}" }.join("\n")}
+
+        ## Accepted risks
+        - None yet.
+
+        ## Artifact hashes
+        - TODO: record approved artifact hashes before final approval.
+      MD
+    end
+
+
+    def first_view_contract_markdown(intent, idea)
+      <<~MD
+        # First View Contract
+
+        ## Source idea
+        #{idea}
+
+        ## Archetype
+        #{intent["archetype"]}
+
+        ## Surface
+        #{intent["surface"]}
+
+        ## Primary interaction above the fold
+        #{intent["primary_interaction"]}
+
+        ## Must be visible without scrolling
+        #{bullet_list(intent["must_have_first_view"])}
+
+        ## Must not be the first-screen experience
+        #{bullet_list(intent["must_not_have"])}
+
+        ## Mobile expectations
+        - The primary interaction remains visible or reachable in the initial viewport.
+        - Supporting panels stack below the core interaction without hiding the action.
+
+        ## Desktop expectations
+        - The primary interaction and supporting context are visible together.
+        - Secondary marketing or explanatory content must not displace the core interface.
+      MD
+    end
+
+    def project_markdown(idea, state, intent = Archetypes.classify(idea))
+      <<~MD
+        # Project
+
+        ## Idea
+        #{idea}
+
+        ## Project ID
+        #{state.dig("project", "id")}
+
+        ## Detected archetype
+        - Archetype: #{intent["archetype"]}
+        - Surface: #{intent["surface"]}
+        - Primary interaction: #{intent["primary_interaction"]}
+
+        ## Interview questions still to answer
+        - Who is the primary visitor?
+        - What is the primary conversion goal?
+        - What content is already available and what should AI draft?
+        - Is login, payment, admin, or database scope required?
+        - Which reference sites are liked/disliked?
+      MD
+    end
+
+    def product_markdown(idea, intent = Archetypes.classify(idea))
+      <<~MD
+        # Product
+
+        ## One-line concept
+        #{idea}
+
+        ## Detected archetype
+        #{intent["archetype"]} (#{intent["surface"]})
+
+        ## Target user
+        The primary user implied by the idea should be served by the #{intent["surface"]} experience before secondary marketing content.
+
+        ## Value proposition
+        Provide a focused #{intent["archetype"]} experience whose first screen supports the core interaction: #{intent["primary_interaction"]}.
+
+        ## Primary conversion / action
+        #{intent["primary_interaction"]}.
+
+        ## Wrong interpretations to avoid
+        Do not turn this into a generic landing page or #{intent["not_surface"]} when the requested archetype requires #{intent["surface"]}.
+
+        ## Release scope
+        #{bullet_list(intent["must_have_first_view"].map { |item| "First-view requirement: #{item}" })}
+        #{bullet_list(intent["must_not_have"].map { |item| "Excluded or blocked: #{item}" })}
+
+        #{mocked_blocked_excluded_markdown(idea)}
+
+        ## Success metrics
+        - First-view contract is satisfied without scrolling on mobile and desktop.
+        - Semantic QA passes for #{intent["archetype"]}.
+      MD
+    end
+
+    def mocked_blocked_excluded_markdown(idea)
+      if safety_sensitive_idea?(idea)
+        <<~MD.chomp
+          ## Mocked / blocked / excluded for safety
+          - Mocked: external account data, third-party API responses, payments/orders, regulated decisions, or provider callbacks until approved integrations exist.
+          - Locked/preview only: order, payment, or broker actions may show a review/confirmation preview, but must not execute a real order or provider-side transaction.
+          - Blocked: credential collection, real account tokens, approval keys, payment capture, real order execution, production deploys, or irreversible provider actions without explicit human approval.
+          - Excluded: medical, legal, financial, investment, or safety-critical advice presented as authoritative without source review, owner approval, and clear user-facing safety framing.
+        MD
+      else
+        <<~MD.chomp
+          ## Mocked / blocked / excluded for safety
+          - Mocked: unavailable third-party data, provider callbacks, or external integrations until approved sources exist.
+          - Locked/preview only: sensitive external actions may show a review/confirmation preview, but must not execute a real provider-side transaction.
+          - Blocked: credential collection, payment capture, real order execution, production deploys, or irreversible external actions without explicit human approval.
+          - Excluded: regulated or safety-critical claims that lack source review, owner approval, and clear user-facing safety framing.
+        MD
+      end
+    end
+
+    def safety_sensitive_idea?(idea)
+      IntentRouter.sensitive?(idea)
+    end
+
+    def bullet_list(items)
+      Array(items).map { |item| "- #{item}" }.join("\n")
+    end
+
+    def brand_markdown(idea)
+      <<~MD
+        # Brand
+
+        ## Brand direction
+        Draft brand direction for: #{idea}
+
+        ## Tone
+        - Clear
+        - Trustworthy
+        - Conversion-focused
+
+        ## Visual mood
+        TODO: define preferred colors, type mood, spacing density, and imagery.
+      MD
+    end
+
+    def content_markdown(idea, intent = Archetypes.classify(idea))
+      <<~MD
+        # Content
+
+        ## Content provenance
+        Drafted by AI from the idea below until replaced by user-provided source material.
+
+        ## Idea
+        #{idea}
+
+        ## First-view content outline
+        #{bullet_list(intent["must_have_first_view"].map { |item| item.tr("_", " ").capitalize })}
+
+        ## Supporting content outline
+        - Context that explains the value proposition.
+        - Proof, help, or trust cues appropriate for #{intent["archetype"]}.
+        - Follow-up action that reinforces the primary interaction.
+
+        ## SEO draft
+        - Title: TODO
+        - Description: TODO
+      MD
+    end
+
+    def write_design_brief_if_needed(intent:, dry_run:, force:)
+      path = File.join(aiweb_dir, "design-brief.md")
+      return nil if !force && File.exist?(path) && !stub_file?(path)
+
+      write_file(path, DesignBrief.new(intent).markdown, dry_run)
+    end
+
+    def design_system_resolver
+      @design_system_resolver ||= DesignSystemResolver.new(root, aiweb_dir: aiweb_dir, templates_dir: templates_dir)
+    end
+
+    def design_candidate_generator(intent)
+      design_path = File.join(aiweb_dir, "DESIGN.md")
+      brief_path = File.join(aiweb_dir, "design-brief.md")
+      DesignCandidateGenerator.new(
+        root: root,
+        aiweb_dir: aiweb_dir,
+        intent: intent,
+        design_markdown: File.exist?(design_path) ? File.read(design_path) : "",
+        design_brief: File.exist?(brief_path) ? File.read(brief_path) : ""
+      )
+    end
+
+    def design_candidate_html_paths
+      DesignCandidateGenerator::CANDIDATE_IDS.map do |id|
+        File.join(aiweb_dir, "design-candidates", "#{id}.html")
+      end
+    end
+
+    def complete_design_candidate_artifacts?
+      comparison_path = File.join(aiweb_dir, "design-candidates", "comparison.md")
+      design_candidate_html_paths.all? { |path| complete_design_candidate_html?(path) } && complete_design_candidate_comparison?(comparison_path)
+    end
+
+    def complete_design_candidate_html?(path)
+      return false unless File.file?(path)
+
+      id = File.basename(path, ".html")
+      html = File.read(path)
+      !blank?(html) &&
+        html.include?("<!-- aiweb:visual-contract:start #{id} -->") &&
+        html.include?("<!-- aiweb:visual-contract:end #{id} -->")
+    end
+
+    def complete_design_candidate_comparison?(path)
+      return false unless File.file?(path)
+
+      markdown = File.read(path)
+      return false if blank?(markdown)
+
+      markdown.include?("Design Candidate Comparison") &&
+        markdown.include?("| Candidate | Strategy | Score | First-view | Proof pattern | CTA flow | Mobile behavior | Risks |") &&
+        %w[editorial-premium conversion-focused trust-minimal].all? { |strategy| markdown.include?(strategy) } &&
+        DesignCandidateGenerator::CANDIDATE_IDS.all? { |id| markdown.include?("| #{id} |") }
+    end
+
+    def selected_candidate_id
+      state = load_state_if_present
+      selected = state&.dig("design_candidates", "selected_candidate")
+      selected.to_s.strip.empty? ? nil : selected.to_s
+    rescue Psych::SyntaxError
+      nil
+    end
+
+    def write_design_system_if_needed(intent:, dry_run:, force:)
+      return nil unless design_system_resolver.write_needed?(force: force)
+
+      brief_path = File.join(aiweb_dir, "design-brief.md")
+      design_brief = File.exist?(brief_path) ? File.read(brief_path) : DesignBrief.new(intent).markdown
+      write_file(design_system_resolver.design_path, design_system_resolver.markdown(intent: intent, design_brief: design_brief), dry_run)
+    end
+
+    def design_prompt_markdown
+      source_names = %w[product.md brand.md content.md ia.md design-brief.md DESIGN.md]
+      source_names << "design-reference-brief.md" if design_reference_brief_present?
+      inputs = source_names.map do |name|
+        path = File.join(aiweb_dir, name)
+        "## #{name}\n\n#{File.exist?(path) ? File.read(path) : "TODO: missing #{name}"}"
+      end
+      selected = selected_candidate_id
+      if selected
+        selected_path = File.join(aiweb_dir, "design-candidates", "selected.md")
+        candidate_path = File.join(aiweb_dir, "design-candidates", "#{selected}.html")
+        inputs << "## design-candidates/selected.md\n\n#{File.exist?(selected_path) ? File.read(selected_path) : "Selected candidate: #{selected}"}"
+        inputs << "## design-candidates/#{selected}.html\n\n#{File.exist?(candidate_path) ? File.read(candidate_path) : "TODO: missing selected candidate HTML"}"
+      end
+      inputs = inputs.join("\n\n")
+      selected_note = selected ? "Use selected candidate `#{selected}` as visual direction notes while keeping `.ai-web/DESIGN.md` authoritative." : "If deterministic candidates exist, select one with `aiweb select-design candidate-01|candidate-02|candidate-03` before implementation handoff."
+      <<~MD
+        # Design Prompt Handoff
+
+        ## GPT Image 2 prompt
+        Create one high-quality website design candidate based on the product, brand, content, IA, design brief, and `.ai-web/DESIGN.md` source of truth below. Produce a polished responsive homepage concept. Avoid logos or copyrighted brand marks. Emphasize layout, visual hierarchy, component style, typography mood, color system, spacing rhythm, and conversion clarity.
+
+        ## Claude Design prompt
+        Convert the selected visual direction into implementation-ready rules that preserve `.ai-web/DESIGN.md`: design tokens, typography scale, color palette, component recipes, layout constraints, `data-aiweb-id` hooks, and responsive behavior. Do not invent product scope beyond the approved artifacts. Preserve the product artifact's wrong-interpretations-to-avoid guidance when choosing first-screen layout and components. Use `.ai-web/design-reference-brief.md` only as pattern evidence when present; do not copy exact reference UI, copy, prices, trademarks, or signed image URLs. #{selected_note}
+
+        ## Candidate evaluation rubric
+        - Conversion clarity
+        - Brand fit
+        - Mobile-first usability
+        - Accessibility risk
+        - Implementation complexity
+        - Token/component consistency
+
+        ## Source artifacts
+        #{inputs}
+      MD
+    end
+
+    def design_candidate_markdown(id, title, source, notes)
+      <<~MD
+        # #{title}
+
+        Candidate ID: #{id}
+        Source: #{source.to_s.empty? ? "manual" : source}
+        Created at: #{now}
+
+        ## Visual summary
+        #{notes.to_s.empty? ? "TODO: summarize image/design analysis." : notes}
+
+        ## Token implications
+        - Colors: TODO
+        - Typography: TODO
+        - Spacing: TODO
+        - Components: TODO
+
+        ## Risks
+        - Accessibility: TODO
+        - Implementation complexity: TODO
+        - Content fit: TODO
+      MD
+    end
+
+    def normalize_reference_type(value)
+      text = value.to_s.strip.downcase
+      text = "manual" if text.empty?
+      aliases = {
+        "gpt-image" => "gpt-image-2",
+        "gpt_image_2" => "gpt-image-2",
+        "reference-image" => "image",
+        "url" => "remote",
+        "lazyweb-reference" => "lazyweb"
+      }
+      normalized = aliases.fetch(text, text)
+      allowed = %w[manual image gpt-image-2 remote lazyweb]
+      raise UserError.new("ingest-reference --type must be one of: #{allowed.join(", ")}", 1) unless allowed.include?(normalized)
+
+      normalized
+    end
+
+    def default_reference_title(reference_type)
+      case reference_type
+      when "gpt-image-2" then "GPT Image 2 reference notes"
+      when "image" then "Reference image notes"
+      when "remote" then "Remote reference notes"
+      when "lazyweb" then "Lazyweb reference notes"
+      else "Manual reference notes"
+      end
+    end
+
+    def reference_ingestion_brief(existing_brief:, type:, title:, source:, notes:)
+      base = existing_brief.to_s.strip
+      lines = base.empty? ? ["# Design Reference Brief", "", "Provider: manual", "Generated at: #{now}"] : [base]
+      lines.concat([
+        "",
+        "## Manually Ingested Reference Evidence",
+        "",
+        "### #{title}",
+        "- Type: #{type}",
+        "- Source: #{source.to_s.empty? ? "manual notes" : source}",
+        "- Recorded at: #{now}",
+        "",
+        "#### Pattern Constraints",
+        *reference_pattern_constraints(notes),
+        "",
+        "#### No-copy Guardrails",
+        *reference_no_copy_guardrails.map { |guardrail| "- #{guardrail}" },
+        "",
+        "This reference is pattern evidence only. It is not implementation source and must not be routed directly to scaffold, source edits, copywriting, pricing, trademarks, or brand claims."
+      ])
+      lines.join("\n").rstrip + "\n"
+    end
+
+    def reference_pattern_constraints(notes)
+      text = notes.to_s.strip
+      return ["- Preserve approved product, brand, IA, and `.ai-web/DESIGN.md` constraints; no additional visual constraint was supplied."] if text.empty?
+
+      text.lines.map(&:strip).reject(&:empty?).first(20).map do |line|
+        normalized = line.sub(/\A[-*]\s*/, "")
+        "- Interpret as pattern constraint: #{normalized}"
+      end
+    end
+
+    def reference_no_copy_guardrails
+      [
+        "Borrow only abstract interaction, hierarchy, mood, spacing, composition, and accessibility patterns.",
+        "Do not reproduce exact screenshot layout, visual asset, copy, prices, logos, trademarks, brand marks, signed URLs, or brand-specific claims.",
+        "Do not treat GPT Image 2 output or reference images as source assets; convert them into design constraints before implementation.",
+        "Implementation agents must use this brief as read-only pattern evidence and must not call external research tools during source edits."
+      ]
+    end
+
+    def reject_reference_secret_path!(value, label)
+      text = value.to_s.strip
+      return if text.empty?
+
+      reject_env_file_segment!(text, "ingest-reference refuses to read .env or .env.* #{label} paths")
+      path_segments = text.split(/[\\\/]+/)
+      if path_segments.any? { |part| part.match?(/\A(?:secrets?|credentials?|private[-_.]?keys?)(?:\.|\z|-|_)/i) }
+        raise UserError.new("ingest-reference refuses to read secret-looking #{label} paths", 1)
+      end
+    end
+
+    def design_comparison_markdown(state)
+      rows = state.dig("design_candidates", "candidates").map do |candidate|
+        "| #{candidate["id"]} | TODO | TODO | TODO | TODO |"
+      end.join("\n")
+      <<~MD
+        # Design Candidate Comparison
+
+        | Candidate | Brand fit | Conversion clarity | Accessibility risk | Complexity |
+        |---|---|---|---|---|
+        #{rows}
+
+        ## Recommendation
+        TODO: select the strongest candidate and explain tradeoffs.
+      MD
+    end
+
+    def selected_design_markdown(selected_id, selected_ref: {}, refs: [])
+      strategy = selected_ref["strategy_id"].to_s.empty? ? "unknown" : selected_ref["strategy_id"]
+      score = selected_ref["score"] || "unscored"
+      selected_strength = selected_ref["first_view"].to_s.empty? ? "the selected candidate artifact" : selected_ref["first_view"]
+      selected_cta = selected_ref["cta_flow"].to_s.empty? ? "the approved primary action flow" : selected_ref["cta_flow"]
+      selected_proof = selected_ref["proof_pattern"].to_s.empty? ? "source-backed proof placeholders" : selected_ref["proof_pattern"]
+      rejected = Array(refs).reject { |candidate| candidate["id"] == selected_id }.map do |candidate|
+        "- #{candidate["id"]}: #{candidate["strategy_id"] || "unknown strategy"} scored #{candidate["score"] || "unscored"}; tradeoff retained for comparison but not selected for this route."
+      end
+      rejected = ["- No rejected candidates were recorded; rerun `aiweb design --candidates 3 --force` if comparison evidence is missing."] if rejected.empty?
+      <<~MD
+        # Selected Design Candidate
+
+        Selected candidate: #{selected_id}
+        Selected candidate path: .ai-web/design-candidates/#{selected_id}.html
+        Strategy: #{strategy}
+        Score: #{score}
+        Selected at: #{now}
+
+        ## Decision
+        Use `#{selected_id}` as the review-selected visual direction for prompt and task-packet handoff. It best balances #{selected_strength}, #{selected_cta}, and #{selected_proof}. DESIGN.md remains the source of truth; `.ai-web/DESIGN.md` remains authoritative for route, tokens, components, visual contract hooks, and implementation constraints.
+
+        ## Why This Candidate
+        - Strategy coverage: #{strategy}.
+        - Rubric score: #{score}.
+        - First-view fit: #{selected_strength}.
+        - Proof pattern: #{selected_proof}.
+        - CTA flow: #{selected_cta}.
+        - Mobile behavior: #{selected_ref["mobile_behavior"] || "preserve approved responsive first-view behavior"}.
+
+        ## Rejected Candidates
+        #{rejected.join("\n")}
+
+        ## Required Adjustments Before Code Generation
+        - Keep `data-aiweb-id` hooks from the selected candidate or replace them with equally stable semantic IDs.
+        - Replace placeholder-safe proof/content slots only with source-backed copy.
+        - Resolve conflicts in favor of `.ai-web/DESIGN.md`; do not overwrite custom DESIGN.md from selection alone.
+      MD
+    end
+
+    def task_packet_markdown(task_id, task_type, state)
+      source_targets = agent_run_default_source_targets
+      source_target_lines = source_targets.empty? ? "- TODO: add one safe source target before running agent-run." : source_targets.map { |path| "- `#{path}`" }.join("\n")
+      machine_source_targets = source_targets.empty? ? "- TODO" : source_targets.map { |path| "- #{path}" }.join("\n")
+      <<~MD
+        # Task Packet — #{task_type}
+
+        Task ID: #{task_id}
+        Phase: #{state.dig("phase", "current")}
+        Created at: #{now}
+
+        ## Goal
+        Complete the #{task_type} slice without expanding scope beyond approved artifacts.
+
+        ## Inputs
+        - `.ai-web/state.yaml`
+        - `.ai-web/quality.yaml`
+        - `.ai-web/intent.yaml`
+        - `.ai-web/first-view-contract.md`
+        - `.ai-web/product.md`
+        - `.ai-web/content.md`
+        - `.ai-web/DESIGN.md`
+        #{design_reference_brief_present? ? "- `.ai-web/design-reference-brief.md` (read-only pattern evidence; do not call Lazyweb or copy exact reference UI/copy)" : "- `.ai-web/design-reference-brief.md` is optional and currently absent; do not call external design research during implementation."}
+        #{selected_candidate_id ? "- `.ai-web/design-candidates/#{selected_candidate_id}.html` (selected visual direction; DESIGN.md remains authoritative)" : "- Select a design candidate before implementation if Gate 2 has not recorded one."}
+        #{source_target_lines}
+
+        ## Constraints
+        - Do not read `.env` or `.env.*`.
+        - Do not perform external deploy/provider actions without explicit approval.
+        - Do not call external Lazyweb/design-research services from implementation tasks; use persisted markdown patterns only.
+        - Do not copy exact reference screenshots, layouts, copy, prices, trademarks, or brand-specific claims.
+        - Keep changes small and reversible.
+        - Respect design tokens and component rules.
+        - QA failures must create fix packets or rollback decisions.
+
+        ## Machine Constraints
+        shell_allowed: false
+        network_allowed: false
+        env_access_allowed: false
+        requires_selected_design: true
+        allowed_source_paths:
+        #{machine_source_targets}
+
+        ## Acceptance Criteria
+        - The slice is implemented or clearly blocked.
+        - Evidence paths are recorded.
+        - Relevant QA checklist items are updated.
+
+        ## Verification
+        - Run local build/test/lint if available.
+        - Run browser QA checklist for user-facing changes.
+      MD
+    end
+
+    def design_reference_brief_present?
+      path = File.join(aiweb_dir, "design-reference-brief.md")
+      File.file?(path) && File.read(path).to_s.strip.length >= 40
+    end
+
+  end
+end
