@@ -4,6 +4,8 @@ This repository currently ships a working **AI Web Director CLI**: a supervised 
 
 Today the CLI manages the project director workspace: `.ai-web` state, phase gates, quality approvals, task packets, runtime profile contracts, QA reports, agent-session artifacts, rollback/blocker state, and snapshots. It can guide a web project through planning, scaffold/runtime readiness, design prompt handoff, supervised agent planning, implementation task sequencing, QA evidence, and recovery decisions. It still does **not** silently create hosted provider resources, read secrets, deploy, or behave as an unsupervised full-stack SaaS generator.
 
+For the current Korean document map, product goal, canonical v3.2 Agent OS references, archived-document rules, and next-step roadmap, start with [`docs/README.ko.md`](docs/README.ko.md).
+
 ## Current scope
 
 - Initialize a Director workspace with `.ai-web` state and templates.

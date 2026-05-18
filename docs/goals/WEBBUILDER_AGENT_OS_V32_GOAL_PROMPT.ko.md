@@ -5,7 +5,7 @@ Repo: `C:\dev\webbuilderagent`
 Source of truth:
 
 1. `docs/goals/WEBBUILDER_AGENT_OS_V32_GOAL_PLAN.ko.md`
-2. `docs/goals/WEBBUILDER_AGENTIFICATION_EXECUTION_PLAN.md`
+2. `docs/archive/2026-05-agentification-v1/WEBBUILDER_AGENTIFICATION_EXECUTION_PLAN.md` (archived prior context)
 3. `docs/contracts/engine-run.md`
 4. `docs/contracts/security-boundary.md`
 5. `.ai-web/state.yaml`
