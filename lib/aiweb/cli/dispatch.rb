@@ -150,24 +150,10 @@ module Aiweb
         opts = parse_browser_qa_options(command)
         project.qa_screenshot(url: opts[:url], task_id: opts[:task_id], force: opts[:force], dry_run: @dry_run)
       when "qa-a11y", "a11y-qa"
-        opts = parse_options do |o, options|
-          o.on("--url URL") { |v| options[:url] = v }
-          o.on("--task-id ID") { |v| options[:task_id] = v }
-          o.on("--force") { options[:force] = true }
-        end
-        unless @argv.empty?
-          raise UserError.new("#{command} does not accept extra positional arguments: #{@argv.join(", ")}", EXIT_VALIDATION_FAILED)
-        end
+        opts = parse_browser_qa_options(command)
         project.qa_a11y(url: opts[:url], task_id: opts[:task_id], force: opts[:force], dry_run: @dry_run)
       when "qa-lighthouse", "lighthouse-qa"
-        opts = parse_options do |o, options|
-          o.on("--url URL") { |v| options[:url] = v }
-          o.on("--task-id ID") { |v| options[:task_id] = v }
-          o.on("--force") { options[:force] = true }
-        end
-        unless @argv.empty?
-          raise UserError.new("#{command} does not accept extra positional arguments: #{@argv.join(", ")}", EXIT_VALIDATION_FAILED)
-        end
+        opts = parse_browser_qa_options(command)
         project.qa_lighthouse(url: opts[:url], task_id: opts[:task_id], force: opts[:force], dry_run: @dry_run)
       when "visual-critique"
         opts = parse_options do |o, options|
