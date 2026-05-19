@@ -204,6 +204,15 @@
         "agent-run metadata carries side_effect_broker, side_effect_broker_path, and side_effect_broker_events",
         "side-effect surface audit classifies the Open3.capture3 path as brokered_agent_run_codex_subprocess instead of legacy_agent_run_worker_subprocess"
       ]
+    },
+    {
+      "surface": "runtime command git revision and preview process-tree direct process forms",
+      "status": "centralized_to_runtime_process_runner",
+      "evidence": [
+        "git_commit_sha now uses Aiweb::Runtime::ProcessRunner with CommandSpec instead of direct Open3.capture3 in runtime_commands.rb",
+        "Windows preview process-tree cleanup now uses runtime_taskkill_process_tree through ProcessRunner/CommandSpec instead of direct system(taskkill) calls",
+        "side-effect surface audit no longer reports local_runtime_command_exception or local_process_tree_cleanup classifications; entry_count dropped from 40 to 37 with unclassified_count=0"
+      ]
     }
   ],
   "preserved_safety_substrate": [
@@ -211,7 +220,9 @@
     "engine-run durable runtime remains canonical",
     "PolicyKernel, ToolGateway, DecisionPacket, HITL, sandbox/copy-back boundaries remain intact"
   ],
-  "remaining_script_runner_candidates": [],
+  "remaining_script_runner_candidates": [
+
+  ],
   "validation": {
     "ruby -Ilib -e require aiweb": "passed: ok",
     "ruby -Itest test/test_agentification_runtime.rb": "passed: 11 runs, 138 assertions, 0 failures, 0 errors",
@@ -226,7 +237,6 @@
     "ruby -Itest test/test_schema_locks.rb": "passed: 3 runs, 883 assertions, 0 failures, 0 errors",
     "ruby -Itest test/test_aiweb_cli.rb -n /deploy/": "passed: 8 runs, 290 assertions, 0 failures, 0 errors",
     "ruby -Itest test/test_contracts.rb": "passed: 19 runs, 247 assertions, 0 failures, 0 errors",
-    "ruby -Itest test/test_contracts.rb -n /side_effect_surface_audit/": "passed: 5 runs, 69 assertions, 0 failures, 0 errors",
     "ruby -Itest test/test_aiweb_cli.rb -n /verify_loop|verify-loop|workbench_dry_run|deploy/": "passed: 18 runs, 616 assertions, 0 failures, 0 errors",
     "ruby -c lib/aiweb/project/engine_run/preview_browser/browser_actions.rb": "passed: Syntax OK",
     "ruby -c test/test_aiweb_cli.rb test/test_schema_locks.rb test/test_agent_os_v32_static_surface_audit.rb": "passed: Syntax OK",
@@ -239,9 +249,14 @@
     "ruby -c lib/aiweb/ops/p5_gate.rb lib/aiweb/ops/release_manifest.rb": "passed: Syntax OK",
     "ruby -c lib/aiweb/project/agent_run.rb lib/aiweb/project/agent_run/codex_runner.rb lib/aiweb/project/side_effect_broker/classification.rb": "passed: Syntax OK",
     "ruby -Itest test/test_aiweb_cli.rb -n '/agent_run_approved_fake_codex_success_records_logs_diff_and_safe_state|agent_run_codex_uses_clean_environment|agent_run_approved_fake_codex_failure_records_failure_and_logs/'": "passed: 3 runs, 87 assertions, 0 failures, 0 errors",
-    "ruby -Itest test/test_contracts.rb -n '/side_effect_surface_audit/'": "passed: 5 runs, 73 assertions, 0 failures, 0 errors",
-    "ruby -Ilib -e side_effect_surface_audit agent-run classification": "passed: coverage=classified, unclassified=0, entry_count=40, classification=brokered_agent_run_codex_subprocess"
+    "ruby -Itest test/test_contracts.rb -n '/side_effect_surface_audit/'": "passed: 5 runs, 75 assertions, 0 failures, 0 errors",
+    "ruby -Ilib -e side_effect_surface_audit agent-run classification": "passed: coverage=classified, unclassified=0, entry_count=37, classification=brokered_agent_run_codex_subprocess",
+    "ruby -c lib/aiweb/project/runtime_commands.rb test/test_contracts.rb": "passed: Syntax OK",
+    "ruby -Itest test/test_aiweb_cli.rb -n '/preview_records_running_fake_dev_server_duplicate_and_stop/'": "passed: 1 run, 39 assertions, 0 failures, 0 errors",
+    "ruby -Ilib -e side_effect_surface_audit runtime command classification": "passed: coverage=classified, unclassified=0, entry_count=37, removed local_runtime_command_exception/local_process_tree_cleanup",
+    "rg Open3.capture3/system in runtime_commands.rb": "passed: no direct Open3.capture3 or system() forms remain in lib/aiweb/project/runtime_commands.rb",
+    "release evidence integrity hash check": "passed: p5_gate_report.md and release_manifest.yaml hashes match evidence_integrity_manifest.yaml"
   },
   "completion_status": "not_complete",
-  "why_not_complete": "Top-level fixed script-runner surfaces, stale deploy provider execution, browser deterministic-probe naming claims, CLI/contract Manus wording marketing overclaims, fixture-eval production-readiness overclaims, red-team catalog-fixture overclaims, secret-canary value emission, self-improvement dry-run overclaims, release validation evidence overclaims, P5 policy/tool gateway overclaims, P5 HITL fixture overclaims, P5 replay readiness overclaims, Brain safety wording overclaims, Brain JSON snapshot overclaims, and the legacy Codex agent-run subprocess exception are neutralized, but Manus-grade natural-language web-app agent readiness still requires independent production red-team/release evidence plus a real SQLite/dependency-backed Brain kernel."
+  "why_not_complete": "Top-level fixed script-runner surfaces, stale deploy provider execution, browser deterministic-probe naming claims, CLI/contract Manus wording marketing overclaims, fixture-eval production-readiness overclaims, red-team catalog-fixture overclaims, secret-canary value emission, self-improvement dry-run overclaims, release validation evidence overclaims, P5 policy/tool gateway overclaims, P5 HITL fixture overclaims, P5 replay readiness overclaims, Brain safety wording overclaims, Brain JSON snapshot overclaims, the legacy Codex agent-run subprocess exception, and runtime_commands direct git/taskkill process forms are neutralized, but Manus-grade natural-language web-app agent readiness still requires independent production red-team/release evidence plus a real SQLite/dependency-backed Brain kernel."
 }

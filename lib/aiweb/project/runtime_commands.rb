@@ -608,8 +608,17 @@ module Aiweb
     end
 
     def git_commit_sha
-      stdout, _stderr, status = Open3.capture3("git", "rev-parse", "HEAD", chdir: root)
-      status.success? ? stdout.strip : "unknown"
+      result = runtime_process_runner.capture(
+        Aiweb::Runtime::CommandSpec.new(
+          argv: %w[git rev-parse HEAD],
+          cwd: root,
+          timeout: 10,
+          max_output_bytes: 4096,
+          risk_class: "local_read_only_git",
+          description: "git rev-parse HEAD"
+        )
+      )
+      result.success? ? result.stdout.strip : "unknown"
     rescue StandardError
       "unknown"
     end
@@ -780,8 +789,8 @@ module Aiweb
     def stop_process_tree(pid)
       if windows?
         taskkill = File.join(ENV["WINDIR"].to_s.empty? ? "C:/Windows" : ENV["WINDIR"], "System32", "taskkill.exe")
-        return if File.executable?(taskkill) && system(taskkill, "/PID", pid.to_s, "/T", "/F", out: File::NULL, err: File::NULL)
-        return if system("taskkill.exe", "/PID", pid.to_s, "/T", "/F", out: File::NULL, err: File::NULL)
+        return if File.executable?(taskkill) && runtime_taskkill_process_tree(pid, taskkill)
+        return if runtime_taskkill_process_tree(pid, "taskkill.exe")
 
         Process.kill("KILL", pid)
       else
@@ -789,6 +798,22 @@ module Aiweb
       end
     rescue Errno::ESRCH, Errno::EINVAL
       nil
+    end
+
+    def runtime_taskkill_process_tree(pid, command)
+      result = runtime_process_runner.capture(
+        Aiweb::Runtime::CommandSpec.new(
+          argv: [command, "/PID", pid.to_s, "/T", "/F"],
+          cwd: root,
+          timeout: 10,
+          max_output_bytes: 16_000,
+          risk_class: "local_process_tree_cleanup",
+          description: "taskkill preview process tree"
+        )
+      )
+      result.success?
+    rescue ArgumentError
+      false
     end
 
     def runtime_state_snapshot

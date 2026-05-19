@@ -107,6 +107,8 @@ class AiwebContractTest < Minitest::Test
     entries = audit.fetch("entries")
     refute entries.any? { |entry| entry.fetch("coverage_status") == "unclassified" }
     refute entries.any? { |entry| entry.fetch("path").end_with?("side_effect_broker.rb") }
+    refute entries.any? { |entry| entry.fetch("classification") == "local_runtime_command_exception" }, "git revision probes must use the central ProcessRunner boundary instead of direct Open3 in runtime commands"
+    refute entries.any? { |entry| entry.fetch("classification") == "local_process_tree_cleanup" }, "preview process tree cleanup must use the central ProcessRunner boundary instead of direct system calls"
 
     classifications = entries.map { |entry| entry.fetch("classification") }
     %w[

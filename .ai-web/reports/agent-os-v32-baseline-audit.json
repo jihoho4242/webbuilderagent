@@ -106,6 +106,11 @@
       "surface": "Codex agent-run worker subprocess documented exception",
       "status": "brokered_with_agent_run_codex_side_effect_broker",
       "finding": "Codex agent-run no longer relies on a legacy documented exception; approved local source-patch subprocess execution writes side-effect broker events and static audit classifies the Open3.capture3 surface as brokered_agent_run_codex_subprocess."
+    },
+    {
+      "surface": "runtime command git revision and preview process-tree direct process forms",
+      "status": "centralized_to_runtime_process_runner",
+      "finding": "runtime_commands no longer owns direct Open3 git revision probes or direct system(taskkill) process-tree cleanup; both route through the central ProcessRunner/CommandSpec boundary, and static side-effect audit has no local_runtime_command_exception or local_process_tree_cleanup entries."
     }
   ],
   "preserve_safety_substrate": [
