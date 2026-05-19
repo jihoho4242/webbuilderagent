@@ -59,9 +59,6 @@ module Aiweb
       if path.end_with?("lib/aiweb/project/engine_run/generated_sources.rb") && line.match?(/exec "\$dir\/\$TOOL_NAME"/)
         return side_effect_classification("brokered_generated_tool_broker_delegate", "brokered", "aiweb.engine_run.tool_broker", "generated POSIX tool-broker shim delegates only after package/git/external-network block checks")
       end
-      if path.end_with?("lib/aiweb/project/engine_run/sandbox_process.rb") && line.include?("Open3.capture3")
-        return side_effect_classification("sandbox_runtime_attestation_exception", "documented_exception", nil, "Docker/Podman inspect/info/rm commands are local runtime-attestation probes, redacted, and recorded in sandbox-preflight evidence")
-      end
       if side_effect_path_in?(path, SIDE_EFFECT_AGENT_RUN_WORKER_PATHS) && line.include?("Open3.capture3") && context.include?("append_side_effect_broker_event")
         return side_effect_classification("brokered_agent_run_codex_subprocess", "brokered", "aiweb.agent_run.codex.side_effect_broker", "Codex agent-run subprocess records side-effect broker events around approved local source-patch execution")
       end

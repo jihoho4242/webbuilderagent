@@ -126,6 +126,11 @@
       "surface": "agent-run OpenManus direct image inspect preflight",
       "status": "centralized_to_runtime_process_runner",
       "finding": "agent-run OpenManus image preflight no longer owns direct Open3 image inspect subprocesses; image inspect now routes through ProcessRunner/CommandSpec with scrubbed env, the stale openmanus_sandbox_image_preflight documented-exception classifier was removed, and static side-effect audit has no openmanus_sandbox_image_preflight entries."
+    },
+    {
+      "surface": "engine-run sandbox runtime attestation direct Docker/Podman probes",
+      "status": "centralized_to_runtime_process_runner",
+      "finding": "engine_run sandbox container inspect, cleanup, image inspect, and runtime info probes no longer own direct Open3 subprocesses; local Docker/Podman attestation now routes through ProcessRunner/CommandSpec, the stale sandbox_runtime_attestation_exception documented-exception classifier was removed, and static side-effect audit has no sandbox_runtime_attestation_exception entries."
     }
   ],
   "preserve_safety_substrate": [

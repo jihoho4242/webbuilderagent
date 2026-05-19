@@ -21,10 +21,10 @@ module Aiweb
     def engine_run_runtime_container_inspect(sandbox, container_id, expected_workspace_dir: nil)
       return { "status" => "not_observed", "reason" => "missing_container_id" } if sandbox.to_s.strip.empty? || container_id.to_s.strip.empty?
 
-      stdout, stderr, status = Open3.capture3(subprocess_path_env, sandbox.to_s, "inspect", container_id.to_s, unsetenv_others: true)
-      return { "status" => "failed", "exit_code" => status.exitstatus, "stderr" => agent_run_redact_process_output(stderr.to_s)[0, 1000] } unless status.success?
+      result = engine_run_sandbox_runtime_capture(sandbox, ["inspect", container_id.to_s], risk_class: "engine_run_sandbox_container_inspect")
+      return { "status" => "failed", "exit_code" => result.exit_code, "stderr" => agent_run_redact_process_output(result.stderr.to_s)[0, 1000] } unless result.success?
 
-      parsed = stdout.to_s.strip.empty? ? [] : JSON.parse(stdout.to_s)
+      parsed = result.stdout.to_s.strip.empty? ? [] : JSON.parse(result.stdout.to_s)
       record = parsed.is_a?(Array) ? parsed.first : parsed
       record = {} unless record.is_a?(Hash)
       host_config = record["HostConfig"].is_a?(Hash) ? record["HostConfig"] : {}
@@ -68,7 +68,7 @@ module Aiweb
       }
     rescue JSON::ParserError
       { "status" => "failed", "reason" => "container_inspect_parse_failed" }
-    rescue SystemCallError => e
+    rescue ArgumentError, SystemCallError => e
       { "status" => "failed", "reason" => e.message }
     end
 
@@ -131,9 +131,9 @@ module Aiweb
     def engine_run_remove_runtime_container(sandbox, container_id)
       return if sandbox.to_s.strip.empty? || container_id.to_s.strip.empty?
 
-      Open3.capture3(subprocess_path_env, sandbox.to_s, "rm", "-f", container_id.to_s, unsetenv_others: true)
+      engine_run_sandbox_runtime_capture(sandbox, ["rm", "-f", container_id.to_s], risk_class: "engine_run_sandbox_container_cleanup", timeout: 10, max_output_bytes: 8_000)
       nil
-    rescue SystemCallError
+    rescue ArgumentError, SystemCallError
       nil
     end
 
@@ -202,11 +202,11 @@ module Aiweb
     def engine_run_container_image_inspect(sandbox, image)
       return { "status" => "skipped", "reason" => "missing_sandbox_or_image" } if sandbox.to_s.strip.empty? || image.to_s.strip.empty?
 
-      stdout, _stderr, status = Open3.capture3(subprocess_path_env, sandbox.to_s, "image", "inspect", image.to_s, unsetenv_others: true)
-      return { "status" => "failed", "exit_code" => status.exitstatus } unless status.success?
-      return { "status" => "failed", "reason" => "image_inspect_empty_output" } if stdout.to_s.strip.empty?
+      result = engine_run_sandbox_runtime_capture(sandbox, ["image", "inspect", image.to_s], risk_class: "engine_run_sandbox_image_inspect")
+      return { "status" => "failed", "exit_code" => result.exit_code } unless result.success?
+      return { "status" => "failed", "reason" => "image_inspect_empty_output" } if result.stdout.to_s.strip.empty?
 
-      parsed = JSON.parse(stdout.to_s)
+      parsed = JSON.parse(result.stdout.to_s)
       image_record = parsed.is_a?(Array) ? parsed.first : parsed
       return { "status" => "failed", "reason" => "image_inspect_missing_record" } unless image_record.is_a?(Hash)
 
@@ -227,7 +227,7 @@ module Aiweb
       }
     rescue JSON::ParserError
       { "status" => "failed", "reason" => "image_inspect_parse_failed" }
-    rescue SystemCallError => e
+    rescue ArgumentError, SystemCallError => e
       { "status" => "failed", "error" => e.message }
     end
 
@@ -240,10 +240,10 @@ module Aiweb
     def engine_run_sandbox_runtime_info(sandbox)
       return { "status" => "skipped", "reason" => "missing_sandbox" } if sandbox.to_s.strip.empty?
 
-      stdout, _stderr, status = Open3.capture3(subprocess_path_env, sandbox.to_s, "info", "--format", "{{json .}}", unsetenv_others: true)
-      return { "status" => "failed", "exit_code" => status.exitstatus, "rootless_mode" => "not_observed", "security_options" => [] } unless status.success?
+      result = engine_run_sandbox_runtime_capture(sandbox, ["info", "--format", "{{json .}}"], risk_class: "engine_run_sandbox_runtime_info")
+      return { "status" => "failed", "exit_code" => result.exit_code, "rootless_mode" => "not_observed", "security_options" => [] } unless result.success?
 
-      parsed = stdout.to_s.strip.empty? ? {} : JSON.parse(stdout.to_s)
+      parsed = result.stdout.to_s.strip.empty? ? {} : JSON.parse(result.stdout.to_s)
       parsed = {} unless parsed.is_a?(Hash)
       security_options = Array(parsed["SecurityOptions"] || parsed.dig("Host", "Security", "SecurityOptions")).map(&:to_s)
       rootless = parsed.dig("Host", "Security", "Rootless")
@@ -258,8 +258,23 @@ module Aiweb
       }
     rescue JSON::ParserError
       { "status" => "passed", "raw_parse_failed" => true, "rootless_mode" => "not_observed", "security_options" => [] }
-    rescue SystemCallError => e
+    rescue ArgumentError, SystemCallError => e
       { "status" => "failed", "error" => e.message, "rootless_mode" => "not_observed", "security_options" => [] }
+    end
+
+    def engine_run_sandbox_runtime_capture(sandbox, args, risk_class:, timeout: 15, max_output_bytes: 32_000)
+      executable = executable_path(sandbox.to_s) || sandbox.to_s
+      runtime_process_runner.capture(
+        Aiweb::Runtime::CommandSpec.new(
+          argv: [executable, *Array(args).map(&:to_s)],
+          cwd: root,
+          env: subprocess_path_env,
+          timeout: timeout,
+          max_output_bytes: max_output_bytes,
+          risk_class: risk_class,
+          description: "engine-run sandbox runtime attestation"
+        )
+      )
     end
 
     def engine_run_sandbox_negative_checks(argv, workspace_dir)
