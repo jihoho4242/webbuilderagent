@@ -3295,7 +3295,7 @@ class AiwebCliTest < Minitest::Test
       assert_includes surface_audit.fetch("scanned_globs"), "bin/**/*"
       assert_includes surface_audit.fetch("scanned_globs"), "scripts/**/*"
       assert_match(/not itself a runtime enforcement broker/, surface_audit.fetch("scanner_limitations").join("\n"))
-      assert surface_audit.fetch("entries").any? { |entry| entry["classification"] == "brokered_engine_run_capture_command" }
+      assert surface_audit.fetch("entries").any? { |entry| entry["classification"] == "central_runtime_process_runner" }
       broker_enforcement = payload.dig("engine_run", "tool_broker", "runtime_broker_enforcement")
       assert_equal "partial_enforcement", broker_enforcement.fetch("status")
       assert_equal 0, broker_enforcement.fetch("executable_without_broker_count")

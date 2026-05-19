@@ -42,9 +42,6 @@ module Aiweb
       if path.end_with?("lib/aiweb/runtime/process_launcher.rb") && line.include?("Process.spawn")
         return side_effect_classification("central_runtime_process_launcher", "brokered", "aiweb.runtime.process_launcher", "central ProcessLauncher starts long-running local argv commands with scrubbed environment and explicit stdio")
       end
-      if path.end_with?("lib/aiweb/project/engine_run/sandbox_process.rb") && line.include?("Open3.capture3") && context.include?("def engine_run_capture_command")
-        return side_effect_classification("brokered_engine_run_capture_command", "brokered", "aiweb.engine_run.tool_broker", "engine_run_capture_command is invoked with staged tool-broker PATH and emits workspace tool-broker events")
-      end
       if path.end_with?("lib/aiweb/project/engine_run/generated_sources.rb") && line.match?(/exec "\$dir\/\$TOOL_NAME"/)
         return side_effect_classification("brokered_generated_tool_broker_delegate", "brokered", "aiweb.engine_run.tool_broker", "generated POSIX tool-broker shim delegates only after package/git/external-network block checks")
       end

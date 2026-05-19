@@ -142,6 +142,25 @@ class AgentificationRuntimeTest < Minitest::Test
     end
   end
 
+  def test_command_spec_requires_explicit_shell_meta_opt_in
+    in_tmp do |dir|
+      error = assert_raises(ArgumentError) do
+        Aiweb::Runtime::CommandSpec.new(argv: [RbConfig.ruby, "-e", "puts 'x'; puts 'y'"], cwd: dir)
+      end
+      assert_match(/unsafe shell metacharacter/, error.message)
+
+      spec = Aiweb::Runtime::CommandSpec.new(
+        argv: [RbConfig.ruby, "-e", "puts 'x'; puts 'y'"],
+        cwd: dir,
+        allow_shell_meta: true
+      )
+      result = Aiweb::Runtime::ProcessRunner.new.capture(spec).to_h
+      assert_equal "passed", result["status"]
+      assert_match(/x/, result["stdout"])
+      assert_match(/y/, result["stdout"])
+    end
+  end
+
   def test_process_runner_times_out_with_structured_result
     in_tmp do |dir|
       script = File.join(dir, "slow.rb")

@@ -1,8 +1,5 @@
 # frozen_string_literal: true
 
-require "open3"
-require "timeout"
-
 module Aiweb
   module ProjectEngineRun
     private
@@ -342,17 +339,21 @@ module Aiweb
     end
 
     def engine_run_capture_command(command, cwd, timeout_sec, env: subprocess_path_env)
-      stdout = +""
-      stderr = +""
-      exit_code = nil
-      Timeout.timeout(timeout_sec) do
-        stdout, stderr, status = Open3.capture3(env, *command, chdir: cwd, unsetenv_others: true)
-        exit_code = status.exitstatus
-      end
-      [stdout, stderr, exit_code]
-    rescue Timeout::Error
-      ["", "timed out after #{timeout_sec}s\n", 124]
-    rescue SystemCallError => e
+      result = runtime_process_runner.capture(
+        Aiweb::Runtime::CommandSpec.new(
+          argv: Array(command).map(&:to_s),
+          cwd: cwd,
+          env: env,
+          timeout: timeout_sec,
+          max_output_bytes: 200_000,
+          risk_class: "engine_run_capture_command",
+          description: "engine-run brokered capture command",
+          allow_shell_meta: true
+        )
+      )
+      exit_code = result.status == "timeout" ? 124 : (result.exit_code || 127)
+      [result.stdout.to_s, result.stderr.to_s, exit_code]
+    rescue ArgumentError, SystemCallError => e
       ["", "#{e.message}\n", 127]
     end
 

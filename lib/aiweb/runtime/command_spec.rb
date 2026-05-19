@@ -7,7 +7,7 @@ module Aiweb
 
       attr_reader :argv, :cwd, :env, :stdin_data, :timeout, :max_output_bytes, :risk_class, :description
 
-      def initialize(argv:, cwd:, env: {}, stdin_data: nil, timeout: 120, max_output_bytes: 200_000, risk_class: "local_process", description: nil)
+      def initialize(argv:, cwd:, env: {}, stdin_data: nil, timeout: 120, max_output_bytes: 200_000, risk_class: "local_process", description: nil, allow_shell_meta: false)
         @argv = Array(argv).map(&:to_s)
         @cwd = cwd.to_s
         @env = env.transform_keys(&:to_s)
@@ -16,6 +16,7 @@ module Aiweb
         @max_output_bytes = max_output_bytes
         @risk_class = risk_class
         @description = description || @argv.join(" ")
+        @allow_shell_meta = allow_shell_meta
         validate!
       end
 
@@ -27,6 +28,8 @@ module Aiweb
         raise ArgumentError, "command argv must not be empty" if argv.empty? || argv.first.to_s.empty?
         raise ArgumentError, "command cwd must not be empty" if cwd.empty?
         argv.each do |part|
+          next if @allow_shell_meta
+
           raise ArgumentError, "unsafe shell metacharacter in argv element #{part.inspect}" if part.match?(SHELL_META_PATTERN)
         end
         true
