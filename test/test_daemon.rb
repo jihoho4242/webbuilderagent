@@ -287,6 +287,26 @@ class AiwebDaemonTest < Minitest::Test
     end
   end
 
+  def test_bridge_treats_shell_metacharacters_as_argv_data_not_shell
+    in_tmp do |dir|
+      engine_root = fake_engine_root(
+        dir,
+        "require 'json'\nputs JSON.generate({schema_version: 1, argv: ARGV})\n"
+      )
+      project_dir = File.join(dir, "project")
+      FileUtils.mkdir_p(project_dir)
+      bridge = Aiweb::CodexCliBridge.new(engine_root: engine_root, allowed_commands: ["agent"])
+      injected_marker = File.join(project_dir, "shell-injection-marker")
+      natural_language_goal = "premium SEO & docs; File.write('#{injected_marker}', 'bad')"
+
+      result = bridge.run(project_path: project_dir, command: "agent", args: ["--goal", natural_language_goal], dry_run: true)
+
+      assert_equal "passed", result["status"]
+      assert_includes result.dig("stdout_json", "argv"), natural_language_goal
+      refute File.exist?(injected_marker), "bridge must pass punctuation as argv data without shell execution"
+    end
+  end
+
   def test_bridge_broker_blocks_disallowed_deploy_and_keeps_read_only_inline
     in_tmp do |dir|
       bridge = Aiweb::CodexCliBridge.new(engine_root: REPO_ROOT)

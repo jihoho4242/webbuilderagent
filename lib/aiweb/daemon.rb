@@ -3,7 +3,6 @@
 require "json"
 require "digest"
 require "fileutils"
-require "open3"
 require "rbconfig"
 require "securerandom"
 require "socket"

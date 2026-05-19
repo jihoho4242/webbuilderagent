@@ -15,7 +15,6 @@ module Aiweb
       if path.end_with?("lib/aiweb/project/browser_observer_script.js")
         return side_effect_classification("local_browser_observer_template_literal", "documented_exception", nil, "browser observer JavaScript is written by engine-run and executed only through the local browser-observation path; JavaScript template literals are not shell execution")
       end
-      return side_effect_classification("brokered_backend_cli_bridge", "brokered", "aiweb.backend.side_effect_broker", "backend bridge writes broker events before Open3.popen3") if path.end_with?("lib/aiweb/daemon/cli_bridge.rb") && line.include?("Open3.popen3")
       if path.end_with?("lib/aiweb/lazyweb_client.rb") && line.match?(/Net::HTTP/)
         return side_effect_classification("brokered_lazyweb_http", "brokered", "aiweb.lazyweb.side_effect_broker", "LazywebClient emits broker audit events around Net::HTTP")
       end

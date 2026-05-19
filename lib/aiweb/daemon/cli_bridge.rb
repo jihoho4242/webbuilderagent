@@ -2,10 +2,12 @@
 
 require "fileutils"
 require "json"
+require "rbconfig"
 require "securerandom"
 require "time"
 
 require_relative "../redaction"
+require_relative "../runtime"
 
 module Aiweb
   class CodexCliBridge
@@ -37,6 +39,7 @@ module Aiweb
         "engine_root" => engine_root,
         "aiweb_bin" => aiweb_bin,
         "ruby" => RbConfig.ruby,
+        "process_runner" => "Aiweb::Runtime::ProcessRunner",
         "command_timeout_seconds" => command_timeout,
         "allowed_commands" => allowed_commands,
         "source_patch_agent_command" => "agent-run",
@@ -48,7 +51,7 @@ module Aiweb
       [
         "frontend sends structured JSON only; no raw shell commands",
         "every /api/* request requires X-Aiweb-Token",
-        "backend invokes bin/aiweb by absolute path through Ruby argv, never through shell interpolation",
+        "backend invokes bin/aiweb by absolute path through Ruby argv via CommandSpec/ProcessRunner, never through shell interpolation",
         "project path is required and --path is controlled by backend",
         "frontend-supplied backend flags (--path, --json, --dry-run, --approved) are rejected inside command args",
         ".env and .env.* path segments are rejected before bridge execution",
@@ -86,15 +89,15 @@ module Aiweb
         raise UserError.new(blocking_issues.first, 5)
       end
 
-      stdout, stderr, status = capture_argv(argv)
-      bridge_broker_finished(broker, status)
-      parsed = parse_json(stdout)
+      result = capture_argv(argv)
+      bridge_broker_finished(broker, result)
+      parsed = parse_json(result.stdout)
       public_args = redact_broker_command(args)
       public_argv = redact_broker_command(argv)
       {
         "schema_version" => 1,
-        "status" => status.success? ? "passed" : "failed",
-        "exit_code" => status.exitstatus,
+        "status" => result.success? ? "passed" : "failed",
+        "exit_code" => result.exit_code,
         "bridge" => metadata.merge(
           "project_path" => project_path,
           "command" => command,
@@ -106,8 +109,8 @@ module Aiweb
           "side_effect_broker_events" => broker.fetch(:events)
         ),
         "stdout_json" => parsed,
-        "stdout" => parsed ? nil : stdout.to_s[0, 20_000],
-        "stderr" => stderr.to_s[0, 20_000]
+        "stdout" => parsed ? nil : result.stdout.to_s[0, 20_000],
+        "stderr" => result.stderr.to_s[0, 20_000]
       }
     rescue StandardError => e
       bridge_broker_failed(broker, e) if defined?(broker) && broker
@@ -241,13 +244,13 @@ module Aiweb
       payload
     end
 
-    def bridge_broker_finished(broker, status)
+    def bridge_broker_finished(broker, result)
       append_bridge_broker_event(
         broker,
         "tool.finished",
         "finished backend aiweb cli execution",
-        "status" => status&.success? ? "passed" : "failed",
-        "exit_code" => status&.exitstatus
+        "status" => result&.success? ? "passed" : "failed",
+        "exit_code" => result&.exit_code
       )
     end
 
@@ -300,82 +303,23 @@ module Aiweb
     end
 
     def capture_argv(argv)
-      stdout_data = +""
-      stderr_data = +""
-      status = nil
-      timed_out = false
+      # The bridge builds a direct argv array from allowlisted commands and validated
+      # structured args. Shell punctuation can appear in natural-language goals, so
+      # it is treated as argv data here; no shell string is ever constructed.
+      result = Aiweb::Runtime::ProcessRunner.new.capture(
+        Aiweb::Runtime::CommandSpec.new(
+          argv: argv,
+          cwd: engine_root,
+          timeout: command_timeout,
+          max_output_bytes: 200_000,
+          risk_class: "backend_cli_bridge",
+          description: "backend aiweb cli bridge",
+          allow_shell_meta: true
+        )
+      )
+      raise UserError.new("bridge command timed out after #{command_timeout}s", 5) if result.status == "timeout"
 
-      Open3.popen3(*argv, **popen_options) do |stdin, stdout, stderr, wait_thr|
-        stdin.close
-        stdout_reader = Thread.new { read_stream(stdout) }
-        stderr_reader = Thread.new { read_stream(stderr) }
-
-        unless wait_thr.join(command_timeout)
-          timed_out = true
-          terminate_process_tree(wait_thr.pid)
-          close_stream(stdout)
-          close_stream(stderr)
-        end
-
-        unless stdout_reader.join(1) && stderr_reader.join(1)
-          terminate_process_tree(wait_thr.pid)
-          close_stream(stdout)
-          close_stream(stderr)
-        end
-
-        stdout_data = reader_value(stdout_reader)
-        stderr_data = reader_value(stderr_reader)
-        status = wait_thr.value if wait_thr.join(1)
-      end
-
-      raise UserError.new("bridge command timed out after #{command_timeout}s", 5) if timed_out
-
-      [stdout_data, stderr_data, status]
-    end
-
-    def read_stream(stream)
-      stream.read.to_s
-    rescue IOError
-      ""
-    end
-
-    def reader_value(thread)
-      return thread.value.to_s if thread.join(0)
-
-      thread.kill
-      ""
-    end
-
-    def close_stream(stream)
-      stream.close unless stream.closed?
-    rescue IOError
-      nil
-    end
-
-    def terminate_process_tree(pid)
-      if windows?
-        kill_process(pid, "KILL")
-        return
-      end
-
-      kill_process(-pid, "TERM") || kill_process(pid, "TERM")
-      sleep 0.2
-      kill_process(-pid, "KILL") || kill_process(pid, "KILL")
-    end
-
-    def popen_options
-      windows? ? {} : { pgroup: true }
-    end
-
-    def windows?
-      RbConfig::CONFIG["host_os"].match?(/mswin|mingw|cygwin/i)
-    end
-
-    def kill_process(target, signal)
-      Process.kill(signal, target)
-      true
-    rescue Errno::ESRCH, Errno::EPERM
-      false
+      result
     end
 
     def safe_project_path!(value)

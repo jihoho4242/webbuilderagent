@@ -151,6 +151,11 @@
       "surface": "setup install and supply-chain evidence subprocesses",
       "status": "centralized_to_runtime_process_runner",
       "finding": "setup package install, SBOM generation, and package audit no longer own direct Open3.capture3 subprocess execution; commands route through ProcessRunner/CommandSpec while preserving setup side-effect broker events, explicit approval policy, clean child environment, stdout/stderr redaction, SBOM artifacts, package audit evidence, and vulnerability gate behavior."
+    },
+    {
+      "surface": "backend CLI bridge subprocess",
+      "status": "centralized_to_runtime_process_runner",
+      "finding": "CodexCliBridge no longer owns direct Open3.popen3 subprocess execution; backend aiweb command execution routes through ProcessRunner/CommandSpec while preserving allowlisted structured commands, backend-controlled flags, side-effect broker evidence, redaction, deploy dry-run blocking, read-only inline broker behavior, and timeout failure events."
     }
   ],
   "preserve_safety_substrate": [
