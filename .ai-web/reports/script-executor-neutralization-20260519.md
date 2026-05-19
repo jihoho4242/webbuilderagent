@@ -32,6 +32,7 @@ WebBuilderAgent is closer to a natural-language, engine-run-centered supervised 
 - Removed the L3 `approved: true` boolean approval shortcut from PolicyKernel/ToolGateway; L3 side effects now require a hash-bound HITL v2 approval artifact.
 - Removed the `schema_version=1, status=passed` verifier-result approval shortcut from PolicyKernel; verifier results are evidence, not execution authority.
 - Hardened HITL artifact self-integrity checks: `approval_hash`, `validation_hash`, run id, risk tier, requested capability, approver id, canonical hash ordering, and `single_use` must match before execution.
+- Removed the `engine-run --approved` without `--approval-hash` execution shortcut; real engine-run execution now requires the matching dry-run capability hash.
 - Demoted P5 replay evidence from generic pass/side-effect-free wording to `replay_demo_passed` with production gate blocked until durable replay/resume audit evidence is attached.
 - Added static audit coverage so stale release-ready / production-ready true claims and broad P5 pass wording cannot be reintroduced in release evidence surfaces.
 - Demoted CLI help from Manus wording marketing language to supervised local engine-run runtime wording, with static audit coverage.

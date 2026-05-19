@@ -777,7 +777,7 @@ module Aiweb
         changed_files: [],
         planned_changes: planned_changes,
         action_taken: dry_status == "blocked" ? "engine run blocked" : "planned engine run",
-        next_action: dry_status == "blocked" ? "select a design candidate before running UI/source engine work" : "rerun aiweb engine-run --agent #{normalized_agent} --mode #{normalized_mode}#{engine_run_sandbox_suffix(normalized_agent, sandbox)} --approved to execute inside the staged sandbox"
+        next_action: dry_status == "blocked" ? "select a design candidate before running UI/source engine work" : "rerun aiweb engine-run --agent #{normalized_agent} --mode #{normalized_mode}#{engine_run_sandbox_suffix(normalized_agent, sandbox)} --approval-hash #{expected_hash} --approved to execute inside the staged sandbox"
       )
     end
 
@@ -1549,7 +1549,9 @@ module Aiweb
     def engine_run_initial_execution_blockers(approved:, approval_hash:, expected_hash:, opendesign_contract:, normalized_mode:, normalized_agent:, sandbox:, workspace_dir:, resume:, resume_context:)
       blockers = []
       blockers << "--approved is required for real engine-run execution" unless approved
-      if !approval_hash.to_s.strip.empty? && approval_hash.to_s.strip != expected_hash
+      if approved && approval_hash.to_s.strip.empty?
+        blockers << "--approval-hash is required for real engine-run execution"
+      elsif !approval_hash.to_s.strip.empty? && approval_hash.to_s.strip != expected_hash
         blockers << "approval hash does not match the current capability envelope"
       end
       blockers.concat(opendesign_contract.fetch("blocking_issues", []))

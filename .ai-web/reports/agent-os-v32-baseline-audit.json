@@ -171,6 +171,11 @@
       "surface": "bin verification harness subprocesses",
       "status": "centralized_to_runtime_process_runner",
       "finding": "bin/check and bin/engine-runtime-matrix-check no longer own direct Open3.capture3 subprocess execution; verification harness commands route through CommandSpec/ProcessRunner while preserving argv execution, repo chdir, bounded output, timeout configuration, and failure stdout/stderr evidence."
+    },
+    {
+      "surface": "engine-run approved-without-hash execution shortcut",
+      "status": "removed",
+      "finding": "Real engine-run execution now requires the matching capability approval hash from dry-run; --approved alone blocks before run artifacts are written."
     }
   ],
   "preserve_safety_substrate": [

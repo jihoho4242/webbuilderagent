@@ -38,4 +38,23 @@ class AgentOsV32ReplayTest < Minitest::Test
       assert_equal true, payload.dig("engine_run", "graph_execution_plan", "validation", "all_side_effect_nodes_gated") if payload.dig("engine_run", "graph_execution_plan")
     end
   end
+
+  def test_engine_run_real_execution_requires_matching_approval_hash
+    Dir.mktmpdir("aiweb-v32-replay-") do |dir|
+      project = Aiweb::Project.new(dir)
+      project.init(profile: "D")
+      dry_run = project.engine_run(goal: "verify approval hash", mode: "safe_patch", dry_run: true)
+      approval_hash = dry_run.dig("engine_run", "approval_hash")
+
+      assert_match(/\A[0-9a-f]{64}\z/, approval_hash.to_s)
+      assert_includes dry_run.fetch("next_action"), "--approval-hash #{approval_hash}"
+
+      before_entries = Dir.glob(File.join(dir, ".ai-web", "runs", "*"))
+      blocked = project.engine_run(goal: "verify approval hash", mode: "safe_patch", approved: true, dry_run: false)
+
+      assert_equal "blocked", blocked.dig("engine_run", "status")
+      assert_match(/--approval-hash is required/, blocked.fetch("blocking_issues").join("\n"))
+      assert_equal before_entries, Dir.glob(File.join(dir, ".ai-web", "runs", "*")), "missing approval hash must block before run artifacts are written"
+    end
+  end
 end
