@@ -41,6 +41,11 @@
       "surface": "red-team catalog fixture claim",
       "status": "demoted_to_production_gate_blocked",
       "finding": "Redteam::Arena no longer reports generic passed for local catalog fixtures; it exposes catalog_fixture_passed plus production_gate_status=blocked, no independent reviewed cases, and operational blockers."
+    },
+    {
+      "surface": "secret canary runner",
+      "status": "redacted_production_blocked",
+      "finding": "secret canary runner no longer emits the canary value or generic passed status; it emits a fingerprint, canary_value_emitted=false, and production_gate_status=blocked."
     }
   ],
   "preserve_safety_substrate": [

@@ -2,6 +2,8 @@
 
 require "yaml"
 
+require_relative "secret_canary"
+
 module Aiweb
   module Redteam
     class Arena
@@ -35,6 +37,7 @@ module Aiweb
           "case_source" => "local_attack_catalog_fixture",
           "case_count" => cases.length,
           "independent_reviewed_case_count" => 0,
+          "secret_canary" => SecretCanary.safe_report,
           "critical_high_bypass_count" => critical_high_failures,
           "blocking_issues" => blocking_issues,
           "operational_blocking_issues" => operational_blocking_issues,
@@ -54,6 +57,7 @@ module Aiweb
           "case_source" => "missing_local_attack_catalog_fixture",
           "case_count" => 0,
           "independent_reviewed_case_count" => 0,
+          "secret_canary" => SecretCanary.safe_report,
           "critical_high_bypass_count" => 1,
           "blocking_issues" => [issue],
           "operational_blocking_issues" => operational_blocking_issues,

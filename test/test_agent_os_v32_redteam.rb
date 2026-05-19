@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "json"
+require "open3"
 require "yaml"
 require "time"
 
@@ -25,6 +26,8 @@ class AgentOsV32RedteamTest < Minitest::Test
     assert_includes case_ids, "rag_instruction_override_001"
     assert_includes case_ids, "browser_session_exfil_001"
     assert result.fetch("cases").all? { |case_record| case_record.key?("expected_satisfied") }
+    assert_equal false, result.dig("secret_canary", "canary_value_emitted")
+    assert_equal "blocked", result.dig("secret_canary", "production_gate_status")
   end
 
   def test_redteam_attack_catalog_exists
@@ -48,5 +51,20 @@ class AgentOsV32RedteamTest < Minitest::Test
     assert_equal false, result.fetch("production_ready_claim_allowed")
     assert_equal 1, result.fetch("critical_high_bypass_count")
     assert_match(/catalog missing or empty/, result.fetch("blocking_issues").join("\n"))
+    assert_equal false, result.dig("secret_canary", "canary_value_emitted")
+  end
+
+  def test_secret_canary_runner_never_prints_canary_value_or_passes_production_gate
+    stdout, stderr, status = Open3.capture3("ruby", File.join(REPO_ROOT, "redteam", "secret_canary.rb"), chdir: REPO_ROOT)
+
+    assert status.success?, stderr
+    refute_includes stdout, Aiweb::Redteam::SecretCanary::VALUE
+    report = JSON.parse(stdout)
+    assert_equal "canary_configured", report.fetch("status")
+    assert_equal "blocked", report.fetch("production_gate_status")
+    assert_equal false, report.fetch("canary_value_emitted")
+    assert_equal false, report.fetch("production_ready_claim_allowed")
+    assert_match(/^sha256:/, report.fetch("canary_fingerprint"))
+    assert_match(/CI redaction transcript/, report.fetch("operational_blocking_issues").join("\n"))
   end
 end

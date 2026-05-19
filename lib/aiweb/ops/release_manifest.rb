@@ -45,6 +45,7 @@ module Aiweb
             "case_count" => p5_evidence.dig("redteam", "case_count"),
             "case_source" => p5_evidence.dig("redteam", "case_source"),
             "independent_reviewed_case_count" => p5_evidence.dig("redteam", "independent_reviewed_case_count"),
+            "secret_canary" => p5_evidence.dig("redteam", "secret_canary"),
             "critical_high_bypass_count" => p5_evidence.dig("redteam", "critical_high_bypass_count"),
             "production_ready_claim_allowed" => p5_evidence.dig("redteam", "production_ready_claim_allowed")
           },

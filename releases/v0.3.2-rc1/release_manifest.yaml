@@ -12,7 +12,7 @@ commit_sha_policy: attach immutable commit sha from CI release job; local static
 github_actions_run_id:
 evidence_files:
 - path: releases/v0.3.2-rc1/p5_gate_report.md
-  sha256: sha256:8566c29271fb8457c8cb9601794877b568b333726794a8405f089a0a4fd15d67
+  sha256: sha256:ec7a273420f2ea7ede2531cc72a34123a85846693dbadf726f5ac72b6d774c3a
 schema_validation_report:
   status: local_bin_check_passed
   command: ruby bin/check
@@ -29,6 +29,15 @@ redteam_report:
   case_count: 6
   case_source: local_attack_catalog_fixture
   independent_reviewed_case_count: 0
+  secret_canary:
+    status: canary_configured
+    fixture_status: canary_configured
+    production_gate_status: blocked
+    canary_fingerprint: sha256:31bf9da44ea52000721b9c9141ad45b45b63f1f7c2a995c95c7b0a4eb152e42d
+    canary_value_emitted: false
+    production_ready_claim_allowed: false
+    operational_blocking_issues:
+    - production-ready secret canary evidence requires CI redaction transcript and independent review
   critical_high_bypass_count: 0
   production_ready_claim_allowed: false
 rollback_plan:
@@ -43,4 +52,4 @@ operational_blocking_issues:
 - production-ready eval science requires independent holdout, leakage check, CI artifact, and human baseline
 - production-ready red-team requires independent adversarial review, CI artifact, secret canary transcript, and expanded attack coverage
 - SQLite backend unavailable; JSONL ledger is a local MVP persistence layer
-p5_evidence_hash: sha256:8566c29271fb8457c8cb9601794877b568b333726794a8405f089a0a4fd15d67
+p5_evidence_hash: sha256:ec7a273420f2ea7ede2531cc72a34123a85846693dbadf726f5ac72b6d774c3a

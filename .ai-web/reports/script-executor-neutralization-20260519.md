@@ -21,6 +21,7 @@ WebBuilderAgent is closer to a natural-language, engine-run-centered supervised 
 - Demoted eval status from generic `passed` to `expanded_fixture_passed` plus `production_gate_status=blocked`, so fixture suites cannot masquerade as production/Manus-grade eval science.
 - Replaced Brain JSON snapshot storage with an append-only JSONL ledger and explicit `SQLite backend unavailable` operational blocker.
 - Demoted red-team status from generic `passed` to `catalog_fixture_passed` plus `production_gate_status=blocked`, so local attack catalog fixtures cannot masquerade as production red-team evidence.
+- Redacted `redteam/secret_canary.rb` output so it emits only a fingerprint and explicit production gate blocker, never the canary value.
 
 ## Remaining non-completion reasons
 
@@ -37,10 +38,11 @@ WebBuilderAgent is closer to a natural-language, engine-run-centered supervised 
 - `ruby -Itest test/test_aiweb_cli.rb -n '/deploy/'` ? PASS: 8 runs, 290 assertions, 0 failures, 0 errors
 - `ruby -Itest test/test_aiweb_cli.rb -n '/verify_loop|verify-loop|workbench_dry_run|deploy/'` ? PASS: 18 runs, 616 assertions, 0 failures, 0 errors
 - `ruby -Itest test/test_aiweb_cli.rb -n '/engine_run_captures_screenshot_manifest|engine_run_design_verdict_passes|engine_run_design_gate_blocks_copy_back_on_browser_action_recovery_failure|engine_run_preserves_structured_browser_policy_evidence/'` ? PASS: 4 runs, 648 assertions, 0 failures, 0 errors
-- `ruby -Itest test/test_agent_os_v32_release_evidence.rb` ? PASS: 2 runs, 52 assertions, 0 failures, 0 errors
+- `ruby -Itest test/test_agent_os_v32_release_evidence.rb` ? PASS: 2 runs, 55 assertions, 0 failures, 0 errors
 - `ruby -Itest test/test_agent_os_v32_evals.rb` ? PASS: 2 runs, 21 assertions, 0 failures, 0 errors
 - `ruby -Itest test/test_agent_os_v32_brain_and_self_improvement.rb` ? PASS: 4 runs, 27 assertions, 0 failures, 0 errors
-- `ruby -Itest test/test_agent_os_v32_redteam.rb` ? PASS: 3 runs, 24 assertions, 0 failures, 0 errors
+- `ruby -Itest test/test_agent_os_v32_redteam.rb` ? PASS: 4 runs, 38 assertions, 0 failures, 0 errors
+- `ruby redteam/secret_canary.rb` ? PASS: canary_configured, canary_value_emitted=false, production_gate_status=blocked
 - `ruby -Itest test/test_agent_os_v32_policy_kernel.rb` ? PASS: 9 runs, 35 assertions, 0 failures, 0 errors
 - `ruby -Itest test/test_agent_os_v32_tool_gateway.rb` ? PASS: 4 runs, 14 assertions, 0 failures, 0 errors
 - `ruby -Itest test/test_agent_os_v32_decision_packet.rb` ? PASS: 3 runs, 22 assertions, 0 failures, 0 errors
@@ -51,4 +53,4 @@ WebBuilderAgent is closer to a natural-language, engine-run-centered supervised 
 
 ## Completion
 
-Not complete. The fixed script-runner deletion part is substantially complete, including fail-closing stale deploy execution, demoting browser scenario wording to deterministic probe evidence, preventing fixture evals and red-team catalog probes from claiming production readiness, and replacing Brain JSON snapshots with append-only JSONL plus a SQLite blocker; the full objective remains active until Manus-grade/natural-language web-app agent readiness is proven requirement-by-requirement.
+Not complete. The fixed script-runner deletion part is substantially complete, including fail-closing stale deploy execution, demoting browser scenario wording to deterministic probe evidence, preventing fixture evals and red-team catalog probes from claiming production readiness, redacting secret-canary output, and replacing Brain JSON snapshots with append-only JSONL plus a SQLite blocker; the full objective remains active until Manus-grade/natural-language web-app agent readiness is proven requirement-by-requirement.

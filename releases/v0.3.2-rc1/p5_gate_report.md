@@ -17,6 +17,7 @@ Evidence integrity: `releases/v0.3.2-rc1/evidence_integrity_manifest.yaml`
 - HITL v2: passed
 - Replay: passed
 - Red-team: catalog_fixture_passed (6 local catalog cases; production gate remains blocked)
+- Red-team secret canary: canary_configured, value emitted=false, production gate blocked
 - Red-team critical/high bypass count: 0
 - Eval: expanded_fixture_passed (50 synthetic fixture cases; production gate remains blocked)
 - Brain: safety passed (JSONL ledger MVP; SQLite operational gate blocked)
