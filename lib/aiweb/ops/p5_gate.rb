@@ -39,16 +39,15 @@ module Aiweb
         scaffold_blockers.concat(constitution.fetch("blocking_issues", [])) unless constitution["status"] == "passed"
         scaffold_blockers << "tool gateway demo failed" unless gateway_result["status"] == "passed"
         scaffold_blockers.concat(approval_check.fetch("blocking_issues", [])) unless approval_check["status"] == "passed"
-        scaffold_blockers << "red-team critical/high bypass remains" unless redteam["critical_high_bypass_count"].to_i.zero?
+        scaffold_blockers.concat(redteam.fetch("blocking_issues", [])) unless redteam["status"] == "catalog_fixture_passed"
         brain_audit = brain_evidence.fetch("audit")
         scaffold_blockers.concat(brain_audit.fetch("blocking_issues", [])) unless brain_audit["status"] == "passed"
         scaffold_blockers << "self-improvement proposal changed source" if proposal["source_changed"] != false
         scaffold_blockers << "eval fixture gate failed" unless eval_result["expanded_fixture_gate_passed"] == true && eval_result["failure_count"].to_i.zero?
         operational_blockers = [
           "production readiness not claimed: GitHub Actions run id is not attached",
-          "operator drill evidence is placeholder only",
-          "eval/red-team packs are expanded fixtures, not independently reviewed production benchmark evidence"
-        ] + brain_audit.fetch("operational_blocking_issues", [])
+          "operator drill evidence is placeholder only"
+        ] + eval_result.fetch("blocking_issues", []) + redteam.fetch("operational_blocking_issues", []) + brain_audit.fetch("operational_blocking_issues", [])
         {
           "schema_version" => 1,
           "release_id" => "v0.3.2-rc1",

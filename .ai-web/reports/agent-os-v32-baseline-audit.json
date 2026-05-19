@@ -36,6 +36,11 @@
       "surface": "Personal Brain persistence claim",
       "status": "append_only_jsonl_mvp_sqlite_blocked",
       "finding": "Brain store now uses append-only JSONL remember/forget events and MemoryAudit exposes SQLite-unavailable operational blocker instead of claiming production-grade persistence"
+    },
+    {
+      "surface": "red-team catalog fixture claim",
+      "status": "demoted_to_production_gate_blocked",
+      "finding": "Redteam::Arena no longer reports generic passed for local catalog fixtures; it exposes catalog_fixture_passed plus production_gate_status=blocked, no independent reviewed cases, and operational blockers."
     }
   ],
   "preserve_safety_substrate": [

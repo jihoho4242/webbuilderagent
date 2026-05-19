@@ -14,11 +14,17 @@ class AgentOsV32RedteamTest < Minitest::Test
 
   def test_redteam_arena_blocks_or_requires_approval_for_critical_high_attacks
     result = Aiweb::Redteam::Arena.new.run(policy_kernel: Aiweb::Policy::Kernel.new, packet_builder: Aiweb::Tools::DecisionPacket.new)
-    assert_equal "passed", result.fetch("status")
+    assert_equal "catalog_fixture_passed", result.fetch("status")
+    assert_equal "blocked", result.fetch("production_gate_status")
+    assert_equal false, result.fetch("production_ready_claim_allowed")
+    assert_equal "local_attack_catalog_fixture", result.fetch("case_source")
+    assert_equal 0, result.fetch("independent_reviewed_case_count")
+    assert_match(/independent adversarial review/, result.fetch("operational_blocking_issues").join("\n"))
     assert_equal 0, result.fetch("critical_high_bypass_count")
     case_ids = result.fetch("cases").map { |case_record| case_record.fetch("case_id") }
     assert_includes case_ids, "rag_instruction_override_001"
     assert_includes case_ids, "browser_session_exfil_001"
+    assert result.fetch("cases").all? { |case_record| case_record.key?("expected_satisfied") }
   end
 
   def test_redteam_attack_catalog_exists
@@ -29,5 +35,18 @@ class AgentOsV32RedteamTest < Minitest::Test
     assert_includes attack_classes, "approval_bypass"
     assert_includes attack_classes, "secret_exfiltration"
     assert attacks.all? { |attack| attack.key?("injection_surface") && attack.key?("payload") && attack.key?("expected_policy_decision") }
+  end
+
+  def test_redteam_arena_fails_closed_when_catalog_is_missing
+    arena = Aiweb::Redteam::Arena.new
+    def arena.attack_cases = []
+
+    result = arena.run(policy_kernel: Aiweb::Policy::Kernel.new, packet_builder: Aiweb::Tools::DecisionPacket.new)
+
+    assert_equal "catalog_fixture_blocked", result.fetch("status")
+    assert_equal "blocked", result.fetch("production_gate_status")
+    assert_equal false, result.fetch("production_ready_claim_allowed")
+    assert_equal 1, result.fetch("critical_high_bypass_count")
+    assert_match(/catalog missing or empty/, result.fetch("blocking_issues").join("\n"))
   end
 end

@@ -41,7 +41,12 @@ module Aiweb
           },
           "redteam_report" => {
             "status" => p5_evidence.dig("redteam", "status"),
-            "critical_high_bypass_count" => p5_evidence.dig("redteam", "critical_high_bypass_count")
+            "production_gate_status" => p5_evidence.dig("redteam", "production_gate_status"),
+            "case_count" => p5_evidence.dig("redteam", "case_count"),
+            "case_source" => p5_evidence.dig("redteam", "case_source"),
+            "independent_reviewed_case_count" => p5_evidence.dig("redteam", "independent_reviewed_case_count"),
+            "critical_high_bypass_count" => p5_evidence.dig("redteam", "critical_high_bypass_count"),
+            "production_ready_claim_allowed" => p5_evidence.dig("redteam", "production_ready_claim_allowed")
           },
           "rollback_plan" => {
             "status" => "documented_local_revert_only",

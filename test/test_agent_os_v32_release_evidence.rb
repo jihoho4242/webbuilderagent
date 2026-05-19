@@ -22,6 +22,11 @@ class AgentOsV32ReleaseEvidenceTest < Minitest::Test
     assert_match(/blocked_pending/, evidence.fetch("operational_readiness"))
     assert_match(/GitHub Actions run id/, evidence.fetch("operational_blocking_issues").join("\n"))
     assert_match(/^sha256:/, evidence.fetch("constitution_hash"))
+    assert_equal "catalog_fixture_passed", evidence.dig("redteam", "status")
+    assert_equal "blocked", evidence.dig("redteam", "production_gate_status")
+    assert_equal false, evidence.dig("redteam", "production_ready_claim_allowed")
+    assert_equal "local_attack_catalog_fixture", evidence.dig("redteam", "case_source")
+    assert_match(/independent adversarial review/, evidence.dig("redteam", "operational_blocking_issues").join("\n"))
     assert_equal 0, evidence.dig("redteam", "critical_high_bypass_count")
     assert_equal "expanded_fixture_passed", evidence.dig("eval", "status")
     assert_equal "blocked", evidence.dig("eval", "production_gate_status")
@@ -32,6 +37,12 @@ class AgentOsV32ReleaseEvidenceTest < Minitest::Test
     assert_equal false, evidence.dig("self_improvement", "proposal", "source_changed")
     assert_equal true, evidence.dig("replay", "side_effect_free_replay")
     assert_equal "passed", evidence.dig("hitl_v2", "status")
+
+    manifest = Aiweb::Ops::ReleaseManifest.new.build(evidence)
+    assert_equal "catalog_fixture_passed", manifest.dig("redteam_report", "status")
+    assert_equal "blocked", manifest.dig("redteam_report", "production_gate_status")
+    assert_equal false, manifest.dig("redteam_report", "production_ready_claim_allowed")
+    assert_equal 0, manifest.dig("redteam_report", "independent_reviewed_case_count")
   end
 
   def test_release_evidence_files_exist_and_reference_p5_gate
@@ -46,6 +57,11 @@ class AgentOsV32ReleaseEvidenceTest < Minitest::Test
     assert_includes manifest.fetch("rollback_plan").fetch("status"), "documented"
     assert_equal "placeholder", manifest.fetch("operator_drill").fetch("status")
     assert_match(/SQLite backend unavailable/, manifest.fetch("operational_blocking_issues").join("\n"))
+    assert_equal "catalog_fixture_passed", manifest.dig("redteam_report", "status")
+    assert_equal "blocked", manifest.dig("redteam_report", "production_gate_status")
+    assert_equal false, manifest.dig("redteam_report", "production_ready_claim_allowed")
+    assert_equal 0, manifest.dig("redteam_report", "independent_reviewed_case_count")
+    assert_match(/independent adversarial review/, manifest.fetch("operational_blocking_issues").join("\n"))
 
     integrity = YAML.safe_load(File.read(File.join(REPO_ROOT, "releases", "v0.3.2-rc1", "evidence_integrity_manifest.yaml")), permitted_classes: [], aliases: false)
     integrity.fetch("files").each do |entry|

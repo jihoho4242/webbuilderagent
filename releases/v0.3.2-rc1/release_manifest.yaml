@@ -7,11 +7,12 @@ production_readiness_claimed: false
 operational_readiness: blocked_pending_ci_operator_drill_and_production_benchmarks
 constitution_hash: sha256:87f5f29f48f18135b27b12f940af93e49e9851df23cf0752d45e0ef4bc73d23c
 p5_evidence_status: scaffold_demo_passed
-commit_sha: 61d26a47022cfa25a38911119e601340a826d928
+commit_sha:
+commit_sha_policy: attach immutable commit sha from CI release job; local static manifest does not claim post-commit provenance
 github_actions_run_id:
 evidence_files:
 - path: releases/v0.3.2-rc1/p5_gate_report.md
-  sha256: sha256:33c8c3ee1cb4dcf300c13aeb8b0b36056d1d1313664ab6bf347dd062029460a5
+  sha256: sha256:8566c29271fb8457c8cb9601794877b568b333726794a8405f089a0a4fd15d67
 schema_validation_report:
   status: local_bin_check_passed
   command: ruby bin/check
@@ -23,20 +24,23 @@ eval_report:
   human_reviewed_case_count: 0
   production_ready_claim_allowed: false
 redteam_report:
-  status: passed
+  status: catalog_fixture_passed
+  production_gate_status: blocked
+  case_count: 6
+  case_source: local_attack_catalog_fixture
+  independent_reviewed_case_count: 0
   critical_high_bypass_count: 0
+  production_ready_claim_allowed: false
 rollback_plan:
   status: documented_local_revert_only
-  summary: revert the release commit and rerun ruby bin/check before any future release
-    claim
+  summary: revert the release commit and rerun ruby bin/check before any future release claim
 operator_drill:
   status: placeholder
-  blocking_issue: operator drill must be run in CI/ops environment before operational
-    readiness can be claimed
+  blocking_issue: operator drill must be run in CI/ops environment before operational readiness can be claimed
 operational_blocking_issues:
 - 'production readiness not claimed: GitHub Actions run id is not attached'
 - operator drill evidence is placeholder only
-- eval/red-team packs are expanded fixtures, not independently reviewed production
-  benchmark evidence
+- production-ready eval science requires independent holdout, leakage check, CI artifact, and human baseline
+- production-ready red-team requires independent adversarial review, CI artifact, secret canary transcript, and expanded attack coverage
 - SQLite backend unavailable; JSONL ledger is a local MVP persistence layer
-p5_evidence_hash: sha256:33c8c3ee1cb4dcf300c13aeb8b0b36056d1d1313664ab6bf347dd062029460a5
+p5_evidence_hash: sha256:8566c29271fb8457c8cb9601794877b568b333726794a8405f089a0a4fd15d67
