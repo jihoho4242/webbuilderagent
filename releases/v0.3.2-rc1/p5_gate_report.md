@@ -12,7 +12,7 @@ Evidence integrity: `releases/v0.3.2-rc1/evidence_integrity_manifest.yaml`
 
 ## Gate summary
 
-- Policy coverage: passed
+- Policy coverage: gateway_demo_passed (whole-repo side-effect coverage unproven; production gate blocked)
 - Tool gateway: passed
 - HITL v2: passed
 - Replay: passed
@@ -34,6 +34,7 @@ Evidence integrity: `releases/v0.3.2-rc1/evidence_integrity_manifest.yaml`
 - operator drill evidence is placeholder only
 - full ruby bin/check evidence is not attached to this release evidence
 - full ruby -Itest test/all.rb evidence is not attached to this release evidence
+- whole-repo side-effect policy coverage audit is not attached to this release evidence
 - production-ready eval science requires independent holdout, leakage check, CI artifact, and human baseline
 - production-ready red-team requires independent adversarial review, CI artifact, secret canary transcript, and expanded attack coverage
 - SQLite backend unavailable; JSONL ledger is a local MVP persistence layer

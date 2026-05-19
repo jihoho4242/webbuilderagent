@@ -44,10 +44,20 @@ module Aiweb
         scaffold_blockers.concat(brain_audit.fetch("blocking_issues", [])) unless brain_audit["status"] == "passed"
         scaffold_blockers << "self-improvement proposal changed source" if proposal["source_changed"] != false
         scaffold_blockers << "eval fixture gate failed" unless eval_result["expanded_fixture_gate_passed"] == true && eval_result["failure_count"].to_i.zero?
+        policy_coverage = {
+          "status" => "gateway_demo_passed",
+          "coverage_status" => "unproven",
+          "all_side_effects_require_decision_packet_policy_gateway" => false,
+          "demo_tool" => "finish",
+          "production_gate_status" => "blocked",
+          "operational_blocking_issues" => [
+            "whole-repo side-effect policy coverage audit is not attached to this release evidence"
+          ]
+        }
         operational_blockers = [
           "production readiness not claimed: GitHub Actions run id is not attached",
           "operator drill evidence is placeholder only"
-        ] + validation_blocking_issues(validation) + eval_result.fetch("blocking_issues", []) + redteam.fetch("operational_blocking_issues", []) + brain_audit.fetch("operational_blocking_issues", []) + experiment.fetch("operational_blocking_issues", [])
+        ] + validation_blocking_issues(validation) + policy_coverage.fetch("operational_blocking_issues", []) + eval_result.fetch("blocking_issues", []) + redteam.fetch("operational_blocking_issues", []) + brain_audit.fetch("operational_blocking_issues", []) + experiment.fetch("operational_blocking_issues", [])
         {
           "schema_version" => 1,
           "release_id" => "v0.3.2-rc1",
@@ -56,7 +66,7 @@ module Aiweb
           "production_readiness_claimed" => false,
           "operational_readiness" => "blocked_pending_ci_operator_drill_and_production_benchmarks",
           "constitution_hash" => constitution["content_hash"],
-          "policy_coverage" => { "status" => "passed", "all_side_effects_require_decision_packet_policy_gateway" => true },
+          "policy_coverage" => policy_coverage,
           "tool_gateway_coverage" => { "status" => gateway_result["status"], "event_order" => gateway_result.fetch("events", []).map { |event| event["event"] } },
           "hitl_v2" => approval_check,
           "replay" => { "status" => "passed", "side_effect_free_replay" => true, "decision_replay_key_present" => true },

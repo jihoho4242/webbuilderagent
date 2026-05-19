@@ -28,6 +28,13 @@ module Aiweb
           "github_actions_run_id" => nil,
           "evidence_files" => evidence_files,
           "schema_validation_report" => validation_report(p5_evidence),
+          "policy_gateway_report" => {
+            "status" => p5_evidence.dig("policy_coverage", "status"),
+            "coverage_status" => p5_evidence.dig("policy_coverage", "coverage_status"),
+            "all_side_effects_require_decision_packet_policy_gateway" => p5_evidence.dig("policy_coverage", "all_side_effects_require_decision_packet_policy_gateway"),
+            "production_gate_status" => p5_evidence.dig("policy_coverage", "production_gate_status"),
+            "demo_tool" => p5_evidence.dig("policy_coverage", "demo_tool")
+          },
           "eval_report" => {
             "status" => p5_evidence.dig("eval", "status"),
             "production_gate_status" => p5_evidence.dig("eval", "production_gate_status"),

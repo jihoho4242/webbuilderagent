@@ -56,6 +56,11 @@
       "surface": "release validation evidence claim",
       "status": "demoted_to_targeted_validation_only",
       "finding": "Release manifest no longer hardcodes local_bin_check_passed; P5/release evidence is blocked until full ruby bin/check, test/all, and CI evidence are attached."
+    },
+    {
+      "surface": "P5 policy coverage claim",
+      "status": "demoted_to_gateway_demo_coverage_unproven",
+      "finding": "P5 evidence no longer claims all side effects require DecisionPacket/PolicyGateway from a single finish-tool demo; whole-repo side-effect coverage remains operationally blocked until audited evidence is attached."
     }
   ],
   "preserve_safety_substrate": [
