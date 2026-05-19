@@ -1,0 +1,67 @@
+{
+  "schema_version": 1,
+  "created_at": "2026-05-19T00:00:00Z",
+  "objective": "Audit WebBuilderAgent as a natural-language web-app-building agent and delete low-quality script-runner surfaces.",
+  "status": "partial_progress_not_complete",
+  "manus_grade_claim": false,
+  "assessment": {
+    "current_level": "engine-run-centered supervised local web-building Agent OS candidate",
+    "not_yet_manus_grade_reasons": [
+      "verify-loop still exists as a fixed build/preview/QA/repair/agent-run bundle and must be removed or converted to an engine-run verification node",
+      "eval/red-team/Brain evidence remains MVP/fixture-grade rather than production benchmark evidence",
+      "operator drill, GitHub Actions run ids, and production release evidence are still blockers",
+      "external provider/deploy/credential flows remain intentionally blocked"
+    ]
+  },
+  "removed_script_runner_surfaces": [
+    {
+      "surface": "AgentRuntime::Loop/Planner/Executor",
+      "status": "deleted",
+      "evidence": [
+        "lib/aiweb/agent_runtime/loop.rb deleted",
+        "lib/aiweb/agent_runtime/planner.rb deleted",
+        "lib/aiweb/agent_runtime/executor.rb deleted",
+        "lib/aiweb/project/agent_runtime_facade.rb delegates aiweb agent goals directly to engine-run"
+      ]
+    },
+    {
+      "surface": "legacy AgentRuntime session/timeline/final-report artifact writer",
+      "status": "deleted",
+      "evidence": [
+        "lib/aiweb/agent_runtime/artifact_writer.rb deleted",
+        "lib/aiweb/agent_runtime/report_builder.rb deleted",
+        "aiweb agent dry-run no longer writes .ai-web/runs/agent-session-* artifacts"
+      ]
+    }
+  ],
+  "preserved_safety_substrate": [
+    "AgentRuntime::SourcePatchGuard remains because it is a safety verifier, not a script runner",
+    "engine-run durable runtime remains canonical",
+    "PolicyKernel, ToolGateway, DecisionPacket, HITL, sandbox/copy-back boundaries remain intact"
+  ],
+  "remaining_script_runner_candidates": [
+    {
+      "surface": "verify-loop",
+      "classification": "remaining legacy fixed pipeline",
+      "risk": "still encodes build -> preview -> QA -> visual-critique -> repair/visual-polish -> agent-run",
+      "required_next_action": "delete real fixed-loop execution or convert command into a thin engine-run verification node with no bespoke step script"
+    },
+    {
+      "surface": "browser static scenario plan/results",
+      "classification": "deterministic local probe",
+      "risk": "acceptable only if never marketed as autonomous planning",
+      "required_next_action": "keep labeled as probe and ensure static audit blocks autonomous-agent claims"
+    }
+  ],
+  "validation": {
+    "ruby -Itest test/test_agentification_runtime.rb": "passed: 11 runs, 133 assertions, 0 failures, 0 errors",
+    "ruby -Itest test/test_agent_os_v32_static_surface_audit.rb": "passed: 2 runs, 22 assertions, 0 failures, 0 errors",
+    "ruby -Itest test/test_agent_os_v32_release_evidence.rb": "passed: 2 runs, 27 assertions, 0 failures, 0 errors",
+    "ruby -Itest test/test_agent_os_v32_policy_kernel.rb test/test_agent_os_v32_tool_gateway.rb test/test_agent_os_v32_decision_packet.rb": "passed: 9 runs, 35 assertions, 0 failures, 0 errors",
+    "ruby -Itest test/test_contracts.rb test/test_schema_locks.rb": "passed: 19 runs, 249 assertions, 0 failures, 0 errors",
+    "ruby -Itest test/all.rb": "passed: 459 runs, 11445 assertions, 0 failures, 0 errors, 3 skips",
+    "git diff --check": "passed with README line-ending warning only"
+  },
+  "completion_status": "not_complete",
+  "why_not_complete": "The AgentRuntime script runner is deleted, but verify-loop remains as the next fixed-pipeline surface to remove or convert. Therefore the full objective is not yet complete."
+}

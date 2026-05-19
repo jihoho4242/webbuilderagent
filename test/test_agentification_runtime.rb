@@ -184,35 +184,16 @@ class AgentificationRuntimeTest < Minitest::Test
       payload, code, stderr = json_cmd("--path", dir, "agent", "--goal", "verify local Supabase scaffold", "--mode", "supervised")
 
       assert_equal 0, code, stderr
-      assert_equal "partial_not_complete", payload.dig("agent_runtime", "status")
-      assert_equal "S", payload.dig("agent_runtime", "profile")
-      assert_equal "not_supported_by_profile", payload.dig("agent_runtime", "browserQa", "status")
-      assert_equal "manifest_required_before_source_mutation", payload.dig("agent_runtime", "patchManifest", "verifier_decision")
-      assert payload.dig("agent_runtime", "patchManifest", "base_file_hashes").is_a?(Hash)
-      assert_equal "engine-run", payload.dig("agent_runtime", "agent_os", "canonical_runtime")
-      assert_equal "summary_only_engine_run_wrapper", payload.dig("agent_runtime", "agent_os", "agent_runtime_execution_role")
-
-      run_dir = File.join(dir, payload.dig("agent_runtime", "artifacts", "run_dir"))
-      %w[
-        agent-session.json
-        timeline.jsonl
-        tool-result-1.json
-        source-patch-manifest.json
-        browser-qa-feedback.json
-        final-report.json
-      ].each do |artifact|
-        assert File.file?(File.join(run_dir, artifact)), "expected #{artifact}"
-      end
-
-      final_report = JSON.parse(File.read(File.join(run_dir, "final-report.json")))
-      assert_equal "partial_not_complete", final_report["status"]
-      assert_equal false, final_report.dig("safety", "dot_env_read")
-      assert_equal false, final_report.dig("safety", "external_actions_performed")
-      assert_equal "delegated_to_engine_run", final_report.dig("toolResults", 0, "status")
-
-      state = YAML.safe_load(File.read(File.join(dir, ".ai-web", "state.yaml")), permitted_classes: [], aliases: false)
-      assert_equal payload.dig("agent_runtime", "artifacts", "final_report"), state.dig("implementation", "latest_agent_runtime")
-      assert_equal "partial_not_complete", state.dig("implementation", "agent_runtime_status")
+      assert_equal "dry_run", payload.dig("agent_runtime", "status")
+      assert_equal "engine-run", payload.dig("agent_runtime", "canonical_runtime")
+      assert_equal "removed_script_runner", payload.dig("agent_runtime", "agent_runtime_execution_role")
+      assert_equal true, payload.dig("agent_runtime", "script_executor_neutralized")
+      assert_equal false, payload.dig("agent_runtime", "fixed_action_planner_present")
+      assert_equal false, payload.dig("agent_runtime", "direct_tool_executor_present")
+      assert_equal "engine-run", payload.dig("agent_runtime", "canonical_runtime")
+      assert_equal "agentic_local", payload.dig("engine_run", "mode")
+      assert_match(/\A[0-9a-f]{64}\z/, payload.dig("agent_runtime", "engine_run", "approval_hash").to_s)
+      assert_empty Dir.glob(File.join(dir, ".ai-web", "runs", "agent-session-*")), "agent facade must not create legacy AgentRuntime session artifacts"
     end
   end
 
@@ -223,13 +204,13 @@ class AgentificationRuntimeTest < Minitest::Test
       payload, code, stderr = json_cmd("--path", dir, "agent", "verify rendered site", "--mode", "supervised")
 
       assert_equal 0, code, stderr
-      assert_equal "partial_not_complete", payload.dig("agent_runtime", "status")
-      assert_equal "D", payload.dig("agent_runtime", "profile")
-      assert_equal %w[build preview browser_qa], Array(payload.dig("agent_runtime", "steps")).map { |step| step["tool"] }
-      assert_equal %w[pending_approval pending_approval pending_approval], Array(payload.dig("agent_runtime", "toolResults")).map { |result| result["status"] }
-      assert_equal "browser QA awaits --approved in supervised mode", payload.dig("agent_runtime", "browserQa", "not_tested_reason")
-      assert_includes payload.dig("agent_runtime", "warnings"), "build pending approval"
-      assert_includes payload.dig("agent_runtime", "reflection", "recommended_next_actions"), "rerun with --approved to execute build"
+      assert_equal "dry_run", payload.dig("agent_runtime", "status")
+      assert_equal "engine-run", payload.dig("agent_runtime", "canonical_runtime")
+      assert_equal "removed_script_runner", payload.dig("agent_runtime", "agent_runtime_execution_role")
+      assert_equal false, payload.dig("agent_runtime", "fixed_action_planner_present")
+      assert_equal false, payload.dig("agent_runtime", "direct_tool_executor_present")
+      assert_equal "agentic_local", payload.dig("agent_runtime", "engine_run", "mode")
+      assert_match(/--approval-hash [0-9a-f]{64}/, payload["next_action"])
     end
   end
 
@@ -243,8 +224,10 @@ class AgentificationRuntimeTest < Minitest::Test
       assert_equal 0, code, stderr
       panel = Array(workbench.dig("workbench", "panels")).find { |item| item["id"] == "agent_runtime" }
       refute_nil panel
-      assert_equal "partial_not_complete", panel["status"]
-      assert_equal payload.dig("agent_runtime", "artifacts", "final_report"), panel["latest_agent_runtime"]
+      assert_equal "empty", panel["status"]
+      assert_nil panel["latest_agent_runtime"]
+      assert_nil panel["latest_engine_run"]
+      assert_equal true, payload.dig("agent_runtime", "script_executor_neutralized")
       assert Array(workbench.dig("workbench", "controls")).any? { |control| control["id"] == "agent" }
     end
   end
@@ -256,7 +239,9 @@ class AgentificationRuntimeTest < Minitest::Test
       payload, code, stderr = json_cmd("--path", dir, "verify-loop", "--max-cycles", "1", "--approved")
 
       assert_equal 5, code, stderr
-      assert_equal "partial_not_complete", payload.dig("verify_loop", "agent_runtime_plan", "status")
+      assert_equal "dry_run", payload.dig("verify_loop", "agent_runtime_plan", "status")
+      assert_equal "engine-run", payload.dig("verify_loop", "agent_runtime_plan", "canonical_runtime")
+      assert_equal "removed_script_runner", payload.dig("verify_loop", "agent_runtime_plan", "agent_runtime_execution_role")
       joined = payload["blocking_issues"].join("\n")
       assert_match(/Profile S does not support build/, joined)
       assert_match(/Profile S does not support preview/, joined)

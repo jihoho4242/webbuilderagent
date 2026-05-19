@@ -318,18 +318,31 @@ module Aiweb
     end
 
     def verify_loop_agent_runtime_plan(cycle_limit)
-      Aiweb::AgentRuntime::Loop.new(self).run(
-        goal: "verify local web-building loop for #{cycle_limit} cycle(s)",
-        mode: "plan-only",
-        profile: nil,
-        max_steps: cycle_limit,
+      planned = engine_run(
+        goal: "verify local web-building evidence for #{cycle_limit} cycle(s)",
+        agent: "codex",
+        mode: "agentic_local",
+        max_cycles: cycle_limit,
         approved: false,
         dry_run: true
-      ).fetch("agent_runtime")
+      )
+      engine = planned["engine_run"].is_a?(Hash) ? planned["engine_run"] : {}
+      {
+        "schema_version" => 2,
+        "status" => engine["status"] || planned["status"] || "unknown",
+        "canonical_runtime" => "engine-run",
+        "agent_runtime_execution_role" => "removed_script_runner",
+        "script_executor_neutralized" => true,
+        "engine_run_id" => engine["run_id"],
+        "approval_hash" => engine["approval_hash"],
+        "checkpoint_path" => engine["checkpoint_path"],
+        "events_path" => engine["events_path"],
+        "blocking_issues" => (Array(planned["blocking_issues"]) + Array(engine["blocking_issues"])).uniq
+      }
     rescue StandardError => e
       {
         "status" => "blocked",
-        "blocking_issues" => ["AgentRuntime plan unavailable: #{e.class}: #{e.message}"]
+        "blocking_issues" => ["engine-run verification plan unavailable: #{e.class}: #{e.message}"]
       }
     end
 

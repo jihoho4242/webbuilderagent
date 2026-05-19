@@ -610,6 +610,8 @@ module Aiweb
         o.on("--mode MODE") { |v| options[:mode] = v }
         o.on("--profile PROFILE") { |v| options[:profile] = v }
         o.on("--max-steps N") { |v| options[:max_steps] = parse_positive_integer(v, "--max-steps") }
+        o.on("--approval-hash HASH") { |v| options[:approval_hash] = v }
+        o.on("--approval-request HASH") { |v| options[:approval_hash] = v }
         o.on("--approved") { options[:approved] = true }
       end
       opts[:goal] ||= @argv.join(" ")
@@ -621,6 +623,7 @@ module Aiweb
         profile: opts[:profile],
         max_steps: opts[:max_steps] || 20,
         approved: !!opts[:approved],
+        approval_hash: opts[:approval_hash],
         dry_run: @dry_run
       )
     end

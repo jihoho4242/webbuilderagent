@@ -61,7 +61,7 @@ module Aiweb
           "eval" => eval_result,
           "brain" => brain_audit.merge("forgotten_memory" => forgotten),
           "self_improvement" => { "proposal" => proposal, "experiment" => experiment },
-          "script_executor_neutralization" => { "status" => "passed", "top_level_agent_runtime_demoted" => true, "verify_loop_role" => "legacy_verification_bundle_tool", "browser_static_scenario_role" => "deterministic_local_browser_probe" },
+          "script_executor_neutralization" => { "status" => "partial", "top_level_agent_runtime_removed" => true, "verify_loop_role" => "remaining_legacy_verification_bundle_tool", "browser_static_scenario_role" => "deterministic_local_browser_probe" },
           "validation" => validation,
           "scaffold_demo_blocking_issues" => scaffold_blockers,
           "operational_blocking_issues" => operational_blockers,

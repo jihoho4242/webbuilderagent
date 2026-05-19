@@ -566,10 +566,12 @@ module Aiweb
       implementation = state&.dig("implementation").is_a?(Hash) ? state.dig("implementation") : {}
       latest_path = implementation["latest_agent_runtime"]
       latest_path ||= latest_agent_runtime_report_path
+      latest_path ||= implementation["latest_engine_run"]
       latest = latest_path && !unsafe_env_path?(latest_path) ? workbench_json_summary(latest_path, allow_runs: true) : nil
       {
         "status" => implementation["agent_runtime_status"] || (latest ? latest["status"] : "empty"),
         "latest_agent_runtime" => latest_path,
+        "latest_engine_run" => implementation["latest_engine_run"],
         "run_id" => implementation["agent_runtime_run_id"] || latest&.dig("agent_session", "run_id"),
         "mode" => implementation["agent_runtime_mode"] || latest&.dig("mode"),
         "profile" => implementation["agent_runtime_profile"] || latest&.dig("profile"),
