@@ -60,6 +60,15 @@
         "browser evidence schema uses probe_plan/probe_results instead of scenario_plan/scenario_results",
         "static surface audit rejects static_safe_action_plan, scenario_plan, and scenario_results in live browser probe code/schema"
       ]
+    },
+    {
+      "surface": "fixture eval production-readiness overclaim",
+      "status": "demoted_to_fixture_pass_production_blocked",
+      "evidence": [
+        "Aiweb::Evals::Runner status now distinguishes expanded_fixture_passed from production_gate_status=blocked",
+        "single-case evals return insufficient_fixture_blocked instead of passed",
+        "P5Gate checks expanded_fixture_gate_passed for scaffold demo while keeping release_ready=false and production_readiness_claimed=false"
+      ]
     }
   ],
   "preserved_safety_substrate": [
@@ -73,7 +82,7 @@
     "ruby -Itest test/test_agentification_runtime.rb": "passed: 11 runs, 138 assertions, 0 failures, 0 errors",
     "ruby -Itest test/test_agent_os_v32_static_surface_audit.rb": "passed: 2 runs, 51 assertions, 0 failures, 0 errors",
     "ruby -Itest test/test_aiweb_cli.rb -n /verify_loop|verify-loop|workbench_dry_run/": "passed: 14 runs, 403 assertions, 0 failures, 0 errors",
-    "ruby -Itest test/test_agent_os_v32_release_evidence.rb": "passed: 2 runs, 27 assertions, 0 failures, 0 errors",
+    "ruby -Itest test/test_agent_os_v32_release_evidence.rb": "passed: 2 runs, 30 assertions, 0 failures, 0 errors",
     "ruby -Itest test/test_agent_os_v32_policy_kernel.rb test/test_agent_os_v32_tool_gateway.rb test/test_agent_os_v32_decision_packet.rb": "passed: 9 runs, 35 assertions, 0 failures, 0 errors",
     "git diff --check": "passed with line-ending warnings only",
     "ruby -Itest test/all.rb": "timed out after 604s in this session; targeted suites above passed",
@@ -85,8 +94,9 @@
     "ruby -Itest test/test_aiweb_cli.rb -n /verify_loop|verify-loop|workbench_dry_run|deploy/": "passed: 18 runs, 616 assertions, 0 failures, 0 errors",
     "ruby -c lib/aiweb/project/engine_run/preview_browser/browser_actions.rb": "passed: Syntax OK",
     "ruby -c test/test_aiweb_cli.rb test/test_schema_locks.rb test/test_agent_os_v32_static_surface_audit.rb": "passed: Syntax OK",
-    "ruby -Itest test/test_aiweb_cli.rb -n /engine_run_captures_screenshot_manifest|engine_run_design_verdict_passes|engine_run_design_gate_blocks_copy_back_on_browser_action_recovery_failure|engine_run_preserves_structured_browser_policy_evidence/": "passed: 4 runs, 648 assertions, 0 failures, 0 errors"
+    "ruby -Itest test/test_aiweb_cli.rb -n /engine_run_captures_screenshot_manifest|engine_run_design_verdict_passes|engine_run_design_gate_blocks_copy_back_on_browser_action_recovery_failure|engine_run_preserves_structured_browser_policy_evidence/": "passed: 4 runs, 648 assertions, 0 failures, 0 errors",
+    "ruby -Itest test/test_agent_os_v32_evals.rb": "passed: 2 runs, 21 assertions, 0 failures, 0 errors"
   },
   "completion_status": "not_complete",
-  "why_not_complete": "Top-level fixed script-runner surfaces, stale deploy provider execution, and browser deterministic-probe naming claims are neutralized, but Manus-grade natural-language web-app agent readiness still requires stronger eval/red-team/Brain/release evidence."
+  "why_not_complete": "Top-level fixed script-runner surfaces, stale deploy provider execution, browser deterministic-probe naming claims, and fixture-eval production-readiness overclaims are neutralized, but Manus-grade natural-language web-app agent readiness still requires stronger independent red-team/Brain/release evidence."
 }

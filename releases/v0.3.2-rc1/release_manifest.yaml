@@ -11,13 +11,16 @@ commit_sha: 61d26a47022cfa25a38911119e601340a826d928
 github_actions_run_id:
 evidence_files:
 - path: releases/v0.3.2-rc1/p5_gate_report.md
-  sha256: sha256:64aea42976348ef27008b2819c2971dc7d1dc2e42c433a2abe87bc711aa78d89
+  sha256: sha256:5c277189178f19c26e4fe0d6a7efc540f804600281547e057fb430112e042859
 schema_validation_report:
   status: local_bin_check_passed
   command: ruby bin/check
 eval_report:
-  status: passed
+  status: expanded_fixture_passed
+  production_gate_status: blocked
   case_count: 50
+  case_source: expanded_fixture_synthetic
+  human_reviewed_case_count: 0
   production_ready_claim_allowed: false
 redteam_report:
   status: passed
@@ -36,4 +39,4 @@ operational_blocking_issues:
 - eval/red-team packs are expanded fixtures, not independently reviewed production
   benchmark evidence
 - Personal Brain persistence is MVP and not yet SQLite-backed
-p5_evidence_hash: sha256:481d51ca7fd9e22f60472e3896fa2124d5ba692a41a0f048b90fecd3622f42c0
+p5_evidence_hash: sha256:5c277189178f19c26e4fe0d6a7efc540f804600281547e057fb430112e042859

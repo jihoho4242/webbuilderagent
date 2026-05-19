@@ -26,6 +26,11 @@
       "surface": "legacy deploy provider execution",
       "status": "fail_closed_removed_execution_files",
       "finding": "deploy/execution.rb and deploy/provenance.rb were removed; deploy now exposes engine_run_release_evidence release_gate and never uses verify-loop evidence as a deploy unlock path"
+    },
+    {
+      "surface": "fixture eval production-readiness claim",
+      "status": "demoted_to_production_gate_blocked",
+      "finding": "eval runner no longer reports status=passed when production evidence is missing; expanded fixtures can pass only fixture gate while production_gate_status remains blocked"
     }
   ],
   "preserve_safety_substrate": [

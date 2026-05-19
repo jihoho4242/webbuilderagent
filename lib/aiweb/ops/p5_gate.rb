@@ -38,7 +38,7 @@ module Aiweb
         scaffold_blockers << "red-team critical/high bypass remains" unless redteam["critical_high_bypass_count"].to_i.zero?
         scaffold_blockers.concat(brain_audit.fetch("blocking_issues", [])) unless brain_audit["status"] == "passed"
         scaffold_blockers << "self-improvement proposal changed source" if proposal["source_changed"] != false
-        scaffold_blockers << "eval runner failed" unless eval_result["status"] == "passed"
+        scaffold_blockers << "eval fixture gate failed" unless eval_result["expanded_fixture_gate_passed"] == true && eval_result["failure_count"].to_i.zero?
         operational_blockers = [
           "production readiness not claimed: GitHub Actions run id is not attached",
           "operator drill evidence is placeholder only",

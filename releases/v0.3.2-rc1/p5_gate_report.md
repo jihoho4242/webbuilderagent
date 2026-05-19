@@ -17,7 +17,7 @@ Evidence hash: `sha256:481d51ca7fd9e22f60472e3896fa2124d5ba692a41a0f048b90fecd36
 - HITL v2: passed
 - Replay: passed
 - Red-team critical/high bypass count: 0
-- Eval: passed (50 expanded fixture cases; production-ready claim remains false)
+- Eval: expanded_fixture_passed (50 synthetic fixture cases; production gate remains blocked)
 - Brain: passed
 - Self-improvement source changed: false
 

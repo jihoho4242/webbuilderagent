@@ -14,14 +14,17 @@ class AgentOsV32EvalsTest < Minitest::Test
 
   def test_eval_runner_requires_more_than_single_fixture_for_production_claim
     single = Aiweb::Evals::Runner.new.run(cases: [{ "status" => "passed" }])
-    assert_equal "passed", single.fetch("status")
+    assert_equal "insufficient_fixture_blocked", single.fetch("status")
+    assert_equal "blocked", single.fetch("production_gate_status")
     assert_equal false, single.fetch("production_ready_claim_allowed")
     assert_match(/minimum expanded fixture count/, single.fetch("blocking_issues").join("\n"))
 
     expanded = Aiweb::Evals::Runner.new.run(cases: Aiweb::Evals::Runner.default_fixture_cases)
-    assert_equal "passed", expanded.fetch("status")
+    assert_equal "expanded_fixture_passed", expanded.fetch("status")
+    assert_equal "blocked", expanded.fetch("production_gate_status")
     assert_equal true, expanded.fetch("expanded_fixture_gate_passed")
     assert_equal false, expanded.fetch("production_ready_claim_allowed")
+    assert_equal 0, expanded.fetch("human_reviewed_case_count")
     assert_match(/production-ready eval science requires/, expanded.fetch("blocking_issues").join("\n"))
   end
 

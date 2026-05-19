@@ -18,10 +18,11 @@ WebBuilderAgent is closer to a natural-language, engine-run-centered supervised 
 - Deleted legacy deploy provider execution/provenance helpers (`lib/aiweb/project/deploy/execution.rb`, `lib/aiweb/project/deploy/provenance.rb`).
 - Replaced the stale deploy `verify_loop_gate` unlock path with a fail-closed `engine_run_release_evidence` release gate; approved deploy no longer executes provider CLI from this local adapter.
 - Renamed browser evidence fields from `planner=static_safe_action_plan` / `scenario_plan` / `scenario_results` to `probe_generator=deterministic_local_browser_probe` / `probe_plan` / `probe_results`.
+- Demoted eval status from generic `passed` to `expanded_fixture_passed` plus `production_gate_status=blocked`, so fixture suites cannot masquerade as production/Manus-grade eval science.
 
 ## Remaining non-completion reasons
 
-- Eval/red-team/Brain evidence remains MVP/fixture-grade rather than production benchmark evidence.
+- Red-team/Brain evidence remains MVP/fixture-grade rather than production benchmark evidence; eval fixture pass is now explicitly production-blocked.
 - Operator drill, GitHub Actions run ids, and production release evidence are still blockers.
 - External provider/deploy/credential flows remain intentionally blocked; deploy provider execution is now fail-closed until a future engine-run release evidence gate exists.
 
@@ -34,7 +35,8 @@ WebBuilderAgent is closer to a natural-language, engine-run-centered supervised 
 - `ruby -Itest test/test_aiweb_cli.rb -n '/deploy/'` ? PASS: 8 runs, 290 assertions, 0 failures, 0 errors
 - `ruby -Itest test/test_aiweb_cli.rb -n '/verify_loop|verify-loop|workbench_dry_run|deploy/'` ? PASS: 18 runs, 616 assertions, 0 failures, 0 errors
 - `ruby -Itest test/test_aiweb_cli.rb -n '/engine_run_captures_screenshot_manifest|engine_run_design_verdict_passes|engine_run_design_gate_blocks_copy_back_on_browser_action_recovery_failure|engine_run_preserves_structured_browser_policy_evidence/'` ? PASS: 4 runs, 648 assertions, 0 failures, 0 errors
-- `ruby -Itest test/test_agent_os_v32_release_evidence.rb` ? PASS: 2 runs, 27 assertions, 0 failures, 0 errors
+- `ruby -Itest test/test_agent_os_v32_release_evidence.rb` ? PASS: 2 runs, 30 assertions, 0 failures, 0 errors
+- `ruby -Itest test/test_agent_os_v32_evals.rb` ? PASS: 2 runs, 21 assertions, 0 failures, 0 errors
 - `ruby -Itest test/test_agent_os_v32_policy_kernel.rb` ? PASS: 9 runs, 35 assertions, 0 failures, 0 errors
 - `ruby -Itest test/test_agent_os_v32_tool_gateway.rb` ? PASS: 4 runs, 14 assertions, 0 failures, 0 errors
 - `ruby -Itest test/test_agent_os_v32_decision_packet.rb` ? PASS: 3 runs, 22 assertions, 0 failures, 0 errors
@@ -45,4 +47,4 @@ WebBuilderAgent is closer to a natural-language, engine-run-centered supervised 
 
 ## Completion
 
-Not complete. The fixed script-runner deletion part is substantially complete, including fail-closing the stale deploy provider execution path and demoting browser scenario wording to deterministic probe evidence, but the full objective remains active until Manus-grade/natural-language web-app agent readiness is proven requirement-by-requirement.
+Not complete. The fixed script-runner deletion part is substantially complete, including fail-closing stale deploy execution, demoting browser scenario wording to deterministic probe evidence, and preventing fixture evals from claiming production readiness; the full objective remains active until Manus-grade/natural-language web-app agent readiness is proven requirement-by-requirement.

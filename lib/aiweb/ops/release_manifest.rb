@@ -33,7 +33,10 @@ module Aiweb
           },
           "eval_report" => {
             "status" => p5_evidence.dig("eval", "status"),
+            "production_gate_status" => p5_evidence.dig("eval", "production_gate_status"),
             "case_count" => p5_evidence.dig("eval", "case_count"),
+            "case_source" => p5_evidence.dig("eval", "case_source"),
+            "human_reviewed_case_count" => p5_evidence.dig("eval", "human_reviewed_case_count"),
             "production_ready_claim_allowed" => p5_evidence.dig("eval", "production_ready_claim_allowed")
           },
           "redteam_report" => {
