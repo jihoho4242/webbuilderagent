@@ -63,6 +63,11 @@
       "finding": "P5 evidence no longer claims all side effects require DecisionPacket/PolicyGateway from a single finish-tool demo; whole-repo side-effect coverage remains operationally blocked until audited evidence is attached."
     },
     {
+      "surface": "P5 tool gateway demo claim",
+      "status": "demoted_to_gateway_demo_production_blocked",
+      "finding": "P5 evidence no longer exposes the finish-tool gateway demo as a raw pass; release evidence remains blocked until a full side-effect tool gateway audit is attached."
+    },
+    {
       "surface": "P5 HITL fixture claim",
       "status": "demoted_to_approval_fixture_production_blocked",
       "finding": "P5 evidence no longer treats fixture approver/reviewer verification as production HITL readiness; release evidence remains blocked until real operator approval artifact, single-use/expiry consumption proof, and audit trail are attached."

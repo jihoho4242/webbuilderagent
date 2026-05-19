@@ -125,6 +125,15 @@
       ]
     },
     {
+      "surface": "P5 tool gateway demo overclaim",
+      "status": "demoted_to_finish_demo_and_production_blocked",
+      "evidence": [
+        "P5Gate tool_gateway_coverage now reports status=gateway_demo_passed with verifier_status=passed instead of exposing a raw pass as coverage",
+        "Release manifest carries tool_gateway_report with production_gate_status=blocked and production_ready_claim_allowed=false",
+        "Operational blockers require a full side-effect tool gateway audit before tool gateway readiness can be claimed"
+      ]
+    },
+    {
       "surface": "P5 HITL fixture approval overclaim",
       "status": "demoted_to_approval_fixture_and_production_blocked",
       "evidence": [
@@ -154,7 +163,7 @@
     "ruby -Itest test/test_agentification_runtime.rb": "passed: 11 runs, 138 assertions, 0 failures, 0 errors",
     "ruby -Itest test/test_agent_os_v32_static_surface_audit.rb": "passed: 2 runs, 51 assertions, 0 failures, 0 errors",
     "ruby -Itest test/test_aiweb_cli.rb -n /verify_loop|verify-loop|workbench_dry_run/": "passed: 14 runs, 403 assertions, 0 failures, 0 errors",
-    "ruby -Itest test/test_agent_os_v32_release_evidence.rb": "passed: 2 runs, 137 assertions, 0 failures, 0 errors",
+    "ruby -Itest test/test_agent_os_v32_release_evidence.rb": "passed: 2 runs, 153 assertions, 0 failures, 0 errors",
     "ruby -Itest test/test_agent_os_v32_policy_kernel.rb test/test_agent_os_v32_tool_gateway.rb test/test_agent_os_v32_decision_packet.rb": "passed: 9 runs, 35 assertions, 0 failures, 0 errors",
     "git diff --check": "passed with line-ending warnings only",
     "ruby -Itest test/all.rb": "timed out after 604s in this session; targeted suites above passed",
@@ -175,5 +184,5 @@
     "ruby -c lib/aiweb/ops/p5_gate.rb lib/aiweb/ops/release_manifest.rb": "passed: Syntax OK"
   },
   "completion_status": "not_complete",
-  "why_not_complete": "Top-level fixed script-runner surfaces, stale deploy provider execution, browser deterministic-probe naming claims, fixture-eval production-readiness overclaims, red-team catalog-fixture overclaims, secret-canary value emission, self-improvement dry-run overclaims, release validation evidence overclaims, P5 policy coverage overclaims, P5 HITL fixture overclaims, P5 replay readiness overclaims, and Brain JSON snapshot overclaims are neutralized, but Manus-grade natural-language web-app agent readiness still requires independent production red-team/release evidence plus a real SQLite/dependency-backed Brain kernel."
+  "why_not_complete": "Top-level fixed script-runner surfaces, stale deploy provider execution, browser deterministic-probe naming claims, fixture-eval production-readiness overclaims, red-team catalog-fixture overclaims, secret-canary value emission, self-improvement dry-run overclaims, release validation evidence overclaims, P5 policy/tool gateway overclaims, P5 HITL fixture overclaims, P5 replay readiness overclaims, and Brain JSON snapshot overclaims are neutralized, but Manus-grade natural-language web-app agent readiness still requires independent production red-team/release evidence plus a real SQLite/dependency-backed Brain kernel."
 }

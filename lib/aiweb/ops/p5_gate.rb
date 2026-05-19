@@ -53,6 +53,17 @@ module Aiweb
         scaffold_blockers.concat(brain_audit.fetch("blocking_issues", [])) unless brain_audit["status"] == "passed"
         scaffold_blockers << "self-improvement proposal changed source" if proposal["source_changed"] != false
         scaffold_blockers << "eval fixture gate failed" unless eval_result["expanded_fixture_gate_passed"] == true && eval_result["failure_count"].to_i.zero?
+        tool_gateway_evidence = {
+          "status" => gateway_result["status"] == "passed" ? "gateway_demo_passed" : "gateway_demo_failed",
+          "verifier_status" => gateway_result["status"],
+          "demo_tool" => "finish",
+          "event_order" => gateway_result.fetch("events", []).map { |event| event["event"] },
+          "production_gate_status" => "blocked",
+          "production_ready_claim_allowed" => false,
+          "operational_blocking_issues" => [
+            "tool gateway demo only exercised finish; full side-effect tool gateway audit is not attached to this release evidence"
+          ]
+        }
         policy_coverage = {
           "status" => "gateway_demo_passed",
           "coverage_status" => "unproven",
@@ -79,7 +90,7 @@ module Aiweb
         operational_blockers = [
           "production readiness not claimed: GitHub Actions run id is not attached",
           "operator drill evidence is placeholder only"
-        ] + validation_blocking_issues(validation) + policy_coverage.fetch("operational_blocking_issues", []) + hitl_evidence.fetch("operational_blocking_issues", []) + replay_evidence.fetch("operational_blocking_issues", []) + eval_result.fetch("blocking_issues", []) + redteam.fetch("operational_blocking_issues", []) + brain_audit.fetch("operational_blocking_issues", []) + experiment.fetch("operational_blocking_issues", [])
+        ] + validation_blocking_issues(validation) + tool_gateway_evidence.fetch("operational_blocking_issues", []) + policy_coverage.fetch("operational_blocking_issues", []) + hitl_evidence.fetch("operational_blocking_issues", []) + replay_evidence.fetch("operational_blocking_issues", []) + eval_result.fetch("blocking_issues", []) + redteam.fetch("operational_blocking_issues", []) + brain_audit.fetch("operational_blocking_issues", []) + experiment.fetch("operational_blocking_issues", [])
         {
           "schema_version" => 1,
           "release_id" => "v0.3.2-rc1",
@@ -89,7 +100,7 @@ module Aiweb
           "operational_readiness" => "blocked_pending_ci_operator_drill_and_production_benchmarks",
           "constitution_hash" => constitution["content_hash"],
           "policy_coverage" => policy_coverage,
-          "tool_gateway_coverage" => { "status" => gateway_result["status"], "event_order" => gateway_result.fetch("events", []).map { |event| event["event"] } },
+          "tool_gateway_coverage" => tool_gateway_evidence,
           "hitl_v2" => hitl_evidence,
           "replay" => replay_evidence,
           "redteam" => redteam,

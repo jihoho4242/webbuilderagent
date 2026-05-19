@@ -12,7 +12,7 @@ commit_sha_policy: attach immutable commit sha from CI release job; local static
 github_actions_run_id:
 evidence_files:
 - path: releases/v0.3.2-rc1/p5_gate_report.md
-  sha256: sha256:f2e15855684404f1c6161cc60db1cbe454be5a4298b594d11e0da971e591d935
+  sha256: sha256:00a5d3d488c92fadf605f08ba9bd592174e166cbf7c8a4dd2512ca22da0e5e61
 schema_validation_report:
   status: targeted_validation_only
   validation_keys:
@@ -27,6 +27,12 @@ policy_gateway_report:
   all_side_effects_require_decision_packet_policy_gateway: false
   production_gate_status: blocked
   demo_tool: finish
+tool_gateway_report:
+  status: gateway_demo_passed
+  verifier_status: passed
+  demo_tool: finish
+  production_gate_status: blocked
+  production_ready_claim_allowed: false
 hitl_report:
   status: approval_fixture_passed
   verifier_status: passed
@@ -82,6 +88,7 @@ operational_blocking_issues:
 - operator drill evidence is placeholder only
 - full ruby bin/check evidence is not attached to this release evidence
 - full ruby -Itest test/all.rb evidence is not attached to this release evidence
+- tool gateway demo only exercised finish; full side-effect tool gateway audit is not attached to this release evidence
 - whole-repo side-effect policy coverage audit is not attached to this release evidence
 - production HITL evidence requires a real operator approval artifact, expiry/single-use consumption proof, and audit trail
 - durable replay/resume audit with artifact hash validation is not attached to this release evidence
@@ -89,4 +96,4 @@ operational_blocking_issues:
 - production-ready red-team requires independent adversarial review, CI artifact, secret canary transcript, and expanded attack coverage
 - SQLite backend unavailable; JSONL ledger is a local MVP persistence layer
 - production-ready self-improvement requires sandbox patch diff, static checks, eval/red-team pass, HITL v2 approval, canary, rollback plan, and monitor evidence
-p5_evidence_hash: sha256:f2e15855684404f1c6161cc60db1cbe454be5a4298b594d11e0da971e591d935
+p5_evidence_hash: sha256:00a5d3d488c92fadf605f08ba9bd592174e166cbf7c8a4dd2512ca22da0e5e61
