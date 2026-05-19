@@ -10,7 +10,16 @@ module Aiweb
       def verify(artifact:, decision_packet:, action_diff:, args:, evidence:, now: Time.now.utc)
         blockers = []
         blockers << "approval schema_version must be 2" unless artifact["schema_version"] == 2
-        blockers << "approval is expired" if Time.parse(artifact.fetch("expires_at")) <= now
+        blockers << "approval run_id mismatch" unless artifact["run_id"].to_s == decision_packet.fetch("run_id").to_s
+        blockers << "approval risk_tier mismatch" unless artifact["risk_tier"].to_s == decision_packet.fetch("risk_tier").to_s
+        blockers << "approval requested_capabilities must include requested tool" unless Array(artifact["requested_capabilities"]).include?(decision_packet.fetch("requested_tool"))
+        blockers << "approval approver_id required" if artifact["approver_id"].to_s.strip.empty?
+        blockers << "approval single_use must be true" unless artifact["single_use"] == true
+        blockers << "approval_hash mismatch" unless artifact["approval_hash"] == Artifact.sha(artifact.reject { |key, _| key == "approval_hash" || key == "validation_hash" })
+        blockers << "approval validation_hash mismatch" unless artifact["validation_hash"] == Artifact.sha([artifact["approval_hash"], artifact["run_id"], artifact["decision_packet_ids"]])
+        expires_at = parse_time(artifact["expires_at"])
+        blockers << "approval expires_at must be ISO-8601" unless expires_at
+        blockers << "approval is expired" if expires_at && expires_at <= now
         blockers << "approval is single-use and already consumed" if artifact["single_use"] == true && !artifact["consumed_at"].nil?
         blockers << "approval does not include decision packet" unless Array(artifact["decision_packet_ids"]).include?(decision_packet.fetch("packet_id"))
         blockers << "approval action_diff_hash mismatch" unless artifact["action_diff_hash"] == Artifact.sha(action_diff)
@@ -24,11 +33,21 @@ module Aiweb
           "status" => blockers.empty? ? "passed" : "blocked",
           "approval_id" => artifact["approval_id"],
           "approval_hash" => artifact["approval_hash"],
+          "artifact_hash_self_verified" => !blockers.any? { |issue| issue.include?("approval_hash mismatch") },
+          "validation_hash_verified" => !blockers.any? { |issue| issue.include?("validation_hash mismatch") },
           "second_reviewer_id" => artifact["second_reviewer_id"],
           "blocking_issues" => blockers
         }
       rescue StandardError => e
         { "schema_version" => 1, "status" => "blocked", "blocking_issues" => ["approval verification failed: #{e.class}: #{e.message}"] }
+      end
+
+      private
+
+      def parse_time(value)
+        Time.parse(value.to_s)
+      rescue ArgumentError, TypeError
+        nil
       end
     end
   end

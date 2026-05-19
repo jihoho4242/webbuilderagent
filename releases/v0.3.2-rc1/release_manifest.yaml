@@ -12,7 +12,7 @@ commit_sha_policy: attach immutable commit sha from CI release job; local static
 github_actions_run_id: null
 evidence_files:
 - path: releases/v0.3.2-rc1/p5_gate_report.md
-  sha256: sha256:e6a6a5bc69883c327a1f992ab1892a4e3ee4b300796f34f3c097ea20b28a8567
+  sha256: sha256:5768e590590baf369faa48961c7549d115ee8c73e50d83739c76c59274de7639
 schema_validation_report:
   status: targeted_validation_only
   validation_keys:
@@ -55,6 +55,8 @@ hitl_report:
   production_gate_status: blocked
   approver_fixture_only: true
   production_ready_claim_allowed: false
+  artifact_hash_self_verified: true
+  validation_hash_verified: true
 replay_report:
   status: replay_demo_passed
   fixture_status: decision_replay_key_fixture_present
@@ -152,4 +154,4 @@ operational_blocking_issues:
   and independent memory audit evidence
 - production-ready self-improvement requires sandbox patch diff, static checks, eval/red-team
   pass, HITL v2 approval, canary, rollback plan, and monitor evidence
-p5_evidence_hash: sha256:e6a6a5bc69883c327a1f992ab1892a4e3ee4b300796f34f3c097ea20b28a8567
+p5_evidence_hash: sha256:5768e590590baf369faa48961c7549d115ee8c73e50d83739c76c59274de7639

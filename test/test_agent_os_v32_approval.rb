@@ -43,6 +43,13 @@ class AgentOsV32ApprovalTest < Minitest::Test
     check = verify(artifact)
     assert_equal "passed", check.fetch("status")
     assert_equal "human-2", check.fetch("second_reviewer_id")
+    assert_equal true, check.fetch("artifact_hash_self_verified")
+    assert_equal true, check.fetch("validation_hash_verified")
+
+    reordered = artifact.to_a.reverse.to_h
+    reordered_check = verify(reordered)
+    assert_equal "passed", reordered_check.fetch("status")
+    assert_equal true, reordered_check.fetch("artifact_hash_self_verified")
   end
 
   def test_expired_mismatched_reused_and_single_reviewer_artifacts_block
@@ -63,5 +70,38 @@ class AgentOsV32ApprovalTest < Minitest::Test
     no_second = verify(artifact(second_reviewer_id: nil))
     assert_equal "blocked", no_second.fetch("status")
     assert_match(/second_reviewer_id/, no_second.fetch("blocking_issues").join("\n"))
+  end
+
+  def test_tampered_approval_hash_validation_hash_and_scope_block
+    tampered_hash = artifact
+    tampered_hash["approval_hash"] = "sha256:#{"0" * 64}"
+    hash_check = verify(tampered_hash)
+    assert_equal "blocked", hash_check.fetch("status")
+    assert_match(/approval_hash mismatch/, hash_check.fetch("blocking_issues").join("\n"))
+    assert_equal false, hash_check.fetch("artifact_hash_self_verified")
+
+    tampered_validation = artifact
+    tampered_validation["validation_hash"] = "sha256:#{"1" * 64}"
+    validation_check = verify(tampered_validation)
+    assert_equal "blocked", validation_check.fetch("status")
+    assert_match(/validation_hash mismatch/, validation_check.fetch("blocking_issues").join("\n"))
+    assert_equal false, validation_check.fetch("validation_hash_verified")
+
+    wrong_run = artifact
+    wrong_run["run_id"] = "other-run"
+    run_check = verify(wrong_run)
+    assert_equal "blocked", run_check.fetch("status")
+    assert_match(/run_id mismatch/, run_check.fetch("blocking_issues").join("\n"))
+
+    wrong_risk = artifact(risk_tier: "L5")
+    risk_check = verify(wrong_risk)
+    assert_equal "blocked", risk_check.fetch("status")
+    assert_match(/risk_tier mismatch/, risk_check.fetch("blocking_issues").join("\n"))
+
+    wrong_capability = artifact
+    wrong_capability["requested_capabilities"] = ["build"]
+    capability_check = verify(wrong_capability)
+    assert_equal "blocked", capability_check.fetch("status")
+    assert_match(/requested_capabilities/, capability_check.fetch("blocking_issues").join("\n"))
   end
 end

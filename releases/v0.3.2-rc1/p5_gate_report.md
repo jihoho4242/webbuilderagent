@@ -15,7 +15,7 @@ Evidence integrity: `releases/v0.3.2-rc1/evidence_integrity_manifest.yaml`
 - Policy coverage: gateway_demo_passed (whole-repo side-effect coverage unproven; production gate blocked)
 - Side-effect surface audit: static_audit_attached (entries=19; unclassified=0; runtime universal enforcement unproven)
 - Tool gateway: gateway_demo_passed (finish demo + L3 boolean rejection + L3 hash-bound approval artifact + verifier-result rejection fixtures; full side-effect gateway audit not attached; production gate blocked)
-- HITL v2: approval_fixture_passed (fixture approver only; production gate blocked)
+- HITL v2: approval_fixture_passed (fixture approver only; artifact hash and validation hash self-checks passed; production gate blocked)
 - Replay: replay_demo_passed (durable replay/resume audit not attached; production gate blocked)
 - Validation: targeted_validation_only (full ruby bin/check, test/all, and CI evidence not attached)
 - Red-team: catalog_fixture_passed (6 local catalog cases; production gate remains blocked)
