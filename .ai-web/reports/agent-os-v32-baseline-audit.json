@@ -116,6 +116,11 @@
       "surface": "agent-run diff-policy direct git evidence subprocesses",
       "status": "centralized_to_runtime_process_runner",
       "finding": "agent_run/diff_policy no longer owns direct Open3 git diff/status subprocesses; git evidence now routes through the central ProcessRunner/CommandSpec boundary, the stale local_read_only_git_evidence documented-exception classifier was removed, and static side-effect audit has no local_read_only_git_evidence entries."
+    },
+    {
+      "surface": "OpenManus readiness direct image inspect subprocess",
+      "status": "centralized_to_runtime_process_runner",
+      "finding": "OpenManus readiness no longer owns direct Open3 image inspect subprocesses; local image inspect now routes through ProcessRunner/CommandSpec with scrubbed env, the stale local_runtime_readiness_probe documented-exception classifier was removed, and static side-effect audit has no local_runtime_readiness_probe entries."
     }
   ],
   "preserve_safety_substrate": [

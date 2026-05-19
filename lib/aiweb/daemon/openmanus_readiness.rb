@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require_relative "../runtime"
+
 module Aiweb
   module OpenManusReadiness
     def openmanus_readiness_payload(check_image:)
@@ -55,15 +57,24 @@ module Aiweb
         }
       end
 
-      stdout, stderr, status = container_image_inspect(provider, image)
-      if status&.success?
+      result = container_image_inspect(executable, image)
+      if result.status == "timeout"
+        {
+          "provider" => provider,
+          "status" => "unavailable",
+          "executable_path" => executable,
+          "image" => image,
+          "image_present" => false,
+          "blocking_issues" => ["#{provider} image preflight timed out"]
+        }
+      elsif result.success?
         {
           "provider" => provider,
           "status" => "ready",
           "executable_path" => executable,
           "image" => image,
           "image_present" => true,
-          "inspect_stdout" => stdout.to_s[0, 300],
+          "inspect_stdout" => result.stdout.to_s[0, 300],
           "blocking_issues" => []
         }
       else
@@ -73,20 +84,11 @@ module Aiweb
           "executable_path" => executable,
           "image" => image,
           "image_present" => false,
-          "inspect_stderr" => stderr.to_s[0, 300],
+          "inspect_stderr" => result.stderr.to_s[0, 300],
           "blocking_issues" => ["#{provider} image is missing locally: #{image}"]
         }
       end
-    rescue Timeout::Error
-      {
-        "provider" => provider,
-        "status" => "unavailable",
-        "executable_path" => executable,
-        "image" => image,
-        "image_present" => false,
-        "blocking_issues" => ["#{provider} image preflight timed out"]
-      }
-    rescue SystemCallError => e
+    rescue ArgumentError, SystemCallError => e
       {
         "provider" => provider,
         "status" => "unavailable",
@@ -97,10 +99,17 @@ module Aiweb
       }
     end
 
-    def container_image_inspect(provider, image)
-      Timeout.timeout(2) do
-        Open3.capture3(provider, "image", "inspect", image)
-      end
+    def container_image_inspect(executable, image)
+      Aiweb::Runtime::ProcessRunner.new.capture(
+        Aiweb::Runtime::CommandSpec.new(
+          argv: [executable, "image", "inspect", image],
+          cwd: Dir.pwd,
+          timeout: 2,
+          max_output_bytes: 16_000,
+          risk_class: "openmanus_readiness_image_inspect",
+          description: "OpenManus local image inspect readiness probe"
+        )
+      )
     end
 
     def openmanus_readiness_next_action(status, image)

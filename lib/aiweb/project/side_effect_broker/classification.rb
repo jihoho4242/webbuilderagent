@@ -71,9 +71,6 @@ module Aiweb
       if path.end_with?("lib/aiweb/project/runtime_commands.rb") && line.include?("Open3.capture3")
         return side_effect_classification("local_runtime_command_exception", "documented_exception", nil, "verify/QA/git revision subprocesses are project-local runtime commands; setup install commands are separately brokered")
       end
-      if path.end_with?("lib/aiweb/daemon/openmanus_readiness.rb") && line.include?("Open3.capture3")
-        return side_effect_classification("local_runtime_readiness_probe", "documented_exception", nil, "OpenManus readiness only inspects local Docker/Podman image availability")
-      end
       side_effect_classification("unclassified_direct_side_effect", "unclassified", nil, "direct process/network surface is not yet classified by side-effect broker audit")
     end
 

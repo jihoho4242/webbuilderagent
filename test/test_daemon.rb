@@ -12,6 +12,7 @@ require "uri"
 require "yaml"
 
 require_relative "support/test_helper"
+require_relative "support/fake_runtime_tooling"
 
 require "aiweb"
 
@@ -20,6 +21,8 @@ class AiwebDaemonTest < Minitest::Test
   AIWEB = File.join(REPO_ROOT, "bin", "aiweb")
   API_TOKEN = "test-api-token"
   APPROVAL_TOKEN = "test-approval-token"
+
+  include FakeRuntimeTooling
 
   def in_tmp
     Dir.mktmpdir("aiweb-daemon-test-") { |dir| yield dir }
@@ -1614,6 +1617,36 @@ class AiwebDaemonTest < Minitest::Test
     assert_equal "openmanus:latest", payload["image"]
     assert_equal %w[docker podman], payload["providers"].map { |provider| provider["provider"] }
     assert payload["next_action"].is_a?(String)
+  end
+
+  def test_backend_openmanus_readiness_uses_scrubbed_process_runner_for_image_inspect
+    in_tmp do |dir|
+      bin_dir = write_fake_openmanus_tooling(dir, include_podman: false)
+      previous_env = ENV.to_h.slice("PATH", "OPENAI_API_KEY", "FAKE_OPENMANUS_SECRET")
+      begin
+        ENV["PATH"] = [bin_dir, previous_env["PATH"].to_s].reject(&:empty?).join(File::PATH_SEPARATOR)
+        ENV["OPENAI_API_KEY"] = "must-not-reach-openmanus-readiness"
+        ENV["FAKE_OPENMANUS_SECRET"] = "must-not-reach-openmanus-readiness"
+
+        status, payload = app.call("GET", "/api/engine/openmanus-readiness", api_headers)
+        docker = payload.fetch("providers").find { |provider| provider["provider"] == "docker" }
+
+        assert_equal 200, status
+        assert_equal "ready", payload.fetch("status")
+        assert_equal "ready", docker.fetch("status")
+        assert_equal true, docker.fetch("image_present")
+        refute_match(/secret environment leaked/i, JSON.generate(payload))
+        refute_match(/must-not-reach-openmanus-readiness/, JSON.generate(payload))
+      ensure
+        %w[PATH OPENAI_API_KEY FAKE_OPENMANUS_SECRET].each do |key|
+          if previous_env.key?(key)
+            ENV[key] = previous_env[key]
+          else
+            ENV.delete(key)
+          end
+        end
+      end
+    end
   end
 
   def test_backend_app_health_and_status_use_latest_engine_bridge
