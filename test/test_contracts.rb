@@ -119,10 +119,11 @@ class AiwebContractTest < Minitest::Test
     refute entries.any? { |entry| entry.fetch("classification") == "brokered_engine_run_capture_command" }, "engine-run capture commands must use the central ProcessRunner boundary instead of direct Open3"
     refute entries.any? { |entry| entry.fetch("classification") == "brokered_setup_supply_chain_command" }, "setup install/SBOM/audit commands must use the central ProcessRunner boundary instead of direct Open3"
     refute entries.any? { |entry| entry.fetch("classification") == "brokered_backend_cli_bridge" }, "backend bridge subprocess execution must use the central ProcessRunner boundary instead of direct Open3"
+    refute entries.any? { |entry| entry.fetch("classification") == "brokered_lazyweb_http" }, "Lazyweb external HTTP must use the central HttpClient boundary instead of direct Net::HTTP"
 
     classifications = entries.map { |entry| entry.fetch("classification") }
     %w[
-      brokered_lazyweb_http
+      central_runtime_http_client
       local_verification_harness_exception
       local_cli_launcher_wrapper
     ].each do |classification|

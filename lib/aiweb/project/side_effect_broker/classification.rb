@@ -15,9 +15,6 @@ module Aiweb
       if path.end_with?("lib/aiweb/project/browser_observer_script.js")
         return side_effect_classification("local_browser_observer_template_literal", "documented_exception", nil, "browser observer JavaScript is written by engine-run and executed only through the local browser-observation path; JavaScript template literals are not shell execution")
       end
-      if path.end_with?("lib/aiweb/lazyweb_client.rb") && line.match?(/Net::HTTP/)
-        return side_effect_classification("brokered_lazyweb_http", "brokered", "aiweb.lazyweb.side_effect_broker", "LazywebClient emits broker audit events around Net::HTTP")
-      end
       if path.end_with?("lib/aiweb/project/runtime_commands.rb") && line.include?("system(")
         return side_effect_classification("local_process_tree_cleanup", "documented_exception", nil, "taskkill/system calls are local cleanup fallbacks for preview process trees")
       end
@@ -26,6 +23,9 @@ module Aiweb
       end
       if path.end_with?("lib/aiweb/runtime/process_runner.rb") && line.match?(/Open3\.(?:capture3|popen3)/)
         return side_effect_classification("central_runtime_process_runner", "brokered", "aiweb.runtime.process_runner", "central CommandSpec/ProcessRunner executes argv-only local commands with scrubbed environment, timeout, output caps, and redaction")
+      end
+      if path.end_with?("lib/aiweb/runtime/http_client.rb") && line.match?(/Net::HTTP/)
+        return side_effect_classification("central_runtime_http_client", "brokered", "aiweb.runtime.http_client", "central HttpRequestSpec/HttpClient executes external HTTP with explicit method, timeout, body cap, and structured result")
       end
       if path.end_with?("lib/aiweb/runtime/process_launcher.rb") && line.include?("def spawn")
         return side_effect_classification("central_runtime_process_launcher_api", "brokered", "aiweb.runtime.process_launcher", "central ProcessLauncher API is the named boundary for long-running local argv subprocesses")

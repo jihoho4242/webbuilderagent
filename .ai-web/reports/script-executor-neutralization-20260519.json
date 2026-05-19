@@ -311,6 +311,17 @@
         "stale brokered_backend_cli_bridge classifier was removed from side_effect_broker/classification.rb so future direct backend bridge subprocess regressions become unclassified instead of pre-approved",
         "side-effect surface audit no longer reports brokered_backend_cli_bridge or cli_bridge.rb direct Open3 entries; entry_count dropped from 22 to 21 with unclassified_count=0"
       ]
+    },
+    {
+      "surface": "Lazyweb external HTTP transport",
+      "status": "centralized_to_runtime_http_client",
+      "evidence": [
+        "LazywebClient no longer owns direct Net::HTTP request construction or transport execution; requests route through Aiweb::Runtime::HttpRequestSpec and Aiweb::Runtime::HttpClient",
+        "Lazyweb side-effect broker events, configured endpoint policy decision, token/query redaction, timeout handling, HTTP status failure handling, invalid JSON failure evidence, and transport failure evidence are preserved",
+        "Lazyweb audit events now identify Aiweb::Runtime::HttpClient as the transport tool instead of Net::HTTP",
+        "stale brokered_lazyweb_http classifier was removed from side_effect_broker/classification.rb so future direct Lazyweb Net::HTTP regressions become unclassified instead of pre-approved",
+        "side-effect surface audit no longer reports brokered_lazyweb_http or lazyweb_client.rb direct Net::HTTP entries; central_runtime_http_client is the only Net::HTTP transport classification and unclassified_count remains 0"
+      ]
     }
   ],
   "preserved_safety_substrate": [
@@ -394,7 +405,11 @@
     "ruby -c lib/aiweb/daemon/cli_bridge.rb lib/aiweb/daemon.rb lib/aiweb/project/side_effect_broker/classification.rb test/test_contracts.rb": "passed: Syntax OK",
     "ruby -Itest test/test_contracts.rb -n '/side_effect_surface_audit/' after backend bridge ProcessRunner centralization": "passed: 5 runs, 75 assertions, 0 failures, 0 errors",
     "ruby -Ilib -e side_effect_surface_audit backend bridge classification": "passed: coverage=classified, unclassified=0, entry_count=21, removed brokered_backend_cli_bridge; no cli_bridge.rb direct Open3 entries remain",
-    "ruby -Itest test/test_daemon.rb -n '/bridge_records_backend_side_effect_broker_for_cli_execution|bridge_public_response_redacts_secret_args|bridge_treats_shell_metacharacters_as_argv_data_not_shell|bridge_broker_blocks_disallowed_deploy_and_keeps_read_only_inline|bridge_broker_records_failed_event_on_timeout/'": "passed: 5 runs, 50 assertions, 0 failures, 0 errors"
+    "ruby -Itest test/test_daemon.rb -n '/bridge_records_backend_side_effect_broker_for_cli_execution|bridge_public_response_redacts_secret_args|bridge_treats_shell_metacharacters_as_argv_data_not_shell|bridge_broker_blocks_disallowed_deploy_and_keeps_read_only_inline|bridge_broker_records_failed_event_on_timeout/'": "passed: 5 runs, 50 assertions, 0 failures, 0 errors",
+    "ruby -c lib/aiweb/lazyweb_client.rb lib/aiweb/runtime.rb lib/aiweb/runtime/http_client.rb lib/aiweb/runtime/http_request_spec.rb lib/aiweb/runtime/http_result.rb lib/aiweb/project/side_effect_broker/classification.rb test/test_contracts.rb test/test_lazyweb_client.rb": "passed: Syntax OK",
+    "ruby -Itest test/test_lazyweb_client.rb after Lazyweb HttpClient centralization": "passed: 7 runs, 47 assertions, 0 failures, 0 errors",
+    "ruby -Itest test/test_contracts.rb -n '/side_effect_surface_audit/' after Lazyweb HttpClient centralization": "passed: 5 runs, 76 assertions, 0 failures, 0 errors",
+    "ruby -Ilib -e side_effect_surface_audit Lazyweb HttpClient classification": "passed: coverage=classified, unclassified=0, entry_count=21, brokered_lazyweb_http=0, central_runtime_http_client=1, no lazyweb_client.rb direct Net::HTTP entries"
   },
   "completion_status": "not_complete",
   "why_not_complete": "Top-level fixed script-runner surfaces, stale deploy provider execution, browser deterministic-probe naming claims, CLI/contract Manus wording marketing overclaims, fixture-eval production-readiness overclaims, red-team catalog-fixture overclaims, secret-canary value emission, self-improvement dry-run overclaims, release validation evidence overclaims, P5 policy/tool gateway overclaims, P5 HITL fixture overclaims, P5 replay readiness overclaims, Brain safety wording overclaims, Brain JSON snapshot overclaims, the Codex agent-run worker subprocess, runtime_commands direct git/taskkill process forms, agent-run diff-policy direct git subprocesses, OpenManus readiness direct image inspect subprocess, and agent-run OpenManus direct image inspect preflight, engine-run sandbox runtime attestation direct Docker/Podman probes, Codex agent-run worker direct subprocess execution, and OpenManus agent-run sandbox worker direct subprocess execution, and engine-run agent worker direct subprocess execution, and engine-run capture helper direct subprocess execution, and setup install/supply-chain direct subprocess execution are neutralized, but Manus-grade natural-language web-app agent readiness still requires independent production red-team/release evidence plus a real SQLite/dependency-backed Brain kernel.",

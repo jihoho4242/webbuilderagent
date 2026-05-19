@@ -1,11 +1,11 @@
 # frozen_string_literal: true
 
 require "json"
-require "net/http"
 require "securerandom"
 require "time"
-require "timeout"
 require "uri"
+
+require_relative "runtime"
 
 module Aiweb
   class LazywebClient
@@ -20,12 +20,13 @@ module Aiweb
     attr_reader :endpoint, :timeout_seconds, :audit_events
     attr_writer :audit_sink
 
-    def initialize(endpoint: DEFAULT_ENDPOINT, token: nil, timeout_seconds: 45, token_sources: TOKEN_SOURCES, audit_sink: nil)
+    def initialize(endpoint: DEFAULT_ENDPOINT, token: nil, timeout_seconds: 45, token_sources: TOKEN_SOURCES, audit_sink: nil, http_client: Aiweb::Runtime::HttpClient.new)
       @endpoint = endpoint.to_s
       @timeout_seconds = Integer(timeout_seconds)
       @token = present(token) || resolve_token(token_sources)
       @audit_sink = audit_sink
       @audit_events = []
+      @http_client = http_client
       raise ArgumentError, "timeout_seconds must be positive" unless @timeout_seconds.positive?
       raise ArgumentError, "endpoint is required" if @endpoint.strip.empty?
     end
@@ -116,24 +117,38 @@ module Aiweb
 
     def post_json(payload)
       uri = URI.parse(endpoint)
-      request = Net::HTTP::Post.new(uri)
-      request["Content-Type"] = "application/json"
-      request["Accept"] = "application/json, text/event-stream"
-      request["Authorization"] = "Bearer #{@token}" if configured?
-      request.body = JSON.generate(payload)
+      headers = {
+        "Content-Type" => "application/json",
+        "Accept" => "application/json, text/event-stream"
+      }
+      headers["Authorization"] = "Bearer #{@token}" if configured?
+      body = JSON.generate(payload)
 
       audit = audit_event_base(payload, uri)
       emit_audit_event("tool.requested", audit.merge("message" => "requested Lazyweb MCP HTTP call"))
       emit_audit_event("policy.decision", audit.merge("message" => "Lazyweb MCP endpoint allowed by configured design-research adapter", "decision" => "allow"))
       emit_audit_event("tool.started", audit.merge("message" => "starting Lazyweb MCP HTTP call"))
-      response = nil
-      Timeout.timeout(timeout_seconds) do
-        Net::HTTP.start(uri.hostname, uri.port, use_ssl: uri.scheme == "https", read_timeout: timeout_seconds, open_timeout: timeout_seconds) do |http|
-          response = http.request(request)
-        end
+      response = @http_client.request(
+        Aiweb::Runtime::HttpRequestSpec.new(
+          uri: endpoint,
+          method: "POST",
+          headers: headers,
+          body: body,
+          timeout: timeout_seconds,
+          risk_class: "lazyweb_mcp_http",
+          description: "Lazyweb MCP HTTP call"
+        )
+      )
+      if response.status == "timeout"
+        emit_lazyweb_terminal_failure(audit, "Lazyweb MCP request timed out", "error_class" => "Timeout::Error")
+        raise ProtocolError, "Lazyweb MCP request timed out after #{timeout_seconds}s"
       end
-      unless response.is_a?(Net::HTTPSuccess)
-        emit_lazyweb_terminal_failure(audit, "finished Lazyweb MCP HTTP call", "http_status" => response&.code.to_s)
+      if response.status == "transport_error"
+        emit_lazyweb_terminal_failure(audit, "failed Lazyweb MCP HTTP call", "error_class" => response.error_class.to_s)
+        raise ProtocolError, self.class.redact("#{response.error_class}: #{response.error_message}", @token)
+      end
+      unless response.success?
+        emit_lazyweb_terminal_failure(audit, "finished Lazyweb MCP HTTP call", "http_status" => response.code.to_s)
         raise ProtocolError, self.class.redact("Lazyweb MCP HTTP #{response.code}: #{response.body}", @token)
       end
 
@@ -143,9 +158,6 @@ module Aiweb
     rescue JSON::ParserError => e
       emit_lazyweb_terminal_failure(audit, "failed to parse Lazyweb MCP HTTP response", "error_class" => e.class.name) if defined?(audit) && audit
       raise ProtocolError, self.class.redact("Lazyweb MCP returned invalid JSON: #{e.message}", @token)
-    rescue Timeout::Error
-      emit_lazyweb_terminal_failure(audit, "Lazyweb MCP request timed out", "error_class" => "Timeout::Error") if defined?(audit) && audit
-      raise ProtocolError, "Lazyweb MCP request timed out after #{timeout_seconds}s"
     rescue StandardError => e
       emit_lazyweb_terminal_failure(audit, "failed Lazyweb MCP HTTP call", "error_class" => e.class.name) if defined?(audit) && audit
       raise
@@ -157,7 +169,7 @@ module Aiweb
         "broker" => "aiweb.lazyweb.side_effect_broker",
         "scope" => "external_http.lazyweb_mcp",
         "target" => payload["method"].to_s,
-        "tool" => "Net::HTTP",
+        "tool" => "Aiweb::Runtime::HttpClient",
         "endpoint" => self.class.redact(uri.to_s, @token),
         "host" => uri.hostname.to_s,
         "method" => "POST",
