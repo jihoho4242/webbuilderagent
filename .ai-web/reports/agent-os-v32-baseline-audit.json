@@ -111,6 +111,11 @@
       "surface": "runtime command git revision and preview process-tree direct process forms",
       "status": "centralized_to_runtime_process_runner",
       "finding": "runtime_commands no longer owns direct Open3 git revision probes or direct system(taskkill) process-tree cleanup; both route through the central ProcessRunner/CommandSpec boundary, and static side-effect audit has no local_runtime_command_exception or local_process_tree_cleanup entries."
+    },
+    {
+      "surface": "agent-run diff-policy direct git evidence subprocesses",
+      "status": "centralized_to_runtime_process_runner",
+      "finding": "agent_run/diff_policy no longer owns direct Open3 git diff/status subprocesses; git evidence now routes through the central ProcessRunner/CommandSpec boundary, the stale local_read_only_git_evidence documented-exception classifier was removed, and static side-effect audit has no local_read_only_git_evidence entries."
     }
   ],
   "preserve_safety_substrate": [

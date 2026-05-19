@@ -10,20 +10,32 @@ module Aiweb
 
       patch = changed_files.flat_map do |entry|
         path = entry["path"]
-        if entry["untracked"]
-          stdout, stderr, status = Open3.capture3("git", "diff", "--no-color", "--binary", "--no-index", "--", "/dev/null", path, chdir: root)
-          next stdout if status.success? && !stdout.empty?
-          next [stdout, stderr].join
-        else
-          stdout, stderr, status = Open3.capture3("git", "diff", "--no-color", "--binary", "--", path, chdir: root)
-          next stdout if status.success? && !stdout.empty?
-          next [stdout, stderr].join
-        end
-      rescue SystemCallError
+        result = agent_run_git_diff_result(path, untracked: entry["untracked"])
+        next result.stdout if result.success? && !result.stdout.empty?
+        next [result.stdout, result.stderr].join
+      rescue ArgumentError, SystemCallError
         next agent_run_full_file_diff(path, nil, File.join(root, path))
       end.join
 
       [patch, changed_files.map { |entry| entry["path"] }]
+    end
+
+    def agent_run_git_diff_result(path, untracked:)
+      argv = if untracked
+               ["git", "diff", "--no-color", "--binary", "--no-index", "--", "/dev/null", path]
+             else
+               ["git", "diff", "--no-color", "--binary", "--", path]
+             end
+      runtime_process_runner.capture(
+        Aiweb::Runtime::CommandSpec.new(
+          argv: argv,
+          cwd: root,
+          timeout: 30,
+          max_output_bytes: 500_000,
+          risk_class: "agent_run_read_only_git_evidence",
+          description: "agent-run git diff evidence"
+        )
+      )
     end
 
     def agent_run_full_file_diff(relative_path, before_path, after_path)
@@ -85,10 +97,19 @@ module Aiweb
     end
 
     def agent_run_changed_files(source_paths)
-      stdout, _stderr, status = Open3.capture3("git", "status", "--porcelain=v1", "-uall", chdir: root)
-      return source_paths.map { |path| { "path" => path, "untracked" => false } } if !status.success?
+      result = runtime_process_runner.capture(
+        Aiweb::Runtime::CommandSpec.new(
+          argv: ["git", "status", "--porcelain=v1", "-uall"],
+          cwd: root,
+          timeout: 30,
+          max_output_bytes: 500_000,
+          risk_class: "agent_run_read_only_git_evidence",
+          description: "agent-run git status evidence"
+        )
+      )
+      return source_paths.map { |path| { "path" => path, "untracked" => false } } unless result.success?
 
-      changed = stdout.lines.each_with_object([]) do |line, memo|
+      changed = result.stdout.lines.each_with_object([]) do |line, memo|
         code = line[0, 2]
         path = line[3..].to_s.strip
         path = path.split(" -> ").last.to_s.strip if line.start_with?("R", "C")
@@ -100,7 +121,7 @@ module Aiweb
         memo << { "path" => path, "untracked" => code == "??" }
       end
       changed.uniq { |entry| entry["path"] }
-    rescue SystemCallError
+    rescue ArgumentError, SystemCallError
       source_paths.map { |path| { "path" => path, "untracked" => false } }
     end
 

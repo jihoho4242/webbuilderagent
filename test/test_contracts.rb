@@ -109,6 +109,7 @@ class AiwebContractTest < Minitest::Test
     refute entries.any? { |entry| entry.fetch("path").end_with?("side_effect_broker.rb") }
     refute entries.any? { |entry| entry.fetch("classification") == "local_runtime_command_exception" }, "git revision probes must use the central ProcessRunner boundary instead of direct Open3 in runtime commands"
     refute entries.any? { |entry| entry.fetch("classification") == "local_process_tree_cleanup" }, "preview process tree cleanup must use the central ProcessRunner boundary instead of direct system calls"
+    refute entries.any? { |entry| entry.fetch("classification") == "local_read_only_git_evidence" }, "agent-run git diff/status evidence must use the central ProcessRunner boundary instead of direct Open3"
 
     classifications = entries.map { |entry| entry.fetch("classification") }
     %w[
