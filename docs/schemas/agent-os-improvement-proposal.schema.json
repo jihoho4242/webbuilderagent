@@ -3,19 +3,26 @@
   "$id": "https://aiweb.local/schemas/agent-os-improvement-proposal.schema.json",
   "title": "Agent OS Improvement Proposal",
   "type": "object",
-  "required": ["schema_version", "proposal_id", "mode", "target_component", "risk_tier", "hypothesis", "eval_plan", "rollback_plan", "approval_required", "change_hash", "source_changed"],
+  "required": ["schema_version", "proposal_id", "mode", "fixture_status", "production_gate_status", "production_ready_claim_allowed", "target_component", "risk_tier", "hypothesis", "eval_plan", "rollback_plan", "approval_required", "sandbox_only", "patch_generated", "promotion_allowed", "change_hash", "source_changed", "operational_blocking_issues"],
   "properties": {
     "schema_version": { "const": 1 },
     "proposal_id": { "type": "string", "pattern": "^improvement-proposal-" },
     "mode": { "enum": ["dry_run", "blocked", "approved_apply"] },
+    "fixture_status": { "enum": ["proposal_fixture_recorded", "proposal_blocked"] },
+    "production_gate_status": { "const": "blocked" },
+    "production_ready_claim_allowed": { "const": false },
     "target_component": { "type": "string" },
     "risk_tier": { "enum": ["L0", "L1", "L2", "L3", "L4", "L5"] },
     "hypothesis": { "type": "string" },
     "eval_plan": { "type": "object" },
     "rollback_plan": { "type": "object" },
     "approval_required": { "type": "boolean" },
+    "sandbox_only": { "const": true },
+    "patch_generated": { "const": false },
+    "promotion_allowed": { "const": false },
     "change_hash": { "type": "string", "pattern": "^sha256:[a-f0-9]{64}$" },
-    "source_changed": { "type": "boolean" }
+    "source_changed": { "type": "boolean" },
+    "operational_blocking_issues": { "type": "array", "items": { "type": "string" } }
   },
   "additionalProperties": true
 }

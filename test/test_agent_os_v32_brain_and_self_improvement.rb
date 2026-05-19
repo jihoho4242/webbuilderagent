@@ -91,13 +91,50 @@ class AgentOsV32BrainAndSelfImprovementTest < Minitest::Test
 
       record = Aiweb::SelfImprovement::ExperimentRegistry.new(path: path).record(proposal)
 
-      assert_equal "planned", record.fetch("status")
+      assert_equal "sandbox_planned", record.fetch("status")
+      assert_equal "experiment_fixture_recorded", record.fetch("fixture_status")
+      assert_equal "blocked", record.fetch("production_gate_status")
       assert_equal false, record.fetch("promotion_allowed")
+      assert_equal false, record.fetch("production_ready_claim_allowed")
       assert_equal true, record.fetch("sandbox_only")
       assert File.file?(path)
 
       persisted = File.readlines(path).map { |line| JSON.parse(line) }
       assert_equal [record.fetch("experiment_id")], persisted.map { |item| item.fetch("experiment_id") }
     end
+  end
+
+  def test_self_improvement_governor_never_claims_production_ready_or_generates_patch
+    proposal = Aiweb::SelfImprovement::Governor.new.dry_run_proposal(
+      target_component: "runtime_tool_description",
+      hypothesis: "Improve clarity without changing source",
+      eval_plan: { "required" => true },
+      rollback_plan: { "summary" => "revert proposal" }
+    )
+
+    assert_equal "dry_run", proposal.fetch("mode")
+    assert_equal "proposal_fixture_recorded", proposal.fetch("fixture_status")
+    assert_equal "blocked", proposal.fetch("production_gate_status")
+    assert_equal false, proposal.fetch("production_ready_claim_allowed")
+    assert_equal true, proposal.fetch("sandbox_only")
+    assert_equal false, proposal.fetch("patch_generated")
+    assert_equal false, proposal.fetch("promotion_allowed")
+    assert_equal false, proposal.fetch("source_changed")
+    assert_match(/sandbox patch diff/, proposal.fetch("operational_blocking_issues").join("\n"))
+  end
+
+  def test_self_improvement_forbidden_component_blocks_even_fixture_proposal
+    proposal = Aiweb::SelfImprovement::Governor.new.dry_run_proposal(
+      target_component: "policy_kernel",
+      hypothesis: "Try to loosen policy",
+      eval_plan: {},
+      rollback_plan: {}
+    )
+
+    assert_equal "blocked", proposal.fetch("mode")
+    assert_equal "proposal_blocked", proposal.fetch("fixture_status")
+    assert_equal "blocked", proposal.fetch("production_gate_status")
+    assert_equal "L5", proposal.fetch("risk_tier")
+    assert_match(/cannot directly patch forbidden component/, proposal.fetch("blocking_issues").join("\n"))
   end
 end

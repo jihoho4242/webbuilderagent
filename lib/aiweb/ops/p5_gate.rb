@@ -47,7 +47,7 @@ module Aiweb
         operational_blockers = [
           "production readiness not claimed: GitHub Actions run id is not attached",
           "operator drill evidence is placeholder only"
-        ] + eval_result.fetch("blocking_issues", []) + redteam.fetch("operational_blocking_issues", []) + brain_audit.fetch("operational_blocking_issues", [])
+        ] + eval_result.fetch("blocking_issues", []) + redteam.fetch("operational_blocking_issues", []) + brain_audit.fetch("operational_blocking_issues", []) + experiment.fetch("operational_blocking_issues", [])
         {
           "schema_version" => 1,
           "release_id" => "v0.3.2-rc1",

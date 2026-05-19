@@ -46,6 +46,11 @@
       "surface": "secret canary runner",
       "status": "redacted_production_blocked",
       "finding": "secret canary runner no longer emits the canary value or generic passed status; it emits a fingerprint, canary_value_emitted=false, and production_gate_status=blocked."
+    },
+    {
+      "surface": "self-improvement dry-run claim",
+      "status": "demoted_to_production_gate_blocked",
+      "finding": "Self-improvement proposals and experiments are explicitly fixture/sandbox-only, production_gate_status=blocked, patch_generated=false, and promotion_allowed=false until real sandbox patch/eval/red-team/HITL/canary/rollback evidence exists."
     }
   ],
   "preserve_safety_substrate": [

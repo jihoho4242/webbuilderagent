@@ -12,7 +12,7 @@ commit_sha_policy: attach immutable commit sha from CI release job; local static
 github_actions_run_id:
 evidence_files:
 - path: releases/v0.3.2-rc1/p5_gate_report.md
-  sha256: sha256:ec7a273420f2ea7ede2531cc72a34123a85846693dbadf726f5ac72b6d774c3a
+  sha256: sha256:a2866aaf2f27c7bc0aaf49850f8d38daadb6a68e728138626ec1e06af51c5158
 schema_validation_report:
   status: local_bin_check_passed
   command: ruby bin/check
@@ -40,6 +40,13 @@ redteam_report:
     - production-ready secret canary evidence requires CI redaction transcript and independent review
   critical_high_bypass_count: 0
   production_ready_claim_allowed: false
+self_improvement_report:
+  proposal_status: proposal_fixture_recorded
+  experiment_status: sandbox_planned
+  production_gate_status: blocked
+  patch_generated: false
+  promotion_allowed: false
+  production_ready_claim_allowed: false
 rollback_plan:
   status: documented_local_revert_only
   summary: revert the release commit and rerun ruby bin/check before any future release claim
@@ -52,4 +59,5 @@ operational_blocking_issues:
 - production-ready eval science requires independent holdout, leakage check, CI artifact, and human baseline
 - production-ready red-team requires independent adversarial review, CI artifact, secret canary transcript, and expanded attack coverage
 - SQLite backend unavailable; JSONL ledger is a local MVP persistence layer
-p5_evidence_hash: sha256:ec7a273420f2ea7ede2531cc72a34123a85846693dbadf726f5ac72b6d774c3a
+- production-ready self-improvement requires sandbox patch diff, static checks, eval/red-team pass, HITL v2 approval, canary, rollback plan, and monitor evidence
+p5_evidence_hash: sha256:a2866aaf2f27c7bc0aaf49850f8d38daadb6a68e728138626ec1e06af51c5158

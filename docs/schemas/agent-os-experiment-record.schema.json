@@ -3,15 +3,19 @@
   "$id": "https://aiweb.local/schemas/agent-os-experiment-record.schema.json",
   "title": "Agent OS Self Improvement Experiment Record",
   "type": "object",
-  "required": ["schema_version", "experiment_id", "proposal_id", "status", "sandbox_only", "eval_result", "promotion_allowed"],
+  "required": ["schema_version", "experiment_id", "proposal_id", "status", "fixture_status", "production_gate_status", "sandbox_only", "eval_result", "promotion_allowed", "production_ready_claim_allowed", "operational_blocking_issues"],
   "properties": {
     "schema_version": { "const": 1 },
     "experiment_id": { "type": "string", "pattern": "^experiment-" },
     "proposal_id": { "type": "string" },
-    "status": { "enum": ["planned", "blocked", "passed", "failed"] },
+    "status": { "enum": ["sandbox_planned", "blocked", "failed"] },
+    "fixture_status": { "enum": ["experiment_fixture_recorded", "experiment_blocked"] },
+    "production_gate_status": { "const": "blocked" },
     "sandbox_only": { "const": true },
     "eval_result": { "type": "object" },
-    "promotion_allowed": { "type": "boolean" }
+    "promotion_allowed": { "const": false },
+    "production_ready_claim_allowed": { "const": false },
+    "operational_blocking_issues": { "type": "array", "items": { "type": "string" } }
   },
   "additionalProperties": true
 }

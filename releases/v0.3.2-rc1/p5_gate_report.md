@@ -21,7 +21,7 @@ Evidence integrity: `releases/v0.3.2-rc1/evidence_integrity_manifest.yaml`
 - Red-team critical/high bypass count: 0
 - Eval: expanded_fixture_passed (50 synthetic fixture cases; production gate remains blocked)
 - Brain: safety passed (JSONL ledger MVP; SQLite operational gate blocked)
-- Self-improvement source changed: false
+- Self-improvement: proposal_fixture_recorded / sandbox_planned (production gate blocked; no patch generated)
 
 ## Scaffold/demo blockers
 
@@ -34,3 +34,4 @@ Evidence integrity: `releases/v0.3.2-rc1/evidence_integrity_manifest.yaml`
 - production-ready eval science requires independent holdout, leakage check, CI artifact, and human baseline
 - production-ready red-team requires independent adversarial review, CI artifact, secret canary transcript, and expanded attack coverage
 - SQLite backend unavailable; JSONL ledger is a local MVP persistence layer
+- production-ready self-improvement requires sandbox patch diff, static checks, eval/red-team pass, HITL v2 approval, canary, rollback plan, and monitor evidence

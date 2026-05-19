@@ -49,6 +49,14 @@ module Aiweb
             "critical_high_bypass_count" => p5_evidence.dig("redteam", "critical_high_bypass_count"),
             "production_ready_claim_allowed" => p5_evidence.dig("redteam", "production_ready_claim_allowed")
           },
+          "self_improvement_report" => {
+            "proposal_status" => p5_evidence.dig("self_improvement", "proposal", "fixture_status"),
+            "experiment_status" => p5_evidence.dig("self_improvement", "experiment", "status"),
+            "production_gate_status" => p5_evidence.dig("self_improvement", "experiment", "production_gate_status"),
+            "patch_generated" => p5_evidence.dig("self_improvement", "proposal", "patch_generated"),
+            "promotion_allowed" => p5_evidence.dig("self_improvement", "experiment", "promotion_allowed"),
+            "production_ready_claim_allowed" => p5_evidence.dig("self_improvement", "experiment", "production_ready_claim_allowed")
+          },
           "rollback_plan" => {
             "status" => "documented_local_revert_only",
             "summary" => "revert the release commit and rerun ruby bin/check before any future release claim"

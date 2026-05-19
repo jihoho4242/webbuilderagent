@@ -36,6 +36,13 @@ class AgentOsV32ReleaseEvidenceTest < Minitest::Test
     assert_equal "blocked", evidence.dig("brain", "operational_status")
     assert_match(/SQLite backend unavailable/, evidence.dig("brain", "operational_blocking_issues").join("\n"))
     assert_equal false, evidence.dig("self_improvement", "proposal", "source_changed")
+    assert_equal "proposal_fixture_recorded", evidence.dig("self_improvement", "proposal", "fixture_status")
+    assert_equal "blocked", evidence.dig("self_improvement", "proposal", "production_gate_status")
+    assert_equal false, evidence.dig("self_improvement", "proposal", "production_ready_claim_allowed")
+    assert_equal "sandbox_planned", evidence.dig("self_improvement", "experiment", "status")
+    assert_equal "blocked", evidence.dig("self_improvement", "experiment", "production_gate_status")
+    assert_equal false, evidence.dig("self_improvement", "experiment", "promotion_allowed")
+    assert_match(/self-improvement requires sandbox patch diff/, evidence.fetch("operational_blocking_issues").join("\n"))
     assert_equal true, evidence.dig("replay", "side_effect_free_replay")
     assert_equal "passed", evidence.dig("hitl_v2", "status")
 
@@ -45,6 +52,10 @@ class AgentOsV32ReleaseEvidenceTest < Minitest::Test
     assert_equal false, manifest.dig("redteam_report", "production_ready_claim_allowed")
     assert_equal 0, manifest.dig("redteam_report", "independent_reviewed_case_count")
     assert_equal false, manifest.dig("redteam_report", "secret_canary", "canary_value_emitted")
+    assert_equal "sandbox_planned", manifest.dig("self_improvement_report", "experiment_status")
+    assert_equal "blocked", manifest.dig("self_improvement_report", "production_gate_status")
+    assert_equal false, manifest.dig("self_improvement_report", "patch_generated")
+    assert_equal false, manifest.dig("self_improvement_report", "promotion_allowed")
   end
 
   def test_release_evidence_files_exist_and_reference_p5_gate
@@ -64,7 +75,12 @@ class AgentOsV32ReleaseEvidenceTest < Minitest::Test
     assert_equal false, manifest.dig("redteam_report", "production_ready_claim_allowed")
     assert_equal 0, manifest.dig("redteam_report", "independent_reviewed_case_count")
     assert_equal false, manifest.dig("redteam_report", "secret_canary", "canary_value_emitted")
+    assert_equal "sandbox_planned", manifest.dig("self_improvement_report", "experiment_status")
+    assert_equal "blocked", manifest.dig("self_improvement_report", "production_gate_status")
+    assert_equal false, manifest.dig("self_improvement_report", "patch_generated")
+    assert_equal false, manifest.dig("self_improvement_report", "promotion_allowed")
     assert_match(/independent adversarial review/, manifest.fetch("operational_blocking_issues").join("\n"))
+    assert_match(/self-improvement requires sandbox patch diff/, manifest.fetch("operational_blocking_issues").join("\n"))
 
     integrity = YAML.safe_load(File.read(File.join(REPO_ROOT, "releases", "v0.3.2-rc1", "evidence_integrity_manifest.yaml")), permitted_classes: [], aliases: false)
     integrity.fetch("files").each do |entry|

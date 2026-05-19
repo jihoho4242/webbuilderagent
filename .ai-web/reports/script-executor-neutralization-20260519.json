@@ -7,7 +7,7 @@
   "assessment": {
     "current_level": "engine-run-centered supervised local web-building Agent OS candidate",
     "not_yet_manus_grade_reasons": [
-      "eval/red-team/Brain evidence is now explicitly blocked from production-readiness claims, but still lacks independent production benchmark evidence",
+      "eval/red-team/Brain/self-improvement evidence is now explicitly blocked from production-readiness claims, but still lacks independent production benchmark and operational evidence",
       "operator drill, GitHub Actions run ids, and production release evidence are still blockers",
       "external provider/deploy/credential flows remain intentionally blocked; local deploy provider execution is now fail-closed pending engine-run release evidence"
     ]
@@ -96,6 +96,15 @@
         "SecretCanary.safe_report exposes only canary_fingerprint, canary_value_emitted=false, production_gate_status=blocked, and production_ready_claim_allowed=false",
         "Redteam::Arena and release manifest carry the redacted secret_canary evidence without claiming production readiness"
       ]
+    },
+    {
+      "surface": "self-improvement dry-run production-readiness overclaim",
+      "status": "demoted_to_proposal_fixture_and_production_blocked",
+      "evidence": [
+        "SelfImprovement::Governor dry_run_proposal now exposes fixture_status=proposal_fixture_recorded, production_gate_status=blocked, production_ready_claim_allowed=false, patch_generated=false, and promotion_allowed=false",
+        "ExperimentRegistry records sandbox_planned experiments with production_gate_status=blocked and promotion_allowed=false",
+        "P5Gate and release manifest carry self-improvement operational blockers instead of treating a dry-run proposal as production self-improvement evidence"
+      ]
     }
   ],
   "preserved_safety_substrate": [
@@ -109,7 +118,7 @@
     "ruby -Itest test/test_agentification_runtime.rb": "passed: 11 runs, 138 assertions, 0 failures, 0 errors",
     "ruby -Itest test/test_agent_os_v32_static_surface_audit.rb": "passed: 2 runs, 51 assertions, 0 failures, 0 errors",
     "ruby -Itest test/test_aiweb_cli.rb -n /verify_loop|verify-loop|workbench_dry_run/": "passed: 14 runs, 403 assertions, 0 failures, 0 errors",
-    "ruby -Itest test/test_agent_os_v32_release_evidence.rb": "passed: 2 runs, 55 assertions, 0 failures, 0 errors",
+    "ruby -Itest test/test_agent_os_v32_release_evidence.rb": "passed: 2 runs, 73 assertions, 0 failures, 0 errors",
     "ruby -Itest test/test_agent_os_v32_policy_kernel.rb test/test_agent_os_v32_tool_gateway.rb test/test_agent_os_v32_decision_packet.rb": "passed: 9 runs, 35 assertions, 0 failures, 0 errors",
     "git diff --check": "passed with line-ending warnings only",
     "ruby -Itest test/all.rb": "timed out after 604s in this session; targeted suites above passed",
@@ -123,10 +132,11 @@
     "ruby -c test/test_aiweb_cli.rb test/test_schema_locks.rb test/test_agent_os_v32_static_surface_audit.rb": "passed: Syntax OK",
     "ruby -Itest test/test_aiweb_cli.rb -n /engine_run_captures_screenshot_manifest|engine_run_design_verdict_passes|engine_run_design_gate_blocks_copy_back_on_browser_action_recovery_failure|engine_run_preserves_structured_browser_policy_evidence/": "passed: 4 runs, 648 assertions, 0 failures, 0 errors",
     "ruby -Itest test/test_agent_os_v32_evals.rb": "passed: 2 runs, 21 assertions, 0 failures, 0 errors",
-    "ruby -Itest test/test_agent_os_v32_brain_and_self_improvement.rb": "passed: 4 runs, 27 assertions, 0 failures, 0 errors",
+    "ruby -Itest test/test_agent_os_v32_brain_and_self_improvement.rb": "passed: 6 runs, 46 assertions, 0 failures, 0 errors",
     "ruby -Itest test/test_agent_os_v32_redteam.rb": "passed: 4 runs, 38 assertions, 0 failures, 0 errors",
-    "ruby redteam/secret_canary.rb": "passed: canary_configured, canary_value_emitted=false, production_gate_status=blocked"
+    "ruby redteam/secret_canary.rb": "passed: canary_configured, canary_value_emitted=false, production_gate_status=blocked",
+    "ruby -Itest test/test_agent_os_v32_contracts.rb": "passed: 3 runs, 66 assertions, 0 failures, 0 errors"
   },
   "completion_status": "not_complete",
-  "why_not_complete": "Top-level fixed script-runner surfaces, stale deploy provider execution, browser deterministic-probe naming claims, fixture-eval production-readiness overclaims, red-team catalog-fixture overclaims, secret-canary value emission, and Brain JSON snapshot overclaims are neutralized, but Manus-grade natural-language web-app agent readiness still requires independent production red-team/release evidence plus a real SQLite/dependency-backed Brain kernel."
+  "why_not_complete": "Top-level fixed script-runner surfaces, stale deploy provider execution, browser deterministic-probe naming claims, fixture-eval production-readiness overclaims, red-team catalog-fixture overclaims, secret-canary value emission, self-improvement dry-run overclaims, and Brain JSON snapshot overclaims are neutralized, but Manus-grade natural-language web-app agent readiness still requires independent production red-team/release evidence plus a real SQLite/dependency-backed Brain kernel."
 }
