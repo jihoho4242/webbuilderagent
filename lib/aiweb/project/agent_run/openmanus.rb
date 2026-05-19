@@ -526,25 +526,23 @@ module Aiweb
       exit_code = nil
       blocking_issues = []
       success = false
-      timed_out = false
-      Open3.popen3(env, *command, chdir: workspace_dir, unsetenv_others: true) do |stdin, stdout, stderr, wait_thr|
-        stdin.write(prompt)
-        stdin.close
-        stdout_reader = Thread.new { stdout.read.to_s rescue "" }
-        stderr_reader = Thread.new { stderr.read.to_s rescue "" }
-        unless wait_thr.join(timeout_sec.to_i)
-          timed_out = true
-          agent_run_kill_process(wait_thr.pid)
-          agent_run_close_stream(stdout)
-          agent_run_close_stream(stderr)
-        end
-        stdout_data = agent_run_limit_process_output(stdout_reader.value.to_s)
-        stderr_data = agent_run_limit_process_output(stderr_reader.value.to_s)
-        status = wait_thr.value if wait_thr.join(1)
-        exit_code = status&.exitstatus
-        success = status&.success? == true
-      end
-      if timed_out
+      result = runtime_process_runner.capture(
+        Aiweb::Runtime::CommandSpec.new(
+          argv: Array(command).map(&:to_s),
+          cwd: workspace_dir,
+          env: env,
+          stdin_data: prompt,
+          timeout: timeout_sec.to_i,
+          max_output_bytes: 200_000,
+          risk_class: "agent_run_openmanus_sandbox_worker",
+          description: "agent-run OpenManus sandbox worker"
+        )
+      )
+      stdout_data = agent_run_limit_process_output(result.stdout)
+      stderr_data = agent_run_limit_process_output(result.stderr)
+      exit_code = result.exit_code
+      success = result.success?
+      if result.status == "timeout"
         blocking_issues << "openmanus timed out after #{timeout_sec}s"
       elsif !success
         blocking_issues << "openmanus exited with status #{exit_code || "unknown"}"
@@ -556,7 +554,7 @@ module Aiweb
         success: success,
         blocking_issues: blocking_issues
       }
-    rescue SystemCallError => e
+    rescue ArgumentError, SystemCallError => e
       {
         stdout: stdout_data,
         stderr: "#{stderr_data}#{e.message}\n",

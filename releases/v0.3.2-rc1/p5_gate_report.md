@@ -13,7 +13,7 @@ Evidence integrity: `releases/v0.3.2-rc1/evidence_integrity_manifest.yaml`
 ## Gate summary
 
 - Policy coverage: gateway_demo_passed (whole-repo side-effect coverage unproven; production gate blocked)
-- Side-effect surface audit: static_audit_attached (entries=27; unclassified=0; runtime universal enforcement unproven)
+- Side-effect surface audit: static_audit_attached (entries=26; unclassified=0; runtime universal enforcement unproven)
 - Tool gateway: gateway_demo_passed (finish demo only; full side-effect gateway audit not attached; production gate blocked)
 - HITL v2: approval_fixture_passed (fixture approver only; production gate blocked)
 - Replay: replay_demo_passed (durable replay/resume audit not attached; production gate blocked)

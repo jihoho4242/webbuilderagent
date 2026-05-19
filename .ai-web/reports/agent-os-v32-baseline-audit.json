@@ -131,6 +131,11 @@
       "surface": "engine-run sandbox runtime attestation direct Docker/Podman probes",
       "status": "centralized_to_runtime_process_runner",
       "finding": "engine_run sandbox container inspect, cleanup, image inspect, and runtime info probes no longer own direct Open3 subprocesses; local Docker/Podman attestation now routes through ProcessRunner/CommandSpec, the stale sandbox_runtime_attestation_exception documented-exception classifier was removed, and static side-effect audit has no sandbox_runtime_attestation_exception entries."
+    },
+    {
+      "surface": "OpenManus agent-run sandbox worker subprocess",
+      "status": "centralized_to_runtime_process_runner",
+      "finding": "OpenManus agent-run no longer owns direct Open3.popen3 subprocess execution; sandbox worker execution routes through ProcessRunner/CommandSpec with stdin_data support while preserving aiweb-managed Docker/Podman sandboxing, tool-broker evidence, workspace validation, diff validation, and bounded copy-back checks."
     }
   ],
   "preserve_safety_substrate": [
