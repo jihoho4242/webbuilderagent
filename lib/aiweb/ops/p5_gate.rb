@@ -51,6 +51,14 @@ module Aiweb
         scaffold_blockers.concat(redteam.fetch("blocking_issues", [])) unless redteam["status"] == "catalog_fixture_passed"
         brain_audit = brain_evidence.fetch("audit")
         scaffold_blockers.concat(brain_audit.fetch("blocking_issues", [])) unless brain_audit["status"] == "passed"
+        brain_release_evidence = brain_audit.merge(
+          "status" => brain_audit["status"] == "passed" ? "memory_safety_fixture_passed" : "memory_safety_fixture_blocked",
+          "verifier_status" => brain_audit["status"],
+          "storage_mode" => brain_evidence.fetch("storage_mode"),
+          "production_gate_status" => "blocked",
+          "production_ready_claim_allowed" => false,
+          "operational_status" => "blocked"
+        )
         scaffold_blockers << "self-improvement proposal changed source" if proposal["source_changed"] != false
         scaffold_blockers << "eval fixture gate failed" unless eval_result["expanded_fixture_gate_passed"] == true && eval_result["failure_count"].to_i.zero?
         tool_gateway_evidence = {
@@ -105,7 +113,7 @@ module Aiweb
           "replay" => replay_evidence,
           "redteam" => redteam,
           "eval" => eval_result,
-          "brain" => brain_audit.merge("forgotten_memory" => brain_evidence.fetch("forgotten"), "storage_mode" => brain_evidence.fetch("storage_mode")),
+          "brain" => brain_release_evidence.merge("forgotten_memory" => brain_evidence.fetch("forgotten")),
           "self_improvement" => { "proposal" => proposal, "experiment" => experiment },
           "script_executor_neutralization" => { "status" => "top_level_surfaces_neutralized", "top_level_agent_runtime_removed" => true, "verify_loop_role" => "engine_run_compatibility_shim_no_fixed_pipeline", "browser_static_scenario_role" => "deterministic_local_browser_probe" },
           "validation" => validation,

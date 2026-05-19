@@ -38,6 +38,11 @@
       "finding": "Brain store now uses append-only JSONL remember/forget events and MemoryAudit exposes SQLite-unavailable operational blocker instead of claiming production-grade persistence"
     },
     {
+      "surface": "P5 Brain safety claim",
+      "status": "demoted_to_memory_safety_fixture_production_blocked",
+      "finding": "P5 release evidence no longer says Brain safety passed as a broad readiness claim; it reports memory_safety_fixture_passed and remains blocked until a real SQLite/dependency-backed Brain kernel exists."
+    },
+    {
       "surface": "red-team catalog fixture claim",
       "status": "demoted_to_production_gate_blocked",
       "finding": "Redteam::Arena no longer reports generic passed for local catalog fixtures; it exposes catalog_fixture_passed plus production_gate_status=blocked, no independent reviewed cases, and operational blockers."

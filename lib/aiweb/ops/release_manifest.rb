@@ -75,6 +75,14 @@ module Aiweb
             "critical_high_bypass_count" => p5_evidence.dig("redteam", "critical_high_bypass_count"),
             "production_ready_claim_allowed" => p5_evidence.dig("redteam", "production_ready_claim_allowed")
           },
+          "brain_report" => {
+            "status" => p5_evidence.dig("brain", "status"),
+            "verifier_status" => p5_evidence.dig("brain", "verifier_status"),
+            "storage_mode" => p5_evidence.dig("brain", "storage_mode"),
+            "production_gate_status" => p5_evidence.dig("brain", "production_gate_status"),
+            "operational_status" => p5_evidence.dig("brain", "operational_status"),
+            "production_ready_claim_allowed" => p5_evidence.dig("brain", "production_ready_claim_allowed")
+          },
           "self_improvement_report" => {
             "proposal_status" => p5_evidence.dig("self_improvement", "proposal", "fixture_status"),
             "experiment_status" => p5_evidence.dig("self_improvement", "experiment", "status"),

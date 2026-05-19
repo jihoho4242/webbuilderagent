@@ -12,7 +12,7 @@ commit_sha_policy: attach immutable commit sha from CI release job; local static
 github_actions_run_id:
 evidence_files:
 - path: releases/v0.3.2-rc1/p5_gate_report.md
-  sha256: sha256:00a5d3d488c92fadf605f08ba9bd592174e166cbf7c8a4dd2512ca22da0e5e61
+  sha256: sha256:56e8318c0a3b7e6003770e1667baad1591d22cd97a2fd93889bd4efd493b633f
 schema_validation_report:
   status: targeted_validation_only
   validation_keys:
@@ -70,6 +70,13 @@ redteam_report:
     - production-ready secret canary evidence requires CI redaction transcript and independent review
   critical_high_bypass_count: 0
   production_ready_claim_allowed: false
+brain_report:
+  status: memory_safety_fixture_passed
+  verifier_status: passed
+  storage_mode: project_local_jsonl_ledger_sqlite_unavailable
+  production_gate_status: blocked
+  operational_status: blocked
+  production_ready_claim_allowed: false
 self_improvement_report:
   proposal_status: proposal_fixture_recorded
   experiment_status: sandbox_planned
@@ -96,4 +103,4 @@ operational_blocking_issues:
 - production-ready red-team requires independent adversarial review, CI artifact, secret canary transcript, and expanded attack coverage
 - SQLite backend unavailable; JSONL ledger is a local MVP persistence layer
 - production-ready self-improvement requires sandbox patch diff, static checks, eval/red-team pass, HITL v2 approval, canary, rollback plan, and monitor evidence
-p5_evidence_hash: sha256:00a5d3d488c92fadf605f08ba9bd592174e166cbf7c8a4dd2512ca22da0e5e61
+p5_evidence_hash: sha256:56e8318c0a3b7e6003770e1667baad1591d22cd97a2fd93889bd4efd493b633f

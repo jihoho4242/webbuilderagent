@@ -21,7 +21,7 @@ Evidence integrity: `releases/v0.3.2-rc1/evidence_integrity_manifest.yaml`
 - Red-team secret canary: canary_configured, value emitted=false, production gate blocked
 - Red-team critical/high bypass count: 0
 - Eval: expanded_fixture_passed (50 synthetic fixture cases; production gate remains blocked)
-- Brain: safety passed (JSONL ledger MVP; SQLite operational gate blocked)
+- Brain: memory_safety_fixture_passed (JSONL ledger MVP; SQLite operational gate blocked)
 - Self-improvement: proposal_fixture_recorded / sandbox_planned (production gate blocked; no patch generated)
 
 ## Scaffold/demo blockers
