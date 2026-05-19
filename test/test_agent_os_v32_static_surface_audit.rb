@@ -108,4 +108,13 @@ class AgentOsV32StaticSurfaceAuditTest < Minitest::Test
       assert_equal false, manifest.dig(report_key, "production_ready_claim_allowed"), "#{report_key} must not allow production-ready claims"
     end
   end
+
+  def test_cli_help_does_not_market_engine_run_as_manus_grade
+    help = Aiweb::CLI::HelpText::TEXT
+
+    refute_includes help, ["Manus", "-style"].join
+    refute_includes help, ["Manus", "-grade"].join
+    assert_includes help, "engine-run: supervised local engine-run runtime for bounded web-building tasks"
+    assert_includes help, "network/install/deploy/provider CLI/git push remain elevated-approval actions"
+  end
 end

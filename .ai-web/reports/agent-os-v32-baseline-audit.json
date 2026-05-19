@@ -86,6 +86,11 @@
       "surface": "P5/release overclaim regression guard",
       "status": "static_audit_added",
       "finding": "Static surface audit now blocks stale release-ready, production-ready, broad pass, and fixture-derived readiness claims from returning to P5/release evidence surfaces."
+    },
+    {
+      "surface": "CLI help Manus wording claim",
+      "status": "demoted_to_supervised_local_runtime",
+      "finding": "CLI help no longer markets engine-run with Manus wording; static audit keeps help positioned as a supervised local engine-run runtime until stronger operational evidence exists."
     }
   ],
   "preserve_safety_substrate": [
