@@ -8146,7 +8146,9 @@ class AiwebCliTest < Minitest::Test
       stdout, stderr, code = run_aiweb_env(
         {
           "PATH" => [bin_dir, "/usr/bin", "/bin", "/usr/sbin", "/sbin"].join(File::PATH_SEPARATOR),
-          "AIWEB_OPENMANUS_IMAGE" => "missing-openmanus:latest"
+          "AIWEB_OPENMANUS_IMAGE" => "missing-openmanus:latest",
+          "OPENAI_API_KEY" => "must-not-reach-openmanus-image-preflight",
+          "FAKE_OPENMANUS_SECRET" => "must-not-reach-openmanus-image-preflight"
         },
         "agent-run", "--task", "latest", "--agent", "openmanus", "--sandbox", "docker", "--approved", "--json"
       )
@@ -8156,6 +8158,8 @@ class AiwebCliTest < Minitest::Test
       assert_equal "", stderr
       assert_equal "blocked", payload.dig("agent_run", "status")
       assert_match(/image is missing locally|openmanus:latest/i, payload.dig("agent_run", "blocking_issues").join("\n"))
+      refute_match(/secret environment leaked/i, payload.dig("agent_run", "blocking_issues").join("\n"))
+      refute_match(/must-not-reach-openmanus-image-preflight/i, stdout)
       assert_no_agent_run_side_effects(before_entries: before_entries, before_state: before_state)
       assert_equal before_source, File.read("src/components/Hero.astro"), "blocked openmanus image preflight must not patch source"
     end

@@ -29,9 +29,6 @@ module Aiweb
       if path.end_with?("lib/aiweb/lazyweb_client.rb") && line.match?(/Net::HTTP/)
         return side_effect_classification("brokered_lazyweb_http", "brokered", "aiweb.lazyweb.side_effect_broker", "LazywebClient emits broker audit events around Net::HTTP")
       end
-      if path.end_with?("lib/aiweb/project/agent_run/openmanus.rb") && line.include?("image\", \"inspect")
-        return side_effect_classification("openmanus_sandbox_image_preflight", "documented_exception", nil, "Docker/Podman image inspect is a local preflight that only checks sandbox image availability")
-      end
       if path.end_with?("lib/aiweb/project/agent_run/openmanus.rb") && line.include?("Open3.popen3")
         return side_effect_classification("brokered_openmanus_sandbox_subprocess", "brokered", "aiweb.openmanus.tool_broker", "OpenManus runs in an aiweb-managed sandbox with clean environment, network disabled, PATH-prepended tool broker, and copied-back scoped outputs")
       end

@@ -111,6 +111,7 @@ class AiwebContractTest < Minitest::Test
     refute entries.any? { |entry| entry.fetch("classification") == "local_process_tree_cleanup" }, "preview process tree cleanup must use the central ProcessRunner boundary instead of direct system calls"
     refute entries.any? { |entry| entry.fetch("classification") == "local_read_only_git_evidence" }, "agent-run git diff/status evidence must use the central ProcessRunner boundary instead of direct Open3"
     refute entries.any? { |entry| entry.fetch("classification") == "local_runtime_readiness_probe" }, "OpenManus readiness image inspect must use the central ProcessRunner boundary instead of direct Open3"
+    refute entries.any? { |entry| entry.fetch("classification") == "openmanus_sandbox_image_preflight" }, "agent-run OpenManus image preflight must use the central ProcessRunner boundary instead of direct Open3"
 
     classifications = entries.map { |entry| entry.fetch("classification") }
     %w[

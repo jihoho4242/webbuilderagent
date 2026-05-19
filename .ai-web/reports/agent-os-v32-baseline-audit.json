@@ -121,6 +121,11 @@
       "surface": "OpenManus readiness direct image inspect subprocess",
       "status": "centralized_to_runtime_process_runner",
       "finding": "OpenManus readiness no longer owns direct Open3 image inspect subprocesses; local image inspect now routes through ProcessRunner/CommandSpec with scrubbed env, the stale local_runtime_readiness_probe documented-exception classifier was removed, and static side-effect audit has no local_runtime_readiness_probe entries."
+    },
+    {
+      "surface": "agent-run OpenManus direct image inspect preflight",
+      "status": "centralized_to_runtime_process_runner",
+      "finding": "agent-run OpenManus image preflight no longer owns direct Open3 image inspect subprocesses; image inspect now routes through ProcessRunner/CommandSpec with scrubbed env, the stale openmanus_sandbox_image_preflight documented-exception classifier was removed, and static side-effect audit has no openmanus_sandbox_image_preflight entries."
     }
   ],
   "preserve_safety_substrate": [

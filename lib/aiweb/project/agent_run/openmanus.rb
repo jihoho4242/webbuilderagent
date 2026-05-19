@@ -114,15 +114,30 @@ module Aiweb
 
     def agent_run_openmanus_image_blockers(command, sandbox:)
       image = agent_run_openmanus_image(command)
-      _stdout, stderr, status = Open3.capture3(subprocess_path_env, sandbox.to_s, "image", "inspect", image, unsetenv_others: true)
-      return [] if status.success?
+      result = agent_run_openmanus_image_inspect_result(sandbox, image)
+      return ["openmanus sandbox image preflight timed out for #{image}"] if result.status == "timeout"
+      return [] if result.success?
 
       message = "openmanus sandbox image is missing locally: #{image}; build or pull it before approved execution"
-      details = stderr.to_s.strip
+      details = result.stderr.to_s.strip
       message = "#{message} (#{details[0, 200]})" unless details.empty?
       [message]
-    rescue SystemCallError => e
+    rescue ArgumentError, SystemCallError => e
       ["openmanus sandbox image preflight failed for #{image}: #{e.message}"]
+    end
+
+    def agent_run_openmanus_image_inspect_result(sandbox, image)
+      executable = executable_path(sandbox.to_s) || sandbox.to_s
+      runtime_process_runner.capture(
+        Aiweb::Runtime::CommandSpec.new(
+          argv: [executable, "image", "inspect", image],
+          cwd: root,
+          timeout: 10,
+          max_output_bytes: 16_000,
+          risk_class: "agent_run_openmanus_image_preflight",
+          description: "agent-run OpenManus local image inspect preflight"
+        )
+      )
     end
 
     def agent_run_openmanus_image(command)

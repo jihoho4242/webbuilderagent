@@ -233,6 +233,16 @@
         "stale local_runtime_readiness_probe documented-exception classifier was removed from side_effect_broker/classification.rb so future direct readiness probes become unclassified instead of pre-approved",
         "side-effect surface audit no longer reports local_runtime_readiness_probe; entry_count dropped from 34 to 33 with unclassified_count=0"
       ]
+    },
+    {
+      "surface": "agent-run OpenManus direct image inspect preflight",
+      "status": "centralized_to_runtime_process_runner",
+      "evidence": [
+        "agent_run_openmanus_image_blockers now uses Aiweb::Runtime::ProcessRunner with CommandSpec instead of direct Open3.capture3",
+        "approved OpenManus local image preflight runs with scrubbed environment; regression test confirms OPENAI_API_KEY and FAKE_OPENMANUS_SECRET are not forwarded to fake docker image inspect",
+        "stale openmanus_sandbox_image_preflight documented-exception classifier was removed from side_effect_broker/classification.rb so future direct image preflight regressions become unclassified instead of pre-approved",
+        "side-effect surface audit no longer reports openmanus_sandbox_image_preflight; entry_count dropped from 33 to 32 with unclassified_count=0"
+      ]
     }
   ],
   "preserved_safety_substrate": [
@@ -269,7 +279,7 @@
     "ruby -c lib/aiweb/ops/p5_gate.rb lib/aiweb/ops/release_manifest.rb": "passed: Syntax OK",
     "ruby -c lib/aiweb/project/agent_run.rb lib/aiweb/project/agent_run/codex_runner.rb lib/aiweb/project/side_effect_broker/classification.rb": "passed: Syntax OK",
     "ruby -Itest test/test_aiweb_cli.rb -n '/agent_run_approved_fake_codex_success_records_logs_diff_and_safe_state|agent_run_codex_uses_clean_environment|agent_run_approved_fake_codex_failure_records_failure_and_logs/'": "passed: 3 runs, 87 assertions, 0 failures, 0 errors",
-    "ruby -Itest test/test_contracts.rb -n '/side_effect_surface_audit/'": "passed: 5 runs, 77 assertions, 0 failures, 0 errors",
+    "ruby -Itest test/test_contracts.rb -n '/side_effect_surface_audit/'": "passed: 5 runs, 78 assertions, 0 failures, 0 errors",
     "ruby -Ilib -e side_effect_surface_audit agent-run classification": "passed: coverage=classified, unclassified=0, entry_count=37, classification=brokered_agent_run_codex_subprocess",
     "ruby -c lib/aiweb/project/runtime_commands.rb test/test_contracts.rb": "passed: Syntax OK",
     "ruby -Itest test/test_aiweb_cli.rb -n '/preview_records_running_fake_dev_server_duplicate_and_stop/'": "passed: 1 run, 39 assertions, 0 failures, 0 errors",
@@ -284,8 +294,12 @@
     "ruby -c lib/aiweb/daemon/openmanus_readiness.rb lib/aiweb/project/side_effect_broker/classification.rb test/test_daemon.rb test/test_contracts.rb": "passed: Syntax OK",
     "ruby -Itest test/test_daemon.rb -n '/openmanus_readiness/'": "passed: 2 runs, 15 assertions, 0 failures, 0 errors",
     "ruby -Ilib -e side_effect_surface_audit OpenManus readiness classification": "passed: coverage=classified, unclassified=0, entry_count=33, removed local_runtime_readiness_probe",
-    "rg Open3.capture3 in openmanus_readiness.rb": "passed: no direct Open3.capture3 remains in lib/aiweb/daemon/openmanus_readiness.rb"
+    "rg Open3.capture3 in openmanus_readiness.rb": "passed: no direct Open3.capture3 remains in lib/aiweb/daemon/openmanus_readiness.rb",
+    "ruby -c lib/aiweb/project/agent_run/openmanus.rb lib/aiweb/project/side_effect_broker/classification.rb test/test_contracts.rb test/test_aiweb_cli.rb": "passed: Syntax OK",
+    "ruby -Itest test/test_aiweb_cli.rb -n '/agent_run_openmanus_approved_requires_prepared_local_image|agent_run_approved_fake_openmanus_uses_managed_container_sandbox_contract/'": "passed: 2 runs, 88 assertions, 0 failures, 0 errors",
+    "ruby -Ilib -e side_effect_surface_audit agent-run OpenManus image preflight classification": "passed: coverage=classified, unclassified=0, entry_count=32, removed openmanus_sandbox_image_preflight",
+    "rg Open3.capture3 in agent_run/openmanus.rb": "passed: no direct Open3.capture3 remains in lib/aiweb/project/agent_run/openmanus.rb"
   },
   "completion_status": "not_complete",
-  "why_not_complete": "Top-level fixed script-runner surfaces, stale deploy provider execution, browser deterministic-probe naming claims, CLI/contract Manus wording marketing overclaims, fixture-eval production-readiness overclaims, red-team catalog-fixture overclaims, secret-canary value emission, self-improvement dry-run overclaims, release validation evidence overclaims, P5 policy/tool gateway overclaims, P5 HITL fixture overclaims, P5 replay readiness overclaims, Brain safety wording overclaims, Brain JSON snapshot overclaims, the legacy Codex agent-run subprocess exception, runtime_commands direct git/taskkill process forms, agent-run diff-policy direct git subprocesses, and OpenManus readiness direct image inspect subprocess are neutralized, but Manus-grade natural-language web-app agent readiness still requires independent production red-team/release evidence plus a real SQLite/dependency-backed Brain kernel."
+  "why_not_complete": "Top-level fixed script-runner surfaces, stale deploy provider execution, browser deterministic-probe naming claims, CLI/contract Manus wording marketing overclaims, fixture-eval production-readiness overclaims, red-team catalog-fixture overclaims, secret-canary value emission, self-improvement dry-run overclaims, release validation evidence overclaims, P5 policy/tool gateway overclaims, P5 HITL fixture overclaims, P5 replay readiness overclaims, Brain safety wording overclaims, Brain JSON snapshot overclaims, the legacy Codex agent-run subprocess exception, runtime_commands direct git/taskkill process forms, agent-run diff-policy direct git subprocesses, OpenManus readiness direct image inspect subprocess, and agent-run OpenManus direct image inspect preflight are neutralized, but Manus-grade natural-language web-app agent readiness still requires independent production red-team/release evidence plus a real SQLite/dependency-backed Brain kernel."
 }
