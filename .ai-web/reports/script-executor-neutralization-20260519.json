@@ -129,8 +129,17 @@
       "status": "demoted_to_gateway_demo_and_coverage_unproven",
       "evidence": [
         "P5Gate policy_coverage now reports status=gateway_demo_passed and coverage_status=unproven",
-        "all_side_effects_require_decision_packet_policy_gateway is false until a whole-repo side-effect coverage audit is attached",
-        "Release manifest carries policy_gateway_report and an operational blocker for missing whole-repo side-effect policy coverage evidence"
+        "all_side_effects_require_decision_packet_policy_gateway is false until runtime universal broker enforcement is proven",
+        "Release manifest carries policy_gateway_report and keeps runtime universal side-effect enforcement blocked despite attached static classification evidence"
+      ]
+    },
+    {
+      "surface": "P5 static side-effect surface audit attachment gap",
+      "status": "static_audit_attached_runtime_universal_enforcement_still_blocked",
+      "evidence": [
+        "P5Gate now attaches side_effect_surface_audit with status=static_audit_attached, coverage_status=classified, and unclassified_count=0",
+        "Release manifest carries side_effect_surface_audit_report while runtime_universal_enforcement_proven remains false",
+        "Operational blockers now distinguish attached static classification evidence from still-missing runtime universal broker enforcement evidence"
       ]
     },
     {
@@ -199,7 +208,7 @@
     "ruby -Itest test/test_agentification_runtime.rb": "passed: 11 runs, 138 assertions, 0 failures, 0 errors",
     "ruby -Itest test/test_agent_os_v32_static_surface_audit.rb": "passed: 5 runs, 102 assertions, 0 failures, 0 errors",
     "ruby -Itest test/test_aiweb_cli.rb -n /verify_loop|verify-loop|workbench_dry_run/": "passed: 14 runs, 403 assertions, 0 failures, 0 errors",
-    "ruby -Itest test/test_agent_os_v32_release_evidence.rb": "passed: 2 runs, 167 assertions, 0 failures, 0 errors",
+    "ruby -Itest test/test_agent_os_v32_release_evidence.rb": "passed: 2 runs, 189 assertions, 0 failures, 0 errors",
     "ruby -Itest test/test_agent_os_v32_policy_kernel.rb test/test_agent_os_v32_tool_gateway.rb test/test_agent_os_v32_decision_packet.rb": "passed: 9 runs, 35 assertions, 0 failures, 0 errors",
     "git diff --check": "passed with line-ending warnings only",
     "ruby -Itest test/all.rb": "timed out after 604s in this session; targeted suites above passed",
@@ -208,6 +217,7 @@
     "ruby -Itest test/test_schema_locks.rb": "passed: 3 runs, 883 assertions, 0 failures, 0 errors",
     "ruby -Itest test/test_aiweb_cli.rb -n /deploy/": "passed: 8 runs, 290 assertions, 0 failures, 0 errors",
     "ruby -Itest test/test_contracts.rb": "passed: 19 runs, 247 assertions, 0 failures, 0 errors",
+    "ruby -Itest test/test_contracts.rb -n /side_effect_surface_audit/": "passed: 5 runs, 69 assertions, 0 failures, 0 errors",
     "ruby -Itest test/test_aiweb_cli.rb -n /verify_loop|verify-loop|workbench_dry_run|deploy/": "passed: 18 runs, 616 assertions, 0 failures, 0 errors",
     "ruby -c lib/aiweb/project/engine_run/preview_browser/browser_actions.rb": "passed: Syntax OK",
     "ruby -c test/test_aiweb_cli.rb test/test_schema_locks.rb test/test_agent_os_v32_static_surface_audit.rb": "passed: Syntax OK",

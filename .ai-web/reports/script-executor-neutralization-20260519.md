@@ -26,6 +26,7 @@ WebBuilderAgent is closer to a natural-language, engine-run-centered supervised 
 - Demoted self-improvement dry-run evidence to `proposal_fixture_recorded` / `sandbox_planned` with `production_gate_status=blocked`, `patch_generated=false`, and `promotion_allowed=false`.
 - Demoted release validation evidence from hardcoded `local_bin_check_passed` / `ruby bin/check` to `targeted_validation_only` unless full `ruby bin/check`, `test/all`, and CI evidence are attached.
 - Demoted P5 policy coverage from global `all_side_effects...=true` to `gateway_demo_passed` with `coverage_status=unproven` until whole-repo side-effect coverage evidence exists.
+- Attached static side-effect surface audit evidence to P5/release reports with `unclassified_count=0`, while keeping runtime universal side-effect enforcement blocked.
 - Demoted P5 tool gateway evidence from raw `passed` to `gateway_demo_passed` / production-blocked until a full side-effect tool gateway audit exists.
 - Demoted P5 HITL v2 evidence from fixture `passed` to `approval_fixture_passed` with production gate blocked until real operator approval/audit evidence is attached.
 - Demoted P5 replay evidence from generic pass/side-effect-free wording to `replay_demo_passed` with production gate blocked until durable replay/resume audit evidence is attached.
@@ -36,7 +37,7 @@ WebBuilderAgent is closer to a natural-language, engine-run-centered supervised 
 ## Remaining non-completion reasons
 
 - Red-team evidence is now explicitly catalog-fixture-only and production-blocked; self-improvement is dry-run fixture-only and production-blocked; Brain is safer append-only JSONL but still operationally blocked until a real SQLite/dependency-backed kernel exists; eval fixture pass is explicitly production-blocked.
-- Operator drill, GitHub Actions run ids, full `ruby bin/check`/`test/all` evidence, whole-repo side-effect policy coverage evidence, full side-effect tool gateway audit evidence, real HITL operator/audit evidence, durable replay/resume audit evidence, and production release evidence are still blockers.
+- Operator drill, GitHub Actions run ids, full `ruby bin/check`/`test/all` evidence, runtime universal side-effect broker enforcement evidence, full side-effect tool gateway audit evidence, real HITL operator/audit evidence, durable replay/resume audit evidence, and production release evidence are still blockers.
 - External provider/deploy/credential flows remain intentionally blocked; deploy provider execution is now fail-closed until a future engine-run release evidence gate exists.
 
 ## Validation
@@ -48,7 +49,7 @@ WebBuilderAgent is closer to a natural-language, engine-run-centered supervised 
 - `ruby -Itest test/test_aiweb_cli.rb -n '/deploy/'` ? PASS: 8 runs, 290 assertions, 0 failures, 0 errors
 - `ruby -Itest test/test_aiweb_cli.rb -n '/verify_loop|verify-loop|workbench_dry_run|deploy/'` ? PASS: 18 runs, 616 assertions, 0 failures, 0 errors
 - `ruby -Itest test/test_aiweb_cli.rb -n '/engine_run_captures_screenshot_manifest|engine_run_design_verdict_passes|engine_run_design_gate_blocks_copy_back_on_browser_action_recovery_failure|engine_run_preserves_structured_browser_policy_evidence/'` ? PASS: 4 runs, 648 assertions, 0 failures, 0 errors
-- `ruby -Itest test/test_agent_os_v32_release_evidence.rb` ? PASS: 2 runs, 167 assertions, 0 failures, 0 errors
+- `ruby -Itest test/test_agent_os_v32_release_evidence.rb` ? PASS: 2 runs, 189 assertions, 0 failures, 0 errors
 - `ruby -Itest test/test_agent_os_v32_evals.rb` ? PASS: 2 runs, 21 assertions, 0 failures, 0 errors
 - `ruby -Itest test/test_agent_os_v32_brain_and_self_improvement.rb` ? PASS: 6 runs, 46 assertions, 0 failures, 0 errors
 - `ruby -Itest test/test_agent_os_v32_redteam.rb` ? PASS: 4 runs, 38 assertions, 0 failures, 0 errors
@@ -57,6 +58,7 @@ WebBuilderAgent is closer to a natural-language, engine-run-centered supervised 
 - `ruby -Itest test/test_agent_os_v32_tool_gateway.rb` ? PASS: 4 runs, 14 assertions, 0 failures, 0 errors
 - `ruby -Itest test/test_agent_os_v32_decision_packet.rb` ? PASS: 3 runs, 22 assertions, 0 failures, 0 errors
 - `ruby -Itest test/test_contracts.rb` ? PASS: 19 runs, 247 assertions, 0 failures, 0 errors
+- `ruby -Itest test/test_contracts.rb -n '/side_effect_surface_audit/'` ? PASS: 5 runs, 69 assertions, 0 failures, 0 errors
 - `ruby -Itest test/test_schema_locks.rb` ? PASS: 3 runs, 883 assertions, 0 failures, 0 errors
 - `ruby -Itest test/test_agent_os_v32_contracts.rb` ? PASS: 3 runs, 66 assertions, 0 failures, 0 errors
 - `git diff --check` ? PASS with line-ending warnings only

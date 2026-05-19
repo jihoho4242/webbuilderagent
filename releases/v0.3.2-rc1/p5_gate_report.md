@@ -13,6 +13,7 @@ Evidence integrity: `releases/v0.3.2-rc1/evidence_integrity_manifest.yaml`
 ## Gate summary
 
 - Policy coverage: gateway_demo_passed (whole-repo side-effect coverage unproven; production gate blocked)
+- Side-effect surface audit: static_audit_attached (unclassified=0; runtime universal enforcement unproven)
 - Tool gateway: gateway_demo_passed (finish demo only; full side-effect gateway audit not attached; production gate blocked)
 - HITL v2: approval_fixture_passed (fixture approver only; production gate blocked)
 - Replay: replay_demo_passed (durable replay/resume audit not attached; production gate blocked)
@@ -35,7 +36,8 @@ Evidence integrity: `releases/v0.3.2-rc1/evidence_integrity_manifest.yaml`
 - full ruby bin/check evidence is not attached to this release evidence
 - full ruby -Itest test/all.rb evidence is not attached to this release evidence
 - tool gateway demo only exercised finish; full side-effect tool gateway audit is not attached to this release evidence
-- whole-repo side-effect policy coverage audit is not attached to this release evidence
+- static side-effect surface audit is attached, but runtime universal side-effect enforcement is not proven by this release evidence
+- side-effect surface audit is static classification evidence only; runtime universal enforcement still requires release-bound broker execution evidence
 - production HITL evidence requires a real operator approval artifact, expiry/single-use consumption proof, and audit trail
 - durable replay/resume audit with artifact hash validation is not attached to this release evidence
 - production-ready eval science requires independent holdout, leakage check, CI artifact, and human baseline

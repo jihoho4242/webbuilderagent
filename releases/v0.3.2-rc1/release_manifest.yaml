@@ -12,7 +12,7 @@ commit_sha_policy: attach immutable commit sha from CI release job; local static
 github_actions_run_id:
 evidence_files:
 - path: releases/v0.3.2-rc1/p5_gate_report.md
-  sha256: sha256:56e8318c0a3b7e6003770e1667baad1591d22cd97a2fd93889bd4efd493b633f
+  sha256: sha256:0b5c62cd4699fcf7c3f66ca9199deb3c41d25c9d78936020ac51d00d18e9e817
 schema_validation_report:
   status: targeted_validation_only
   validation_keys:
@@ -27,6 +27,15 @@ policy_gateway_report:
   all_side_effects_require_decision_packet_policy_gateway: false
   production_gate_status: blocked
   demo_tool: finish
+side_effect_surface_audit_report:
+  status: static_audit_attached
+  scanner: aiweb.side_effect_surface_audit.v1
+  coverage_status: classified
+  entry_count: 40
+  unclassified_count: 0
+  runtime_universal_enforcement_proven: false
+  production_gate_status: blocked
+  production_ready_claim_allowed: false
 tool_gateway_report:
   status: gateway_demo_passed
   verifier_status: passed
@@ -96,11 +105,12 @@ operational_blocking_issues:
 - full ruby bin/check evidence is not attached to this release evidence
 - full ruby -Itest test/all.rb evidence is not attached to this release evidence
 - tool gateway demo only exercised finish; full side-effect tool gateway audit is not attached to this release evidence
-- whole-repo side-effect policy coverage audit is not attached to this release evidence
+- static side-effect surface audit is attached, but runtime universal side-effect enforcement is not proven by this release evidence
+- side-effect surface audit is static classification evidence only; runtime universal enforcement still requires release-bound broker execution evidence
 - production HITL evidence requires a real operator approval artifact, expiry/single-use consumption proof, and audit trail
 - durable replay/resume audit with artifact hash validation is not attached to this release evidence
 - production-ready eval science requires independent holdout, leakage check, CI artifact, and human baseline
 - production-ready red-team requires independent adversarial review, CI artifact, secret canary transcript, and expanded attack coverage
 - SQLite backend unavailable; JSONL ledger is a local MVP persistence layer
 - production-ready self-improvement requires sandbox patch diff, static checks, eval/red-team pass, HITL v2 approval, canary, rollback plan, and monitor evidence
-p5_evidence_hash: sha256:56e8318c0a3b7e6003770e1667baad1591d22cd97a2fd93889bd4efd493b633f
+p5_evidence_hash: sha256:0b5c62cd4699fcf7c3f66ca9199deb3c41d25c9d78936020ac51d00d18e9e817

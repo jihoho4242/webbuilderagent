@@ -35,6 +35,16 @@ module Aiweb
             "production_gate_status" => p5_evidence.dig("policy_coverage", "production_gate_status"),
             "demo_tool" => p5_evidence.dig("policy_coverage", "demo_tool")
           },
+          "side_effect_surface_audit_report" => {
+            "status" => p5_evidence.dig("side_effect_surface_audit", "status"),
+            "scanner" => p5_evidence.dig("side_effect_surface_audit", "scanner"),
+            "coverage_status" => p5_evidence.dig("side_effect_surface_audit", "coverage_status"),
+            "entry_count" => p5_evidence.dig("side_effect_surface_audit", "entry_count"),
+            "unclassified_count" => p5_evidence.dig("side_effect_surface_audit", "unclassified_count"),
+            "runtime_universal_enforcement_proven" => p5_evidence.dig("side_effect_surface_audit", "runtime_universal_enforcement_proven"),
+            "production_gate_status" => p5_evidence.dig("side_effect_surface_audit", "production_gate_status"),
+            "production_ready_claim_allowed" => p5_evidence.dig("side_effect_surface_audit", "production_ready_claim_allowed")
+          },
           "tool_gateway_report" => {
             "status" => p5_evidence.dig("tool_gateway_coverage", "status"),
             "verifier_status" => p5_evidence.dig("tool_gateway_coverage", "verifier_status"),

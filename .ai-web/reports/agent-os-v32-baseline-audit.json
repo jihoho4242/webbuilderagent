@@ -65,7 +65,12 @@
     {
       "surface": "P5 policy coverage claim",
       "status": "demoted_to_gateway_demo_coverage_unproven",
-      "finding": "P5 evidence no longer claims all side effects require DecisionPacket/PolicyGateway from a single finish-tool demo; whole-repo side-effect coverage remains operationally blocked until audited evidence is attached."
+      "finding": "P5 evidence no longer claims all side effects require DecisionPacket/PolicyGateway from a single finish-tool demo; runtime universal side-effect enforcement remains operationally blocked until release-bound broker execution evidence is attached."
+    },
+    {
+      "surface": "P5 static side-effect surface audit evidence",
+      "status": "attached_static_audit_runtime_universal_enforcement_blocked",
+      "finding": "P5 release evidence now attaches the repo static side-effect surface audit with zero unclassified direct execution surfaces, while still blocking runtime universal broker-enforcement claims."
     },
     {
       "surface": "P5 tool gateway demo claim",

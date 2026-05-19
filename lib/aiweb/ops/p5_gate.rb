@@ -44,9 +44,11 @@ module Aiweb
         experiment = Aiweb::SelfImprovement::ExperimentRegistry.new.record(proposal)
         redteam = Aiweb::Redteam::Arena.new.run(policy_kernel: policy_kernel, packet_builder: packet_builder)
         eval_result = Aiweb::Evals::Runner.new.run(cases: Aiweb::Evals::Runner.default_fixture_cases)
+        side_effect_audit = Aiweb::Project.new(Dir.pwd).send(:side_effect_surface_audit)
         scaffold_blockers = []
         scaffold_blockers.concat(constitution.fetch("blocking_issues", [])) unless constitution["status"] == "passed"
         scaffold_blockers << "tool gateway demo failed" unless gateway_result["status"] == "passed"
+        scaffold_blockers << "side-effect surface audit has unclassified direct execution surfaces" unless side_effect_audit["coverage_status"] == "classified"
         scaffold_blockers.concat(approval_check.fetch("blocking_issues", [])) unless approval_check["status"] == "passed"
         scaffold_blockers.concat(redteam.fetch("blocking_issues", [])) unless redteam["status"] == "catalog_fixture_passed"
         brain_audit = brain_evidence.fetch("audit")
@@ -79,7 +81,21 @@ module Aiweb
           "demo_tool" => "finish",
           "production_gate_status" => "blocked",
           "operational_blocking_issues" => [
-            "whole-repo side-effect policy coverage audit is not attached to this release evidence"
+            "static side-effect surface audit is attached, but runtime universal side-effect enforcement is not proven by this release evidence"
+          ]
+        }
+        side_effect_surface_audit_evidence = {
+          "status" => side_effect_audit["coverage_status"] == "classified" ? "static_audit_attached" : "static_audit_blocked",
+          "scanner" => side_effect_audit["scanner"],
+          "coverage_status" => side_effect_audit["coverage_status"],
+          "entry_count" => side_effect_audit["entry_count"],
+          "unclassified_count" => side_effect_audit["unclassified_count"],
+          "runtime_universal_enforcement_proven" => false,
+          "production_gate_status" => "blocked",
+          "production_ready_claim_allowed" => false,
+          "scanner_limitations" => side_effect_audit.fetch("scanner_limitations", []),
+          "operational_blocking_issues" => [
+            "side-effect surface audit is static classification evidence only; runtime universal enforcement still requires release-bound broker execution evidence"
           ]
         }
         replay_evidence = {
@@ -98,7 +114,7 @@ module Aiweb
         operational_blockers = [
           "production readiness not claimed: GitHub Actions run id is not attached",
           "operator drill evidence is placeholder only"
-        ] + validation_blocking_issues(validation) + tool_gateway_evidence.fetch("operational_blocking_issues", []) + policy_coverage.fetch("operational_blocking_issues", []) + hitl_evidence.fetch("operational_blocking_issues", []) + replay_evidence.fetch("operational_blocking_issues", []) + eval_result.fetch("blocking_issues", []) + redteam.fetch("operational_blocking_issues", []) + brain_audit.fetch("operational_blocking_issues", []) + experiment.fetch("operational_blocking_issues", [])
+        ] + validation_blocking_issues(validation) + tool_gateway_evidence.fetch("operational_blocking_issues", []) + policy_coverage.fetch("operational_blocking_issues", []) + side_effect_surface_audit_evidence.fetch("operational_blocking_issues", []) + hitl_evidence.fetch("operational_blocking_issues", []) + replay_evidence.fetch("operational_blocking_issues", []) + eval_result.fetch("blocking_issues", []) + redteam.fetch("operational_blocking_issues", []) + brain_audit.fetch("operational_blocking_issues", []) + experiment.fetch("operational_blocking_issues", [])
         {
           "schema_version" => 1,
           "release_id" => "v0.3.2-rc1",
@@ -108,6 +124,7 @@ module Aiweb
           "operational_readiness" => "blocked_pending_ci_operator_drill_and_production_benchmarks",
           "constitution_hash" => constitution["content_hash"],
           "policy_coverage" => policy_coverage,
+          "side_effect_surface_audit" => side_effect_surface_audit_evidence,
           "tool_gateway_coverage" => tool_gateway_evidence,
           "hitl_v2" => hitl_evidence,
           "replay" => replay_evidence,
