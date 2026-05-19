@@ -31,6 +31,7 @@ WebBuilderAgent is closer to a natural-language, engine-run-centered supervised 
 - Demoted P5 replay evidence from generic pass/side-effect-free wording to `replay_demo_passed` with production gate blocked until durable replay/resume audit evidence is attached.
 - Added static audit coverage so stale release-ready / production-ready true claims and broad P5 pass wording cannot be reintroduced in release evidence surfaces.
 - Demoted CLI help from Manus wording marketing language to supervised local engine-run runtime wording, with static audit coverage.
+- Demoted the public `engine-run` contract from product-level Manus wording to supervised, scoped local agentic runtime wording, with static audit coverage.
 
 ## Remaining non-completion reasons
 
@@ -42,7 +43,7 @@ WebBuilderAgent is closer to a natural-language, engine-run-centered supervised 
 
 - `ruby -Ilib -e "require 'aiweb'; puts 'ok'"` ? PASS
 - `ruby -Itest test/test_agentification_runtime.rb` ? PASS: 11 runs, 138 assertions, 0 failures, 0 errors
-- `ruby -Itest test/test_agent_os_v32_static_surface_audit.rb` ? PASS: 4 runs, 92 assertions, 0 failures, 0 errors
+- `ruby -Itest test/test_agent_os_v32_static_surface_audit.rb` ? PASS: 5 runs, 102 assertions, 0 failures, 0 errors
 - `ruby -Itest test/test_aiweb_cli.rb -n '/verify_loop|verify-loop|workbench_dry_run/'` ? PASS: 14 runs, 403 assertions, 0 failures, 0 errors
 - `ruby -Itest test/test_aiweb_cli.rb -n '/deploy/'` ? PASS: 8 runs, 290 assertions, 0 failures, 0 errors
 - `ruby -Itest test/test_aiweb_cli.rb -n '/verify_loop|verify-loop|workbench_dry_run|deploy/'` ? PASS: 18 runs, 616 assertions, 0 failures, 0 errors
@@ -64,4 +65,4 @@ WebBuilderAgent is closer to a natural-language, engine-run-centered supervised 
 
 ## Completion
 
-Not complete. The fixed script-runner deletion part is substantially complete, including fail-closing stale deploy execution, demoting browser scenario wording to deterministic probe evidence, demoting CLI Manus wording marketing language, preventing fixture evals and red-team catalog probes from claiming production readiness, redacting secret-canary output, demoting self-improvement dry-runs, release validation claims, policy/tool gateway claims, HITL fixture claims, replay demo claims, and Brain safety wording to production-blocked/targeted evidence, and replacing Brain JSON snapshots with append-only JSONL plus a SQLite blocker; the full objective remains active until Manus-grade/natural-language web-app agent readiness is proven requirement-by-requirement.
+Not complete. The fixed script-runner deletion part is substantially complete, including fail-closing stale deploy execution, demoting browser scenario wording to deterministic probe evidence, demoting CLI/contract Manus wording marketing language, preventing fixture evals and red-team catalog probes from claiming production readiness, redacting secret-canary output, demoting self-improvement dry-runs, release validation claims, policy/tool gateway claims, HITL fixture claims, replay demo claims, and Brain safety wording to production-blocked/targeted evidence, and replacing Brain JSON snapshots with append-only JSONL plus a SQLite blocker; the full objective remains active until Manus-grade/natural-language web-app agent readiness is proven requirement-by-requirement.

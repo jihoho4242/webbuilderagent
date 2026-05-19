@@ -177,6 +177,15 @@
         "test_agent_os_v32_static_surface_audit rejects Manus wording in CLI help",
         "The help text keeps network/install/deploy/provider CLI/git push under elevated-approval actions"
       ]
+    },
+    {
+      "surface": "engine-run public contract Manus wording claim",
+      "status": "demoted_to_supervised_scoped_local_runtime",
+      "evidence": [
+        "docs/contracts/engine-run.md now describes engine-run as a supervised, scoped local agentic runtime",
+        "test_agent_os_v32_static_surface_audit rejects Manus wording in README and engine-run contract surfaces",
+        "OpenManus adapter naming remains allowed while product-level Manus marketing claims are blocked"
+      ]
     }
   ],
   "preserved_safety_substrate": [
@@ -188,7 +197,7 @@
   "validation": {
     "ruby -Ilib -e require aiweb": "passed: ok",
     "ruby -Itest test/test_agentification_runtime.rb": "passed: 11 runs, 138 assertions, 0 failures, 0 errors",
-    "ruby -Itest test/test_agent_os_v32_static_surface_audit.rb": "passed: 4 runs, 92 assertions, 0 failures, 0 errors",
+    "ruby -Itest test/test_agent_os_v32_static_surface_audit.rb": "passed: 5 runs, 102 assertions, 0 failures, 0 errors",
     "ruby -Itest test/test_aiweb_cli.rb -n /verify_loop|verify-loop|workbench_dry_run/": "passed: 14 runs, 403 assertions, 0 failures, 0 errors",
     "ruby -Itest test/test_agent_os_v32_release_evidence.rb": "passed: 2 runs, 167 assertions, 0 failures, 0 errors",
     "ruby -Itest test/test_agent_os_v32_policy_kernel.rb test/test_agent_os_v32_tool_gateway.rb test/test_agent_os_v32_decision_packet.rb": "passed: 9 runs, 35 assertions, 0 failures, 0 errors",
@@ -211,5 +220,5 @@
     "ruby -c lib/aiweb/ops/p5_gate.rb lib/aiweb/ops/release_manifest.rb": "passed: Syntax OK"
   },
   "completion_status": "not_complete",
-  "why_not_complete": "Top-level fixed script-runner surfaces, stale deploy provider execution, browser deterministic-probe naming claims, CLI Manus wording marketing overclaims, fixture-eval production-readiness overclaims, red-team catalog-fixture overclaims, secret-canary value emission, self-improvement dry-run overclaims, release validation evidence overclaims, P5 policy/tool gateway overclaims, P5 HITL fixture overclaims, P5 replay readiness overclaims, Brain safety wording overclaims, and Brain JSON snapshot overclaims are neutralized, but Manus-grade natural-language web-app agent readiness still requires independent production red-team/release evidence plus a real SQLite/dependency-backed Brain kernel."
+  "why_not_complete": "Top-level fixed script-runner surfaces, stale deploy provider execution, browser deterministic-probe naming claims, CLI/contract Manus wording marketing overclaims, fixture-eval production-readiness overclaims, red-team catalog-fixture overclaims, secret-canary value emission, self-improvement dry-run overclaims, release validation evidence overclaims, P5 policy/tool gateway overclaims, P5 HITL fixture overclaims, P5 replay readiness overclaims, Brain safety wording overclaims, and Brain JSON snapshot overclaims are neutralized, but Manus-grade natural-language web-app agent readiness still requires independent production red-team/release evidence plus a real SQLite/dependency-backed Brain kernel."
 }

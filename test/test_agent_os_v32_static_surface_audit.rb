@@ -117,4 +117,22 @@ class AgentOsV32StaticSurfaceAuditTest < Minitest::Test
     assert_includes help, "engine-run: supervised local engine-run runtime for bounded web-building tasks"
     assert_includes help, "network/install/deploy/provider CLI/git push remain elevated-approval actions"
   end
+
+  def test_public_product_docs_do_not_market_engine_run_with_manus_claims
+    public_docs = [
+      File.join(REPO_ROOT, "README.md"),
+      File.join(REPO_ROOT, "docs", "contracts", "engine-run.md")
+    ].map { |path| File.read(path) }.join("\n")
+
+    [
+      ["Manus", "-inspired"].join,
+      ["Manus", "-style"].join,
+      ["Manus", "-grade"].join
+    ].each do |claim|
+      refute_includes public_docs, claim
+    end
+
+    assert_includes public_docs, "`engine-run` is the supervised, scoped local agentic runtime for WebBuilderAgent."
+    assert_includes public_docs, "it is still not an OS-level universal enforcement broker"
+  end
 end

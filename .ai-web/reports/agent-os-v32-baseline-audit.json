@@ -91,6 +91,11 @@
       "surface": "CLI help Manus wording claim",
       "status": "demoted_to_supervised_local_runtime",
       "finding": "CLI help no longer markets engine-run with Manus wording; static audit keeps help positioned as a supervised local engine-run runtime until stronger operational evidence exists."
+    },
+    {
+      "surface": "engine-run contract Manus wording claim",
+      "status": "demoted_to_supervised_scoped_local_runtime",
+      "finding": "Public engine-run contract no longer markets the runtime as Manus wording; static audit blocks product-level Manus wording claims in README and contract surfaces while preserving OpenManus adapter naming."
     }
   ],
   "preserve_safety_substrate": [

@@ -1,6 +1,6 @@
 # Engine Run Contract
 
-`engine-run` is the Manus-inspired, scoped local agentic runtime for WebBuilderAgent.
+`engine-run` is the supervised, scoped local agentic runtime for WebBuilderAgent.
 
 It does not replace the existing bounded `agent-run` safe patch flow. `safe_patch` stays available for conservative source edits. `agentic_local` adds a staged sandbox workspace where the agent can inspect, edit, run local checks, observe failures, and retry before aiweb validates copy-back.
 
