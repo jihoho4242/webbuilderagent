@@ -44,6 +44,16 @@ class AgentOsV32StaticSurfaceAuditTest < Minitest::Test
     assert_includes verify_loop_source, "engine_run("
     assert_includes verify_loop_source, "fixed_pipeline_present"
     refute_match(/verify_loop_record_step|build\(dry_run: false\)|preview\(dry_run: false\)|qa_playwright|agent_run\(task: \"latest\"/, verify_loop_source)
+
+    browser_actions_source = File.read(File.join(REPO_ROOT, "lib", "aiweb", "project", "engine_run", "preview_browser", "browser_actions.rb"))
+    browser_schema = File.read(File.join(REPO_ROOT, "docs", "schemas", "browser-evidence.schema.json"))
+    [browser_actions_source, browser_schema].each do |text|
+      assert_includes text, "deterministic_local_browser_probe"
+      assert_includes text, "deterministic_probe_not_autonomous_planning"
+      refute_includes text, "static_safe_action_plan"
+      refute_includes text, "scenario_plan"
+      refute_includes text, "scenario_results"
+    end
   end
 
   def test_baseline_audit_records_inventory_and_preserved_safety_substrate

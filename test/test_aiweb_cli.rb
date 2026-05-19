@@ -3816,21 +3816,21 @@ class AiwebCliTest < Minitest::Test
       assert_operator manifest.dig("action_recovery", "recovery_attempts").length, :>, 0
       assert_equal [], manifest.dig("action_recovery", "external_requests_blocked")
       assert_equal "captured", manifest.dig("action_loop", "status")
-      assert_equal "bounded_safe_local_observation_loop", manifest.dig("action_loop", "loop_type")
-      assert_equal "deterministic_observation_not_open_ended", manifest.dig("action_loop", "autonomy_level")
+      assert_equal "bounded_safe_local_browser_probe", manifest.dig("action_loop", "loop_type")
+      assert_equal "deterministic_probe_not_autonomous_planning", manifest.dig("action_loop", "autonomy_level")
       assert_equal "localhost-only", manifest.dig("action_loop", "policy", "network")
       assert_equal true, manifest.dig("action_loop", "policy", "reversible_only")
       assert_equal false, manifest.dig("action_loop", "policy", "form_submission_allowed")
       assert_operator manifest.dig("action_loop", "planned_steps").length, :>, 0
       assert_operator manifest.dig("action_loop", "executed_steps").length, :>, 0
       assert_operator manifest.dig("action_loop", "recovery_steps").length, :>, 0
-      assert_operator manifest.dig("action_loop", "scenario_plan").length, :>, 0
-      assert_operator manifest.dig("action_loop", "scenario_results").length, :>, 0
+      assert_operator manifest.dig("action_loop", "probe_plan").length, :>, 0
+      assert_operator manifest.dig("action_loop", "probe_results").length, :>, 0
       assert_equal true, manifest.dig("action_loop", "multi_step_evidence", "multi_step_sequences_observed")
-      assert_equal true, manifest.dig("action_loop", "multi_step_evidence", "all_scenarios_recovered")
-      assert manifest.dig("action_loop", "scenario_results").all? { |entry| entry.fetch("status") == "captured" }
-      assert manifest.dig("action_loop", "scenario_results").all? { |entry| entry.fetch("step_count") >= 2 }
-      assert manifest.dig("action_loop", "scenario_results").all? { |entry| entry.fetch("recovery_step_count") >= 1 }
+      assert_equal true, manifest.dig("action_loop", "multi_step_evidence", "all_probes_recovered")
+      assert manifest.dig("action_loop", "probe_results").all? { |entry| entry.fetch("status") == "captured" }
+      assert manifest.dig("action_loop", "probe_results").all? { |entry| entry.fetch("step_count") >= 2 }
+      assert manifest.dig("action_loop", "probe_results").all? { |entry| entry.fetch("recovery_step_count") >= 1 }
       assert manifest.dig("action_loop", "viewports").all? { |entry| entry.fetch("status") == "captured" }
       assert_equal "passed", manifest.dig("runtime_attestation", "status")
       assert_equal "openmanus", manifest.dig("runtime_attestation", "agent")

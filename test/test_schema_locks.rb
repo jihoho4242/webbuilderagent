@@ -315,13 +315,17 @@ class AiwebSchemaLockTest < Minitest::Test
     assert_includes action_recovery_viewport_required, "unsafe_navigation_blocked"
     assert_includes action_recovery_viewport_required, "external_request_block_count"
     assert_equal true, browser.dig("properties", "action_loop", "properties", "required", "const")
-    assert_equal "bounded_safe_local_observation_loop", browser.dig("properties", "action_loop", "properties", "loop_type", "const")
-    assert_equal "deterministic_observation_not_open_ended", browser.dig("properties", "action_loop", "properties", "autonomy_level", "const")
+    assert_equal "bounded_safe_local_browser_probe", browser.dig("properties", "action_loop", "properties", "loop_type", "const")
+    assert_equal "deterministic_probe_not_autonomous_planning", browser.dig("properties", "action_loop", "properties", "autonomy_level", "const")
+    assert_equal "deterministic_local_browser_probe", browser.dig("properties", "action_loop", "properties", "probe_generator", "const")
     assert_equal "localhost-only", browser.dig("properties", "action_loop", "properties", "policy", "properties", "network", "const")
     assert_equal true, browser.dig("properties", "action_loop", "properties", "policy", "properties", "reversible_only", "const")
     assert_equal false, browser.dig("properties", "action_loop", "properties", "policy", "properties", "form_submission_allowed", "const")
-    assert_includes browser.dig("properties", "action_loop", "required"), "scenario_plan"
-    assert_includes browser.dig("properties", "action_loop", "required"), "scenario_results"
+    refute_includes browser.dig("properties", "action_loop", "required"), "planner"
+    assert_includes browser.dig("properties", "action_loop", "required"), "probe_plan"
+    assert_includes browser.dig("properties", "action_loop", "required"), "probe_results"
+    refute_includes browser.dig("properties", "action_loop", "required"), "scenario_plan"
+    refute_includes browser.dig("properties", "action_loop", "required"), "scenario_results"
     assert_includes browser.dig("properties", "action_loop", "required"), "multi_step_evidence"
     assert_equal "localhost-only", browser.dig("properties", "action_loop", "properties", "multi_step_evidence", "properties", "policy", "properties", "network", "const")
     assert_equal true, browser.dig("properties", "action_loop", "properties", "multi_step_evidence", "properties", "policy", "properties", "reversible_only", "const")
@@ -339,10 +343,10 @@ class AiwebSchemaLockTest < Minitest::Test
     assert_equal 1, captured_condition.dig("then", "properties", "action_loop", "properties", "planned_steps", "minItems")
     assert_equal 1, captured_condition.dig("then", "properties", "action_loop", "properties", "executed_steps", "minItems")
     assert_equal 1, captured_condition.dig("then", "properties", "action_loop", "properties", "recovery_steps", "minItems")
-    assert_equal 3, captured_condition.dig("then", "properties", "action_loop", "properties", "scenario_plan", "minItems")
-    assert_equal 3, captured_condition.dig("then", "properties", "action_loop", "properties", "scenario_results", "minItems")
+    assert_equal 3, captured_condition.dig("then", "properties", "action_loop", "properties", "probe_plan", "minItems")
+    assert_equal 3, captured_condition.dig("then", "properties", "action_loop", "properties", "probe_results", "minItems")
     assert_equal true, captured_condition.dig("then", "properties", "action_loop", "properties", "multi_step_evidence", "properties", "multi_step_sequences_observed", "const")
-    assert_equal true, captured_condition.dig("then", "properties", "action_loop", "properties", "multi_step_evidence", "properties", "all_scenarios_recovered", "const")
+    assert_equal true, captured_condition.dig("then", "properties", "action_loop", "properties", "multi_step_evidence", "properties", "all_probes_recovered", "const")
     assert_includes eval_benchmark.dig("properties", "metrics", "required"), "action_recovery_pass"
     assert_includes eval_benchmark.dig("properties", "metrics", "required"), "browser_action_loop_pass"
     %w[inside_container_probe container_id runtime_container_inspect runtime_matrix effective_user security_attestation sandbox_user egress_denial_probe negative_checks preflight_warnings blocking_issues].each do |field|

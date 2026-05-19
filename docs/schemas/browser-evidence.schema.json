@@ -634,7 +634,7 @@
         "loop_type",
         "goal_source",
         "autonomy_level",
-        "planner",
+        "probe_generator",
         "policy",
         "limits",
         "stop_condition",
@@ -644,8 +644,8 @@
         "recovery_steps",
         "blocked_steps",
         "multi_step_evidence",
-        "scenario_results",
-        "scenario_plan",
+        "probe_results",
+        "probe_plan",
         "limitations",
         "blocking_issues"
       ],
@@ -664,16 +664,16 @@
           "const": true
         },
         "loop_type": {
-          "const": "bounded_safe_local_observation_loop"
+          "const": "bounded_safe_local_browser_probe"
         },
         "goal_source": {
           "const": "selected_design_fixture_and_browser_evidence"
         },
         "autonomy_level": {
-          "const": "deterministic_observation_not_open_ended"
+          "const": "deterministic_probe_not_autonomous_planning"
         },
-        "planner": {
-          "const": "static_safe_action_plan"
+        "probe_generator": {
+          "const": "deterministic_local_browser_probe"
         },
         "policy": {
           "type": "object",
@@ -875,12 +875,12 @@
             "type": "string"
           }
         },
-        "scenario_plan": {
+        "probe_plan": {
           "type": "array",
           "items": {
             "type": "object",
             "required": [
-              "scenario_id",
+              "probe_id",
               "viewport",
               "goal",
               "policy",
@@ -888,7 +888,7 @@
               "steps"
             ],
             "properties": {
-              "scenario_id": {
+              "probe_id": {
                 "type": "string"
               },
               "viewport": {
@@ -939,12 +939,12 @@
             "additionalProperties": true
           }
         },
-        "scenario_results": {
+        "probe_results": {
           "type": "array",
           "items": {
             "type": "object",
             "required": [
-              "scenario_id",
+              "probe_id",
               "viewport",
               "status",
               "step_count",
@@ -953,7 +953,7 @@
               "blocking_issues"
             ],
             "properties": {
-              "scenario_id": {
+              "probe_id": {
                 "type": "string"
               },
               "viewport": {
@@ -995,20 +995,20 @@
         "multi_step_evidence": {
           "type": "object",
           "required": [
-            "scenario_count",
+            "probe_count",
             "multi_step_sequences_observed",
-            "all_scenarios_recovered",
+            "all_probes_recovered",
             "policy"
           ],
           "properties": {
-            "scenario_count": {
+            "probe_count": {
               "type": "integer",
               "minimum": 0
             },
             "multi_step_sequences_observed": {
               "type": "boolean"
             },
-            "all_scenarios_recovered": {
+            "all_probes_recovered": {
               "type": "boolean"
             },
             "total_executed_step_count": {
@@ -1189,8 +1189,8 @@
               "planned_steps",
               "executed_steps",
               "recovery_steps",
-              "scenario_plan",
-              "scenario_results",
+              "probe_plan",
+              "probe_results",
               "multi_step_evidence",
               "blocking_issues"
             ],
@@ -1213,10 +1213,10 @@
               "blocking_issues": {
                 "maxItems": 0
               },
-              "scenario_plan": {
+              "probe_plan": {
                 "minItems": 3
               },
-              "scenario_results": {
+              "probe_results": {
                 "minItems": 3,
                 "items": {
                   "type": "object",
@@ -1238,13 +1238,13 @@
               },
               "multi_step_evidence": {
                 "properties": {
-                  "scenario_count": {
+                  "probe_count": {
                     "minimum": 3
                   },
                   "multi_step_sequences_observed": {
                     "const": true
                   },
-                  "all_scenarios_recovered": {
+                  "all_probes_recovered": {
                     "const": true
                   }
                 }

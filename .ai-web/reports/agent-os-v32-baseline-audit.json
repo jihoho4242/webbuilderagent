@@ -18,9 +18,9 @@
       "finding": "fixed build/preview/QA/visual-critique/repair/agent-run pipeline removed; command now delegates to engine-run compatibility metadata only"
     },
     {
-      "surface": "browser static scenario plan/results",
-      "status": "deterministic_probe",
-      "finding": "deterministic local browser probe, not autonomous planning"
+      "surface": "browser deterministic probe plan/results",
+      "status": "demoted_and_renamed_probe_contract",
+      "finding": "deterministic local browser probe, not autonomous planning; live schema/code now use probe_generator/probe_plan/probe_results and static audit rejects static_safe_action_plan/scenario_* names"
     },
     {
       "surface": "legacy deploy provider execution",

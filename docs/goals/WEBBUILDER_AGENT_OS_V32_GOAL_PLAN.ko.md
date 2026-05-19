@@ -19,7 +19,7 @@
    - “대본 실행기”, “고정 시나리오 실행기”, “정해진 루프를 에이전트처럼 포장한 엔진”은 제거하거나 하위 도구로 강등한다.
    - 최종 방향은 goal-driven `observe -> reason/plan -> act -> verify -> reflect` 구조다.
 4. 전문가 서브에이전트 회의 결과
-   - Architect: `engine-run` durable graph/evidence를 정본 런타임으로 삼고, `AgentRuntime`/`verify-loop`/browser static scenario를 목표 기반 런타임의 하위 tool/probe로 재배치해야 한다.
+   - Architect: `engine-run` durable graph/evidence를 정본 런타임으로 삼고, `AgentRuntime`/`verify-loop`/browser deterministic probe를 목표 기반 런타임의 하위 tool/probe로 재배치해야 한다.
    - Test Engineer: Constitution, PolicyKernel, ToolGateway, DecisionPacket, HITL v2, replay, red-team, eval, Personal Brain, self-improvement, P5 evidence, script-executor 제거를 테스트 가능한 acceptance criteria로 고정해야 한다.
 
 ---
@@ -108,7 +108,7 @@ aiweb agent
 
 - goal 이해 없이 정해진 단계 목록만 실행한다.
 - `build -> preview -> qa -> visual-critique -> repair -> agent-run` 같은 고정 pipeline을 에이전트 판단처럼 포장한다.
-- `static_safe_action_plan`, `scenario_plan`, `scenario_results`를 자율 브라우저 에이전트처럼 주장한다.
+- `deterministic_local_browser_probe`, `probe_plan`, `probe_results`를 자율 브라우저 에이전트처럼 주장한다.
 - ToolGateway/PolicyKernel/DecisionPacket 없이 subprocess, browser, file write, MCP, deploy, network, memory write를 실행한다.
 - 실패 원인에 따라 계획을 바꾸지 않고 같은 대본을 재시도한다.
 
@@ -116,7 +116,7 @@ aiweb agent
 
 - `AgentRuntime::Planner/Executor`의 top-level engine 역할
 - `verify-loop`의 director/agent engine 역할
-- browser `static_safe_action_plan`의 agentic planning 주장
+- browser `deterministic_local_browser_probe`의 agentic planning 주장
 - legacy `agent-run`의 public mental model; worker adapter compatibility로만 유지
 
 보존할 것:
@@ -552,9 +552,9 @@ finish_or_continue
 1. `AgentRuntime::Planner`의 고정 action chooser 제거 또는 goal taxonomy 기반 planner로 교체
 2. `AgentRuntime::Executor`의 직접 `@project.build`, `@project.preview`, `@project.qa_*` 호출 제거; ToolGateway로만 실행
 3. `verify-loop`는 top-level agent/director가 아니라 `verification_bundle_tool` 또는 `legacy_verify_tool`로 강등
-4. browser `static_safe_action_plan`은 `deterministic_local_browser_probe`로 명명/문서화
+4. browser `deterministic_local_browser_probe`은 `deterministic_local_browser_probe`로 명명/문서화
 5. README/help/docs에서 “자동 에이전트 planning”으로 오해되는 표현 제거
-6. static audit 추가: `script-executor`, `fixed scenario runner`, `hardcoded scenario executor`, `bypass runner` 류가 executable surface로 남으면 실패
+6. static audit 추가: `script-executor`, `fixed probe runner`, `hardcoded probe executor`, `bypass runner` 류가 executable surface로 남으면 실패
 
 중요:
 
@@ -887,7 +887,7 @@ ruby bin/engine-runtime-matrix-check --json
 성공 판정은 아래를 모두 만족해야 한다.
 
 1. `aiweb agent`가 `engine-run` durable graph/evidence를 정본으로 사용한다.
-2. `AgentRuntime`/`verify-loop`/browser static scenario가 top-level 대본 실행기처럼 남아 있지 않다.
+2. `AgentRuntime`/`verify-loop`/browser deterministic probe가 top-level 대본 실행기처럼 남아 있지 않다.
 3. 모든 side effect가 `DecisionPacket -> PolicyKernel -> ToolGateway` 순서를 통과한다.
 4. Constitution hash가 run/resume/replay/P5 evidence에 연결된다.
 5. HITL v2 approval mismatch/expiry/single-use/L4-L5 second reviewer 테스트가 통과한다.
@@ -931,7 +931,7 @@ ruby bin/engine-runtime-matrix-check --json
 
 ### Decision
 
-`engine-run`을 v3.2 Agent OS의 정본 durable runtime으로 승격하고, `aiweb agent`는 그 위의 goal-driven facade로 재구성한다. 고정 pipeline/script/scenario runner는 삭제하거나 ToolGateway-routed tool/probe로 강등한다.
+`engine-run`을 v3.2 Agent OS의 정본 durable runtime으로 승격하고, `aiweb agent`는 그 위의 goal-driven facade로 재구성한다. 고정 pipeline/script/probe runner는 삭제하거나 ToolGateway-routed tool/probe로 강등한다.
 
 ### Drivers
 

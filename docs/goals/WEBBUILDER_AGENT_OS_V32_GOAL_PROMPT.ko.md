@@ -32,11 +32,11 @@ Core decision:
 
 대본 실행기 제거:
 
-아래와 같은 “script-executor / fixed scenario runner / hardcoded pipeline을 에이전트처럼 포장한 엔진”을 제거하거나 ToolGateway-routed 하위 tool/probe로 강등하라.
+아래와 같은 “script-executor / fixed probe runner / hardcoded pipeline을 에이전트처럼 포장한 엔진”을 제거하거나 ToolGateway-routed 하위 tool/probe로 강등하라.
 
 - `AgentRuntime::Planner/Executor`가 goal reasoning 없이 `build`, `preview`, `browser_qa`, `local_verify`, `finish` 같은 고정 action list를 실행하는 구조
 - `verify-loop`가 `build -> preview -> QA -> visual-critique -> repair -> agent-run` 고정 대본을 main agent engine처럼 행동하는 구조
-- browser `static_safe_action_plan` / `scenario_plan` / `scenario_results`를 자율 planning으로 주장하는 구조
+- browser `deterministic_local_browser_probe` / `probe_plan` / `probe_results`를 자율 planning으로 주장하는 구조
 - PolicyKernel/ToolGateway/DecisionPacket 없이 process/browser/file/copy-back/MCP/memory/deploy/network를 실행할 수 있는 구조
 
 중요: build/preview/QA/browser evidence 기능 자체를 삭제하지 말라. 정본 에이전트 엔진 지위를 제거하고, DecisionPacket + PolicyKernel + ToolGateway를 통과하는 tool/probe/eval fixture로 재배치하라.
@@ -175,7 +175,7 @@ Required implementation order:
 6. Script-executor-like engines deletion/demotion
    - `AgentRuntime::Planner/Executor`의 top-level engine 역할 제거
    - `verify-loop`를 verification tool node로 강등
-   - browser static scenario는 deterministic local browser probe로 명확히 표기
+   - browser deterministic probe는 deterministic local browser probe로 명확히 표기
    - static audit로 script-executor/fixed-runner/bypass-runner 실행 표면 차단
    - README/help/docs에서 fixed pipeline을 자율 에이전트처럼 보이게 하는 표현 제거
 
@@ -252,7 +252,7 @@ Acceptance criteria:
 - L4/L5 require second reviewer.
 - Replay consistency runs without real side effects.
 - Script-executor-like top-level engines are deleted, demoted, or fail-closed by static audit.
-- Browser static scenarios are labeled deterministic probes, not autonomous planning.
+- Browser deterministic probes are labeled deterministic probes, not autonomous planning.
 - Domain eval + red-team artifacts are generated.
 - Red-team critical/high bypass count is 0, or honest failure report is generated.
 - Personal Brain MVP blocks secret memory, tombstone leaks, and low-grade memory action use.

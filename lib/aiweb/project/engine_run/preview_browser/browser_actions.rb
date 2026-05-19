@@ -253,15 +253,15 @@ module Aiweb
           entry.merge("viewport" => capture["viewport"], "policy" => "non_local_request_blocked")
         end
       end
-      scenarios = engine_run_browser_action_loop_scenarios(captures)
-      scenario_plan = scenarios.map do |scenario|
-        scenario.slice("scenario_id", "viewport", "goal", "policy", "target_count", "steps")
+      probes = engine_run_browser_action_loop_probes(captures)
+      probe_plan = probes.map do |probe|
+        probe.slice("probe_id", "viewport", "goal", "policy", "target_count", "steps")
       end
-      scenario_results = scenarios.map do |scenario|
-        scenario.slice("scenario_id", "viewport", "status", "step_count", "recovery_step_count", "blocked_step_count", "blocking_issues")
+      probe_results = probes.map do |probe|
+        probe.slice("probe_id", "viewport", "status", "step_count", "recovery_step_count", "blocked_step_count", "blocking_issues")
       end
       multi_step_evidence = engine_run_browser_action_loop_multi_step_evidence(
-        scenario_results: scenario_results,
+        probe_results: probe_results,
         executed_steps: executed_steps,
         recovery_steps: recovery_steps,
         blocked_steps: blocked_steps
@@ -269,10 +269,10 @@ module Aiweb
       blockers = viewports.flat_map { |entry| Array(entry["blocking_issues"]).map { |issue| "#{entry["viewport"]}: #{issue}" } }
       status = captures.length == 3 &&
         viewports.all? { |entry| entry["status"] == "captured" && entry["unsafe_navigation_policy_enforced"] == true } &&
-        scenario_results.length == captures.length &&
-        scenario_results.all? { |scenario| scenario["status"] == "captured" } &&
+        probe_results.length == captures.length &&
+        probe_results.all? { |probe| probe["status"] == "captured" } &&
         multi_step_evidence["multi_step_sequences_observed"] == true &&
-        multi_step_evidence["all_scenarios_recovered"] == true &&
+        multi_step_evidence["all_probes_recovered"] == true &&
         executed_steps.any? &&
         recovery_steps.any? &&
         blockers.empty? ? "captured" : "failed"
@@ -283,8 +283,8 @@ module Aiweb
         executed_steps: executed_steps,
         recovery_steps: recovery_steps,
         blocked_steps: blocked_steps,
-        scenario_plan: scenario_plan,
-        scenario_results: scenario_results,
+        probe_plan: probe_plan,
+        probe_results: probe_results,
         multi_step_evidence: multi_step_evidence,
         blocking_issues: blockers
       )
@@ -292,7 +292,7 @@ module Aiweb
       envelope
     end
 
-    def engine_run_browser_action_loop_scenarios(captures)
+    def engine_run_browser_action_loop_probes(captures)
       captures.map do |capture|
         viewport = capture["viewport"].to_s
         recovery = capture["action_recovery"].is_a?(Hash) ? capture["action_recovery"] : {}
@@ -323,7 +323,7 @@ module Aiweb
           step_count >= 2 &&
           recovery_step_count.positive? ? "captured" : "failed"
         {
-          "scenario_id" => "safe-local-ui-probe-#{viewport}",
+          "probe_id" => "safe-local-ui-probe-#{viewport}",
           "viewport" => viewport,
           "goal" => "probe reversible local UI interactions and recover preview state",
           "policy" => {
@@ -343,12 +343,12 @@ module Aiweb
       end
     end
 
-    def engine_run_browser_action_loop_multi_step_evidence(scenario_results:, executed_steps:, recovery_steps:, blocked_steps:)
-      results = Array(scenario_results)
+    def engine_run_browser_action_loop_multi_step_evidence(probe_results:, executed_steps:, recovery_steps:, blocked_steps:)
+      results = Array(probe_results)
       {
-        "scenario_count" => results.length,
-        "multi_step_sequences_observed" => results.any? { |scenario| scenario["step_count"].to_i >= 2 } || Array(executed_steps).length >= 2,
-        "all_scenarios_recovered" => results.any? && results.all? { |scenario| scenario["status"] == "captured" && scenario["recovery_step_count"].to_i.positive? },
+        "probe_count" => results.length,
+        "multi_step_sequences_observed" => results.any? { |probe| probe["step_count"].to_i >= 2 } || Array(executed_steps).length >= 2,
+        "all_probes_recovered" => results.any? && results.all? { |probe| probe["status"] == "captured" && probe["recovery_step_count"].to_i.positive? },
         "total_executed_step_count" => Array(executed_steps).length,
         "total_recovery_step_count" => Array(recovery_steps).length,
         "total_blocked_step_count" => Array(blocked_steps).length,
@@ -361,10 +361,10 @@ module Aiweb
       }
     end
 
-    def engine_run_browser_action_loop_envelope(status:, viewports:, planned_steps:, executed_steps:, recovery_steps:, blocked_steps:, blocking_issues:, reason: nil, scenario_plan: [], scenario_results: [], multi_step_evidence: nil)
-      scenario_results = Array(scenario_results)
+    def engine_run_browser_action_loop_envelope(status:, viewports:, planned_steps:, executed_steps:, recovery_steps:, blocked_steps:, blocking_issues:, reason: nil, probe_plan: [], probe_results: [], multi_step_evidence: nil)
+      probe_results = Array(probe_results)
       multi_step_evidence ||= engine_run_browser_action_loop_multi_step_evidence(
-        scenario_results: scenario_results,
+        probe_results: probe_results,
         executed_steps: executed_steps,
         recovery_steps: recovery_steps,
         blocked_steps: blocked_steps
@@ -373,10 +373,10 @@ module Aiweb
         "schema_version" => 1,
         "status" => status,
         "required" => true,
-        "loop_type" => "bounded_safe_local_observation_loop",
+        "loop_type" => "bounded_safe_local_browser_probe",
         "goal_source" => "selected_design_fixture_and_browser_evidence",
-        "autonomy_level" => "deterministic_observation_not_open_ended",
-        "planner" => "static_safe_action_plan",
+        "autonomy_level" => "deterministic_probe_not_autonomous_planning",
+        "probe_generator" => "deterministic_local_browser_probe",
         "policy" => {
           "network" => "localhost-only",
           "allowed_actions" => %w[scroll_into_view hover focus fill_text_probe restore_input_value click_same_origin_anchor click_toggle_button escape restore_preview_url],
@@ -398,8 +398,8 @@ module Aiweb
         "executed_steps" => Array(executed_steps),
         "recovery_steps" => Array(recovery_steps),
         "blocked_steps" => Array(blocked_steps),
-        "scenario_plan" => Array(scenario_plan),
-        "scenario_results" => scenario_results,
+        "probe_plan" => Array(probe_plan),
+        "probe_results" => probe_results,
         "multi_step_evidence" => multi_step_evidence,
         "limitations" => [
           "not a production open-ended browser agent",
