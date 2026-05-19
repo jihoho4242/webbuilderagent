@@ -12,7 +12,7 @@ commit_sha_policy: attach immutable commit sha from CI release job; local static
 github_actions_run_id: null
 evidence_files:
 - path: releases/v0.3.2-rc1/p5_gate_report.md
-  sha256: sha256:42c6a3bdbc993e76352ec82cc776a2c6993492f3e951b9164624ac769f8b1962
+  sha256: sha256:e6a6a5bc69883c327a1f992ab1892a4e3ee4b300796f34f3c097ea20b28a8567
 schema_validation_report:
   status: targeted_validation_only
   validation_keys:
@@ -47,6 +47,8 @@ tool_gateway_report:
   l3_boolean_gateway_status: approval_required
   l3_hash_bound_approval_passed: true
   l3_artifact_gateway_status: passed
+  verifier_result_hash_rejected: true
+  verifier_result_gateway_status: approval_required
 hitl_report:
   status: approval_fixture_passed
   verifier_status: passed
@@ -131,8 +133,9 @@ operational_blocking_issues:
 - operator drill evidence is placeholder only
 - full ruby bin/check evidence is not attached to this release evidence
 - full ruby -Itest test/all.rb evidence is not attached to this release evidence
-- tool gateway demo exercised finish plus L3 approval gating fixtures, but full side-effect
-  tool gateway audit is not attached to this release evidence
+- tool gateway demo exercised finish plus L3 approval gating and verifier-result rejection
+  fixtures, but full side-effect tool gateway audit is not attached to this release
+  evidence
 - static side-effect surface audit is attached, but runtime universal side-effect
   enforcement is not proven by this release evidence
 - side-effect surface audit is static classification evidence only; runtime universal
@@ -149,4 +152,4 @@ operational_blocking_issues:
   and independent memory audit evidence
 - production-ready self-improvement requires sandbox patch diff, static checks, eval/red-team
   pass, HITL v2 approval, canary, rollback plan, and monitor evidence
-p5_evidence_hash: sha256:42c6a3bdbc993e76352ec82cc776a2c6993492f3e951b9164624ac769f8b1962
+p5_evidence_hash: sha256:e6a6a5bc69883c327a1f992ab1892a4e3ee4b300796f34f3c097ea20b28a8567

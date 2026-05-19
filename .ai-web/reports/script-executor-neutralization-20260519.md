@@ -30,6 +30,7 @@ WebBuilderAgent is closer to a natural-language, engine-run-centered supervised 
 - Demoted P5 tool gateway evidence from raw `passed` to `gateway_demo_passed` / production-blocked until a full side-effect tool gateway audit exists.
 - Demoted P5 HITL v2 evidence from fixture `passed` to `approval_fixture_passed` with production gate blocked until real operator approval/audit evidence is attached.
 - Removed the L3 `approved: true` boolean approval shortcut from PolicyKernel/ToolGateway; L3 side effects now require a hash-bound HITL v2 approval artifact.
+- Removed the `schema_version=1, status=passed` verifier-result approval shortcut from PolicyKernel; verifier results are evidence, not execution authority.
 - Demoted P5 replay evidence from generic pass/side-effect-free wording to `replay_demo_passed` with production gate blocked until durable replay/resume audit evidence is attached.
 - Added static audit coverage so stale release-ready / production-ready true claims and broad P5 pass wording cannot be reintroduced in release evidence surfaces.
 - Demoted CLI help from Manus wording marketing language to supervised local engine-run runtime wording, with static audit coverage.
@@ -69,7 +70,7 @@ WebBuilderAgent is closer to a natural-language, engine-run-centered supervised 
 - `ruby -Itest test/test_agent_os_v32_brain_and_self_improvement.rb` ? PASS: 6 runs, 46 assertions, 0 failures, 0 errors
 - `ruby -Itest test/test_agent_os_v32_redteam.rb` ? PASS: 4 runs, 38 assertions, 0 failures, 0 errors
 - `ruby redteam/secret_canary.rb` ? PASS: canary_configured, canary_value_emitted=false, production_gate_status=blocked
-- `ruby -Itest test/test_agent_os_v32_policy_kernel.rb` ? PASS: 9 runs, 35 assertions, 0 failures, 0 errors
+- `ruby -Itest test/test_agent_os_v32_policy_kernel.rb` ? PASS: 11 runs, 47 assertions, 0 failures, 0 errors
 - `ruby -Itest test/test_agent_os_v32_tool_gateway.rb` ? PASS: 4 runs, 14 assertions, 0 failures, 0 errors
 - `ruby -Itest test/test_agent_os_v32_decision_packet.rb` ? PASS: 3 runs, 22 assertions, 0 failures, 0 errors
 - `ruby -Itest test/test_contracts.rb` ? PASS: 19 runs, 247 assertions, 0 failures, 0 errors

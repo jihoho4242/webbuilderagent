@@ -80,7 +80,7 @@
     {
       "surface": "P5 HITL fixture claim",
       "status": "demoted_to_approval_fixture_production_blocked",
-      "finding": "P5 evidence no longer treats fixture approver/reviewer verification as production HITL readiness; PolicyKernel rejects L3 boolean approval without a hash-bound HITL v2 artifact, and release evidence remains blocked until real operator approval artifact, single-use/expiry consumption proof, and audit trail are attached."
+      "finding": "P5 evidence no longer treats fixture approver/reviewer verification as production HITL readiness; PolicyKernel rejects L3 boolean approval and schema_version=1 verifier-result hashes without a hash-bound HITL v2 artifact, and release evidence remains blocked until real operator approval artifact, single-use/expiry consumption proof, and audit trail are attached."
     },
     {
       "surface": "P5 replay readiness claim",

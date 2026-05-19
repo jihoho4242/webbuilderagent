@@ -41,7 +41,7 @@ module Aiweb
           approval_check = verify_approval(packet, approval_artifact || approval, action_diff, args, evidence)
           return event(packet, "approval_required", "#{tier} requires passing HITL v2 approval artifact: #{approval_check.fetch("blocking_issues", []).join("; ")}", rule_for(registry, "require_hitl_for_l4_l5"), "high", approval_check.fetch("status", "blocked")) unless approval_check["status"] == "passed"
         elsif tier == "L3"
-          if approval_artifact || approval.to_h["schema_version"] == 2
+          if approval_artifact || approval
             approval_check = verify_approval(packet, approval_artifact || approval, action_diff, args, evidence)
             return event(packet, "approval_required", "L3 approval artifact failed: #{approval_check.fetch("blocking_issues", []).join("; ")}", rule_for(registry, "require_approval_for_l3"), "medium", approval_check.fetch("status", "blocked")) unless approval_check["status"] == "passed"
 
@@ -85,7 +85,12 @@ module Aiweb
 
       def verify_approval(packet, artifact, action_diff, args, evidence)
         return { "status" => "blocked", "blocking_issues" => ["approval artifact missing"] } unless artifact.is_a?(Hash)
-        return artifact if artifact["schema_version"] == 1 && artifact.key?("status")
+        if artifact["schema_version"] != 2
+          return {
+            "status" => "blocked",
+            "blocking_issues" => ["approval artifact must be schema_version 2; verifier result hashes are not execution authority"]
+          }
+        end
 
         @approval_verifier.verify(
           artifact: artifact,

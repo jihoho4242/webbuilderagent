@@ -28,6 +28,7 @@ module Aiweb
         l3_evidence = { "packet_id" => l3_packet.fetch("packet_id"), "fixture" => "p5-l3-hitl" }
         l3_approval = Aiweb::Approval::Artifact.build(run_id: "p5-demo", decision_packet_ids: [l3_packet.fetch("packet_id")], risk_tier: "L3", requested_capabilities: ["build"], action_diff: l3_action_diff, args: l3_args, evidence: l3_evidence, approver_id: "p5-fixture-approver")
         l3_artifact_gateway = gateway.execute(run_id: "p5-demo", goal: "p5 l3 approval artifact demo", tool_name: "build", decision_packet: l3_packet, approval_artifact: l3_approval, action_diff: l3_action_diff, args: l3_args, evidence: l3_evidence)
+        verifier_result_gateway = gateway.execute(run_id: "p5-demo", goal: "p5 forged verifier result rejection demo", tool_name: "external_deploy", approval: { "schema_version" => 1, "status" => "passed", "approval_id" => "approval-forged", "approval_hash" => "sha256:forged", "blocking_issues" => [] })
         packet = packet_builder.build(run_id: "p5-demo", goal: "approval demo", requested_tool: "external_deploy", inputs: { demo: true })
         approval = Aiweb::Approval::Artifact.build(run_id: "p5-demo", decision_packet_ids: [packet["packet_id"]], risk_tier: "L4", requested_capabilities: ["external_deploy"], action_diff: "dry-run", args: { demo: true }, evidence: { demo: true }, approver_id: "p5-fixture-approver", second_reviewer_id: "p5-fixture-reviewer")
         approval_check = Aiweb::Approval::Verifier.new.verify(artifact: approval, decision_packet: packet, action_diff: "dry-run", args: { demo: true }, evidence: { demo: true })
@@ -65,6 +66,7 @@ module Aiweb
         scaffold_blockers << "tool gateway demo failed" unless gateway_result["status"] == "passed"
         scaffold_blockers << "L3 boolean approval was not rejected by ToolGateway" unless l3_boolean_gateway.dig("policy_decision", "approval_status") == "boolean_approval_rejected"
         scaffold_blockers << "L3 hash-bound approval artifact did not pass ToolGateway" unless l3_artifact_gateway.dig("policy_decision", "approval_status") == "passed"
+        scaffold_blockers << "verifier-result approval hash was not rejected by ToolGateway" unless verifier_result_gateway.dig("policy_decision", "approval_status") == "blocked"
         scaffold_blockers << "side-effect surface audit has unclassified direct execution surfaces" unless side_effect_audit["coverage_status"] == "classified"
         scaffold_blockers.concat(approval_check.fetch("blocking_issues", [])) unless approval_check["status"] == "passed"
         scaffold_blockers.concat(redteam.fetch("blocking_issues", [])) unless redteam["status"] == "catalog_fixture_passed"
@@ -93,6 +95,8 @@ module Aiweb
           "l3_boolean_gateway_status" => l3_boolean_gateway["status"],
           "l3_hash_bound_approval_passed" => l3_artifact_gateway.dig("policy_decision", "approval_status") == "passed",
           "l3_artifact_gateway_status" => l3_artifact_gateway["status"],
+          "verifier_result_hash_rejected" => verifier_result_gateway.dig("policy_decision", "approval_status") == "blocked",
+          "verifier_result_gateway_status" => verifier_result_gateway["status"],
           "production_gate_status" => "blocked",
           "production_ready_claim_allowed" => false,
           "operational_blocking_issues" => [

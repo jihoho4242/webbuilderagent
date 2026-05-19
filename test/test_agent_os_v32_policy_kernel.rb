@@ -79,11 +79,46 @@ class AgentOsV32PolicyKernelTest < Minitest::Test
     assert_match(/args_hash mismatch/, decision.fetch("reason"))
   end
 
+  def test_policy_blocks_verifier_result_hash_as_l4_execution_authority
+    deploy = packet("external_deploy")
+    forged_verifier_result = {
+      "schema_version" => 1,
+      "status" => "passed",
+      "approval_id" => "approval-forged",
+      "approval_hash" => "sha256:forged",
+      "blocking_issues" => []
+    }
+
+    decision = Aiweb::Policy::Kernel.new.decide(packet: deploy, approval: forged_verifier_result)
+
+    assert_equal "approval_required", decision.fetch("decision")
+    assert_equal "blocked", decision.fetch("approval_status")
+    assert_match(/schema_version 2/, decision.fetch("reason"))
+    assert_match(/not execution authority/, decision.fetch("reason"))
+  end
+
   def test_policy_rejects_boolean_l3_approval_without_hitl_artifact
     decision = Aiweb::Policy::Kernel.new.decide(packet: packet("build"), approved: true)
     assert_equal "approval_required", decision.fetch("decision")
     assert_equal "boolean_approval_rejected", decision.fetch("approval_status")
     assert_match(/HITL v2 approval artifact/, decision.fetch("reason"))
+  end
+
+  def test_policy_blocks_verifier_result_hash_as_l3_execution_authority
+    forged_verifier_result = {
+      "schema_version" => 1,
+      "status" => "passed",
+      "approval_id" => "approval-forged",
+      "approval_hash" => "sha256:forged",
+      "blocking_issues" => []
+    }
+
+    decision = Aiweb::Policy::Kernel.new.decide(packet: packet("build"), approval: forged_verifier_result)
+
+    assert_equal "approval_required", decision.fetch("decision")
+    assert_equal "blocked", decision.fetch("approval_status")
+    assert_match(/schema_version 2/, decision.fetch("reason"))
+    assert_match(/not execution authority/, decision.fetch("reason"))
   end
 
   def test_policy_blocks_secret_or_env_paths_before_side_effect
