@@ -21,8 +21,32 @@ class AgentOsV32DecisionPacketTest < Minitest::Test
     assert_equal "build", packet.fetch("requested_tool")
     assert_equal "L3", packet.fetch("risk_tier")
     assert_equal "required", packet.fetch("approval_requirement")
+    assert_equal [], packet.fetch("read_paths")
+    assert_equal [], packet.fetch("write_paths")
+    assert_equal [], packet.fetch("process_argv")
+    assert_equal "none", packet.fetch("network_policy")
     assert_equal true, packet.dig("replay_policy", "side_effect_free_replay")
     assert_match(/^sha256:/, packet.dig("replay_policy", "decision_replay_key"))
+  end
+
+  def test_decision_packet_carries_side_effect_scope_for_gateway_review
+    packet = Aiweb::Tools::DecisionPacket.new.build(
+      run_id: "decision-test",
+      goal: "browser qa",
+      requested_tool: "browser_qa",
+      inputs: {
+        "read_paths" => ["src/pages/index.astro"],
+        "write_paths" => [".ai-web/runs/browser-qa/result.json"],
+        "process_argv" => %w[pnpm exec playwright],
+        "network_policy" => "localhost_only"
+      },
+      expected_outputs: [".ai-web/runs/browser-qa/result.json"]
+    )
+
+    assert_equal ["src/pages/index.astro"], packet.fetch("read_paths")
+    assert_equal [".ai-web/runs/browser-qa/result.json"], packet.fetch("write_paths")
+    assert_equal %w[pnpm exec playwright], packet.fetch("process_argv")
+    assert_equal "localhost_only", packet.fetch("network_policy")
   end
 
   def test_idempotency_key_is_stable_but_packet_id_is_unique

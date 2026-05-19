@@ -184,11 +184,13 @@ class AgentificationRuntimeTest < Minitest::Test
       payload, code, stderr = json_cmd("--path", dir, "agent", "--goal", "verify local Supabase scaffold", "--mode", "supervised")
 
       assert_equal 0, code, stderr
-      assert_equal "complete", payload.dig("agent_runtime", "status")
+      assert_equal "partial_not_complete", payload.dig("agent_runtime", "status")
       assert_equal "S", payload.dig("agent_runtime", "profile")
       assert_equal "not_supported_by_profile", payload.dig("agent_runtime", "browserQa", "status")
       assert_equal "manifest_required_before_source_mutation", payload.dig("agent_runtime", "patchManifest", "verifier_decision")
       assert payload.dig("agent_runtime", "patchManifest", "base_file_hashes").is_a?(Hash)
+      assert_equal "engine-run", payload.dig("agent_runtime", "agent_os", "canonical_runtime")
+      assert_equal "summary_only_engine_run_wrapper", payload.dig("agent_runtime", "agent_os", "agent_runtime_execution_role")
 
       run_dir = File.join(dir, payload.dig("agent_runtime", "artifacts", "run_dir"))
       %w[
@@ -203,14 +205,14 @@ class AgentificationRuntimeTest < Minitest::Test
       end
 
       final_report = JSON.parse(File.read(File.join(run_dir, "final-report.json")))
-      assert_equal "complete", final_report["status"]
+      assert_equal "partial_not_complete", final_report["status"]
       assert_equal false, final_report.dig("safety", "dot_env_read")
       assert_equal false, final_report.dig("safety", "external_actions_performed")
-      assert_equal "passed", final_report.dig("toolResults", 0, "status")
+      assert_equal "delegated_to_engine_run", final_report.dig("toolResults", 0, "status")
 
       state = YAML.safe_load(File.read(File.join(dir, ".ai-web", "state.yaml")), permitted_classes: [], aliases: false)
       assert_equal payload.dig("agent_runtime", "artifacts", "final_report"), state.dig("implementation", "latest_agent_runtime")
-      assert_equal "complete", state.dig("implementation", "agent_runtime_status")
+      assert_equal "partial_not_complete", state.dig("implementation", "agent_runtime_status")
     end
   end
 
@@ -241,7 +243,7 @@ class AgentificationRuntimeTest < Minitest::Test
       assert_equal 0, code, stderr
       panel = Array(workbench.dig("workbench", "panels")).find { |item| item["id"] == "agent_runtime" }
       refute_nil panel
-      assert_equal "complete", panel["status"]
+      assert_equal "partial_not_complete", panel["status"]
       assert_equal payload.dig("agent_runtime", "artifacts", "final_report"), panel["latest_agent_runtime"]
       assert Array(workbench.dig("workbench", "controls")).any? { |control| control["id"] == "agent" }
     end

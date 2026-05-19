@@ -3,7 +3,7 @@
   "$id": "https://aiweb.local/schemas/agent-os-policy-decision-event.schema.json",
   "title": "Agent OS Policy Decision Event",
   "type": "object",
-  "required": ["schema_version", "decision_id", "packet_id", "tool_name", "decision", "risk_tier", "permission_tier", "reason", "constitution_hash", "policy_kernel_version", "created_at"],
+  "required": ["schema_version", "decision_id", "packet_id", "tool_name", "decision", "risk_tier", "permission_tier", "reason", "rule_id", "policy_registry_version", "capability_matrix_version", "residual_risk", "approval_status", "constitution_hash", "policy_kernel_version", "created_at"],
   "properties": {
     "schema_version": { "const": 1 },
     "decision_id": { "type": "string", "pattern": "^policy-decision-" },
@@ -13,6 +13,11 @@
     "risk_tier": { "enum": ["L0", "L1", "L2", "L3", "L4", "L5"] },
     "permission_tier": { "enum": ["L0", "L1", "L2", "L3", "L4", "L5"] },
     "reason": { "type": "string" },
+    "rule_id": { "type": "string", "minLength": 1 },
+    "policy_registry_version": { "type": ["string", "null"] },
+    "capability_matrix_version": { "type": ["string", "null"] },
+    "residual_risk": { "type": "string" },
+    "approval_status": { "type": "string" },
     "constitution_hash": { "type": "string", "pattern": "^sha256:[a-f0-9]{64}$" },
     "policy_kernel_version": { "type": "string" },
     "created_at": { "type": "string" }

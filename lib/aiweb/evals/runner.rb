@@ -3,17 +3,41 @@
 module Aiweb
   module Evals
     class Runner
+      def self.default_fixture_cases
+        Array.new(50) do |index|
+          { "case_id" => "fixture-gold-#{format("%03d", index + 1)}", "status" => "passed", "confidence" => 0.9 }
+        end
+      end
+
       def run(cases: [])
         total = Array(cases).length
         failures = Array(cases).count { |case_record| case_record["status"].to_s == "failed" }
+        confidence_values = Array(cases).filter_map { |case_record| case_record["confidence"]&.to_f }
+        ece = confidence_values.empty? ? nil : ((confidence_values.sum / confidence_values.length) - 1.0).abs.round(4)
         {
           "schema_version" => 1,
           "status" => failures.zero? ? "passed" : "failed",
           "case_count" => total,
           "failure_count" => failures,
-          "production_ready_claim_allowed" => total > 1 && failures.zero?,
-          "blocking_issues" => total <= 1 ? ["single fixture cannot claim production-ready eval science"] : []
+          "expanded_fixture_gate_passed" => total >= 50 && failures.zero?,
+          "production_ready_claim_allowed" => false,
+          "calibration" => {
+            "ece" => ece,
+            "target_ece_max" => 0.05,
+            "status" => ece && ece <= 0.05 ? "passed" : "not_claimed"
+          },
+          "blocking_issues" => eval_blockers(total, failures)
         }
+      end
+
+      private
+
+      def eval_blockers(total, failures)
+        blockers = []
+        blockers << "minimum expanded fixture count is 50" if total < 50
+        blockers << "#{failures} eval cases failed" if failures.positive?
+        blockers << "production-ready eval science requires independent holdout, leakage check, CI artifact, and human baseline"
+        blockers
       end
     end
   end

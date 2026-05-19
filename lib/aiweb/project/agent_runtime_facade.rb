@@ -14,15 +14,17 @@ module Aiweb
         raise UserError.new("agent --mode must be plan-only, supervised, or autonomous-local", 1)
       end
 
+      canonical_engine_run = agent_engine_run_facade_plan(normalized_goal)
       payload = Aiweb::AgentRuntime::Loop.new(self).run(
         goal: normalized_goal,
         mode: normalized_mode,
         profile: profile,
         max_steps: max_steps.to_i.positive? ? max_steps.to_i : 20,
         approved: approved,
-        dry_run: dry_run || normalized_mode == "plan-only"
+        dry_run: dry_run || normalized_mode == "plan-only",
+        canonical_engine_run: canonical_engine_run
       )
-      payload["engine_run_facade"] = agent_engine_run_facade_plan(normalized_goal)
+      payload["engine_run_facade"] = canonical_engine_run
       payload.dig("agent_runtime", "agent_os")["engine_run_facade"] = payload["engine_run_facade"] if payload.dig("agent_runtime", "agent_os").is_a?(Hash)
       payload
     end

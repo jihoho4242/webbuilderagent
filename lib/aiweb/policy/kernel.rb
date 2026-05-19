@@ -4,45 +4,94 @@ require_relative "decision_event"
 require_relative "rule_registry"
 require_relative "../runtime/path_policy"
 require_relative "../constitution"
+require_relative "../approval"
 
 module Aiweb
   module Policy
     class Kernel
       VERSION = "agent-os-policy-kernel-v1"
 
-      def initialize(constitution_verifier: Aiweb::Constitution::Verifier.new)
+      def initialize(constitution_verifier: Aiweb::Constitution::Verifier.new, rule_registry: RuleRegistry.new, approval_verifier: Aiweb::Approval::Verifier.new)
         @constitution_verifier = constitution_verifier
+        @rule_registry = rule_registry
+        @approval_verifier = approval_verifier
       end
 
-      def decide(packet:, approved: false, approval: nil, paths: [])
+      def decide(packet:, approved: false, approval: nil, approval_artifact: nil, action_diff: nil, args: nil, evidence: nil, paths: [])
+        registry = @rule_registry.load
+        capability_matrix = @rule_registry.capability_matrix
         constitution = @constitution_verifier.verify(expected_hash: packet["constitution_hash"])
-        return DecisionEvent.build(packet: packet, decision: "block", reason: constitution.fetch("blocking_issues").join("; ")) unless constitution["status"] == "passed"
-
-        path_blocker = secret_path_blocker(paths)
-        return DecisionEvent.build(packet: packet, decision: "block", reason: path_blocker) if path_blocker
-        return DecisionEvent.build(packet: packet, decision: "block", reason: "decision packet has blockers: #{packet["blockers"].join("; ")}") if Array(packet["blockers"]).any?
-
-        tier = packet.fetch("risk_tier")
-        if %w[L4 L5].include?(tier)
-          return DecisionEvent.build(packet: packet, decision: "approval_required", reason: "#{tier} requires HITL v2 approval") unless approved && approval_satisfied?(approval, tier)
-        elsif tier == "L3"
-          return DecisionEvent.build(packet: packet, decision: "approval_required", reason: "L3 local side effect requires explicit approval") unless approved
+        unless constitution["status"] == "passed"
+          return event(packet, "block", constitution.fetch("blocking_issues").join("; "), "constitution_hash_mismatch", "critical", "blocked")
         end
 
-        DecisionEvent.build(packet: packet, decision: "allow", reason: "policy allow for #{tier}")
+        path_blocker = secret_path_blocker(paths)
+        return event(packet, "block", path_blocker, rule_for(registry, "block_secret_paths"), "critical", "blocked") if path_blocker
+
+        if Array(packet["blockers"]).any?
+          return event(packet, "block", "decision packet has blockers: #{packet["blockers"].join("; ")}", "packet_blockers", "critical", "blocked")
+        end
+
+        tier = packet.fetch("risk_tier")
+        validate_tier!(capability_matrix, tier)
+        if %w[L4 L5].include?(tier)
+          approval_check = verify_approval(packet, approval_artifact || approval, action_diff, args, evidence)
+          return event(packet, "approval_required", "#{tier} requires passing HITL v2 approval artifact: #{approval_check.fetch("blocking_issues", []).join("; ")}", rule_for(registry, "require_hitl_for_l4_l5"), "high", approval_check.fetch("status", "blocked")) unless approval_check["status"] == "passed"
+        elsif tier == "L3"
+          if approval_artifact || approval.to_h["schema_version"] == 2
+            approval_check = verify_approval(packet, approval_artifact || approval, action_diff, args, evidence)
+            return event(packet, "approval_required", "L3 approval artifact failed: #{approval_check.fetch("blocking_issues", []).join("; ")}", rule_for(registry, "require_approval_for_l3"), "medium", approval_check.fetch("status", "blocked")) unless approval_check["status"] == "passed"
+
+            return event(packet, "allow", "policy allow for L3 with passing HITL v2 approval artifact", rule_for(registry, "require_approval_for_l3"), "low", approval_check.fetch("status", "passed"))
+          elsif approved
+            return event(packet, "allow", "policy allow for L3 via dev_fixture_only boolean approval; production paths must use HITL v2 artifact", rule_for(registry, "require_approval_for_l3"), "medium", "dev_fixture_only")
+          else
+            return event(packet, "approval_required", "L3 local side effect requires explicit approval artifact or dev_fixture_only boolean approval", rule_for(registry, "require_approval_for_l3"), "medium", "missing")
+          end
+        end
+
+        event(packet, "allow", "policy allow for #{tier}", rule_for(registry, "allow_l0_l2_local"), tier == "L2" ? "low" : "none", "not_required")
       rescue StandardError => e
         fallback = packet.is_a?(Hash) ? packet : { "packet_id" => "missing", "requested_tool" => "unknown", "risk_tier" => "L5", "permission_tier" => "L5", "constitution_hash" => Aiweb::Constitution::Loader.new.content_hash, "policy_kernel_version" => VERSION }
-        DecisionEvent.build(packet: fallback, decision: "block", reason: "policy kernel failure: #{e.class}: #{e.message}")
+        DecisionEvent.build(packet: fallback, decision: "block", reason: "policy kernel failure: #{e.class}: #{e.message}", rule_id: "policy_kernel_fail_closed", residual_risk: "critical", approval_status: "blocked")
       end
 
       private
 
-      def approval_satisfied?(approval, tier)
-        return false unless approval.is_a?(Hash)
-        return false if approval["status"] == "blocked"
-        return false if %w[L4 L5].include?(tier) && approval["second_reviewer_id"].to_s.strip.empty?
+      def event(packet, decision, reason, rule_id, residual_risk, approval_status)
+        DecisionEvent.build(
+          packet: packet,
+          decision: decision,
+          reason: reason,
+          rule_id: rule_id,
+          policy_registry_version: @rule_registry.version,
+          capability_matrix_version: @rule_registry.capability_matrix_version,
+          residual_risk: residual_risk,
+          approval_status: approval_status
+        )
+      end
 
-        true
+      def rule_for(registry, id)
+        Array(registry["rules"]).find { |rule| rule["id"] == id }.to_h.fetch("id", id)
+      end
+
+      def validate_tier!(capability_matrix, tier)
+        return if capability_matrix.fetch("permission_tiers").key?(tier)
+
+        raise KeyError, "unknown permission tier #{tier}"
+      end
+
+      def verify_approval(packet, artifact, action_diff, args, evidence)
+        return { "status" => "blocked", "blocking_issues" => ["approval artifact missing"] } unless artifact.is_a?(Hash)
+        return artifact if artifact["schema_version"] == 1 && artifact.key?("status")
+
+        @approval_verifier.verify(
+          artifact: artifact,
+          decision_packet: packet,
+          action_diff: action_diff || default_action_diff(packet),
+          args: args || default_approval_args(packet),
+          evidence: evidence || default_approval_evidence(packet)
+        )
       end
 
       def secret_path_blocker(paths)
@@ -52,6 +101,30 @@ module Aiweb
           return "unsafe or secret path blocked by PolicyKernel: #{path}"
         end
         nil
+      end
+
+      def default_action_diff(packet)
+        {
+          "requested_tool" => packet["requested_tool"],
+          "inputs_hash" => packet["inputs_hash"],
+          "expected_outputs" => packet["expected_outputs"]
+        }
+      end
+
+      def default_approval_args(packet)
+        {
+          "requested_tool" => packet["requested_tool"],
+          "inputs_hash" => packet["inputs_hash"],
+          "idempotency_key" => packet["idempotency_key"]
+        }
+      end
+
+      def default_approval_evidence(packet)
+        {
+          "packet_id" => packet["packet_id"],
+          "constitution_hash" => packet["constitution_hash"],
+          "policy_kernel_version" => packet["policy_kernel_version"]
+        }
       end
     end
   end

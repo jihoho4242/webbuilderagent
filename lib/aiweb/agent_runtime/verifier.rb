@@ -30,7 +30,7 @@ module Aiweb
         return "blocked" if blockers.any? || result_blockers.any? || statuses.include?("blocked")
         return "failed" if statuses.any? { |status| %w[failed timeout error].include?(status) }
         return "pending_approval" if statuses.include?("pending_approval")
-        return "planned" if statuses.include?("planned")
+        return "planned" if statuses.include?("planned") || statuses.include?("delegated_to_engine_run")
         return "passed" if statuses.any? && statuses.all? { |status| %w[passed running already_running created reused].include?(status) }
 
         "planned"

@@ -10,13 +10,13 @@ module Aiweb
         @project = project
       end
 
-      def build(session:, observation:, plan:, tool_results:, verification:, reflection:, contract:, dry_run:)
+      def build(session:, observation:, plan:, tool_results:, verification:, reflection:, contract:, dry_run:, canonical_engine_run: nil)
         not_tested = not_tested_items(session: session, contract: contract, tool_results: tool_results, dry_run: dry_run)
         {
           "schema_version" => 1,
           "status" => reflection.fetch("status"),
           "summary" => summary_for(reflection.fetch("status"), session: session, contract: contract, tool_results: tool_results),
-          "agent_os" => agent_os_summary(session: session, tool_results: tool_results),
+          "agent_os" => agent_os_summary(session: session, tool_results: tool_results, canonical_engine_run: canonical_engine_run),
           "agent_session" => session.to_h(status: reflection.fetch("status"), stop_reason: reflection.fetch("stop_reason"), profile_contract: contract),
           "profile" => observation["profile"],
           "mode" => session.mode,
@@ -46,12 +46,13 @@ module Aiweb
 
       private
 
-      def agent_os_summary(session:, tool_results:)
+      def agent_os_summary(session:, tool_results:, canonical_engine_run:)
         constitution = Aiweb::Constitution::Verifier.new.verify
         {
           "schema_version" => 1,
           "canonical_runtime" => "engine-run",
           "agent_facade_role" => "goal_facade_compatibility_surface",
+          "agent_runtime_execution_role" => "summary_only_engine_run_wrapper",
           "split_brain_policy" => "agent artifacts must reference engine-run compatible DecisionPacket/PolicyKernel/ToolGateway evidence",
           "constitution_hash" => constitution["content_hash"],
           "constitution_status" => constitution["status"],
@@ -61,7 +62,7 @@ module Aiweb
             "verify_loop_role" => "legacy_verification_bundle_tool",
             "browser_static_scenario_role" => "deterministic_local_browser_probe"
           },
-          "engine_run_facade" => {
+          "engine_run_facade" => canonical_engine_run || {
             "status" => "canonical_runtime_selected",
             "recommended_command" => "aiweb engine-run --goal #{session.goal.inspect} --dry-run"
           }

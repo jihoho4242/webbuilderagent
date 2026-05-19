@@ -13,10 +13,14 @@ require "aiweb"
 class AgentOsV32ReleaseEvidenceTest < Minitest::Test
   REPO_ROOT = File.expand_path("..", __dir__)
 
-  def test_p5_gate_builds_release_ready_evidence_bundle
+  def test_p5_gate_builds_honest_scaffold_demo_evidence_bundle
     evidence = Aiweb::Ops::P5Gate.new.evidence(validation: { "unit" => "test" })
     assert_equal "v0.3.2-rc1", evidence.fetch("release_id")
-    assert_equal true, evidence.fetch("release_ready"), evidence.fetch("blocking_issues").join("\n")
+    assert_equal "scaffold_demo_passed", evidence.fetch("p5_status")
+    assert_equal false, evidence.fetch("release_ready")
+    assert_equal false, evidence.fetch("production_readiness_claimed")
+    assert_match(/blocked_pending/, evidence.fetch("operational_readiness"))
+    assert_match(/GitHub Actions run id/, evidence.fetch("operational_blocking_issues").join("\n"))
     assert_match(/^sha256:/, evidence.fetch("constitution_hash"))
     assert_equal 0, evidence.dig("redteam", "critical_high_bypass_count")
     assert_equal false, evidence.dig("self_improvement", "proposal", "source_changed")
@@ -31,6 +35,10 @@ class AgentOsV32ReleaseEvidenceTest < Minitest::Test
     manifest = YAML.safe_load(File.read(File.join(REPO_ROOT, "releases", "v0.3.2-rc1", "release_manifest.yaml")), permitted_classes: [], aliases: false)
     assert_equal "v0.3.2-rc1", manifest.fetch("release_id")
     assert_match(/^sha256:/, manifest.fetch("constitution_hash"))
+    assert_equal false, manifest.fetch("production_readiness_claimed")
+    assert manifest.fetch("evidence_files").any? { |item| item.fetch("path") == "releases/v0.3.2-rc1/p5_gate_report.md" }
+    assert_includes manifest.fetch("rollback_plan").fetch("status"), "documented"
+    assert_equal "placeholder", manifest.fetch("operator_drill").fetch("status")
 
     integrity = YAML.safe_load(File.read(File.join(REPO_ROOT, "releases", "v0.3.2-rc1", "evidence_integrity_manifest.yaml")), permitted_classes: [], aliases: false)
     integrity.fetch("files").each do |entry|

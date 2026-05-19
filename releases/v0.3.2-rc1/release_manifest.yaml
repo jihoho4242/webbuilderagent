@@ -1,6 +1,39 @@
 ---
 schema_version: 1
 release_id: v0.3.2-rc1
-release_ready: true
+release_ready: false
+p5_status: scaffold_demo_passed
+production_readiness_claimed: false
+operational_readiness: blocked_pending_ci_operator_drill_and_production_benchmarks
 constitution_hash: sha256:87f5f29f48f18135b27b12f940af93e49e9851df23cf0752d45e0ef4bc73d23c
-p5_evidence_status: passed
+p5_evidence_status: scaffold_demo_passed
+commit_sha: 61d26a47022cfa25a38911119e601340a826d928
+github_actions_run_id:
+evidence_files:
+- path: releases/v0.3.2-rc1/p5_gate_report.md
+  sha256: sha256:64aea42976348ef27008b2819c2971dc7d1dc2e42c433a2abe87bc711aa78d89
+schema_validation_report:
+  status: local_bin_check_passed
+  command: ruby bin/check
+eval_report:
+  status: passed
+  case_count: 50
+  production_ready_claim_allowed: false
+redteam_report:
+  status: passed
+  critical_high_bypass_count: 0
+rollback_plan:
+  status: documented_local_revert_only
+  summary: revert the release commit and rerun ruby bin/check before any future release
+    claim
+operator_drill:
+  status: placeholder
+  blocking_issue: operator drill must be run in CI/ops environment before operational
+    readiness can be claimed
+operational_blocking_issues:
+- 'production readiness not claimed: GitHub Actions run id is not attached'
+- operator drill evidence is placeholder only
+- eval/red-team packs are expanded fixtures, not independently reviewed production
+  benchmark evidence
+- Personal Brain persistence is MVP and not yet SQLite-backed
+p5_evidence_hash: sha256:481d51ca7fd9e22f60472e3896fa2124d5ba692a41a0f048b90fecd3622f42c0

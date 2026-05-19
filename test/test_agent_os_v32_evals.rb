@@ -16,11 +16,13 @@ class AgentOsV32EvalsTest < Minitest::Test
     single = Aiweb::Evals::Runner.new.run(cases: [{ "status" => "passed" }])
     assert_equal "passed", single.fetch("status")
     assert_equal false, single.fetch("production_ready_claim_allowed")
-    assert_match(/single fixture/, single.fetch("blocking_issues").join("\n"))
+    assert_match(/minimum expanded fixture count/, single.fetch("blocking_issues").join("\n"))
 
-    multi = Aiweb::Evals::Runner.new.run(cases: [{ "status" => "passed" }, { "status" => "passed" }])
-    assert_equal "passed", multi.fetch("status")
-    assert_equal true, multi.fetch("production_ready_claim_allowed")
+    expanded = Aiweb::Evals::Runner.new.run(cases: Aiweb::Evals::Runner.default_fixture_cases)
+    assert_equal "passed", expanded.fetch("status")
+    assert_equal true, expanded.fetch("expanded_fixture_gate_passed")
+    assert_equal false, expanded.fetch("production_ready_claim_allowed")
+    assert_match(/production-ready eval science requires/, expanded.fetch("blocking_issues").join("\n"))
   end
 
   def test_eval_fixture_packs_and_sampling_plan_exist

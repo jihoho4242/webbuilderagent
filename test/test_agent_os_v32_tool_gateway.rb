@@ -18,6 +18,7 @@ class AgentOsV32ToolGatewayTest < Minitest::Test
     assert_equal "passed", result.fetch("status")
     assert Aiweb::Tools::DecisionPacket.new.valid?(result.fetch("packet"))
     assert_equal "allow", result.fetch("policy_decision").fetch("decision")
+    assert_equal "allow_l0_l2_local", result.fetch("policy_decision").fetch("rule_id")
     assert_equal %w[tool.requested policy.decision tool.started tool.finished], result.fetch("events").map { |event| event.fetch("event") }
   end
 
@@ -40,6 +41,7 @@ class AgentOsV32ToolGatewayTest < Minitest::Test
 
     assert_equal "passed", result.fetch("status")
     assert_equal "allow", result.fetch("policy_decision").fetch("decision")
+    assert_equal "dev_fixture_only", result.fetch("policy_decision").fetch("approval_status")
   end
 
   def test_gateway_fails_closed_for_unknown_tool

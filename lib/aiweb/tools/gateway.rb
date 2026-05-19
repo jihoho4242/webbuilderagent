@@ -14,7 +14,7 @@ module Aiweb
         @packet_builder = packet_builder
       end
 
-      def execute(run_id:, goal:, tool_name:, inputs: {}, expected_outputs: [], approved: false, approval: nil, paths: [])
+      def execute(run_id:, goal:, tool_name:, inputs: {}, expected_outputs: [], approved: false, approval: nil, approval_artifact: nil, action_diff: nil, args: nil, evidence: nil, paths: [])
         packet = @packet_builder.build(
           run_id: run_id,
           goal: goal,
@@ -24,7 +24,17 @@ module Aiweb
           approval_requirement: approved ? "satisfied" : nil
         )
         requested = event("tool.requested", tool_name, packet, nil, "requested")
-        decision = @policy_kernel.decide(packet: packet, approved: approved, approval: approval, paths: paths)
+        scoped_paths = Array(paths) + Array(packet["read_paths"]) + Array(packet["write_paths"])
+        decision = @policy_kernel.decide(
+          packet: packet,
+          approved: approved,
+          approval: approval,
+          approval_artifact: approval_artifact,
+          action_diff: action_diff,
+          args: args,
+          evidence: evidence,
+          paths: scoped_paths
+        )
         policy_event = event("policy.decision", tool_name, packet, decision, decision.fetch("decision"))
         unless decision.fetch("decision") == "allow"
           return {

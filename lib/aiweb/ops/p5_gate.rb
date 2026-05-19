@@ -30,19 +30,28 @@ module Aiweb
         proposal = Aiweb::SelfImprovement::Governor.new.dry_run_proposal(target_component: "runtime_tool_description", hypothesis: "Improve clarity", eval_plan: { "required" => true }, rollback_plan: { "summary" => "revert proposal" })
         experiment = Aiweb::SelfImprovement::ExperimentRegistry.new.record(proposal)
         redteam = Aiweb::Redteam::Arena.new.run(policy_kernel: policy_kernel, packet_builder: packet_builder)
-        eval_result = Aiweb::Evals::Runner.new.run(cases: [{ "status" => "passed" }, { "status" => "passed" }])
-        blockers = []
-        blockers.concat(constitution.fetch("blocking_issues", [])) unless constitution["status"] == "passed"
-        blockers << "tool gateway demo failed" unless gateway_result["status"] == "passed"
-        blockers.concat(approval_check.fetch("blocking_issues", [])) unless approval_check["status"] == "passed"
-        blockers << "red-team critical/high bypass remains" unless redteam["critical_high_bypass_count"].to_i.zero?
-        blockers.concat(brain_audit.fetch("blocking_issues", [])) unless brain_audit["status"] == "passed"
-        blockers << "self-improvement proposal changed source" if proposal["source_changed"] != false
-        blockers << "eval runner failed" unless eval_result["status"] == "passed"
+        eval_result = Aiweb::Evals::Runner.new.run(cases: Aiweb::Evals::Runner.default_fixture_cases)
+        scaffold_blockers = []
+        scaffold_blockers.concat(constitution.fetch("blocking_issues", [])) unless constitution["status"] == "passed"
+        scaffold_blockers << "tool gateway demo failed" unless gateway_result["status"] == "passed"
+        scaffold_blockers.concat(approval_check.fetch("blocking_issues", [])) unless approval_check["status"] == "passed"
+        scaffold_blockers << "red-team critical/high bypass remains" unless redteam["critical_high_bypass_count"].to_i.zero?
+        scaffold_blockers.concat(brain_audit.fetch("blocking_issues", [])) unless brain_audit["status"] == "passed"
+        scaffold_blockers << "self-improvement proposal changed source" if proposal["source_changed"] != false
+        scaffold_blockers << "eval runner failed" unless eval_result["status"] == "passed"
+        operational_blockers = [
+          "production readiness not claimed: GitHub Actions run id is not attached",
+          "operator drill evidence is placeholder only",
+          "eval/red-team packs are expanded fixtures, not independently reviewed production benchmark evidence",
+          "Personal Brain persistence is MVP and not yet SQLite-backed"
+        ]
         {
           "schema_version" => 1,
           "release_id" => "v0.3.2-rc1",
-          "release_ready" => blockers.empty?,
+          "p5_status" => scaffold_blockers.empty? ? "scaffold_demo_passed" : "scaffold_demo_blocked",
+          "release_ready" => false,
+          "production_readiness_claimed" => false,
+          "operational_readiness" => "blocked_pending_ci_operator_drill_and_production_benchmarks",
           "constitution_hash" => constitution["content_hash"],
           "policy_coverage" => { "status" => "passed", "all_side_effects_require_decision_packet_policy_gateway" => true },
           "tool_gateway_coverage" => { "status" => gateway_result["status"], "event_order" => gateway_result.fetch("events", []).map { |event| event["event"] } },
@@ -54,7 +63,9 @@ module Aiweb
           "self_improvement" => { "proposal" => proposal, "experiment" => experiment },
           "script_executor_neutralization" => { "status" => "passed", "top_level_agent_runtime_demoted" => true, "verify_loop_role" => "legacy_verification_bundle_tool", "browser_static_scenario_role" => "deterministic_local_browser_probe" },
           "validation" => validation,
-          "blocking_issues" => blockers
+          "scaffold_demo_blocking_issues" => scaffold_blockers,
+          "operational_blocking_issues" => operational_blockers,
+          "blocking_issues" => scaffold_blockers + operational_blockers
         }
       end
     end
