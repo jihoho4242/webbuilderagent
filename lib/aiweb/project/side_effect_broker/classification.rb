@@ -2,11 +2,6 @@
 
 module Aiweb
   module ProjectSideEffectBroker
-    SIDE_EFFECT_SETUP_SUPPLY_CHAIN_PATHS = %w[
-      lib/aiweb/project/runtime_commands/setup.rb
-      lib/aiweb/project/runtime_commands/setup/supply_chain/broker.rb
-      lib/aiweb/project/runtime_commands/setup/supply_chain.rb
-    ].freeze
     private
 
     def side_effect_surface_classification(path, line, lines, index)
@@ -23,9 +18,6 @@ module Aiweb
       return side_effect_classification("brokered_backend_cli_bridge", "brokered", "aiweb.backend.side_effect_broker", "backend bridge writes broker events before Open3.popen3") if path.end_with?("lib/aiweb/daemon/cli_bridge.rb") && line.include?("Open3.popen3")
       if path.end_with?("lib/aiweb/lazyweb_client.rb") && line.match?(/Net::HTTP/)
         return side_effect_classification("brokered_lazyweb_http", "brokered", "aiweb.lazyweb.side_effect_broker", "LazywebClient emits broker audit events around Net::HTTP")
-      end
-      if side_effect_path_in?(path, SIDE_EFFECT_SETUP_SUPPLY_CHAIN_PATHS) && line.include?("Open3.capture3") && context.include?("append_side_effect_broker_event")
-        return side_effect_classification("brokered_setup_supply_chain_command", "brokered", "aiweb.setup.side_effect_broker", "setup package-manager/SBOM/audit subprocess is surrounded by broker events")
       end
       if path.end_with?("lib/aiweb/project/runtime_commands.rb") && line.include?("system(")
         return side_effect_classification("local_process_tree_cleanup", "documented_exception", nil, "taskkill/system calls are local cleanup fallbacks for preview process trees")
@@ -49,11 +41,6 @@ module Aiweb
         return side_effect_classification("local_runtime_command_exception", "documented_exception", nil, "verify/QA/git revision subprocesses are project-local runtime commands; setup install commands are separately brokered")
       end
       side_effect_classification("unclassified_direct_side_effect", "unclassified", nil, "direct process/network surface is not yet classified by side-effect broker audit")
-    end
-
-
-    def side_effect_path_in?(path, candidates)
-      candidates.any? { |candidate| path.end_with?(candidate) }
     end
 
     def side_effect_surface_safe_launcher_exec?(path, line)

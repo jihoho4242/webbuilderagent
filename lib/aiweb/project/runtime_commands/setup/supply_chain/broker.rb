@@ -52,15 +52,25 @@ module Aiweb
       append_side_effect_broker_event(broker_path, events, "tool.requested", context.merge("requested_at" => started_at, "dry_run" => false))
       append_side_effect_broker_event(broker_path, events, "policy.decision", context.merge("decision" => "allow", "reason" => "explicit --approved setup supply-chain evidence"))
       append_side_effect_broker_event(broker_path, events, "tool.started", context.merge("started_at" => started_at))
-      stdout, stderr, process_status = Open3.capture3(setup_child_env, *command_argv, chdir: root, unsetenv_others: true)
-      status = process_status.success? ? "passed" : "failed"
-      append_side_effect_broker_event(broker_path, events, "tool.finished", context.merge("finished_at" => now, "status" => status, "exit_code" => process_status.exitstatus))
+      result = runtime_process_runner.capture(
+        Aiweb::Runtime::CommandSpec.new(
+          argv: command_argv,
+          cwd: root,
+          env: setup_child_env,
+          timeout: 180,
+          max_output_bytes: 200_000,
+          risk_class: "setup_supply_chain_evidence",
+          description: "approved setup supply-chain evidence command"
+        )
+      )
+      status = result.success? ? "passed" : "failed"
+      append_side_effect_broker_event(broker_path, events, "tool.finished", context.merge("finished_at" => now, "status" => status, "exit_code" => result.exit_code))
       {
         "command" => command_argv,
         "status" => status,
-        "exit_code" => process_status.exitstatus,
-        "stdout" => redact_side_effect_process_output(redact_setup_output(stdout)),
-        "stderr" => redact_side_effect_process_output(redact_setup_output(stderr))
+        "exit_code" => result.exit_code,
+        "stdout" => redact_side_effect_process_output(redact_setup_output(result.stdout)),
+        "stderr" => redact_side_effect_process_output(redact_setup_output(result.stderr))
       }
     end
   end

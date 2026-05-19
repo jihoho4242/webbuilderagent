@@ -249,9 +249,20 @@ module Aiweb
             "tool.started",
             side_effect_context.merge("started_at" => started_at)
           )
-          stdout, stderr, process_status = Open3.capture3(setup_child_env, *command_argv, chdir: root, unsetenv_others: true)
-          exit_code = process_status.exitstatus
-          status = process_status.success? ? "passed" : "failed"
+          install_result = runtime_process_runner.capture(
+            Aiweb::Runtime::CommandSpec.new(
+              argv: command_argv,
+              cwd: root,
+              env: setup_child_env,
+              timeout: 900,
+              max_output_bytes: 200_000,
+              risk_class: "setup_package_install",
+              description: "approved setup package install"
+            )
+          )
+          install_success = install_result.success?
+          exit_code = install_result.exit_code
+          status = install_success ? "passed" : "failed"
           install_status = status
           append_side_effect_broker_event(
             side_effect_broker_path,
@@ -259,10 +270,10 @@ module Aiweb
             "tool.finished",
             side_effect_context.merge("finished_at" => now, "status" => status, "exit_code" => exit_code)
           )
-          stdout = redact_side_effect_process_output(redact_setup_output(stdout))
-          stderr = redact_side_effect_process_output(redact_setup_output(stderr))
-          blocking_issues << "#{command} failed with exit code #{exit_code}" unless process_status.success?
-          if process_status.success?
+          stdout = redact_side_effect_process_output(redact_setup_output(install_result.stdout))
+          stderr = redact_side_effect_process_output(redact_setup_output(install_result.stderr))
+          blocking_issues << "#{command} failed with exit code #{exit_code || install_result.status}" unless install_success
+          if install_success
             sbom_result = setup_run_brokered_supply_chain_command(
               side_effect_broker_path,
               side_effect_broker_events,
@@ -307,7 +318,7 @@ module Aiweb
                 package_manager: package_manager
               )
               if audit_exception["status"] == "accepted"
-                status = process_status.success? ? "passed" : status
+                status = install_success ? "passed" : status
               else
                 blocked_counts = audit_artifact.fetch("severity_counts").slice("critical", "high")
                 blocking_issues << "setup package audit blocked by critical/high vulnerabilities: #{blocked_counts.inspect}"

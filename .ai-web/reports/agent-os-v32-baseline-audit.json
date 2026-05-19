@@ -146,6 +146,11 @@
       "surface": "engine-run capture command helper subprocess",
       "status": "centralized_to_runtime_process_runner",
       "finding": "engine_run_capture_command no longer owns direct Open3.capture3 subprocess execution; verification, sandbox preflight, and browser observation capture routes use ProcessRunner/CommandSpec. CommandSpec rejects shell metacharacters by default and requires explicit allow_shell_meta for known literal shell-script argv boundaries."
+    },
+    {
+      "surface": "setup install and supply-chain evidence subprocesses",
+      "status": "centralized_to_runtime_process_runner",
+      "finding": "setup package install, SBOM generation, and package audit no longer own direct Open3.capture3 subprocess execution; commands route through ProcessRunner/CommandSpec while preserving setup side-effect broker events, explicit approval policy, clean child environment, stdout/stderr redaction, SBOM artifacts, package audit evidence, and vulnerability gate behavior."
     }
   ],
   "preserve_safety_substrate": [
