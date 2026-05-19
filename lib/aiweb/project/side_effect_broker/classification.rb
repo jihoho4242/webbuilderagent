@@ -71,8 +71,8 @@ module Aiweb
       if path.end_with?("lib/aiweb/project/agent_run.rb") && line.match?(/git.*diff|git.*status/)
         return side_effect_classification("local_read_only_git_evidence", "documented_exception", nil, "git diff/status subprocesses are local read-only evidence collection for bounded agent-run")
       end
-      if side_effect_path_in?(path, SIDE_EFFECT_AGENT_RUN_WORKER_PATHS) && line.include?("Open3.capture3")
-        return side_effect_classification("legacy_agent_run_worker_subprocess", "documented_exception", nil, "legacy agent-run worker subprocess is bounded by agent-run context and OpenManus tool-broker log evidence; not a universal broker path")
+      if side_effect_path_in?(path, SIDE_EFFECT_AGENT_RUN_WORKER_PATHS) && line.include?("Open3.capture3") && context.include?("append_side_effect_broker_event")
+        return side_effect_classification("brokered_agent_run_codex_subprocess", "brokered", "aiweb.agent_run.codex.side_effect_broker", "Codex agent-run subprocess records side-effect broker events around approved local source-patch execution")
       end
       if path.end_with?("lib/aiweb/project/runtime_commands.rb") && line.include?("Open3.capture3")
         return side_effect_classification("local_runtime_command_exception", "documented_exception", nil, "verify/QA/git revision subprocesses are project-local runtime commands; setup install commands are separately brokered")

@@ -115,11 +115,13 @@ class AiwebContractTest < Minitest::Test
       brokered_setup_supply_chain_command
       brokered_engine_run_capture_command
       brokered_openmanus_sandbox_subprocess
+      brokered_agent_run_codex_subprocess
       local_verification_harness_exception
       local_cli_launcher_wrapper
     ].each do |classification|
       assert_includes classifications, classification
     end
+    refute_includes classifications, "legacy_agent_run_worker_subprocess"
   end
 
   def test_side_effect_surface_audit_flags_unclassified_common_ruby_process_forms

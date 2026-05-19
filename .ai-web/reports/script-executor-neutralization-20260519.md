@@ -33,6 +33,7 @@ WebBuilderAgent is closer to a natural-language, engine-run-centered supervised 
 - Added static audit coverage so stale release-ready / production-ready true claims and broad P5 pass wording cannot be reintroduced in release evidence surfaces.
 - Demoted CLI help from Manus wording marketing language to supervised local engine-run runtime wording, with static audit coverage.
 - Demoted the public `engine-run` contract from product-level Manus wording to supervised, scoped local agentic runtime wording, with static audit coverage.
+- Converted the Codex `agent-run` worker subprocess from a legacy documented exception into `aiweb.agent_run.codex.side_effect_broker` evidence: approved local source-patch runs now write `side-effect-broker.jsonl`, metadata embeds broker events, and the static surface audit classifies the Open3 path as `brokered_agent_run_codex_subprocess`.
 
 ## Remaining non-completion reasons
 
@@ -58,7 +59,9 @@ WebBuilderAgent is closer to a natural-language, engine-run-centered supervised 
 - `ruby -Itest test/test_agent_os_v32_tool_gateway.rb` ? PASS: 4 runs, 14 assertions, 0 failures, 0 errors
 - `ruby -Itest test/test_agent_os_v32_decision_packet.rb` ? PASS: 3 runs, 22 assertions, 0 failures, 0 errors
 - `ruby -Itest test/test_contracts.rb` ? PASS: 19 runs, 247 assertions, 0 failures, 0 errors
-- `ruby -Itest test/test_contracts.rb -n '/side_effect_surface_audit/'` ? PASS: 5 runs, 69 assertions, 0 failures, 0 errors
+- `ruby -Itest test/test_aiweb_cli.rb -n '/agent_run_approved_fake_codex_success_records_logs_diff_and_safe_state|agent_run_codex_uses_clean_environment|agent_run_approved_fake_codex_failure_records_failure_and_logs/'` ? PASS: 3 runs, 87 assertions, 0 failures, 0 errors
+- `ruby -Itest test/test_contracts.rb -n '/side_effect_surface_audit/'` ? PASS: 5 runs, 73 assertions, 0 failures, 0 errors
+- `ruby -Ilib -e "side_effect_surface_audit agent-run classification"` ? PASS: coverage=classified, unclassified=0, entry_count=40, classification=brokered_agent_run_codex_subprocess
 - `ruby -Itest test/test_schema_locks.rb` ? PASS: 3 runs, 883 assertions, 0 failures, 0 errors
 - `ruby -Itest test/test_agent_os_v32_contracts.rb` ? PASS: 3 runs, 66 assertions, 0 failures, 0 errors
 - `git diff --check` ? PASS with line-ending warnings only
@@ -67,4 +70,4 @@ WebBuilderAgent is closer to a natural-language, engine-run-centered supervised 
 
 ## Completion
 
-Not complete. The fixed script-runner deletion part is substantially complete, including fail-closing stale deploy execution, demoting browser scenario wording to deterministic probe evidence, demoting CLI/contract Manus wording marketing language, preventing fixture evals and red-team catalog probes from claiming production readiness, redacting secret-canary output, demoting self-improvement dry-runs, release validation claims, policy/tool gateway claims, HITL fixture claims, replay demo claims, and Brain safety wording to production-blocked/targeted evidence, and replacing Brain JSON snapshots with append-only JSONL plus a SQLite blocker; the full objective remains active until Manus-grade/natural-language web-app agent readiness is proven requirement-by-requirement.
+Not complete. The fixed script-runner deletion part is substantially complete, including fail-closing stale deploy execution, demoting browser scenario wording to deterministic probe evidence, demoting CLI/contract Manus wording marketing language, preventing fixture evals and red-team catalog probes from claiming production readiness, redacting secret-canary output, demoting self-improvement dry-runs, release validation claims, policy/tool gateway claims, HITL fixture claims, replay demo claims, Brain safety wording to production-blocked/targeted evidence, replacing Brain JSON snapshots with append-only JSONL plus a SQLite blocker, and converting the legacy Codex `agent-run` subprocess exception into brokered side-effect evidence; the full objective remains active until Manus-grade/natural-language web-app agent readiness is proven requirement-by-requirement.

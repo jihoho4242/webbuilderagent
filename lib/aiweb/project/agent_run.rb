@@ -64,6 +64,7 @@ module Aiweb
       metadata_path = File.join(run_dir, "agent-run.json")
       context_path = File.join(run_dir, "agent-run-context.json")
       diff_path = File.join(aiweb_dir, "diffs", "#{run_id}.patch")
+      side_effect_broker_path = File.join(run_dir, "side-effect-broker.jsonl")
       openmanus_context_path = File.join(run_dir, "openmanus-context.json")
       openmanus_prompt_path = File.join(run_dir, "openmanus-prompt.md")
       openmanus_validator_path = File.join(run_dir, "openmanus-validator.json")
@@ -164,6 +165,8 @@ module Aiweb
           relative(openmanus_denied_access_log_path),
           relative(openmanus_tool_broker_log_path)
         ])
+      else
+        planned_changes << relative(side_effect_broker_path)
       end
 
       openmanus_contract = agent_name == "openmanus" ? agent_run_openmanus_contract(
@@ -258,7 +261,8 @@ module Aiweb
         stderr_path: stderr_path,
         context_path: context_path,
         metadata_path: metadata_path,
-        diff_path: diff_path
+        diff_path: diff_path,
+        side_effect_broker_path: side_effect_broker_path
       )
     end
 
@@ -275,7 +279,7 @@ module Aiweb
       []
     end
 
-    def agent_run_process_env(context_path:, source_paths:, task_source:, run_id:, diff_path:, metadata_path:)
+    def agent_run_process_env(context_path:, source_paths:, task_source:, run_id:, diff_path:, metadata_path:, side_effect_broker_path: nil)
       subprocess_path_env.merge(
         "AIWEB_AGENT_RUN_CONTEXT_PATH" => context_path,
         "AIWEB_AGENT_RUN_ALLOWED_SOURCE_PATHS_JSON" => JSON.generate(source_paths),
@@ -285,7 +289,9 @@ module Aiweb
         "AIWEB_AGENT_RUN_RUN_ID" => run_id,
         "AIWEB_AGENT_RUN_DIFF_PATH" => relative(diff_path),
         "AIWEB_AGENT_RUN_METADATA_PATH" => relative(metadata_path)
-      )
+      ).tap do |env|
+        env["AIWEB_AGENT_RUN_SIDE_EFFECT_BROKER_PATH"] = relative(side_effect_broker_path) if side_effect_broker_path
+      end
     end
 
 

@@ -7960,8 +7960,19 @@ class AiwebCliTest < Minitest::Test
       assert run_dir, "approved agent-run must write a run directory"
       assert diff_path, "approved agent-run must write a diff patch"
       assert File.exist?(File.join(run_dir, "agent-run.json")), "approved agent-run must write metadata JSON"
+      assert File.exist?(File.join(run_dir, "side-effect-broker.jsonl")), "approved agent-run must write broker evidence"
       assert_equal "fake codex approved stdout\n", File.read(File.join(run_dir, "stdout.log"))
       assert_equal "fake codex approved stderr\n", File.read(File.join(run_dir, "stderr.log"))
+      broker_events = File.readlines(File.join(run_dir, "side-effect-broker.jsonl"), chomp: true).map { |line| JSON.parse(line) }
+      metadata = JSON.parse(File.read(File.join(run_dir, "agent-run.json")))
+      assert_equal %w[tool.requested policy.decision tool.started tool.finished], broker_events.map { |event| event.fetch("event") }
+      assert_equal "aiweb.agent_run.codex.side_effect_broker", metadata.dig("side_effect_broker", "broker")
+      assert_equal "agent_run.codex_worker", metadata.dig("side_effect_broker", "scope")
+      assert_equal true, metadata.dig("side_effect_broker", "events_recorded")
+      assert_equal broker_events.length, metadata.dig("side_effect_broker", "event_count")
+      assert_equal broker_events, metadata.fetch("side_effect_broker_events")
+      assert_equal "allow", broker_events.find { |event| event.fetch("event") == "policy.decision" }.fetch("decision")
+      assert_equal "passed", broker_events.last.fetch("status")
       assert_match(/patched by fake codex/, File.read("src/components/Hero.astro"))
       refute_equal before_source, File.read("src/components/Hero.astro"), "approved agent-run must patch source"
       after_entries = project_entries
@@ -7971,7 +7982,7 @@ class AiwebCliTest < Minitest::Test
       assert_equal env_size, File.size(".env")
       assert_equal env_mtime, File.mtime(".env")
       refute_includes File.read(diff_path), secret
-      assert_agent_run_artifacts_do_not_leak_secret(secret, File.join(run_dir, "agent-run.json"), File.join(run_dir, "stdout.log"), File.join(run_dir, "stderr.log"), diff_path)
+      assert_agent_run_artifacts_do_not_leak_secret(secret, File.join(run_dir, "agent-run.json"), File.join(run_dir, "stdout.log"), File.join(run_dir, "stderr.log"), File.join(run_dir, "side-effect-broker.jsonl"), diff_path)
       refute_nil state.dig("implementation", "latest_agent_run")
       assert_match(%r{\A\.ai-web/runs/agent-run-.+/agent-run\.json\z}, state.dig("implementation", "latest_agent_run"))
       refute_nil state.dig("implementation", "last_diff")
@@ -8325,6 +8336,15 @@ class AiwebCliTest < Minitest::Test
       assert run_dir, "failed agent-run must still write a run directory"
       assert_equal "fake codex failure stdout\n", File.read(File.join(run_dir, "stdout.log"))
       assert_equal "fake codex failure stderr\n", File.read(File.join(run_dir, "stderr.log"))
+      broker_events = File.readlines(File.join(run_dir, "side-effect-broker.jsonl"), chomp: true).map { |line| JSON.parse(line) }
+      metadata = JSON.parse(File.read(File.join(run_dir, "agent-run.json")))
+      assert_equal %w[tool.requested policy.decision tool.started tool.failed], broker_events.map { |event| event.fetch("event") }
+      assert_equal "aiweb.agent_run.codex.side_effect_broker", metadata.dig("side_effect_broker", "broker")
+      assert_equal true, metadata.dig("side_effect_broker", "events_recorded")
+      assert_equal broker_events.length, metadata.dig("side_effect_broker", "event_count")
+      assert_equal broker_events, metadata.fetch("side_effect_broker_events")
+      assert_equal "failed", broker_events.last.fetch("status")
+      assert_equal 23, broker_events.last.fetch("exit_code")
       refute_nil state.dig("implementation", "latest_agent_run")
     end
   end

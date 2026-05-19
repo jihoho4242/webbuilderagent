@@ -195,6 +195,15 @@
         "test_agent_os_v32_static_surface_audit rejects Manus wording in README and engine-run contract surfaces",
         "OpenManus adapter naming remains allowed while product-level Manus marketing claims are blocked"
       ]
+    },
+    {
+      "surface": "Codex agent-run worker subprocess documented exception",
+      "status": "brokered_with_agent_run_codex_side_effect_broker",
+      "evidence": [
+        "Codex agent-run now writes .ai-web/runs/agent-run-*/side-effect-broker.jsonl with tool.requested -> policy.decision -> tool.started -> tool.finished/tool.failed events",
+        "agent-run metadata carries side_effect_broker, side_effect_broker_path, and side_effect_broker_events",
+        "side-effect surface audit classifies the Open3.capture3 path as brokered_agent_run_codex_subprocess instead of legacy_agent_run_worker_subprocess"
+      ]
     }
   ],
   "preserved_safety_substrate": [
@@ -227,8 +236,12 @@
     "ruby -Itest test/test_agent_os_v32_redteam.rb": "passed: 4 runs, 38 assertions, 0 failures, 0 errors",
     "ruby redteam/secret_canary.rb": "passed: canary_configured, canary_value_emitted=false, production_gate_status=blocked",
     "ruby -Itest test/test_agent_os_v32_contracts.rb": "passed: 3 runs, 66 assertions, 0 failures, 0 errors",
-    "ruby -c lib/aiweb/ops/p5_gate.rb lib/aiweb/ops/release_manifest.rb": "passed: Syntax OK"
+    "ruby -c lib/aiweb/ops/p5_gate.rb lib/aiweb/ops/release_manifest.rb": "passed: Syntax OK",
+    "ruby -c lib/aiweb/project/agent_run.rb lib/aiweb/project/agent_run/codex_runner.rb lib/aiweb/project/side_effect_broker/classification.rb": "passed: Syntax OK",
+    "ruby -Itest test/test_aiweb_cli.rb -n '/agent_run_approved_fake_codex_success_records_logs_diff_and_safe_state|agent_run_codex_uses_clean_environment|agent_run_approved_fake_codex_failure_records_failure_and_logs/'": "passed: 3 runs, 87 assertions, 0 failures, 0 errors",
+    "ruby -Itest test/test_contracts.rb -n '/side_effect_surface_audit/'": "passed: 5 runs, 73 assertions, 0 failures, 0 errors",
+    "ruby -Ilib -e side_effect_surface_audit agent-run classification": "passed: coverage=classified, unclassified=0, entry_count=40, classification=brokered_agent_run_codex_subprocess"
   },
   "completion_status": "not_complete",
-  "why_not_complete": "Top-level fixed script-runner surfaces, stale deploy provider execution, browser deterministic-probe naming claims, CLI/contract Manus wording marketing overclaims, fixture-eval production-readiness overclaims, red-team catalog-fixture overclaims, secret-canary value emission, self-improvement dry-run overclaims, release validation evidence overclaims, P5 policy/tool gateway overclaims, P5 HITL fixture overclaims, P5 replay readiness overclaims, Brain safety wording overclaims, and Brain JSON snapshot overclaims are neutralized, but Manus-grade natural-language web-app agent readiness still requires independent production red-team/release evidence plus a real SQLite/dependency-backed Brain kernel."
+  "why_not_complete": "Top-level fixed script-runner surfaces, stale deploy provider execution, browser deterministic-probe naming claims, CLI/contract Manus wording marketing overclaims, fixture-eval production-readiness overclaims, red-team catalog-fixture overclaims, secret-canary value emission, self-improvement dry-run overclaims, release validation evidence overclaims, P5 policy/tool gateway overclaims, P5 HITL fixture overclaims, P5 replay readiness overclaims, Brain safety wording overclaims, Brain JSON snapshot overclaims, and the legacy Codex agent-run subprocess exception are neutralized, but Manus-grade natural-language web-app agent readiness still requires independent production red-team/release evidence plus a real SQLite/dependency-backed Brain kernel."
 }
