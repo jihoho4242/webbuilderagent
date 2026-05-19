@@ -1,8 +1,8 @@
 schema_version: 1
 release_id: v0.3.2-rc1
-p5_evidence_hash: sha256:a2866aaf2f27c7bc0aaf49850f8d38daadb6a68e728138626ec1e06af51c5158
+p5_evidence_hash: sha256:815c8b9a3048b10de9a911a3cb769e0a5609f256111bcb6b3a24e5ee554b67f0
 files:
 - path: releases/v0.3.2-rc1/p5_gate_report.md
-  sha256: sha256:a2866aaf2f27c7bc0aaf49850f8d38daadb6a68e728138626ec1e06af51c5158
+  sha256: sha256:815c8b9a3048b10de9a911a3cb769e0a5609f256111bcb6b3a24e5ee554b67f0
 - path: releases/v0.3.2-rc1/release_manifest.yaml
-  sha256: sha256:2adaa977b5a0a5d43bd9ebfa1516b9b92a21b0b491ceda7b1669714dfdf63815
+  sha256: sha256:1516b6cc2dc431721d91c66847a5f74cf43185562a0b62b022663dca78206706

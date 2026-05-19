@@ -47,7 +47,7 @@ module Aiweb
         operational_blockers = [
           "production readiness not claimed: GitHub Actions run id is not attached",
           "operator drill evidence is placeholder only"
-        ] + eval_result.fetch("blocking_issues", []) + redteam.fetch("operational_blocking_issues", []) + brain_audit.fetch("operational_blocking_issues", []) + experiment.fetch("operational_blocking_issues", [])
+        ] + validation_blocking_issues(validation) + eval_result.fetch("blocking_issues", []) + redteam.fetch("operational_blocking_issues", []) + brain_audit.fetch("operational_blocking_issues", []) + experiment.fetch("operational_blocking_issues", [])
         {
           "schema_version" => 1,
           "release_id" => "v0.3.2-rc1",
@@ -70,6 +70,16 @@ module Aiweb
           "operational_blocking_issues" => operational_blockers,
           "blocking_issues" => scaffold_blockers + operational_blockers
         }
+      end
+
+      private
+
+      def validation_blocking_issues(validation)
+        text = validation.to_s
+        blockers = []
+        blockers << "full ruby bin/check evidence is not attached to this release evidence" unless text.match?(/ruby bin\/check.*passed|bin_check.*passed/i)
+        blockers << "full ruby -Itest test/all.rb evidence is not attached to this release evidence" unless text.match?(/test\/all\.rb.*passed|test_all.*passed/i)
+        blockers
       end
     end
   end

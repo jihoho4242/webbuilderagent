@@ -27,10 +27,7 @@ module Aiweb
           "commit_sha" => current_commit_sha,
           "github_actions_run_id" => nil,
           "evidence_files" => evidence_files,
-          "schema_validation_report" => {
-            "status" => "local_bin_check_passed",
-            "command" => "ruby bin/check"
-          },
+          "schema_validation_report" => validation_report(p5_evidence),
           "eval_report" => {
             "status" => p5_evidence.dig("eval", "status"),
             "production_gate_status" => p5_evidence.dig("eval", "production_gate_status"),
@@ -95,6 +92,22 @@ module Aiweb
         nil
       rescue StandardError
         nil
+      end
+
+      def validation_report(p5_evidence)
+        validation = p5_evidence.fetch("validation", {})
+        validation_text = validation.to_s
+        bin_check_passed = validation_text.match?(/ruby bin\/check.*passed|bin_check.*passed/i)
+        test_all_passed = validation_text.match?(/test\/all\.rb.*passed|test_all.*passed/i)
+        status = bin_check_passed && test_all_passed ? "full_local_validation_attached" : "targeted_validation_only"
+        {
+          "status" => status,
+          "validation_keys" => validation.is_a?(Hash) ? validation.keys.map(&:to_s).sort : [],
+          "ruby_bin_check_passed" => bin_check_passed,
+          "test_all_passed" => test_all_passed,
+          "github_actions_run_id" => nil,
+          "blocking_issue" => status == "full_local_validation_attached" ? nil : "full ruby bin/check, test/all, and CI evidence are not attached to this release manifest"
+        }
       end
     end
   end

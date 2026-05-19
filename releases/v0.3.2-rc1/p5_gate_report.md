@@ -16,6 +16,7 @@ Evidence integrity: `releases/v0.3.2-rc1/evidence_integrity_manifest.yaml`
 - Tool gateway: passed
 - HITL v2: passed
 - Replay: passed
+- Validation: targeted_validation_only (full ruby bin/check, test/all, and CI evidence not attached)
 - Red-team: catalog_fixture_passed (6 local catalog cases; production gate remains blocked)
 - Red-team secret canary: canary_configured, value emitted=false, production gate blocked
 - Red-team critical/high bypass count: 0
@@ -31,6 +32,8 @@ Evidence integrity: `releases/v0.3.2-rc1/evidence_integrity_manifest.yaml`
 
 - production readiness not claimed: GitHub Actions run id is not attached
 - operator drill evidence is placeholder only
+- full ruby bin/check evidence is not attached to this release evidence
+- full ruby -Itest test/all.rb evidence is not attached to this release evidence
 - production-ready eval science requires independent holdout, leakage check, CI artifact, and human baseline
 - production-ready red-team requires independent adversarial review, CI artifact, secret canary transcript, and expanded attack coverage
 - SQLite backend unavailable; JSONL ledger is a local MVP persistence layer

@@ -12,10 +12,15 @@ commit_sha_policy: attach immutable commit sha from CI release job; local static
 github_actions_run_id:
 evidence_files:
 - path: releases/v0.3.2-rc1/p5_gate_report.md
-  sha256: sha256:a2866aaf2f27c7bc0aaf49850f8d38daadb6a68e728138626ec1e06af51c5158
+  sha256: sha256:815c8b9a3048b10de9a911a3cb769e0a5609f256111bcb6b3a24e5ee554b67f0
 schema_validation_report:
-  status: local_bin_check_passed
-  command: ruby bin/check
+  status: targeted_validation_only
+  validation_keys:
+  - unit
+  ruby_bin_check_passed: false
+  test_all_passed: false
+  github_actions_run_id:
+  blocking_issue: full ruby bin/check, test/all, and CI evidence are not attached to this release manifest
 eval_report:
   status: expanded_fixture_passed
   production_gate_status: blocked
@@ -56,8 +61,10 @@ operator_drill:
 operational_blocking_issues:
 - 'production readiness not claimed: GitHub Actions run id is not attached'
 - operator drill evidence is placeholder only
+- full ruby bin/check evidence is not attached to this release evidence
+- full ruby -Itest test/all.rb evidence is not attached to this release evidence
 - production-ready eval science requires independent holdout, leakage check, CI artifact, and human baseline
 - production-ready red-team requires independent adversarial review, CI artifact, secret canary transcript, and expanded attack coverage
 - SQLite backend unavailable; JSONL ledger is a local MVP persistence layer
 - production-ready self-improvement requires sandbox patch diff, static checks, eval/red-team pass, HITL v2 approval, canary, rollback plan, and monitor evidence
-p5_evidence_hash: sha256:a2866aaf2f27c7bc0aaf49850f8d38daadb6a68e728138626ec1e06af51c5158
+p5_evidence_hash: sha256:815c8b9a3048b10de9a911a3cb769e0a5609f256111bcb6b3a24e5ee554b67f0
