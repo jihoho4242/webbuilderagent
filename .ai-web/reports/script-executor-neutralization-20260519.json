@@ -267,6 +267,17 @@
         "stale brokered_openmanus_sandbox_subprocess classifier was removed from side_effect_broker/classification.rb so future direct OpenManus worker regressions become unclassified instead of pre-approved",
         "side-effect surface audit no longer reports brokered_openmanus_sandbox_subprocess; entry_count dropped from 27 to 26 with unclassified_count=0"
       ]
+    },
+    {
+      "surface": "engine-run agent worker subprocess",
+      "status": "centralized_to_runtime_process_runner",
+      "evidence": [
+        "engine_run_capture_agent now uses Aiweb::Runtime::ProcessRunner with CommandSpec instead of direct Open3.popen3",
+        "engine-run worker prompts flow through CommandSpec stdin_data while retaining the staged tool-broker PATH and scrubbed environment",
+        "OpenManus/OpenHands/LangGraph/OpenAI Agents SDK worker execution keeps sandbox/tool-broker evidence, stdout/stderr redaction, timeout handling, and secret-output quarantine checks",
+        "stale engine_run.rb brokered_engine_run_capture_command classifier was removed so future direct engine-run worker regressions become unclassified instead of pre-approved",
+        "side-effect surface audit no longer reports an engine_run.rb direct Open3 entry; entry_count dropped from 26 to 25 with unclassified_count=0"
+      ]
     }
   ],
   "preserved_safety_substrate": [
@@ -333,8 +344,12 @@
     "ruby -c lib/aiweb/project/agent_run/openmanus.rb lib/aiweb/project/side_effect_broker/classification.rb test/test_contracts.rb": "passed: Syntax OK",
     "ruby -Itest test/test_aiweb_cli.rb -n '/agent_run_approved_fake_openmanus_uses_managed_container_sandbox_contract|agent_run_openmanus_blocks_package_install_through_tool_broker|agent_run_openmanus_blocks_unapproved_root_mutation|agent_run_openmanus_approved_requires_prepared_local_image/' after OpenManus worker ProcessRunner centralization": "passed: 2 runs, 88 assertions, 0 failures, 0 errors",
     "ruby -Itest test/test_contracts.rb -n '/side_effect_surface_audit/' after OpenManus worker ProcessRunner centralization": "passed: 5 runs, 77 assertions, 0 failures, 0 errors",
-    "ruby -Ilib -e side_effect_surface_audit OpenManus agent-run worker classification": "passed: coverage=classified, unclassified=0, entry_count=26, removed brokered_openmanus_sandbox_subprocess; no agent_run/openmanus.rb Open3 entries remain"
+    "ruby -Ilib -e side_effect_surface_audit OpenManus agent-run worker classification": "passed: coverage=classified, unclassified=0, entry_count=26, removed brokered_openmanus_sandbox_subprocess; no agent_run/openmanus.rb Open3 entries remain",
+    "ruby -c lib/aiweb/project/engine_run.rb lib/aiweb/project/side_effect_broker/classification.rb test/test_contracts.rb": "passed: Syntax OK",
+    "ruby -Itest test/test_aiweb_cli.rb -n '/engine_run_openmanus_uses_aiweb_managed_sandbox_and_copies_back_safe_changes|engine_run_waits_for_approval_when_staged_tool_broker_blocks_package_install|engine_run_verification_uses_clean_environment|engine_run_surfaces_verification_tool_broker_blocks_in_policy_and_events/'": "passed: 4 runs, 242 assertions, 0 failures, 0 errors",
+    "ruby -Itest test/test_contracts.rb -n '/side_effect_surface_audit/' after engine-run worker ProcessRunner centralization": "passed: 5 runs, 78 assertions, 0 failures, 0 errors",
+    "ruby -Ilib -e side_effect_surface_audit engine-run worker classification": "passed: coverage=classified, unclassified=0, entry_count=25, no engine_run.rb direct Open3 entries remain; brokered_engine_run_capture_command only remains in sandbox_process.rb engine_run_capture_command"
   },
   "completion_status": "not_complete",
-  "why_not_complete": "Top-level fixed script-runner surfaces, stale deploy provider execution, browser deterministic-probe naming claims, CLI/contract Manus wording marketing overclaims, fixture-eval production-readiness overclaims, red-team catalog-fixture overclaims, secret-canary value emission, self-improvement dry-run overclaims, release validation evidence overclaims, P5 policy/tool gateway overclaims, P5 HITL fixture overclaims, P5 replay readiness overclaims, Brain safety wording overclaims, Brain JSON snapshot overclaims, the Codex agent-run worker subprocess, runtime_commands direct git/taskkill process forms, agent-run diff-policy direct git subprocesses, OpenManus readiness direct image inspect subprocess, and agent-run OpenManus direct image inspect preflight, engine-run sandbox runtime attestation direct Docker/Podman probes, Codex agent-run worker direct subprocess execution, and OpenManus agent-run sandbox worker direct subprocess execution are neutralized, but Manus-grade natural-language web-app agent readiness still requires independent production red-team/release evidence plus a real SQLite/dependency-backed Brain kernel."
+  "why_not_complete": "Top-level fixed script-runner surfaces, stale deploy provider execution, browser deterministic-probe naming claims, CLI/contract Manus wording marketing overclaims, fixture-eval production-readiness overclaims, red-team catalog-fixture overclaims, secret-canary value emission, self-improvement dry-run overclaims, release validation evidence overclaims, P5 policy/tool gateway overclaims, P5 HITL fixture overclaims, P5 replay readiness overclaims, Brain safety wording overclaims, Brain JSON snapshot overclaims, the Codex agent-run worker subprocess, runtime_commands direct git/taskkill process forms, agent-run diff-policy direct git subprocesses, OpenManus readiness direct image inspect subprocess, and agent-run OpenManus direct image inspect preflight, engine-run sandbox runtime attestation direct Docker/Podman probes, Codex agent-run worker direct subprocess execution, and OpenManus agent-run sandbox worker direct subprocess execution, and engine-run agent worker direct subprocess execution are neutralized, but Manus-grade natural-language web-app agent readiness still requires independent production red-team/release evidence plus a real SQLite/dependency-backed Brain kernel."
 }

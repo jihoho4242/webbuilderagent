@@ -115,6 +115,7 @@ class AiwebContractTest < Minitest::Test
     refute entries.any? { |entry| entry.fetch("classification") == "sandbox_runtime_attestation_exception" }, "engine-run sandbox runtime attestations must use the central ProcessRunner boundary instead of direct Open3"
     refute entries.any? { |entry| entry.fetch("classification") == "brokered_agent_run_codex_subprocess" }, "Codex agent-run worker must use the central ProcessRunner boundary instead of direct Open3"
     refute entries.any? { |entry| entry.fetch("classification") == "brokered_openmanus_sandbox_subprocess" }, "OpenManus agent-run sandbox worker must use the central ProcessRunner boundary instead of direct Open3"
+    refute entries.any? { |entry| entry.fetch("path") == "lib/aiweb/project/engine_run.rb" && entry.fetch("classification") == "brokered_engine_run_capture_command" }, "engine-run agent worker must use the central ProcessRunner boundary instead of direct Open3"
 
     classifications = entries.map { |entry| entry.fetch("classification") }
     %w[

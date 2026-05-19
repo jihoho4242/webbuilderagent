@@ -136,6 +136,11 @@
       "surface": "OpenManus agent-run sandbox worker subprocess",
       "status": "centralized_to_runtime_process_runner",
       "finding": "OpenManus agent-run no longer owns direct Open3.popen3 subprocess execution; sandbox worker execution routes through ProcessRunner/CommandSpec with stdin_data support while preserving aiweb-managed Docker/Podman sandboxing, tool-broker evidence, workspace validation, diff validation, and bounded copy-back checks."
+    },
+    {
+      "surface": "engine-run agent worker subprocess",
+      "status": "centralized_to_runtime_process_runner",
+      "finding": "engine_run_capture_agent no longer owns direct Open3.popen3 subprocess execution; agent worker execution routes through ProcessRunner/CommandSpec with stdin_data support while preserving staged tool-broker PATH, scrubbed environment, stdout/stderr redaction, timeout handling, and secret-output quarantine checks."
     }
   ],
   "preserve_safety_substrate": [
