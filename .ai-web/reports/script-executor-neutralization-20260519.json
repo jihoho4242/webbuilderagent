@@ -322,6 +322,17 @@
         "stale brokered_lazyweb_http classifier was removed from side_effect_broker/classification.rb so future direct Lazyweb Net::HTTP regressions become unclassified instead of pre-approved",
         "side-effect surface audit no longer reports brokered_lazyweb_http or lazyweb_client.rb direct Net::HTTP entries; central_runtime_http_client is the only Net::HTTP transport classification and unclassified_count remains 0"
       ]
+    },
+    {
+      "surface": "long-running preview/workbench process launch",
+      "status": "launch_spec_enforced_central_process_launcher",
+      "evidence": [
+        "Aiweb::Runtime::ProcessLauncher now accepts only Aiweb::Runtime::LaunchSpec via spec: instead of loose argv/cwd/env keyword arguments",
+        "LaunchSpec validates non-empty argv/cwd, rejects shell metacharacters by default, carries risk_class/description, and preserves explicit stdin/stdout/stderr/unsetenv_others fields for long-running local processes",
+        "scaffold preview, workbench serve, and engine-run sandbox preview callers now construct LaunchSpec before spawning",
+        "ProcessLauncher still owns the single Process.spawn boundary with EnvPolicy.clean_env and explicit stdio, while callers cannot bypass the typed launch contract",
+        "contract tests now assert all ProcessLauncher callers pass spec: and side-effect surface audit remains classified with unclassified_count=0"
+      ]
     }
   ],
   "preserved_safety_substrate": [
@@ -409,7 +420,12 @@
     "ruby -c lib/aiweb/lazyweb_client.rb lib/aiweb/runtime.rb lib/aiweb/runtime/http_client.rb lib/aiweb/runtime/http_request_spec.rb lib/aiweb/runtime/http_result.rb lib/aiweb/project/side_effect_broker/classification.rb test/test_contracts.rb test/test_lazyweb_client.rb": "passed: Syntax OK",
     "ruby -Itest test/test_lazyweb_client.rb after Lazyweb HttpClient centralization": "passed: 7 runs, 47 assertions, 0 failures, 0 errors",
     "ruby -Itest test/test_contracts.rb -n '/side_effect_surface_audit/' after Lazyweb HttpClient centralization": "passed: 5 runs, 76 assertions, 0 failures, 0 errors",
-    "ruby -Ilib -e side_effect_surface_audit Lazyweb HttpClient classification": "passed: coverage=classified, unclassified=0, entry_count=21, brokered_lazyweb_http=0, central_runtime_http_client=1, no lazyweb_client.rb direct Net::HTTP entries"
+    "ruby -Ilib -e side_effect_surface_audit Lazyweb HttpClient classification": "passed: coverage=classified, unclassified=0, entry_count=21, brokered_lazyweb_http=0, central_runtime_http_client=1, no lazyweb_client.rb direct Net::HTTP entries",
+    "ruby -c lib/aiweb/runtime/launch_spec.rb lib/aiweb/runtime/process_launcher.rb lib/aiweb/runtime.rb lib/aiweb/project/runtime_commands.rb lib/aiweb/project/workbench.rb lib/aiweb/project/engine_run/preview_browser/preview_process.rb test/test_agentification_runtime.rb": "passed: Syntax OK",
+    "ruby -Itest test/test_agentification_runtime.rb -n '/process_runner|command_spec|process_launcher|launch_spec/'": "passed: 5 runs, 33 assertions, 0 failures, 0 errors",
+    "ruby -Itest test/test_aiweb_cli.rb -n '/preview_records_running_fake_dev_server_duplicate_and_stop|workbench_dry_run|engine_run_captures_screenshot_manifest|engine_run_design_verdict_passes/'": "passed: 4 runs, 775 assertions, 0 failures, 0 errors",
+    "ruby -Itest test/test_contracts.rb -n '/side_effect_surface_audit|process_launcher_callers_use_launch_spec/'": "passed: 6 runs, 78 assertions, 0 failures, 0 errors",
+    "ruby -Ilib -e side_effect_surface_audit LaunchSpec classification": "passed: coverage=classified, unclassified=0, entry_count=21; ProcessLauncher entries are central runtime launcher boundary entries and LaunchSpec has no direct side-effect entries"
   },
   "completion_status": "not_complete",
   "why_not_complete": "Top-level fixed script-runner surfaces, stale deploy provider execution, browser deterministic-probe naming claims, CLI/contract Manus wording marketing overclaims, fixture-eval production-readiness overclaims, red-team catalog-fixture overclaims, secret-canary value emission, self-improvement dry-run overclaims, release validation evidence overclaims, P5 policy/tool gateway overclaims, P5 HITL fixture overclaims, P5 replay readiness overclaims, Brain safety wording overclaims, Brain JSON snapshot overclaims, the Codex agent-run worker subprocess, runtime_commands direct git/taskkill process forms, agent-run diff-policy direct git subprocesses, OpenManus readiness direct image inspect subprocess, and agent-run OpenManus direct image inspect preflight, engine-run sandbox runtime attestation direct Docker/Podman probes, Codex agent-run worker direct subprocess execution, and OpenManus agent-run sandbox worker direct subprocess execution, and engine-run agent worker direct subprocess execution, and engine-run capture helper direct subprocess execution, and setup install/supply-chain direct subprocess execution are neutralized, but Manus-grade natural-language web-app agent readiness still requires independent production red-team/release evidence plus a real SQLite/dependency-backed Brain kernel.",

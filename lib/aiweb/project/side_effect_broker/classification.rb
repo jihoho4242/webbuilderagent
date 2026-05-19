@@ -28,10 +28,10 @@ module Aiweb
         return side_effect_classification("central_runtime_http_client", "brokered", "aiweb.runtime.http_client", "central HttpRequestSpec/HttpClient executes external HTTP with explicit method, timeout, body cap, and structured result")
       end
       if path.end_with?("lib/aiweb/runtime/process_launcher.rb") && line.include?("def spawn")
-        return side_effect_classification("central_runtime_process_launcher_api", "brokered", "aiweb.runtime.process_launcher", "central ProcessLauncher API is the named boundary for long-running local argv subprocesses")
+        return side_effect_classification("central_runtime_process_launcher_api", "brokered", "aiweb.runtime.process_launcher", "central ProcessLauncher API requires LaunchSpec for long-running local argv subprocesses")
       end
       if path.end_with?("lib/aiweb/runtime/process_launcher.rb") && line.include?("Process.spawn")
-        return side_effect_classification("central_runtime_process_launcher", "brokered", "aiweb.runtime.process_launcher", "central ProcessLauncher starts long-running local argv commands with scrubbed environment and explicit stdio")
+        return side_effect_classification("central_runtime_process_launcher", "brokered", "aiweb.runtime.process_launcher", "central ProcessLauncher starts LaunchSpec-validated long-running local argv commands with scrubbed environment and explicit stdio")
       end
       if path.end_with?("lib/aiweb/project/engine_run/generated_sources.rb") && line.match?(/exec "\$dir\/\$TOOL_NAME"/)
         return side_effect_classification("brokered_generated_tool_broker_delegate", "brokered", "aiweb.engine_run.tool_broker", "generated POSIX tool-broker shim delegates only after package/git/external-network block checks")

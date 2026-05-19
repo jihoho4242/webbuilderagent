@@ -43,7 +43,17 @@ module Aiweb
       File.write(stdout_path, "")
       File.write(stderr_path, "")
       started_at = now
-      pid = Aiweb::Runtime::ProcessLauncher.spawn(argv: command, cwd: cwd, env: env, stdout: stdout_path, stderr: stderr_path)
+      pid = Aiweb::Runtime::ProcessLauncher.spawn(
+        spec: Aiweb::Runtime::LaunchSpec.new(
+          argv: command,
+          cwd: cwd,
+          env: env,
+          stdout: stdout_path,
+          stderr: stderr_path,
+          risk_class: "engine_run_preview_server",
+          description: "engine-run sandbox preview server"
+        )
+      )
       url = nil
       exit_code = nil
       timed_out = false

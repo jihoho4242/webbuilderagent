@@ -211,11 +211,15 @@ module Aiweb
           stderr_file = File.open(stderr_path, "ab")
           begin
             pid = Aiweb::Runtime::ProcessLauncher.spawn(
-              argv: preview_command_argv(command),
-              cwd: root,
-              env: subprocess_path_env,
-              stdout: stdout_file,
-              stderr: stderr_file
+              spec: Aiweb::Runtime::LaunchSpec.new(
+                argv: preview_command_argv(command),
+                cwd: root,
+                env: subprocess_path_env,
+                stdout: stdout_file,
+                stderr: stderr_file,
+                risk_class: "scaffold_preview_server",
+                description: "scaffold preview server"
+              )
             )
             Process.detach(pid)
             status = "running"

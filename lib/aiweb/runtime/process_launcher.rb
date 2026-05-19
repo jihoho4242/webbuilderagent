@@ -5,15 +5,15 @@ module Aiweb
     module ProcessLauncher
       module_function
 
-      def spawn(argv:, cwd:, env: {}, stdin: File::NULL, stdout: File::NULL, stderr: File::NULL, unsetenv_others: true)
+      def spawn(spec:)
         Process.spawn(
-          EnvPolicy.clean_env(env),
-          *argv,
-          chdir: cwd,
-          in: stdin,
-          out: stdout,
-          err: stderr,
-          unsetenv_others: unsetenv_others
+          EnvPolicy.clean_env(spec.env),
+          *spec.argv,
+          chdir: spec.cwd,
+          in: spec.stdin,
+          out: spec.stdout,
+          err: spec.stderr,
+          unsetenv_others: spec.unsetenv_others
         )
       end
     end

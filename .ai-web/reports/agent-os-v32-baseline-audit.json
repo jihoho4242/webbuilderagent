@@ -161,6 +161,11 @@
       "surface": "Lazyweb external HTTP transport",
       "status": "centralized_to_runtime_http_client",
       "finding": "LazywebClient no longer owns direct Net::HTTP transport execution; external Lazyweb MCP requests route through HttpRequestSpec/HttpClient while preserving Lazyweb side-effect broker events, endpoint policy decision evidence, token/query redaction, timeout handling, HTTP status failure handling, invalid JSON failure evidence, and transport failure evidence."
+    },
+    {
+      "surface": "long-running preview/workbench process launch",
+      "status": "launch_spec_enforced_central_process_launcher",
+      "finding": "ProcessLauncher now accepts only LaunchSpec through spec:, and scaffold preview, workbench serve, and engine-run sandbox preview callers construct LaunchSpec before spawning. The single Process.spawn boundary remains centralized with EnvPolicy.clean_env and explicit stdio while callers cannot pass loose argv/cwd/env keyword arguments."
     }
   ],
   "preserve_safety_substrate": [

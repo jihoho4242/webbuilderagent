@@ -175,6 +175,37 @@ class AgentificationRuntimeTest < Minitest::Test
     end
   end
 
+  def test_process_launcher_requires_launch_spec_and_clean_env
+    in_tmp do |dir|
+      script = File.join(dir, "launch_env_probe.rb")
+      stdout_path = File.join(dir, "launch-stdout.log")
+      stderr_path = File.join(dir, "launch-stderr.log")
+      File.write(script, "puts ENV.key?('SECRET_TOKEN')\nputs ENV['SAFE_EXTRA']\n")
+
+      error = assert_raises(ArgumentError) do
+        Aiweb::Runtime::LaunchSpec.new(argv: [RbConfig.ruby, "-e", "puts 'x'; puts 'y'"], cwd: dir)
+      end
+      assert_match(/unsafe shell metacharacter/, error.message)
+
+      pid = Aiweb::Runtime::ProcessLauncher.spawn(
+        spec: Aiweb::Runtime::LaunchSpec.new(
+          argv: [RbConfig.ruby, script],
+          cwd: dir,
+          env: { "SECRET_TOKEN" => "must-not-pass", "SAFE_EXTRA" => "visible" },
+          stdout: stdout_path,
+          stderr: stderr_path,
+          risk_class: "test_launch"
+        )
+      )
+      Process.wait(pid)
+
+      assert_equal 0, $?.exitstatus
+      assert_match(/false/, File.read(stdout_path))
+      assert_match(/visible/, File.read(stdout_path))
+      assert_equal "", File.read(stderr_path)
+    end
+  end
+
   def test_source_patch_guard_enforces_manifest_bounds
     manifest = {
       "allowed_source_paths" => %w[src public package.json],

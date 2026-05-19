@@ -202,10 +202,14 @@ module Aiweb
         pid = nil
         begin
           pid = Aiweb::Runtime::ProcessLauncher.spawn(
-            argv: workbench_serve_command(bind_host, bind_port),
-            cwd: root,
-            stdout: stdout_file,
-            stderr: stderr_file
+            spec: Aiweb::Runtime::LaunchSpec.new(
+              argv: workbench_serve_command(bind_host, bind_port),
+              cwd: root,
+              stdout: stdout_file,
+              stderr: stderr_file,
+              risk_class: "workbench_local_server",
+              description: "workbench local server"
+            )
           )
           Process.detach(pid)
         ensure

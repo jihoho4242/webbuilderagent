@@ -132,6 +132,20 @@ class AiwebContractTest < Minitest::Test
     refute_includes classifications, "legacy_agent_run_worker_subprocess"
   end
 
+  def test_process_launcher_callers_use_launch_spec
+    files = Dir.glob(File.join(REPO_ROOT, "lib", "**", "*.rb")).select { |path| File.file?(path) }
+    loose_callers = files.filter_map do |path|
+      next if path.end_with?(File.join("lib", "aiweb", "runtime", "process_launcher.rb"))
+
+      text = File.read(path)
+      next unless text.match?(/ProcessLauncher\.spawn\((?!\s*spec:)/m)
+
+      path.sub(%r{\A#{Regexp.escape(REPO_ROOT)}[\\/]?}, "").tr("\\", "/")
+    end
+
+    assert_empty loose_callers, "ProcessLauncher callers must pass Aiweb::Runtime::LaunchSpec through spec:"
+  end
+
   def test_side_effect_surface_audit_flags_unclassified_common_ruby_process_forms
     Dir.mktmpdir do |dir|
       FileUtils.mkdir_p(File.join(dir, "lib"))
