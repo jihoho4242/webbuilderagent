@@ -127,18 +127,18 @@ module Aiweb
         )
       end
 
-      blockers = []
-      blockers << "--approved is required for real engine-run execution" unless approved
-      if !approval_hash.to_s.strip.empty? && approval_hash.to_s.strip != expected_hash
-        blockers << "approval hash does not match the current capability envelope"
-      end
-      blockers.concat(opendesign_contract.fetch("blocking_issues", []))
-      blockers.concat(engine_run_mode_blockers(normalized_mode, normalized_agent, sandbox, paths.fetch(:workspace_dir)))
-      if resume && !resume_context
-        blockers << "engine-run resume target has no readable checkpoint: #{resume}"
-      elsif resume_context
-        blockers.concat(engine_run_resume_blockers(resume_context))
-      end
+      blockers = engine_run_initial_execution_blockers(
+        approved: approved,
+        approval_hash: approval_hash,
+        expected_hash: expected_hash,
+        opendesign_contract: opendesign_contract,
+        normalized_mode: normalized_mode,
+        normalized_agent: normalized_agent,
+        sandbox: sandbox,
+        workspace_dir: paths.fetch(:workspace_dir),
+        resume: resume,
+        resume_context: resume_context
+      )
 
       unless blockers.empty?
         return engine_run_initial_blocked_payload(
@@ -1544,6 +1544,22 @@ module Aiweb
           "blocking_issues" => result["blocking_issues"] || []
         }
       end
+    end
+
+    def engine_run_initial_execution_blockers(approved:, approval_hash:, expected_hash:, opendesign_contract:, normalized_mode:, normalized_agent:, sandbox:, workspace_dir:, resume:, resume_context:)
+      blockers = []
+      blockers << "--approved is required for real engine-run execution" unless approved
+      if !approval_hash.to_s.strip.empty? && approval_hash.to_s.strip != expected_hash
+        blockers << "approval hash does not match the current capability envelope"
+      end
+      blockers.concat(opendesign_contract.fetch("blocking_issues", []))
+      blockers.concat(engine_run_mode_blockers(normalized_mode, normalized_agent, sandbox, workspace_dir))
+      if resume && !resume_context
+        blockers << "engine-run resume target has no readable checkpoint: #{resume}"
+      elsif resume_context
+        blockers.concat(engine_run_resume_blockers(resume_context))
+      end
+      blockers
     end
 
     def engine_run_stage_workspace(workspace_dir, events_path:, events:)

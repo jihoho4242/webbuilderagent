@@ -54,7 +54,66 @@ module Aiweb
       end
     end
 
-    def engine_run_metadata(run_id:, status:, mode:, agent:, sandbox:, approved:, dry_run:, goal:, capability:, approval_hash:, paths:, events:, checkpoint:, blocking_issues:, started_at: nil, finished_at: nil, exit_code: nil, staged_manifest_path: nil, diff_path: nil, stdout_log: nil, stderr_log: nil, verification_path: nil, preview_path: nil, screenshot_evidence_path: nil, design_verdict_path: nil, design_fidelity_path: nil, design_fixture_path: nil, eval_benchmark_path: nil, supply_chain_gate_path: nil, opendesign_contract_path: nil, project_index_path: nil, run_memory_path: nil, authz_enforcement_path: nil, worker_adapter_registry_path: nil, graph_execution_plan_path: nil, graph_scheduler_state_path: nil, sandbox_preflight_path: nil, quarantine_path: nil, agent_result_path: nil, run_graph: nil, graph_execution_plan: nil, graph_scheduler_state: nil, tool_broker: nil, sandbox_preflight: nil, copy_back_policy: nil, verification: nil, preview: nil, screenshot_evidence: nil, design_verdict: nil, design_fidelity: nil, design_fixture: nil, eval_benchmark: nil, supply_chain_gate: nil, quarantine: nil, opendesign_contract: nil, project_index: nil, run_memory: nil, authz_enforcement: nil, worker_adapter_registry: nil)
+    def engine_run_metadata(**attrs)
+      run_id = attrs.fetch(:run_id)
+      status = attrs.fetch(:status)
+      mode = attrs.fetch(:mode)
+      agent = attrs.fetch(:agent)
+      sandbox = attrs.fetch(:sandbox)
+      approved = attrs.fetch(:approved)
+      dry_run = attrs.fetch(:dry_run)
+      goal = attrs.fetch(:goal)
+      capability = attrs.fetch(:capability)
+      approval_hash = attrs.fetch(:approval_hash)
+      paths = attrs.fetch(:paths)
+      events = attrs.fetch(:events)
+      checkpoint = attrs.fetch(:checkpoint)
+      blocking_issues = attrs.fetch(:blocking_issues)
+      started_at = attrs[:started_at]
+      finished_at = attrs[:finished_at]
+      exit_code = attrs[:exit_code]
+      staged_manifest_path = attrs[:staged_manifest_path]
+      diff_path = attrs[:diff_path]
+      stdout_log = attrs[:stdout_log]
+      stderr_log = attrs[:stderr_log]
+      verification_path = attrs[:verification_path]
+      preview_path = attrs[:preview_path]
+      screenshot_evidence_path = attrs[:screenshot_evidence_path]
+      design_verdict_path = attrs[:design_verdict_path]
+      design_fidelity_path = attrs[:design_fidelity_path]
+      design_fixture_path = attrs[:design_fixture_path]
+      eval_benchmark_path = attrs[:eval_benchmark_path]
+      supply_chain_gate_path = attrs[:supply_chain_gate_path]
+      opendesign_contract_path = attrs[:opendesign_contract_path]
+      project_index_path = attrs[:project_index_path]
+      run_memory_path = attrs[:run_memory_path]
+      authz_enforcement_path = attrs[:authz_enforcement_path]
+      worker_adapter_registry_path = attrs[:worker_adapter_registry_path]
+      graph_execution_plan_path = attrs[:graph_execution_plan_path]
+      graph_scheduler_state_path = attrs[:graph_scheduler_state_path]
+      sandbox_preflight_path = attrs[:sandbox_preflight_path]
+      quarantine_path = attrs[:quarantine_path]
+      agent_result_path = attrs[:agent_result_path]
+      run_graph = attrs[:run_graph]
+      graph_execution_plan = attrs[:graph_execution_plan]
+      graph_scheduler_state = attrs[:graph_scheduler_state]
+      tool_broker = attrs[:tool_broker]
+      sandbox_preflight = attrs[:sandbox_preflight]
+      copy_back_policy = attrs[:copy_back_policy]
+      verification = attrs[:verification]
+      preview = attrs[:preview]
+      screenshot_evidence = attrs[:screenshot_evidence]
+      design_verdict = attrs[:design_verdict]
+      design_fidelity = attrs[:design_fidelity]
+      design_fixture = attrs[:design_fixture]
+      eval_benchmark = attrs[:eval_benchmark]
+      supply_chain_gate = attrs[:supply_chain_gate]
+      quarantine = attrs[:quarantine]
+      opendesign_contract = attrs[:opendesign_contract]
+      project_index = attrs[:project_index]
+      run_memory = attrs[:run_memory]
+      authz_enforcement = attrs[:authz_enforcement]
+      worker_adapter_registry = attrs[:worker_adapter_registry]
       {
         "schema_version" => 1,
         "run_id" => run_id,

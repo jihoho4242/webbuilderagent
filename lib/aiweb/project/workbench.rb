@@ -2,6 +2,46 @@
 
 module Aiweb
   module ProjectWorkbench
+    WORKBENCH_PANELS = %w[
+      chat
+      plan_artifacts
+      design_candidates
+      selected_design
+      preview
+      file_tree
+      qa_results
+      visual_critique
+      agent_runtime
+      run_timeline
+      verify_loop_status
+    ].freeze
+
+    WORKBENCH_CONTROLS = [
+      ["agent", "Run supervised agent", "aiweb agent \"Improve this local site\" --mode supervised"],
+      ["run", "Run director", "aiweb run"],
+      ["design", "Generate design candidates", "aiweb design"],
+      ["build", "Plan or run scaffold build", "aiweb build"],
+      ["preview", "Start local preview", "aiweb preview"],
+      ["qa_playwright", "Run Playwright QA", "aiweb qa-playwright"],
+      ["visual_critique", "Record visual critique", "aiweb visual-critique"],
+      ["repair", "Create repair packet", "aiweb repair"],
+      ["visual_polish", "Plan visual polish loop", "aiweb visual-polish"],
+      ["verify_loop", "Run verify loop", "aiweb verify-loop --max-cycles 3"]
+    ].freeze
+
+    WORKBENCH_FILE_TREE_EXCLUDES = %w[
+      .git
+      .ai-web/workbench
+      .ai-web/snapshots
+      .ai-web/runs
+      node_modules
+      dist
+      build
+      coverage
+      tmp
+      vendor/bundle
+    ].freeze
+
     def workbench(export: false, serve: false, approved: false, host: "127.0.0.1", port: nil, dry_run: false, force: false)
       return workbench_serve(approved: approved, host: host, port: port, dry_run: dry_run, force: force) if serve
 

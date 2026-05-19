@@ -19,40 +19,17 @@ module Aiweb
         current_hash = workspace_files.dig(path, "sha256")
         next if base_hash == current_hash
 
-        if current_hash.nil?
+        classification = engine_run_classify_copy_back_change(workspace_dir, path, current_hash)
+        case classification.fetch("disposition")
+        when "safe"
+          safe_changes << path
+        when "approval"
           approval_changes << path
-          approval_issues << "delete requires approval: #{path}"
-          next
-        end
-
-        full = File.join(workspace_dir, path)
-        if engine_run_secret_surface_path?(path) || File.symlink?(full) || path.split("/").include?("..")
+          approval_issues << classification.fetch("issue")
+        else
           blocked_changes << path
-          blocking_issues << "unsafe changed path blocked: #{path}"
-          next
+          blocking_issues << classification.fetch("issue")
         end
-        if engine_run_binary_file?(full)
-          blocked_changes << path
-          blocking_issues << "binary changed file blocked: #{path}"
-          next
-        end
-        if engine_run_file_contains_secret?(full)
-          blocked_changes << path
-          blocking_issues << "secret-like content blocked in changed file: #{path}"
-          next
-        end
-        unless engine_run_writable_path?(path)
-          blocked_changes << path
-          blocking_issues << "changed path outside engine-run writable envelope: #{path}"
-          next
-        end
-        if engine_run_high_risk_path?(path)
-          approval_changes << path
-          approval_issues << "high-risk changed path requires approval: #{path}"
-          next
-        end
-
-        safe_changes << path
       end
 
       requested_actions = (engine_run_requested_tool_actions(process_output) + engine_run_requested_tool_actions_from_broker_events(workspace_dir)).uniq { |action| action["type"] }
@@ -116,6 +93,19 @@ module Aiweb
       end
 
       requests
+    end
+
+    def engine_run_classify_copy_back_change(workspace_dir, path, current_hash)
+      return { "disposition" => "approval", "issue" => "delete requires approval: #{path}" } if current_hash.nil?
+
+      full = File.join(workspace_dir, path)
+      return { "disposition" => "blocked", "issue" => "unsafe changed path blocked: #{path}" } if engine_run_secret_surface_path?(path) || File.symlink?(full) || path.split("/").include?("..")
+      return { "disposition" => "blocked", "issue" => "binary changed file blocked: #{path}" } if engine_run_binary_file?(full)
+      return { "disposition" => "blocked", "issue" => "secret-like content blocked in changed file: #{path}" } if engine_run_file_contains_secret?(full)
+      return { "disposition" => "blocked", "issue" => "changed path outside engine-run writable envelope: #{path}" } unless engine_run_writable_path?(path)
+      return { "disposition" => "approval", "issue" => "high-risk changed path requires approval: #{path}" } if engine_run_high_risk_path?(path)
+
+      { "disposition" => "safe", "issue" => nil }
     end
 
     def engine_run_supply_chain_gate(policy:, workspace_dir:, manifest:, paths:)

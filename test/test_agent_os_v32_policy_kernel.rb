@@ -92,6 +92,25 @@ class AgentOsV32PolicyKernelTest < Minitest::Test
     assert_match(/unsafe or secret path/, decision.fetch("reason"))
   end
 
+  def test_policy_blocks_mismatched_external_network_scope_before_side_effect
+    scoped = packet("build", "process_argv" => %w[curl https://example.invalid], "network_policy" => "none")
+
+    decision = Aiweb::Policy::Kernel.new.decide(packet: scoped, approved: true)
+
+    assert_equal "block", decision.fetch("decision")
+    assert_equal "side_effect_scope_violation", decision.fetch("rule_id")
+    assert_match(/external network|process argv/, decision.fetch("reason"))
+  end
+
+  def test_policy_blocks_raw_environment_process_argv
+    scoped = packet("build", "process_argv" => %w[printenv])
+
+    decision = Aiweb::Policy::Kernel.new.decide(packet: scoped, approved: true)
+
+    assert_equal "block", decision.fetch("decision")
+    assert_match(/environment|secret/, decision.fetch("reason"))
+  end
+
   def test_policy_fails_closed_on_constitution_hash_mismatch
     bad = packet("finish")
     bad["constitution_hash"] = "sha256:bad"

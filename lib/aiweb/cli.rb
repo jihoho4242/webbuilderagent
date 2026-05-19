@@ -25,6 +25,7 @@ module Aiweb
 
     MUTATION_COMMANDS = %w[start init interview run run-cancel run-resume engine-run engine-scheduler mcp-broker agent agent-run verify-loop eval-baseline human-baseline ingest-reference ingest-design next-task qa-checklist qa-report repair advance rollback resolve-blocker snapshot design-brief design-research design-system design-prompt design select-design scaffold setup build preview qa-playwright browser-qa qa-screenshot screenshot-qa qa-a11y a11y-qa qa-lighthouse lighthouse-qa visual-critique visual-polish workbench component-map visual-edit supabase-secret-qa supabase-local-verify github-sync deploy-plan deploy daemon backend].freeze
     RUNTIME_PLAN_COMMANDS = %w[runtime-plan scaffold-status].freeze
+    RUNTIME_EXECUTION_COMMANDS = %w[build preview qa-playwright browser-qa qa-screenshot screenshot-qa qa-a11y a11y-qa qa-lighthouse lighthouse-qa].freeze
     REGISTRY_COMMANDS = %w[design-systems skills craft].freeze
     WEBBUILDER_COMMANDS = %w[
       help --help -h version --version

@@ -43,8 +43,8 @@ module Aiweb
 
       def delegated_to_engine_run_result(action, canonical_engine_run, dry_run:, mode:, approved:)
         tool = action.fetch("tool")
-        return Executor.new(@project).send(:planned_result, tool, action).merge("canonical_runtime" => "engine-run") if dry_run
-        return Executor.new(@project).send(:pending_approval_result, tool, action, mode).merge("canonical_runtime" => "engine-run") if action["requires_approval"] == true && !approved
+        return ToolResult.planned(tool, action).merge("canonical_runtime" => "engine-run") if dry_run
+        return ToolResult.pending_approval(tool, action, mode).merge("canonical_runtime" => "engine-run") if action["requires_approval"] == true && !approved
 
         {
           "tool" => tool,

@@ -133,32 +133,8 @@ module Aiweb
           raise UserError.new("supabase-local-verify does not accept extra positional arguments: #{@argv.join(", ")}", EXIT_VALIDATION_FAILED)
         end
         project.supabase_local_verify(dry_run: @dry_run, force: opts[:force])
-      when "build"
-        parse_options
-        unless @argv.empty?
-          raise UserError.new("build does not accept extra positional arguments: #{@argv.join(", ")}", EXIT_VALIDATION_FAILED)
-        end
-        project.build(dry_run: @dry_run)
-      when "preview"
-        opts = parse_options do |o, options|
-          o.on("--stop") { options[:stop] = true }
-        end
-        unless @argv.empty?
-          raise UserError.new("preview does not accept extra positional arguments: #{@argv.join(", ")}", EXIT_VALIDATION_FAILED)
-        end
-        project.preview(dry_run: @dry_run, stop: opts[:stop])
-      when "qa-playwright", "browser-qa"
-        opts = parse_browser_qa_options(command)
-        project.qa_playwright(url: opts[:url], task_id: opts[:task_id], force: opts[:force], dry_run: @dry_run)
-      when "qa-screenshot", "screenshot-qa"
-        opts = parse_browser_qa_options(command)
-        project.qa_screenshot(url: opts[:url], task_id: opts[:task_id], force: opts[:force], dry_run: @dry_run)
-      when "qa-a11y", "a11y-qa"
-        opts = parse_browser_qa_options(command)
-        project.qa_a11y(url: opts[:url], task_id: opts[:task_id], force: opts[:force], dry_run: @dry_run)
-      when "qa-lighthouse", "lighthouse-qa"
-        opts = parse_browser_qa_options(command)
-        project.qa_lighthouse(url: opts[:url], task_id: opts[:task_id], force: opts[:force], dry_run: @dry_run)
+      when *RUNTIME_EXECUTION_COMMANDS
+        dispatch_runtime_execution(command)
       when "visual-critique"
         opts = parse_options do |o, options|
           o.on("--screenshot PATH") { |v| options[:screenshot] = v }
@@ -521,6 +497,33 @@ module Aiweb
         raise UserError.new("#{command} does not accept extra positional arguments: #{@argv.join(", ")}", EXIT_VALIDATION_FAILED)
       end
       opts
+    end
+
+    def dispatch_runtime_execution(command)
+      case command
+      when "build"
+        parse_options
+        reject_extra_args!(command)
+        project.build(dry_run: @dry_run)
+      when "preview"
+        opts = parse_options do |o, options|
+          o.on("--stop") { options[:stop] = true }
+        end
+        reject_extra_args!(command)
+        project.preview(dry_run: @dry_run, stop: opts[:stop])
+      when "qa-playwright", "browser-qa"
+        opts = parse_browser_qa_options(command)
+        project.qa_playwright(url: opts[:url], task_id: opts[:task_id], force: opts[:force], dry_run: @dry_run)
+      when "qa-screenshot", "screenshot-qa"
+        opts = parse_browser_qa_options(command)
+        project.qa_screenshot(url: opts[:url], task_id: opts[:task_id], force: opts[:force], dry_run: @dry_run)
+      when "qa-a11y", "a11y-qa"
+        opts = parse_browser_qa_options(command)
+        project.qa_a11y(url: opts[:url], task_id: opts[:task_id], force: opts[:force], dry_run: @dry_run)
+      when "qa-lighthouse", "lighthouse-qa"
+        opts = parse_browser_qa_options(command)
+        project.qa_lighthouse(url: opts[:url], task_id: opts[:task_id], force: opts[:force], dry_run: @dry_run)
+      end
     end
 
     def dispatch_github_sync(opts)

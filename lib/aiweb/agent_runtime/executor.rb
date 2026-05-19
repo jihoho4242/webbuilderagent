@@ -12,8 +12,8 @@ module Aiweb
 
       def execute(action, dry_run: true, mode: "plan-only", approved: false)
         tool = action.fetch("tool")
-        return planned_result(tool, action) if dry_run
-        return pending_approval_result(tool, action, mode) if approval_required?(action, mode, approved)
+        return ToolResult.planned(tool, action) if dry_run
+        return ToolResult.pending_approval(tool, action, mode) if approval_required?(action, mode, approved)
 
         gateway_result = @gateway.execute(
           run_id: "agent-runtime-#{Time.now.utc.strftime("%Y%m%dT%H%M%SZ")}",
@@ -30,10 +30,6 @@ module Aiweb
       end
 
       private
-
-      def planned_result(tool, action)
-        { "tool" => tool, "status" => "planned", "dry_run" => true, "blocking_issues" => [], "action" => action }
-      end
 
       def approval_required?(action, mode, approved)
         return false if approved == true
@@ -71,18 +67,6 @@ module Aiweb
         base["status"] ||= gateway_result["status"]
         base["blocking_issues"] = (Array(base["blocking_issues"]) + Array(gateway_result["blocking_issues"])).uniq
         base
-      end
-
-      def pending_approval_result(tool, action, mode)
-        {
-          "tool" => tool,
-          "status" => "pending_approval",
-          "dry_run" => false,
-          "blocking_issues" => [],
-          "pending_approval" => true,
-          "reason" => "#{tool} is an approved local runtime action; mode #{mode.inspect} requires --approved before execution.",
-          "action" => action
-        }
       end
 
       def wrap_project_result(tool, payload, nested_key)

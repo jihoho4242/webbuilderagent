@@ -191,34 +191,11 @@ module Aiweb
           lifecycle_scripts,
           lifecycle_enabled_requested: allow_lifecycle_scripts
         )
-        sbom_artifact = setup_supply_chain_not_executed_artifact(
-          kind: "sbom",
-          status: "not_executed",
-          package_manager: package_manager,
-          command_argv: setup_supply_chain_sbom_argv(package_manager),
-          reason: "package install did not complete"
-        )
-        cyclonedx_sbom_artifact = setup_supply_chain_not_executed_artifact(
-          kind: "cyclonedx_sbom",
-          status: "not_executed",
-          package_manager: package_manager,
-          command_argv: setup_supply_chain_sbom_argv(package_manager),
-          reason: "package install did not complete"
-        )
-        spdx_sbom_artifact = setup_supply_chain_not_executed_artifact(
-          kind: "spdx_sbom",
-          status: "not_executed",
-          package_manager: package_manager,
-          command_argv: setup_supply_chain_sbom_argv(package_manager),
-          reason: "package install did not complete"
-        )
-        audit_artifact = setup_supply_chain_not_executed_artifact(
-          kind: "package_audit",
-          status: "not_executed",
-          package_manager: package_manager,
-          command_argv: setup_supply_chain_audit_argv(package_manager),
-          reason: "package install did not complete"
-        )
+        not_executed_artifacts = setup_not_executed_supply_chain_artifacts(package_manager)
+        sbom_artifact = not_executed_artifacts.fetch(:sbom)
+        cyclonedx_sbom_artifact = not_executed_artifacts.fetch(:cyclonedx_sbom)
+        spdx_sbom_artifact = not_executed_artifacts.fetch(:spdx_sbom)
+        audit_artifact = not_executed_artifacts.fetch(:package_audit)
         audit_exception = audit_exception_plan
         side_effect_context = setup_side_effect_broker_context(command_argv: command_argv, approved: true)
         append_side_effect_broker_event(
@@ -498,6 +475,17 @@ module Aiweb
       ].map { |key| relative(paths.fetch(key)) }
     end
 
+    def setup_not_executed_supply_chain_artifacts(package_manager)
+      reason = "package install did not complete"
+      sbom_argv = setup_supply_chain_sbom_argv(package_manager)
+      {
+        sbom: setup_supply_chain_not_executed_artifact(kind: "sbom", status: "not_executed", package_manager: package_manager, command_argv: sbom_argv, reason: reason),
+        cyclonedx_sbom: setup_supply_chain_not_executed_artifact(kind: "cyclonedx_sbom", status: "not_executed", package_manager: package_manager, command_argv: sbom_argv, reason: reason),
+        spdx_sbom: setup_supply_chain_not_executed_artifact(kind: "spdx_sbom", status: "not_executed", package_manager: package_manager, command_argv: sbom_argv, reason: reason),
+        package_audit: setup_supply_chain_not_executed_artifact(kind: "package_audit", status: "not_executed", package_manager: package_manager, command_argv: setup_supply_chain_audit_argv(package_manager), reason: reason)
+      }
+    end
+
     def setup_blocked_payload(state:, status:, command:, dry_run:, blocking_issues:, next_action:)
       setup_payload(
         state: state,
@@ -516,16 +504,7 @@ module Aiweb
     end
 
     def setup_payload(state:, metadata:, changed_files:, action_taken:, blocking_issues:, next_action:)
-      {
-        "schema_version" => 1,
-        "current_phase" => state&.dig("phase", "current"),
-        "action_taken" => action_taken,
-        "changed_files" => changed_files,
-        "blocking_issues" => blocking_issues,
-        "missing_artifacts" => [],
-        "setup" => metadata,
-        "next_action" => next_action
-      }
+      runtime_command_payload(key: "setup", state: state, metadata: metadata, changed_files: changed_files, action_taken: action_taken, blocking_issues: blocking_issues, next_action: next_action)
     end
 
     def setup_run_metadata(run_id:, status:, command:, package_manager:, started_at:, finished_at:, exit_code:, stdout_log:, stderr_log:, metadata_path:, lifecycle_script_warnings:, lifecycle_enabled_requested: false, node_modules_present:, blocking_issues:, dry_run:, approved:, requires_approval:, side_effect_broker_path: nil, side_effect_broker: nil, side_effect_broker_events: [], supply_chain_gate_path: nil, supply_chain_gate: nil, sbom_path: nil, cyclonedx_sbom_path: nil, spdx_sbom_path: nil, package_audit_path: nil, audit_exception: nil)

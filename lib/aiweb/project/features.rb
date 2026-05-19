@@ -1,0 +1,50 @@
+# frozen_string_literal: true
+
+require_relative "path_safety"
+require_relative "runtime_commands"
+require_relative "verify_loop"
+require_relative "sandbox_runtime"
+require_relative "side_effect_broker"
+require_relative "mcp_broker"
+require_relative "graph_scheduler"
+require_relative "engine_scheduler_service"
+require_relative "run_lifecycle"
+require_relative "scaffold"
+require_relative "design_fidelity"
+require_relative "deploy"
+require_relative "repair"
+require_relative "visual_polish"
+require_relative "agent_run"
+require_relative "agent_runtime_facade"
+require_relative "engine_run"
+require_relative "state"
+require_relative "workbench"
+require_relative "content_templates"
+require_relative "design_research_boundary"
+require_relative "qa_reporting"
+require_relative "component_map_boundary"
+require_relative "visual_edit_boundary"
+require_relative "visual_critique_boundary"
+
+module Aiweb
+  module ProjectFeatures
+    include ProjectPathSafety
+    include ProjectRuntimeCommands
+    include ProjectVerifyLoop
+    include ProjectSandboxRuntime
+    include ProjectSideEffectBroker
+    include ProjectMcpBroker
+    include ProjectDesignFidelity
+    include Project::Deploy
+    include ProjectRepair
+    include ProjectVisualPolish
+    include ProjectAgentRun
+    include ProjectAgentRuntimeFacade
+    include ProjectEngineRun
+    include ProjectEngineSchedulerService
+    include ProjectRunLifecycle
+    include ProjectStateBoundary
+    include ProjectWorkbench
+    include Project::Scaffold
+  end
+end

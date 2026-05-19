@@ -28,6 +28,9 @@ module Aiweb
         path_blocker = secret_path_blocker(paths)
         return event(packet, "block", path_blocker, rule_for(registry, "block_secret_paths"), "critical", "blocked") if path_blocker
 
+        scope_blocker = side_effect_scope_blocker(packet)
+        return event(packet, "block", scope_blocker, "side_effect_scope_violation", "critical", "blocked") if scope_blocker
+
         if Array(packet["blockers"]).any?
           return event(packet, "block", "decision packet has blockers: #{packet["blockers"].join("; ")}", "packet_blockers", "critical", "blocked")
         end
@@ -100,6 +103,20 @@ module Aiweb
 
           return "unsafe or secret path blocked by PolicyKernel: #{path}"
         end
+        nil
+      end
+
+      def side_effect_scope_blocker(packet)
+        network_policy = packet["network_policy"].to_s
+        return "unknown network policy blocked by PolicyKernel: #{network_policy}" unless %w[none localhost_only external_requires_approval].include?(network_policy)
+        if network_policy == "external_requires_approval" && !%w[L4 L5].include?(packet["risk_tier"].to_s)
+          return "external network policy requires L4/L5 risk tier"
+        end
+
+        argv_text = Array(packet["process_argv"]).join(" ")
+        return "process argv attempts raw environment or secret access" if argv_text.match?(/(?:\A|\s)(?:env|printenv)(?:\s|\z)|\.env/i)
+        return "process argv attempts external network without L4/L5 policy" if argv_text.match?(/\b(?:curl|wget)\s+https?:/i) && network_policy != "external_requires_approval"
+
         nil
       end
 

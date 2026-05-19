@@ -169,18 +169,9 @@ module Aiweb
     end
 
     def qa_screenshot_payload(state:, metadata:, screenshot_metadata:, changed_files:, planned_changes:, action_taken:, blocking_issues:, next_action:)
-      payload = {
-        "schema_version" => 1,
-        "current_phase" => state&.dig("phase", "current"),
-        "action_taken" => action_taken,
-        "changed_files" => changed_files,
-        "blocking_issues" => blocking_issues,
-        "missing_artifacts" => [],
-        "screenshot_qa" => metadata,
-        "qa_screenshot" => metadata,
-        "screenshot_metadata" => screenshot_metadata,
-        "next_action" => next_action
-      }
+      payload = runtime_command_payload(key: "screenshot_qa", state: state, metadata: metadata, changed_files: changed_files, action_taken: action_taken, blocking_issues: blocking_issues, next_action: next_action)
+      payload["qa_screenshot"] = metadata
+      payload["screenshot_metadata"] = screenshot_metadata
       payload["planned_changes"] = planned_changes unless planned_changes.empty?
       payload
     end
@@ -374,16 +365,7 @@ module Aiweb
     end
 
     def qa_static_payload(key:, state:, metadata:, changed_files:, action_taken:, blocking_issues:, next_action:)
-      {
-        "schema_version" => 1,
-        "current_phase" => state&.dig("phase", "current"),
-        "action_taken" => action_taken,
-        "changed_files" => changed_files,
-        "blocking_issues" => blocking_issues,
-        "missing_artifacts" => [],
-        key => metadata,
-        "next_action" => next_action
-      }
+      runtime_command_payload(key: key, state: state, metadata: metadata, changed_files: changed_files, action_taken: action_taken, blocking_issues: blocking_issues, next_action: next_action)
     end
 
     def qa_static_blocked_payload(key, label, state, blockers, dry_run:, command:, target:)

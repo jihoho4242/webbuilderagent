@@ -330,16 +330,7 @@ module Aiweb
     end
 
     def build_payload(state:, metadata:, changed_files:, action_taken:, blocking_issues:, next_action:)
-      {
-        "schema_version" => 1,
-        "current_phase" => state&.dig("phase", "current"),
-        "action_taken" => action_taken,
-        "changed_files" => changed_files,
-        "blocking_issues" => blocking_issues,
-        "missing_artifacts" => [],
-        "build" => metadata,
-        "next_action" => next_action
-      }
+      runtime_command_payload(key: "build", state: state, metadata: metadata, changed_files: changed_files, action_taken: action_taken, blocking_issues: blocking_issues, next_action: next_action)
     end
 
     def build_run_metadata(run_id:, status:, command:, started_at:, finished_at:, exit_code:, stdout_log:, stderr_log:, metadata_path:, blocking_issues:, dry_run:)
@@ -404,29 +395,11 @@ module Aiweb
     end
 
     def preview_payload(state:, metadata:, changed_files:, action_taken:, blocking_issues:, next_action:)
-      {
-        "schema_version" => 1,
-        "current_phase" => state&.dig("phase", "current"),
-        "action_taken" => action_taken,
-        "changed_files" => changed_files,
-        "blocking_issues" => blocking_issues,
-        "missing_artifacts" => [],
-        "preview" => metadata,
-        "next_action" => next_action
-      }
+      runtime_command_payload(key: "preview", state: state, metadata: metadata, changed_files: changed_files, action_taken: action_taken, blocking_issues: blocking_issues, next_action: next_action)
     end
 
     def qa_playwright_payload(state:, metadata:, changed_files:, action_taken:, blocking_issues:, next_action:)
-      {
-        "schema_version" => 1,
-        "current_phase" => state&.dig("phase", "current"),
-        "action_taken" => action_taken,
-        "changed_files" => changed_files,
-        "blocking_issues" => blocking_issues,
-        "missing_artifacts" => [],
-        "playwright_qa" => metadata,
-        "next_action" => next_action
-      }
+      runtime_command_payload(key: "playwright_qa", state: state, metadata: metadata, changed_files: changed_files, action_taken: action_taken, blocking_issues: blocking_issues, next_action: next_action)
     end
 
     def qa_playwright_blocked_payload(state, blockers, dry_run:, command:, target:)
@@ -448,6 +421,19 @@ module Aiweb
         payload["status"] = "error"
         payload["error"] = { "message" => blockers.join("; ") }
       end
+    end
+
+    def runtime_command_payload(key:, state:, metadata:, changed_files:, action_taken:, blocking_issues:, next_action:)
+      {
+        "schema_version" => 1,
+        "current_phase" => state&.dig("phase", "current"),
+        "action_taken" => action_taken,
+        "changed_files" => changed_files,
+        "blocking_issues" => blocking_issues,
+        "missing_artifacts" => [],
+        key => metadata,
+        "next_action" => next_action
+      }
     end
 
     def qa_playwright_run_metadata(run_id:, task_id:, status:, command:, started_at:, finished_at:, exit_code:, target:, spec_path:, stdout_log:, stderr_log:, result_path:, metadata_path:, blocking_issues:, dry_run:)

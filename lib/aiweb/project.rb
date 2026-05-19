@@ -39,52 +39,11 @@ require_relative "evals"
 require_relative "redteam"
 require_relative "ops"
 require_relative "agent_runtime"
-require_relative "project/path_safety"
-require_relative "project/runtime_commands"
-require_relative "project/verify_loop"
-require_relative "project/sandbox_runtime"
-require_relative "project/side_effect_broker"
-require_relative "project/mcp_broker"
-require_relative "project/graph_scheduler"
-require_relative "project/engine_scheduler_service"
-require_relative "project/run_lifecycle"
-require_relative "project/scaffold"
-require_relative "project/design_fidelity"
-require_relative "project/deploy"
-require_relative "project/repair"
-require_relative "project/visual_polish"
-require_relative "project/agent_run"
-require_relative "project/agent_runtime_facade"
-require_relative "project/engine_run"
-require_relative "project/state"
-require_relative "project/workbench"
-require_relative "project/content_templates"
-require_relative "project/design_research_boundary"
-require_relative "project/qa_reporting"
-require_relative "project/component_map_boundary"
-require_relative "project/visual_edit_boundary"
-require_relative "project/visual_critique_boundary"
+require_relative "project/features"
 
 module Aiweb
   class Project
-    include ProjectPathSafety
-    include ProjectRuntimeCommands
-    include ProjectVerifyLoop
-    include ProjectSandboxRuntime
-    include ProjectSideEffectBroker
-    include ProjectMcpBroker
-    include ProjectDesignFidelity
-    include Deploy
-    include ProjectRepair
-    include ProjectVisualPolish
-    include ProjectAgentRun
-    include ProjectAgentRuntimeFacade
-    include ProjectEngineRun
-    include ProjectEngineSchedulerService
-    include ProjectRunLifecycle
-    include ProjectStateBoundary
-    include ProjectWorkbench
-    include Project::Scaffold
+    include ProjectFeatures
     PHASES = %w[
       phase--1
       phase-0
@@ -142,46 +101,6 @@ module Aiweb
       preview.json
     ].freeze
 
-    WORKBENCH_PANELS = %w[
-      chat
-      plan_artifacts
-      design_candidates
-      selected_design
-      preview
-      file_tree
-      qa_results
-      visual_critique
-      agent_runtime
-      run_timeline
-      verify_loop_status
-    ].freeze
-
-    WORKBENCH_CONTROLS = [
-      ["agent", "Run supervised agent", "aiweb agent \"Improve this local site\" --mode supervised"],
-      ["run", "Run director", "aiweb run"],
-      ["design", "Generate design candidates", "aiweb design"],
-      ["build", "Plan or run scaffold build", "aiweb build"],
-      ["preview", "Start local preview", "aiweb preview"],
-      ["qa_playwright", "Run Playwright QA", "aiweb qa-playwright"],
-      ["visual_critique", "Record visual critique", "aiweb visual-critique"],
-      ["repair", "Create repair packet", "aiweb repair"],
-      ["visual_polish", "Plan visual polish loop", "aiweb visual-polish"],
-      ["verify_loop", "Run verify loop", "aiweb verify-loop --max-cycles 3"]
-    ].freeze
-
-    WORKBENCH_FILE_TREE_EXCLUDES = %w[
-      .git
-      .ai-web/workbench
-      .ai-web/snapshots
-      .ai-web/runs
-      node_modules
-      dist
-      build
-      coverage
-      tmp
-      vendor/bundle
-    ].freeze
-
     SCAFFOLD_PROFILE_D_REQUIRED_FILES = %w[
       package.json
       astro.config.mjs
@@ -231,51 +150,6 @@ module Aiweb
       /sb_secret_[A-Za-z0-9_-]+/,
       /eyJ[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]{20,}/
     ].freeze
-    SECRET_LOOKING_PATH_PATTERN = %r{
-      (?:
-        (?:\A|/)\.ssh(?:/|\z)|
-        (?:\A|/)(?:secret|secrets|private|credentials?)(?:[._-][^/\s`"'<>]+)?(?:/|\z)|
-        (?:\A|/)[^/\s`"'<>]*(?:private[_-]?key|id_rsa|id_dsa|id_ed25519|credential|secret)[^/\s`"'<>]*\.(?:txt|json|ya?ml|pem|key|env)\z|
-        (?:\A|/)[^/\s`"'<>]*\.(?:pem|key)\z
-      )
-    }ix.freeze
-    AGENT_RUN_SHELL_REQUEST_PATTERN = /
-      \b(?:
-        rm\s+-[A-Za-z]*r|
-        cat\s+\.env|
-        printenv|
-        curl|
-        wget|
-        ssh|
-        scp|
-        sudo|
-        chmod|
-        pnpm|
-        npm|
-        yarn|
-        bun|
-        vercel|
-        netlify
-      )\b
-    /ix.freeze
-    AGENT_RUN_SECRET_VALUE_PATTERN = /
-      (?:\b[A-Z0-9_]*(?:SECRET|TOKEN|PASSWORD|PRIVATE[_-]?KEY|API[_-]?KEY)[A-Z0-9_]*=[^\s]+)|
-      (?:-----BEGIN\ [A-Z ]*PRIVATE\ KEY-----)|
-      (?:\bAKIA[0-9A-Z]{16}\b)|
-      (?:\b(?:ghp|gho|ghu|ghs|github_pat)_[A-Za-z0-9_]{10,}\b)|
-      (?:\bxox[baprs]-[A-Za-z0-9-]{10,}\b)|
-      (?:\b(?:sk|rk)_(?:live|test|proj)_[A-Za-z0-9_-]{10,}\b)
-    /ix.freeze
-    AGENT_RUN_SNAPSHOT_PRUNE_DIRS = %w[
-      .git
-      node_modules
-      dist
-      build
-      coverage
-      tmp
-      vendor
-    ].freeze
-
     attr_reader :root, :templates_dir
 
     def initialize(root)
