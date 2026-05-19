@@ -24,6 +24,15 @@ module Aiweb
         packet = packet_builder.build(run_id: "p5-demo", goal: "approval demo", requested_tool: "external_deploy", inputs: { demo: true })
         approval = Aiweb::Approval::Artifact.build(run_id: "p5-demo", decision_packet_ids: [packet["packet_id"]], risk_tier: "L4", requested_capabilities: ["external_deploy"], action_diff: "dry-run", args: { demo: true }, evidence: { demo: true }, approver_id: "p5-fixture-approver", second_reviewer_id: "p5-fixture-reviewer")
         approval_check = Aiweb::Approval::Verifier.new.verify(artifact: approval, decision_packet: packet, action_diff: "dry-run", args: { demo: true }, evidence: { demo: true })
+        hitl_evidence = approval_check.merge(
+          "fixture_status" => approval_check["status"] == "passed" ? "approval_fixture_passed" : "approval_fixture_failed",
+          "production_gate_status" => "blocked",
+          "production_ready_claim_allowed" => false,
+          "approver_fixture_only" => true,
+          "operational_blocking_issues" => [
+            "production HITL evidence requires a real operator approval artifact, expiry/single-use consumption proof, and audit trail"
+          ]
+        )
         brain_evidence = Dir.mktmpdir("aiweb-p5-brain") do |brain_root|
           store = Aiweb::Brain::Store.new(root: brain_root)
           mem = store.remember(summary: "Use policy-gated memory proposals only", evidence_grade: "high")
@@ -57,7 +66,7 @@ module Aiweb
         operational_blockers = [
           "production readiness not claimed: GitHub Actions run id is not attached",
           "operator drill evidence is placeholder only"
-        ] + validation_blocking_issues(validation) + policy_coverage.fetch("operational_blocking_issues", []) + eval_result.fetch("blocking_issues", []) + redteam.fetch("operational_blocking_issues", []) + brain_audit.fetch("operational_blocking_issues", []) + experiment.fetch("operational_blocking_issues", [])
+        ] + validation_blocking_issues(validation) + policy_coverage.fetch("operational_blocking_issues", []) + hitl_evidence.fetch("operational_blocking_issues", []) + eval_result.fetch("blocking_issues", []) + redteam.fetch("operational_blocking_issues", []) + brain_audit.fetch("operational_blocking_issues", []) + experiment.fetch("operational_blocking_issues", [])
         {
           "schema_version" => 1,
           "release_id" => "v0.3.2-rc1",
@@ -68,7 +77,7 @@ module Aiweb
           "constitution_hash" => constitution["content_hash"],
           "policy_coverage" => policy_coverage,
           "tool_gateway_coverage" => { "status" => gateway_result["status"], "event_order" => gateway_result.fetch("events", []).map { |event| event["event"] } },
-          "hitl_v2" => approval_check,
+          "hitl_v2" => hitl_evidence,
           "replay" => { "status" => "passed", "side_effect_free_replay" => true, "decision_replay_key_present" => true },
           "redteam" => redteam,
           "eval" => eval_result,

@@ -35,6 +35,13 @@ module Aiweb
             "production_gate_status" => p5_evidence.dig("policy_coverage", "production_gate_status"),
             "demo_tool" => p5_evidence.dig("policy_coverage", "demo_tool")
           },
+          "hitl_report" => {
+            "status" => p5_evidence.dig("hitl_v2", "fixture_status"),
+            "verifier_status" => p5_evidence.dig("hitl_v2", "status"),
+            "production_gate_status" => p5_evidence.dig("hitl_v2", "production_gate_status"),
+            "approver_fixture_only" => p5_evidence.dig("hitl_v2", "approver_fixture_only"),
+            "production_ready_claim_allowed" => p5_evidence.dig("hitl_v2", "production_ready_claim_allowed")
+          },
           "eval_report" => {
             "status" => p5_evidence.dig("eval", "status"),
             "production_gate_status" => p5_evidence.dig("eval", "production_gate_status"),
