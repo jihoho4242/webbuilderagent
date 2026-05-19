@@ -16,20 +16,35 @@ class AgentOsV32BrainAndSelfImprovementTest < Minitest::Test
       result = store.remember(summary: "Use a compact premium editorial layout", evidence_grade: "operator_approved", source: "test", scope: "project")
 
       assert_equal "passed", result.fetch("status")
-      assert_equal "project_local_jsonl_ledger_sqlite_unavailable", store.storage_mode
+      assert_equal "project_local_jsonl_ledger_with_projection", store.storage_mode
       assert_equal false, store.sqlite_available?
 
       path = File.join(dir, ".ai-web", "brain", "brain.jsonl")
+      index_path = File.join(dir, ".ai-web", "brain", "brain-index.json")
+      health_path = File.join(dir, ".ai-web", "brain", "memory-health-report.json")
       assert File.file?(path)
+      assert File.file?(index_path)
+      assert File.file?(health_path)
       events = File.readlines(path, chomp: true).map { |line| JSON.parse(line) }
       assert_equal ["memory.remembered"], events.map { |event| event.fetch("event") }
+      assert_match(/^sha256:/, events.first.fetch("event_hash"))
+      assert_nil events.first["previous_event_hash"]
+      index = JSON.parse(File.read(index_path))
+      assert_equal 1, index.fetch("ledger_event_count")
+      assert_equal events.first.fetch("event_hash"), index.fetch("last_event_hash")
+      assert_equal true, index.fetch("event_hash_chain_valid")
+      assert_equal 1, index.fetch("item_count")
 
       reloaded = Aiweb::Brain::Store.new(root: dir)
       assert_equal ["Use a compact premium editorial layout"], reloaded.search.map { |item| item.fetch("summary") }
+      assert_equal true, reloaded.event_hash_chain_valid?
+      assert_equal 0, reloaded.search_projection_lag
 
       reloaded.forget(result.fetch("memory_id"))
       events = File.readlines(path, chomp: true).map { |line| JSON.parse(line) }
       assert_equal %w[memory.remembered memory.forgotten], events.map { |event| event.fetch("event") }
+      assert_equal events.first.fetch("event_hash"), events.last.fetch("previous_event_hash")
+      assert_match(/^sha256:/, events.last.fetch("event_hash"))
 
       tombstone_reload = Aiweb::Brain::Store.new(root: dir)
       assert_empty tombstone_reload.search
@@ -37,7 +52,10 @@ class AgentOsV32BrainAndSelfImprovementTest < Minitest::Test
       audit = Aiweb::Brain::MemoryAudit.new.audit(tombstone_reload)
       assert_equal "passed", audit.fetch("status")
       assert_equal "blocked", audit.fetch("operational_status")
-      assert_match(/SQLite backend unavailable/, audit.fetch("operational_blocking_issues").join("\n"))
+      assert_equal true, audit.dig("metrics", "event_hash_chain_valid")
+      assert_equal true, audit.dig("metrics", "search_projection_present")
+      assert_equal 0, audit.dig("metrics", "search_projection_lag")
+      assert_match(/SQLite\/concurrency-backed store/, audit.fetch("operational_blocking_issues").join("\n"))
     end
   end
 
@@ -63,12 +81,17 @@ class AgentOsV32BrainAndSelfImprovementTest < Minitest::Test
       assert_equal 0, migrated.tombstone_leak_count
 
       ledger_path = File.join(brain_dir, "brain.jsonl")
+      index_path = File.join(brain_dir, "brain-index.json")
       assert File.file?(ledger_path)
+      assert File.file?(index_path)
       events = File.readlines(ledger_path, chomp: true).map { |line| JSON.parse(line) }
       assert_equal %w[memory.remembered memory.forgotten], events.map { |event| event.fetch("event") }
+      assert events.all? { |event| event.fetch("event_hash").start_with?("sha256:") }
 
       reloaded = Aiweb::Brain::Store.new(root: dir)
       assert_equal ["Keep this approved preference"], reloaded.search.map { |item| item.fetch("summary") }
+      assert_equal true, reloaded.event_hash_chain_valid?
+      assert_equal 0, reloaded.search_projection_lag
     end
   end
 

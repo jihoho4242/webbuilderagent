@@ -72,11 +72,12 @@
     },
     {
       "surface": "Personal Brain JSON snapshot persistence overclaim",
-      "status": "replaced_with_append_only_jsonl_mvp_and_operational_sqlite_blocker",
+      "status": "replaced_with_hash_chained_jsonl_projection_mvp_and_operational_sqlite_blocker",
       "evidence": [
-        "Brain::Store now writes .ai-web/brain/brain.jsonl append-only memory.remembered/memory.forgotten events instead of overwriting brain.json snapshots",
-        "MemoryAudit exposes storage_mode, sqlite_available=false, append_only_ledger=true, and operational_status=blocked",
-        "P5 brain evidence reports memory_safety_fixture_passed and keeps SQLite operational gate blocked"
+        "Brain::Store now writes .ai-web/brain/brain.jsonl hash-chained append-only memory.remembered/memory.forgotten events instead of overwriting brain.json snapshots",
+        "Brain::Store writes brain-index.json search projection and memory-health-report.json so durability and retrieval lag are explicit evidence, not broad readiness claims",
+        "MemoryAudit validates storage_mode, append_only_ledger, event_hash_chain_valid, search_projection_present, search_projection_lag, tombstone leaks, and operational_status=blocked",
+        "P5 brain evidence reports memory_safety_fixture_passed and keeps the SQLite/concurrency-backed production Brain gate blocked"
       ]
     },
     {
@@ -84,7 +85,7 @@
       "status": "demoted_to_memory_safety_fixture_and_production_blocked",
       "evidence": [
         "P5Gate brain evidence now reports status=memory_safety_fixture_passed with verifier_status=passed",
-        "Release manifest carries brain_report with production_gate_status=blocked and production_ready_claim_allowed=false",
+        "Release manifest carries brain_report with ledger_event_count, event_hash_chain_valid, search_projection status, health_report_present, production_gate_status=blocked, and production_ready_claim_allowed=false",
         "P5 report no longer says Brain safety passed as a broad readiness claim"
       ]
     },
@@ -357,7 +358,7 @@
     "ruby -Itest test/test_agentification_runtime.rb": "passed: 11 runs, 138 assertions, 0 failures, 0 errors",
     "ruby -Itest test/test_agent_os_v32_static_surface_audit.rb": "passed: 5 runs, 102 assertions, 0 failures, 0 errors",
     "ruby -Itest test/test_aiweb_cli.rb -n /verify_loop|verify-loop|workbench_dry_run/": "passed: 14 runs, 403 assertions, 0 failures, 0 errors",
-    "ruby -Itest test/test_agent_os_v32_release_evidence.rb": "passed: 2 runs, 189 assertions, 0 failures, 0 errors",
+    "ruby -Itest test/test_agent_os_v32_release_evidence.rb": "passed: 2 runs, 204 assertions, 0 failures, 0 errors",
     "ruby -Itest test/test_agent_os_v32_policy_kernel.rb test/test_agent_os_v32_tool_gateway.rb test/test_agent_os_v32_decision_packet.rb": "passed: 9 runs, 35 assertions, 0 failures, 0 errors",
     "git diff --check": "passed with line-ending warnings only",
     "ruby -Itest test/all.rb": "timed out after 604s in this session; targeted suites above passed",
@@ -371,7 +372,7 @@
     "ruby -c test/test_aiweb_cli.rb test/test_schema_locks.rb test/test_agent_os_v32_static_surface_audit.rb": "passed: Syntax OK",
     "ruby -Itest test/test_aiweb_cli.rb -n /engine_run_captures_screenshot_manifest|engine_run_design_verdict_passes|engine_run_design_gate_blocks_copy_back_on_browser_action_recovery_failure|engine_run_preserves_structured_browser_policy_evidence/": "passed: 4 runs, 648 assertions, 0 failures, 0 errors",
     "ruby -Itest test/test_agent_os_v32_evals.rb": "passed: 2 runs, 21 assertions, 0 failures, 0 errors",
-    "ruby -Itest test/test_agent_os_v32_brain_and_self_improvement.rb": "passed: 6 runs, 46 assertions, 0 failures, 0 errors",
+    "ruby -Itest test/test_agent_os_v32_brain_and_self_improvement.rb": "passed: 6 runs, 67 assertions, 0 failures, 0 errors",
     "ruby -Itest test/test_agent_os_v32_redteam.rb": "passed: 4 runs, 38 assertions, 0 failures, 0 errors",
     "ruby redteam/secret_canary.rb": "passed: canary_configured, canary_value_emitted=false, production_gate_status=blocked",
     "ruby -Itest test/test_agent_os_v32_contracts.rb": "passed: 3 runs, 66 assertions, 0 failures, 0 errors",
@@ -441,9 +442,11 @@
     "ruby bin/engine-runtime-matrix-check --dry-run --json after bin ProcessRunner centralization": "passed: planned matrix JSON emitted",
     "ruby -Itest test/test_contracts.rb -n '/side_effect_surface_audit/' after bin ProcessRunner centralization": "passed: 5 runs, 75 assertions, 0 failures, 0 errors",
     "ruby -Ilib -e side_effect_surface_audit bin verification classification": "passed: coverage=classified, unclassified=0, entry_count=19, removed local_verification_harness_exception; no bin/* direct Open3 entries remain",
-    "rg Open3.capture3/Open3.popen3 in bin": "passed: no direct Open3.capture3/Open3.popen3 remains in bin scripts"
+    "rg Open3.capture3/Open3.popen3 in bin": "passed: no direct Open3.capture3/Open3.popen3 remains in bin scripts",
+    "ruby -c Brain/P5 release evidence files": "passed: Syntax OK for Brain store/audit/projection, P5 gate, release manifest, and updated tests",
+    "YAML/JSON parse and release evidence integrity hashes": "passed: release YAML, report JSON, evidence_integrity_manifest file hashes, and p5_evidence_hash verified"
   },
   "completion_status": "not_complete",
-  "why_not_complete": "Top-level fixed script-runner surfaces, stale deploy provider execution, browser deterministic-probe naming claims, CLI/contract Manus wording marketing overclaims, fixture-eval production-readiness overclaims, red-team catalog-fixture overclaims, secret-canary value emission, self-improvement dry-run overclaims, release validation evidence overclaims, P5 policy/tool gateway overclaims, P5 HITL fixture overclaims, P5 replay readiness overclaims, Brain safety wording overclaims, Brain JSON snapshot overclaims, the Codex agent-run worker subprocess, runtime_commands direct git/taskkill process forms, agent-run diff-policy direct git subprocesses, OpenManus readiness direct image inspect subprocess, and agent-run OpenManus direct image inspect preflight, engine-run sandbox runtime attestation direct Docker/Podman probes, Codex agent-run worker direct subprocess execution, and OpenManus agent-run sandbox worker direct subprocess execution, and engine-run agent worker direct subprocess execution, and engine-run capture helper direct subprocess execution, and setup install/supply-chain direct subprocess execution are neutralized, but Manus-grade natural-language web-app agent readiness still requires independent production red-team/release evidence plus a real SQLite/dependency-backed Brain kernel.",
+  "why_not_complete": "Top-level fixed script-runner surfaces, stale deploy provider execution, browser deterministic-probe naming claims, CLI/contract Manus wording marketing overclaims, fixture-eval production-readiness overclaims, red-team catalog-fixture overclaims, secret-canary value emission, self-improvement dry-run overclaims, release validation evidence overclaims, P5 policy/tool gateway overclaims, P5 HITL fixture overclaims, P5 replay readiness overclaims, Brain safety wording overclaims, Brain JSON snapshot/projection/hash-chain evidence gaps, the Codex agent-run worker subprocess, runtime_commands direct git/taskkill process forms, agent-run diff-policy direct git subprocesses, OpenManus readiness direct image inspect subprocess, and agent-run OpenManus direct image inspect preflight, engine-run sandbox runtime attestation direct Docker/Podman probes, Codex agent-run worker direct subprocess execution, and OpenManus agent-run sandbox worker direct subprocess execution, and engine-run agent worker direct subprocess execution, and engine-run capture helper direct subprocess execution, and setup install/supply-chain direct subprocess execution are neutralized, but Manus-grade natural-language web-app agent readiness still requires independent production red-team/release evidence plus a real SQLite/concurrency-backed Brain kernel.",
   "completion": {}
 }

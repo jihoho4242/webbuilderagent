@@ -89,6 +89,11 @@ module Aiweb
             "status" => p5_evidence.dig("brain", "status"),
             "verifier_status" => p5_evidence.dig("brain", "verifier_status"),
             "storage_mode" => p5_evidence.dig("brain", "storage_mode"),
+            "ledger_event_count" => p5_evidence.dig("brain", "ledger_event_count"),
+            "event_hash_chain_valid" => p5_evidence.dig("brain", "event_hash_chain_valid"),
+            "search_projection" => p5_evidence.dig("brain", "search_projection"),
+            "health_report_present" => p5_evidence.dig("brain", "health_report_present"),
+            "metrics" => p5_evidence.dig("brain", "metrics"),
             "production_gate_status" => p5_evidence.dig("brain", "production_gate_status"),
             "operational_status" => p5_evidence.dig("brain", "operational_status"),
             "production_ready_claim_allowed" => p5_evidence.dig("brain", "production_ready_claim_allowed")

@@ -38,7 +38,15 @@ module Aiweb
           mem = store.remember(summary: "Use policy-gated memory proposals only", evidence_grade: "high")
           forgotten = store.forget(mem["memory_id"])
           audit = Aiweb::Brain::MemoryAudit.new.audit(store)
-          { "audit" => audit, "forgotten" => forgotten, "storage_mode" => store.storage_mode }
+          {
+            "audit" => audit,
+            "forgotten" => forgotten,
+            "storage_mode" => store.storage_mode,
+            "search_projection" => Aiweb::Brain::SearchProjection.status(store),
+            "ledger_event_count" => store.ledger_event_count,
+            "event_hash_chain_valid" => store.event_hash_chain_valid?,
+            "health_report_present" => File.file?(store.health_report_path.to_s)
+          }
         end
         proposal = Aiweb::SelfImprovement::Governor.new.dry_run_proposal(target_component: "runtime_tool_description", hypothesis: "Improve clarity", eval_plan: { "required" => true }, rollback_plan: { "summary" => "revert proposal" })
         experiment = Aiweb::SelfImprovement::ExperimentRegistry.new.record(proposal)
@@ -57,6 +65,10 @@ module Aiweb
           "status" => brain_audit["status"] == "passed" ? "memory_safety_fixture_passed" : "memory_safety_fixture_blocked",
           "verifier_status" => brain_audit["status"],
           "storage_mode" => brain_evidence.fetch("storage_mode"),
+          "ledger_event_count" => brain_evidence.fetch("ledger_event_count"),
+          "event_hash_chain_valid" => brain_evidence.fetch("event_hash_chain_valid"),
+          "search_projection" => brain_evidence.fetch("search_projection"),
+          "health_report_present" => brain_evidence.fetch("health_report_present"),
           "production_gate_status" => "blocked",
           "production_ready_claim_allowed" => false,
           "operational_status" => "blocked"

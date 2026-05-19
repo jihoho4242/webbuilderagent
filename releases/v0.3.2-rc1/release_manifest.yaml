@@ -12,7 +12,7 @@ commit_sha_policy: attach immutable commit sha from CI release job; local static
 github_actions_run_id:
 evidence_files:
 - path: releases/v0.3.2-rc1/p5_gate_report.md
-  sha256: sha256:064c5ba241faadc4dea5c0b48a91b395745f9633fbb606405fd755f4292a2548
+  sha256: sha256:e67206e8ae4e6a3ad2f39a7019eafacb5559cc0d3d5b4dc48b73ee0f605fafae
 schema_validation_report:
   status: targeted_validation_only
   validation_keys:
@@ -82,7 +82,26 @@ redteam_report:
 brain_report:
   status: memory_safety_fixture_passed
   verifier_status: passed
-  storage_mode: project_local_jsonl_ledger_sqlite_unavailable
+  storage_mode: project_local_jsonl_ledger_with_projection
+  ledger_event_count: 2
+  event_hash_chain_valid: true
+  search_projection:
+    schema_version: 1
+    status: ready
+    global_rerank: false
+    ledger_event_count: 2
+    search_projection_lag: 0
+    event_hash_chain_valid: true
+  health_report_present: true
+  metrics:
+    append_only_ledger: true
+    ledger_event_count: 2
+    last_event_hash_present: true
+    event_hash_chain_valid: true
+    search_projection_present: true
+    search_projection_lag: 0
+    tombstone_leak: 0
+    low_grade_action_use: 0
   production_gate_status: blocked
   operational_status: blocked
   production_ready_claim_allowed: false
@@ -111,6 +130,6 @@ operational_blocking_issues:
 - durable replay/resume audit with artifact hash validation is not attached to this release evidence
 - production-ready eval science requires independent holdout, leakage check, CI artifact, and human baseline
 - production-ready red-team requires independent adversarial review, CI artifact, secret canary transcript, and expanded attack coverage
-- SQLite backend unavailable; JSONL ledger is a local MVP persistence layer
+- production Brain still needs SQLite/concurrency-backed store, backup/restore drill, and independent memory audit evidence
 - production-ready self-improvement requires sandbox patch diff, static checks, eval/red-team pass, HITL v2 approval, canary, rollback plan, and monitor evidence
-p5_evidence_hash: sha256:064c5ba241faadc4dea5c0b48a91b395745f9633fbb606405fd755f4292a2548
+p5_evidence_hash: sha256:e67206e8ae4e6a3ad2f39a7019eafacb5559cc0d3d5b4dc48b73ee0f605fafae
