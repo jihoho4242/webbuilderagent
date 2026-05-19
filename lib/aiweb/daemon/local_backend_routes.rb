@@ -175,6 +175,7 @@ module Aiweb
           task: payload["task"] || "latest",
           agent: payload["agent"] || "codex",
           sandbox: payload["sandbox"],
+          approval_hash: payload["approval_hash"],
           dry_run: payload.key?("dry_run") ? truthy?(payload["dry_run"]) : true,
           approved: approved
         ).tap { |result| result["bridge"]["serialized_execution"] = true if result["bridge"].is_a?(Hash) }

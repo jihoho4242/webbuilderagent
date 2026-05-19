@@ -46,7 +46,7 @@ module Aiweb
       vendor
     ].freeze
 
-    def agent_run(task: "latest", agent: "codex", approved: false, dry_run: false, sandbox: nil)
+    def agent_run(task: "latest", agent: "codex", approved: false, approval_hash: nil, dry_run: false, sandbox: nil)
       assert_initialized!
 
       agent_name = agent.to_s.strip.empty? ? "codex" : agent.to_s.strip
@@ -123,10 +123,25 @@ module Aiweb
         source_paths: source_paths,
         target_allowlist: target_allowlist
       )
+      capability = agent_run_capability_envelope(
+        run_id: run_id,
+        agent: agent_name,
+        sandbox: openmanus_sandbox,
+        task_source: task_source,
+        context: context,
+        source_paths: source_paths,
+        target_allowlist: target_allowlist
+      )
+      expected_hash = agent_run_approval_hash(capability)
       blockers << task_source["reason"] if task_source["path"].nil?
       blockers << "agent-run task packet does not identify any safe source targets" if source_paths.empty?
       blockers << "agent-run component map is malformed" if component_map_error
       blockers << "agent-run requires --approved for real command execution" if !dry_run && !approved
+      if !dry_run && approved && approval_hash.to_s.strip.empty?
+        blockers << "--approval-hash is required for real agent-run execution"
+      elsif !approval_hash.to_s.strip.empty? && approval_hash.to_s.strip != expected_hash
+        blockers << "approval hash does not match the current agent-run capability envelope"
+      end
       blockers.concat(agent_run_source_security_blockers(source_paths))
       openmanus_command_env = agent_name == "openmanus" ? agent_run_openmanus_command_env(
         sandbox: openmanus_sandbox,
@@ -205,6 +220,8 @@ module Aiweb
         source_paths: source_paths,
         dry_run: dry_run,
         approved: approved,
+        approval_hash: expected_hash,
+        capability: capability,
         blocking_issues: blockers.uniq,
         status: blockers.empty? ? "planned" : "blocked"
       )
@@ -220,7 +237,7 @@ module Aiweb
           planned_changes: blockers.empty? ? planned_changes : [],
           action_taken: blockers.empty? ? "planned agent run" : "agent run blocked",
           blocking_issues: blockers.uniq,
-          next_action: blockers.empty? ? agent_run_approved_next_action(agent_name, openmanus_sandbox) : "add a safe source target to the task packet or component map, then rerun #{agent_run_approved_command(agent_name, openmanus_sandbox)}"
+          next_action: blockers.empty? ? agent_run_approved_next_action(agent_name, openmanus_sandbox, expected_hash) : "resolve blockers, rerun aiweb agent-run --task latest --agent #{agent_name} --dry-run, review the approval_hash, then rerun with --approval-hash HASH --approved"
         )
       end
 
@@ -245,7 +262,9 @@ module Aiweb
           denied_access_log_path: openmanus_denied_access_log_path,
           tool_broker_log_path: openmanus_tool_broker_log_path,
           command: agent_command,
-          contract: openmanus_contract
+          contract: openmanus_contract,
+          approval_hash: expected_hash,
+          capability: capability
         )
       end
 
@@ -262,7 +281,9 @@ module Aiweb
         context_path: context_path,
         metadata_path: metadata_path,
         diff_path: diff_path,
-        side_effect_broker_path: side_effect_broker_path
+        side_effect_broker_path: side_effect_broker_path,
+        approval_hash: expected_hash,
+        capability: capability
       )
     end
 

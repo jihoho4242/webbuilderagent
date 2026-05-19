@@ -14,8 +14,9 @@ module Aiweb
       metadata_path = File.join(run_dir, "agent-run.json")
       diff_path = File.join(@root, ".ai-web", "diffs", "#{run_id}.patch")
       command = ["aiweb", "agent-run", "--task", task, "--agent", agent]
-      command << "--approved" if approved
       command << "--dry-run" if dry_run
+      command << "--approval-hash HASH" if approved
+      command << "--approved" if approved
 
       {
         "schema_version" => 1,
@@ -38,7 +39,8 @@ module Aiweb
           "planned_metadata_path" => relative_path(metadata_path),
           "planned_diff_path" => relative_path(diff_path),
           "guardrails" => [
-            "--approved required for real local agent execution",
+            "--approval-hash from dry-run required for real local agent execution",
+            "--approved required with the matching approval hash for real local agent execution",
             "--dry-run writes nothing",
             "no build/preview/QA/deploy/provider CLI",
             "no .env/.env.* reads or output"
@@ -58,7 +60,7 @@ module Aiweb
         dry_run: false,
         action_taken: "agent run blocked",
         blocking_issues: ["--approved is required for real local agent execution"],
-        next_action: "rerun the agent run as aiweb agent-run --task #{task} --agent #{agent} --dry-run or --approved"
+        next_action: "rerun the agent run as aiweb agent-run --task #{task} --agent #{agent} --dry-run, review the approval_hash, then rerun with --approval-hash HASH --approved"
       )
     end
     end

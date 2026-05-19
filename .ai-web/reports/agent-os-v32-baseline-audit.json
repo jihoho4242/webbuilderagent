@@ -176,6 +176,11 @@
       "surface": "engine-run approved-without-hash execution shortcut",
       "status": "removed",
       "finding": "Real engine-run execution now requires the matching capability approval hash from dry-run; --approved alone blocks before run artifacts are written."
+    },
+    {
+      "surface": "agent-run approved-without-hash execution shortcut",
+      "status": "removed",
+      "finding": "Direct agent-run local source-patch execution now requires the matching dry-run approval hash; --approved alone blocks before worker processes, run artifacts, or source patches are created. engine-run safe_patch delegates through an internal dry-run hash rather than preserving the public boolean shortcut."
     }
   ],
   "preserve_safety_substrate": [

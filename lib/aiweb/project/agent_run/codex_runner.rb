@@ -4,7 +4,7 @@ module Aiweb
   module ProjectAgentRun
     private
 
-    def agent_run_codex(state:, agent_name:, task_source:, context:, source_paths:, run_id:, run_dir:, stdout_path:, stderr_path:, context_path:, metadata_path:, diff_path:, side_effect_broker_path:)
+    def agent_run_codex(state:, agent_name:, task_source:, context:, source_paths:, run_id:, run_dir:, stdout_path:, stderr_path:, context_path:, metadata_path:, diff_path:, side_effect_broker_path:, approval_hash:, capability:)
       changes = []
       payload = nil
       mutation(dry_run: false) do
@@ -103,6 +103,8 @@ module Aiweb
           source_paths: source_paths,
           dry_run: false,
           approved: true,
+          approval_hash: approval_hash,
+          capability: capability,
           blocking_issues: blocking_issues,
           status: metadata_status,
           changed_source_files: changed_source_files

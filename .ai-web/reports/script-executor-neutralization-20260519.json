@@ -385,6 +385,17 @@
         "Missing approval hash blocks before run artifacts are written",
         "Stale approval hash rejection remains covered by CLI regression tests"
       ]
+    },
+    {
+      "surface": "Agent-run approved-without-hash execution shortcut",
+      "status": "removed_requires_matching_agent_run_capability_approval_hash",
+      "evidence": [
+        "agent-run --dry-run now emits a deterministic approval_hash bound to task, selected design context, allowed source paths, source base hashes, agent, sandbox, and forbidden capabilities",
+        "real agent-run execution blocks when --approved is provided without --approval-hash",
+        "stale agent-run approval hashes are rejected before worker processes, run artifacts, or source patches are created",
+        "daemon codex agent-run payloads now pass approval_hash through the backend bridge instead of relying on approval_token plus --approved alone",
+        "engine-run safe_patch delegates to agent-run through an internal dry-run approval hash, preserving engine-run as the canonical approval surface without keeping the public boolean shortcut"
+      ]
     }
   ],
   "preserved_safety_substrate": [
@@ -488,9 +499,11 @@
     "ruby -Itest test/test_agent_os_v32_policy_kernel.rb": "passed: 11 runs, 47 assertions, 0 failures, 0 errors",
     "ruby -Itest test/test_agent_os_v32_approval.rb": "passed: 3 runs, 35 assertions, 0 failures, 0 errors",
     "ruby -Itest test/test_agent_os_v32_replay.rb": "passed: 3 runs, 34 assertions, 0 failures, 0 errors",
-    "ruby -Itest test/test_aiweb_cli.rb -n '/verify_loop_approved_without_hash_blocks_before_legacy_tooling|engine_run_rejects_stale_approval_hash_after_opendesign_contract_changes/'": "passed: 2 runs, 29 assertions, 0 failures, 0 errors"
+    "ruby -Itest test/test_aiweb_cli.rb -n '/verify_loop_approved_without_hash_blocks_before_legacy_tooling|engine_run_rejects_stale_approval_hash_after_opendesign_contract_changes/'": "passed: 2 runs, 29 assertions, 0 failures, 0 errors",
+    "ruby -Itest test/test_aiweb_cli.rb -n /agent_run/": "passed: 26 runs, 624 assertions, 0 failures, 0 errors",
+    "ruby -c agent-run approval hash surfaces": "passed: agent_run.rb, metadata_payload.rb, codex_runner.rb, openmanus.rb, engine_run.rb, dispatch.rb, agent_run_payload.rb, cli_bridge.rb, local_backend_routes.rb, test_aiweb_cli.rb, test_daemon.rb"
   },
   "completion_status": "not_complete",
-  "why_not_complete": "Top-level fixed script-runner surfaces, stale deploy provider execution, browser deterministic-probe naming claims, CLI/contract Manus wording marketing overclaims, fixture-eval production-readiness overclaims, red-team catalog-fixture overclaims, secret-canary value emission, self-improvement dry-run overclaims, release validation evidence overclaims, P5 policy/tool gateway overclaims, P5 HITL fixture overclaims, L3 boolean approval bypasses, verifier-result approval hash bypasses, weak HITL artifact self-integrity checks, engine-run approved-without-hash execution shortcuts, P5 replay readiness overclaims, Brain safety wording overclaims, Brain JSON snapshot/projection/hash-chain evidence gaps, the Codex agent-run worker subprocess, runtime_commands direct git/taskkill process forms, agent-run diff-policy direct git subprocesses, OpenManus readiness direct image inspect subprocess, and agent-run OpenManus direct image inspect preflight, engine-run sandbox runtime attestation direct Docker/Podman probes, Codex agent-run worker direct subprocess execution, and OpenManus agent-run sandbox worker direct subprocess execution, and engine-run agent worker direct subprocess execution, and engine-run capture helper direct subprocess execution, and setup install/supply-chain direct subprocess execution are neutralized, but Manus-grade natural-language web-app agent readiness still requires independent production red-team/release evidence plus a real SQLite/concurrency-backed Brain kernel.",
+  "why_not_complete": "Top-level fixed script-runner surfaces, stale deploy provider execution, browser deterministic-probe naming claims, CLI/contract Manus wording marketing overclaims, fixture-eval production-readiness overclaims, red-team catalog-fixture overclaims, secret-canary value emission, self-improvement dry-run overclaims, release validation evidence overclaims, P5 policy/tool gateway overclaims, P5 HITL fixture overclaims, L3 boolean approval bypasses, verifier-result approval hash bypasses, weak HITL artifact self-integrity checks, engine-run approved-without-hash execution shortcuts, agent-run approved-without-hash execution shortcuts, P5 replay readiness overclaims, Brain safety wording overclaims, Brain JSON snapshot/projection/hash-chain evidence gaps, the Codex agent-run worker subprocess, runtime_commands direct git/taskkill process forms, agent-run diff-policy direct git subprocesses, OpenManus readiness direct image inspect subprocess, and agent-run OpenManus direct image inspect preflight, engine-run sandbox runtime attestation direct Docker/Podman probes, Codex agent-run worker direct subprocess execution, and OpenManus agent-run sandbox worker direct subprocess execution, and engine-run agent worker direct subprocess execution, and engine-run capture helper direct subprocess execution, and setup install/supply-chain direct subprocess execution are neutralized, but Manus-grade natural-language web-app agent readiness still requires independent production red-team/release evidence plus a real SQLite/concurrency-backed Brain kernel.",
   "completion": {}
 }

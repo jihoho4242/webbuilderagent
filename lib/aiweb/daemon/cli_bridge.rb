@@ -117,7 +117,7 @@ module Aiweb
       raise
     end
 
-    def agent_run(project_path:, task: "latest", agent: "codex", sandbox: nil, dry_run: true, approved: false)
+    def agent_run(project_path:, task: "latest", agent: "codex", sandbox: nil, approval_hash: nil, dry_run: true, approved: false)
       agent_name = agent.to_s.strip.empty? ? "codex" : agent.to_s.strip
       raise UserError.new("bridge agent-run agent must be codex or openmanus", 5) unless %w[codex openmanus].include?(agent_name)
       sandbox_name = sandbox.to_s.strip.downcase
@@ -125,6 +125,7 @@ module Aiweb
 
       args = ["--task", task.to_s, "--agent", agent_name]
       args.concat(["--sandbox", sandbox_name]) unless sandbox_name.empty?
+      args.concat(["--approval-hash", approval_hash.to_s]) unless approval_hash.to_s.strip.empty?
       run(
         project_path: project_path,
         command: "agent-run",

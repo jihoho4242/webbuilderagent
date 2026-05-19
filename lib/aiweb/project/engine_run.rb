@@ -1533,6 +1533,35 @@ module Aiweb
     end
 
     def engine_run_safe_patch(state:, capability:, normalized_agent:, sandbox:, approved:, dry_run:)
+      if approved && !dry_run
+        preflight = agent_run(task: "latest", agent: normalized_agent, sandbox: sandbox, approved: false, dry_run: true)
+        unless preflight.dig("agent_run", "status") == "planned"
+          preflight["engine_run"] = {
+            "schema_version" => 1,
+            "status" => preflight.dig("agent_run", "status"),
+            "mode" => "safe_patch",
+            "agent" => normalized_agent,
+            "capability" => capability,
+            "delegated_to" => "agent-run",
+            "blocking_issues" => preflight["blocking_issues"] || []
+          }
+          return preflight
+        end
+        delegated_hash = preflight.dig("agent_run", "approval_hash")
+        return agent_run(task: "latest", agent: normalized_agent, sandbox: sandbox, approved: approved, approval_hash: delegated_hash, dry_run: false).tap do |result|
+          result["engine_run"] = {
+            "schema_version" => 1,
+            "status" => result.dig("agent_run", "status"),
+            "mode" => "safe_patch",
+            "agent" => normalized_agent,
+            "capability" => capability,
+            "delegated_to" => "agent-run",
+            "delegated_approval_hash" => delegated_hash,
+            "blocking_issues" => result["blocking_issues"] || []
+          }
+        end
+      end
+
       agent_run(task: "latest", agent: normalized_agent, sandbox: sandbox, approved: approved, dry_run: dry_run).tap do |result|
         result["engine_run"] = {
           "schema_version" => 1,

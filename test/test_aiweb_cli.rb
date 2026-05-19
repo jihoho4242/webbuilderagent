@@ -109,6 +109,28 @@ class AiwebCliTest < Minitest::Test
     [stdout, stderr, status.exitstatus]
   end
 
+  def agent_run_approval_hash(env = nil, task: "latest", agent: "codex", sandbox: nil)
+    args = ["agent-run", "--task", task, "--agent", agent]
+    args.concat(["--sandbox", sandbox]) if sandbox
+    args.concat(["--dry-run", "--json"])
+    stdout, stderr, code = env ? run_aiweb_env(env, *args) : run_aiweb(*args)
+    payload = JSON.parse(stdout)
+    assert_equal 0, code, "agent-run dry-run should produce approval_hash: #{stdout} #{stderr}"
+    assert_equal "", stderr
+    hash = payload.dig("agent_run", "approval_hash")
+    assert_match(/\A[0-9a-f]{64}\z/, hash)
+    assert_includes payload["next_action"].to_s, "--approval-hash #{hash}"
+    hash
+  end
+
+  def run_approved_agent_run(env = nil, task: "latest", agent: "codex", sandbox: nil)
+    hash = agent_run_approval_hash(env, task: task, agent: agent, sandbox: sandbox)
+    args = ["agent-run", "--task", task, "--agent", agent]
+    args.concat(["--sandbox", sandbox]) if sandbox
+    args.concat(["--approval-hash", hash, "--approved", "--json"])
+    env ? run_aiweb_env(env, *args) : run_aiweb(*args)
+  end
+
   def with_env_values(values)
     old = values.keys.to_h { |key| [key, ENV[key]] }
     values.each { |key, value| value.nil? ? ENV.delete(key) : ENV[key] = value }
@@ -7548,7 +7570,8 @@ class AiwebCliTest < Minitest::Test
       assert_equal true, payload.dig("agent_run", "dry_run")
       assert_match(/agent run/i, payload["action_taken"])
       assert_includes %w[planned dry_run], payload.dig("agent_run", "status")
-      assert_equal "rerun aiweb agent-run --task latest --agent codex --approved to execute the local codex patch run", payload["next_action"]
+      assert_match(/\Arerun aiweb agent-run --task latest --agent codex --approval-hash [0-9a-f]{64} --approved/, payload["next_action"])
+      assert_match(/\A[0-9a-f]{64}\z/, payload.dig("agent_run", "approval_hash"))
       assert_no_agent_run_side_effects(before_entries: before_entries, before_state: before_state)
       assert_equal before_source, File.read("src/components/Hero.astro"), "agent-run --dry-run must not patch source"
       refute File.exist?(marker), "agent-run --dry-run must not execute codex"
@@ -7581,7 +7604,8 @@ class AiwebCliTest < Minitest::Test
       assert_equal "openmanus", payload.dig("agent_run", "agent")
       assert_equal "implementation-local-no-network", payload.dig("agent_run", "permission_profile")
       assert_equal "planned", payload.dig("agent_run", "status")
-      assert_equal "rerun aiweb agent-run --task latest --agent openmanus --sandbox docker --approved to execute the local openmanus patch run in an aiweb-managed sandbox", payload["next_action"]
+      assert_match(/\Arerun aiweb agent-run --task latest --agent openmanus --sandbox docker --approval-hash [0-9a-f]{64} --approved/, payload["next_action"])
+      assert_match(/\A[0-9a-f]{64}\z/, payload.dig("agent_run", "approval_hash"))
       assert_includes payload.fetch("planned_changes"), ".ai-web/runs/#{payload.dig("agent_run", "run_id")}/openmanus-context.json"
       assert_equal ["src/components/Hero.astro"], payload.dig("agent_run", "openmanus", "context", "allowed_source_paths")
       assert_equal "missing", payload.dig("agent_run", "openmanus", "context", "sandbox_mode")
@@ -7895,6 +7919,56 @@ class AiwebCliTest < Minitest::Test
     end
   end
 
+  def test_agent_run_approved_without_approval_hash_blocks_without_writes_or_process_execution
+    in_tmp do |dir|
+      prepare_agent_run_fixture(task_markdown: agent_run_safe_task_markdown)
+      marker = File.join(dir, "codex-was-run")
+      bin_dir = write_fake_codex_tooling(dir, marker_path: marker, patch_path: File.join(dir, "src/components/Hero.astro"))
+      before_entries = project_entries
+      before_state = File.read(".ai-web/state.yaml")
+      before_source = File.read("src/components/Hero.astro")
+
+      stdout, stderr, code = run_aiweb_env(
+        { "PATH" => [bin_dir, "/usr/bin", "/bin", "/usr/sbin", "/sbin"].join(File::PATH_SEPARATOR) },
+        "agent-run", "--task", "latest", "--agent", "codex", "--approved", "--json"
+      )
+      payload = JSON.parse(stdout)
+
+      refute_equal 0, code
+      assert_equal "", stderr
+      assert_equal "blocked", payload.dig("agent_run", "status")
+      assert_match(/approval-hash.*required/i, payload.dig("agent_run", "blocking_issues").join("\n"))
+      assert_match(/\A[0-9a-f]{64}\z/, payload.dig("agent_run", "approval_hash"))
+      assert_no_agent_run_side_effects(before_entries: before_entries, before_state: before_state)
+      assert_equal before_source, File.read("src/components/Hero.astro"), "approved-without-hash agent-run must not patch source"
+      refute File.exist?(marker), "approved-without-hash agent-run must not execute codex"
+    end
+  end
+
+  def test_agent_run_rejects_stale_approval_hash_without_writes_or_process_execution
+    in_tmp do |dir|
+      prepare_agent_run_fixture(task_markdown: agent_run_safe_task_markdown)
+      marker = File.join(dir, "codex-was-run")
+      bin_dir = write_fake_codex_tooling(dir, marker_path: marker, patch_path: File.join(dir, "src/components/Hero.astro"))
+      stale_hash = "0" * 64
+      before_entries = project_entries
+      before_state = File.read(".ai-web/state.yaml")
+
+      stdout, stderr, code = run_aiweb_env(
+        { "PATH" => [bin_dir, "/usr/bin", "/bin", "/usr/sbin", "/sbin"].join(File::PATH_SEPARATOR) },
+        "agent-run", "--task", "latest", "--agent", "codex", "--approval-hash", stale_hash, "--approved", "--json"
+      )
+      payload = JSON.parse(stdout)
+
+      assert_equal 5, code
+      assert_equal "", stderr
+      assert_equal "blocked", payload.dig("agent_run", "status")
+      assert_match(/approval hash does not match/i, payload.dig("agent_run", "blocking_issues").join("\n"))
+      assert_no_agent_run_side_effects(before_entries: before_entries, before_state: before_state)
+      refute File.exist?(marker), "stale-hash agent-run must not execute codex"
+    end
+  end
+
   def test_agent_run_approved_fake_codex_success_records_logs_diff_and_safe_state
     in_tmp do |dir|
       secret = "SECRET=pr22-agent-run-do-not-leak"
@@ -7943,9 +8017,9 @@ class AiwebCliTest < Minitest::Test
       env_size = File.size(".env")
       env_mtime = File.mtime(".env")
 
-      stdout, stderr, code = run_aiweb_env(
+      stdout, stderr, code = run_approved_agent_run(
         { "PATH" => [bin_dir, "/usr/bin", "/bin", "/usr/sbin", "/sbin"].join(File::PATH_SEPARATOR) },
-        "agent-run", "--task", "latest", "--agent", "codex", "--approved", "--json"
+        agent: "codex"
       )
       payload = JSON.parse(stdout)
       run_dir = Dir.glob(".ai-web/runs/agent-run-*").sort.last
@@ -8000,7 +8074,7 @@ class AiwebCliTest < Minitest::Test
         "FAKE_CODEX_SECRET" => "must-not-reach-codex"
       }
 
-      stdout, stderr, code = run_aiweb_env(env, "agent-run", "--task", "latest", "--agent", "codex", "--approved", "--json")
+      stdout, stderr, code = run_approved_agent_run(env, agent: "codex")
       payload = JSON.parse(stdout)
 
       assert_equal 0, code
@@ -8021,13 +8095,14 @@ class AiwebCliTest < Minitest::Test
       env_size = File.size(".env")
       env_mtime = File.mtime(".env")
 
-      stdout, stderr, code = run_aiweb_env(
+      stdout, stderr, code = run_approved_agent_run(
         {
           "PATH" => [bin_dir, "/usr/bin", "/bin", "/usr/sbin", "/sbin"].join(File::PATH_SEPARATOR),
           "OPENAI_API_KEY" => "must-not-reach-openmanus",
           "FAKE_OPENMANUS_SECRET" => "must-not-reach-openmanus"
         },
-        "agent-run", "--task", "latest", "--agent", "openmanus", "--sandbox", "docker", "--approved", "--json"
+        agent: "openmanus",
+        sandbox: "docker"
       )
       payload = JSON.parse(stdout)
       run_dir = Dir.glob(".ai-web/runs/agent-run-*").sort.last
@@ -8085,9 +8160,10 @@ class AiwebCliTest < Minitest::Test
       bin_dir = write_fake_openmanus_tooling(dir, broker_blocked_action: "package_install")
       before_source = File.read("src/components/Hero.astro")
 
-      stdout, stderr, code = run_aiweb_env(
+      stdout, stderr, code = run_approved_agent_run(
         { "PATH" => [bin_dir, "/usr/bin", "/bin", "/usr/sbin", "/sbin"].join(File::PATH_SEPARATOR) },
-        "agent-run", "--task", "latest", "--agent", "openmanus", "--sandbox", "docker", "--approved", "--json"
+        agent: "openmanus",
+        sandbox: "docker"
       )
       payload = JSON.parse(stdout)
       run_dir = Dir.glob(".ai-web/runs/agent-run-*").sort.last
@@ -8143,14 +8219,16 @@ class AiwebCliTest < Minitest::Test
       before_state = File.read(".ai-web/state.yaml")
       before_source = File.read("src/components/Hero.astro")
 
+      env = {
+        "PATH" => [bin_dir, "/usr/bin", "/bin", "/usr/sbin", "/sbin"].join(File::PATH_SEPARATOR),
+        "AIWEB_OPENMANUS_IMAGE" => "missing-openmanus:latest",
+        "OPENAI_API_KEY" => "must-not-reach-openmanus-image-preflight",
+        "FAKE_OPENMANUS_SECRET" => "must-not-reach-openmanus-image-preflight"
+      }
+      hash = agent_run_approval_hash(env, agent: "openmanus", sandbox: "docker")
       stdout, stderr, code = run_aiweb_env(
-        {
-          "PATH" => [bin_dir, "/usr/bin", "/bin", "/usr/sbin", "/sbin"].join(File::PATH_SEPARATOR),
-          "AIWEB_OPENMANUS_IMAGE" => "missing-openmanus:latest",
-          "OPENAI_API_KEY" => "must-not-reach-openmanus-image-preflight",
-          "FAKE_OPENMANUS_SECRET" => "must-not-reach-openmanus-image-preflight"
-        },
-        "agent-run", "--task", "latest", "--agent", "openmanus", "--sandbox", "docker", "--approved", "--json"
+        env,
+        "agent-run", "--task", "latest", "--agent", "openmanus", "--sandbox", "docker", "--approval-hash", hash, "--approved", "--json"
       )
       payload = JSON.parse(stdout)
 
@@ -8231,11 +8309,12 @@ class AiwebCliTest < Minitest::Test
       bin_dir = write_fake_openmanus_tooling(dir, mutate_root_path: root_mutation_path)
       before_hero = File.read("src/components/Hero.astro")
 
-      stdout, stderr, code = run_aiweb_env(
+      stdout, stderr, code = run_approved_agent_run(
         {
           "PATH" => [bin_dir, "/usr/bin", "/bin", "/usr/sbin", "/sbin"].join(File::PATH_SEPARATOR),
         },
-        "agent-run", "--task", "latest", "--agent", "openmanus", "--sandbox", "docker", "--approved", "--json"
+        agent: "openmanus",
+        sandbox: "docker"
       )
       payload = JSON.parse(stdout)
 
@@ -8265,9 +8344,9 @@ class AiwebCliTest < Minitest::Test
       prompt_path = File.join(dir, ".ai-web", "runs", "captured-codex-prompt.txt")
       bin_dir = write_fake_codex_tooling(dir, patch_path: File.join(dir, "src/components/Hero.astro"), prompt_path: prompt_path)
       FileUtils.mkdir_p(File.dirname(prompt_path))
-      stdout, stderr, code = run_aiweb_env(
+      stdout, stderr, code = run_approved_agent_run(
         { "PATH" => [bin_dir, "/usr/bin", "/bin", "/usr/sbin", "/sbin"].join(File::PATH_SEPARATOR) },
-        "agent-run", "--task", "latest", "--agent", "codex", "--approved", "--json"
+        agent: "codex"
       )
       payload = JSON.parse(stdout)
       prompt = File.read(prompt_path)
@@ -8325,9 +8404,9 @@ class AiwebCliTest < Minitest::Test
         exit_status: 23
       )
 
-      stdout, stderr, code = run_aiweb_env(
+      stdout, stderr, code = run_approved_agent_run(
         { "PATH" => [bin_dir, "/usr/bin", "/bin", "/usr/sbin", "/sbin"].join(File::PATH_SEPARATOR) },
-        "agent-run", "--task", "latest", "--agent", "codex", "--approved", "--json"
+        agent: "codex"
       )
       payload = JSON.parse(stdout)
       run_dir = Dir.glob(".ai-web/runs/agent-run-*").sort.last
@@ -8541,9 +8620,9 @@ class AiwebCliTest < Minitest::Test
         stdout_text: "fake codex unauthorized stdout"
       )
 
-      stdout, stderr, code = run_aiweb_env(
+      stdout, stderr, code = run_approved_agent_run(
         { "PATH" => [bin_dir, "/usr/bin", "/bin", "/usr/sbin", "/sbin"].join(File::PATH_SEPARATOR) },
-        "agent-run", "--task", "latest", "--agent", "codex", "--approved", "--json"
+        agent: "codex"
       )
       payload = JSON.parse(stdout)
       run_dir = Dir.glob(".ai-web/runs/agent-run-*").sort.last
@@ -8585,9 +8664,9 @@ class AiwebCliTest < Minitest::Test
     stdout, stderr, code = run_aiweb("help")
     assert_equal 0, code
     assert_equal "", stderr
-    assert_includes stdout, "agent-run --task latest --agent codex --approved"
+    assert_includes stdout, "agent-run --task latest --agent codex --approval-hash HASH --approved"
     assert_includes stdout, "agent-run --task latest --agent codex --dry-run"
-    assert_includes stdout, "agent-run --task latest --agent openmanus --sandbox docker --approved"
+    assert_includes stdout, "agent-run --task latest --agent openmanus --sandbox docker --approval-hash HASH --approved"
     assert_includes stdout, "agent-run --task latest --agent openmanus --dry-run"
 
     help_stdout, help_stderr, help_code = run_webbuilder("--help")

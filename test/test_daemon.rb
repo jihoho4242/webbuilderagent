@@ -218,6 +218,7 @@ class AiwebDaemonTest < Minitest::Test
           "task" => kwargs[:task],
           "agent" => kwargs[:agent],
           "sandbox" => kwargs[:sandbox],
+          "approval_hash" => kwargs[:approval_hash],
           "dry_run" => kwargs[:dry_run],
           "approved" => kwargs[:approved]
         },
@@ -1769,7 +1770,7 @@ class AiwebDaemonTest < Minitest::Test
         "POST",
         "/api/codex/agent-run",
         api_headers,
-        JSON.generate("path" => dir, "task" => "latest", "dry_run" => true, "approved" => true)
+        JSON.generate("path" => dir, "task" => "latest", "dry_run" => true, "approved" => true, "approval_hash" => "hash-agent-run")
       )
       assert_equal 403, status
       assert_match(/approval token/i, payload["error"])
@@ -1778,7 +1779,7 @@ class AiwebDaemonTest < Minitest::Test
         "POST",
         "/api/codex/agent-run",
         approval_headers("X-Aiweb-Approval-Token" => "wrong"),
-        JSON.generate("path" => dir, "task" => "latest", "dry_run" => true, "approved" => true)
+        JSON.generate("path" => dir, "task" => "latest", "dry_run" => true, "approved" => true, "approval_hash" => "hash-agent-run")
       )
       assert_equal 403, status
       assert_match(/approval token/i, payload["error"])
@@ -1787,12 +1788,14 @@ class AiwebDaemonTest < Minitest::Test
         "POST",
         "/api/codex/agent-run",
         approval_headers,
-        JSON.generate("path" => dir, "task" => "latest", "dry_run" => true, "approved" => true)
+        JSON.generate("path" => dir, "task" => "latest", "dry_run" => true, "approved" => true, "approval_hash" => "hash-agent-run")
       )
       assert_equal 200, status
       assert_equal "failed", payload["status"]
       assert_equal true, payload.dig("bridge", "approved")
       assert_includes payload.dig("bridge", "argv"), "--approved"
+      assert_includes payload.dig("bridge", "argv"), "--approval-hash"
+      assert_includes payload.dig("bridge", "argv"), "hash-agent-run"
     end
   end
 

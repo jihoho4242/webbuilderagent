@@ -6,12 +6,12 @@ OpenManus is never the project director. aiweb owns `.ai-web` state, phase gates
 
 ```bash
 aiweb agent-run --task latest --agent openmanus --dry-run --json
-aiweb agent-run --task latest --agent openmanus --sandbox docker --approved --json
+aiweb agent-run --task latest --agent openmanus --sandbox docker --approval-hash HASH --approved --json
 ```
 
 ## Invocation
 
-Version 1 uses an aiweb-managed container sandbox plus a JSON file contract. HTTP wrappers and daemon-mediated execution are future Workbench infrastructure, not the v1 agent-run boundary.
+Version 1 uses an aiweb-managed container sandbox plus a JSON file contract. Real execution requires the `approval_hash` emitted by the matching `agent-run --dry-run` capability envelope plus `--approved`; `--approved` alone blocks before run artifacts or worker processes are created. HTTP wrappers and daemon-mediated execution are future Workbench infrastructure, not the v1 agent-run boundary.
 
 Approved execution requires:
 

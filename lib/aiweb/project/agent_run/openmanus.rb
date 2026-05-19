@@ -169,19 +169,20 @@ module Aiweb
       end
     end
 
-    def agent_run_approved_command(agent_name, sandbox)
+    def agent_run_approved_command(agent_name, sandbox, approval_hash = "HASH")
       parts = ["aiweb", "agent-run", "--task", "latest", "--agent", agent_name]
       parts.concat(["--sandbox", sandbox]) if agent_name == "openmanus" && !sandbox.to_s.empty?
+      parts.concat(["--approval-hash", approval_hash])
       parts << "--approved"
       parts.join(" ")
     end
 
-    def agent_run_approved_next_action(agent_name, sandbox)
+    def agent_run_approved_next_action(agent_name, sandbox, approval_hash)
       if agent_name == "openmanus"
         chosen = sandbox.to_s.empty? ? "docker" : sandbox
-        "rerun aiweb agent-run --task latest --agent openmanus --sandbox #{chosen} --approved to execute the local openmanus patch run in an aiweb-managed sandbox"
+        "rerun aiweb agent-run --task latest --agent openmanus --sandbox #{chosen} --approval-hash #{approval_hash} --approved to execute the local openmanus patch run in an aiweb-managed sandbox"
       else
-        "rerun aiweb agent-run --task latest --agent #{agent_name} --approved to execute the local #{agent_name} patch run"
+        "rerun aiweb agent-run --task latest --agent #{agent_name} --approval-hash #{approval_hash} --approved to execute the local #{agent_name} patch run"
       end
     end
 
@@ -271,7 +272,7 @@ module Aiweb
       }
     end
 
-    def agent_run_openmanus(state:, task_source:, context:, source_paths:, run_id:, run_dir:, stdout_path:, stderr_path:, metadata_path:, diff_path:, context_path:, prompt_path:, validator_path:, result_path:, network_log_path:, browser_log_path:, denied_access_log_path:, tool_broker_log_path:, command:, contract:)
+    def agent_run_openmanus(state:, task_source:, context:, source_paths:, run_id:, run_dir:, stdout_path:, stderr_path:, metadata_path:, diff_path:, context_path:, prompt_path:, validator_path:, result_path:, network_log_path:, browser_log_path:, denied_access_log_path:, tool_broker_log_path:, command:, contract:, approval_hash:, capability:)
       changes = []
       payload = nil
       mutation(dry_run: false) do
@@ -420,6 +421,8 @@ module Aiweb
           source_paths: source_paths,
           dry_run: false,
           approved: true,
+          approval_hash: approval_hash,
+          capability: capability,
           blocking_issues: blocking_issues,
           status: status,
           changed_source_files: changed_source_files

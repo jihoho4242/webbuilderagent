@@ -583,6 +583,8 @@ module Aiweb
         o.on("--task TASK") { |v| options[:task] = v }
         o.on("--agent AGENT") { |v| options[:agent] = v }
         o.on("--sandbox SANDBOX") { |v| options[:sandbox] = v }
+        o.on("--approval-hash HASH") { |v| options[:approval_hash] = v }
+        o.on("--approval-request HASH") { |v| options[:approval_hash] = v }
         o.on("--approved") { options[:approved] = true }
       end
       unless @argv.empty?
@@ -600,7 +602,7 @@ module Aiweb
       approved = !!opts[:approved]
       return agent_run_approval_blocked_payload(task: task, agent: agent) if !@dry_run && !approved
 
-      call_project_adapter(:agent_run, { task: task, agent: agent, sandbox: sandbox.empty? ? nil : sandbox, approved: approved, dry_run: @dry_run }).tap do |result|
+      call_project_adapter(:agent_run, { task: task, agent: agent, sandbox: sandbox.empty? ? nil : sandbox, approved: approved, approval_hash: opts[:approval_hash], dry_run: @dry_run }).tap do |result|
         normalize_agent_run_payload!(result, task: task, agent: agent, approved: approved, dry_run: @dry_run)
       end
     end
