@@ -49,6 +49,10 @@ module Aiweb
             "status" => p5_evidence.dig("tool_gateway_coverage", "status"),
             "verifier_status" => p5_evidence.dig("tool_gateway_coverage", "verifier_status"),
             "demo_tool" => p5_evidence.dig("tool_gateway_coverage", "demo_tool"),
+            "l3_boolean_approval_rejected" => p5_evidence.dig("tool_gateway_coverage", "l3_boolean_approval_rejected"),
+            "l3_boolean_gateway_status" => p5_evidence.dig("tool_gateway_coverage", "l3_boolean_gateway_status"),
+            "l3_hash_bound_approval_passed" => p5_evidence.dig("tool_gateway_coverage", "l3_hash_bound_approval_passed"),
+            "l3_artifact_gateway_status" => p5_evidence.dig("tool_gateway_coverage", "l3_artifact_gateway_status"),
             "production_gate_status" => p5_evidence.dig("tool_gateway_coverage", "production_gate_status"),
             "production_ready_claim_allowed" => p5_evidence.dig("tool_gateway_coverage", "production_ready_claim_allowed")
           },

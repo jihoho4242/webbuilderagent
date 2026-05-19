@@ -14,14 +14,15 @@ module Aiweb
         @packet_builder = packet_builder
       end
 
-      def execute(run_id:, goal:, tool_name:, inputs: {}, expected_outputs: [], approved: false, approval: nil, approval_artifact: nil, action_diff: nil, args: nil, evidence: nil, paths: [])
-        packet = @packet_builder.build(
+      def execute(run_id:, goal:, tool_name:, inputs: {}, expected_outputs: [], approved: false, approval: nil, approval_artifact: nil, action_diff: nil, args: nil, evidence: nil, paths: [], decision_packet: nil)
+        approval_material = approval_artifact || approval
+        packet = decision_packet.is_a?(Hash) ? decision_packet : @packet_builder.build(
           run_id: run_id,
           goal: goal,
           requested_tool: tool_name,
           inputs: inputs,
           expected_outputs: expected_outputs,
-          approval_requirement: approved ? "satisfied" : nil
+          approval_requirement: approval_material.is_a?(Hash) && approval_material["schema_version"] == 2 ? "satisfied" : nil
         )
         requested = event("tool.requested", tool_name, packet, nil, "requested")
         scoped_paths = Array(paths) + Array(packet["read_paths"]) + Array(packet["write_paths"])

@@ -29,6 +29,7 @@ WebBuilderAgent is closer to a natural-language, engine-run-centered supervised 
 - Attached static side-effect surface audit evidence to P5/release reports with `unclassified_count=0`, while keeping runtime universal side-effect enforcement blocked.
 - Demoted P5 tool gateway evidence from raw `passed` to `gateway_demo_passed` / production-blocked until a full side-effect tool gateway audit exists.
 - Demoted P5 HITL v2 evidence from fixture `passed` to `approval_fixture_passed` with production gate blocked until real operator approval/audit evidence is attached.
+- Removed the L3 `approved: true` boolean approval shortcut from PolicyKernel/ToolGateway; L3 side effects now require a hash-bound HITL v2 approval artifact.
 - Demoted P5 replay evidence from generic pass/side-effect-free wording to `replay_demo_passed` with production gate blocked until durable replay/resume audit evidence is attached.
 - Added static audit coverage so stale release-ready / production-ready true claims and broad P5 pass wording cannot be reintroduced in release evidence surfaces.
 - Demoted CLI help from Manus wording marketing language to supervised local engine-run runtime wording, with static audit coverage.

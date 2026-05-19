@@ -1,4 +1,3 @@
----
 schema_version: 1
 release_id: v0.3.2-rc1
 release_ready: false
@@ -7,20 +6,22 @@ production_readiness_claimed: false
 operational_readiness: blocked_pending_ci_operator_drill_and_production_benchmarks
 constitution_hash: sha256:87f5f29f48f18135b27b12f940af93e49e9851df23cf0752d45e0ef4bc73d23c
 p5_evidence_status: scaffold_demo_passed
-commit_sha:
-commit_sha_policy: attach immutable commit sha from CI release job; local static manifest does not claim post-commit provenance
-github_actions_run_id:
+commit_sha: null
+commit_sha_policy: attach immutable commit sha from CI release job; local static manifest
+  does not claim post-commit provenance
+github_actions_run_id: null
 evidence_files:
 - path: releases/v0.3.2-rc1/p5_gate_report.md
-  sha256: sha256:e67206e8ae4e6a3ad2f39a7019eafacb5559cc0d3d5b4dc48b73ee0f605fafae
+  sha256: sha256:42c6a3bdbc993e76352ec82cc776a2c6993492f3e951b9164624ac769f8b1962
 schema_validation_report:
   status: targeted_validation_only
   validation_keys:
   - unit
   ruby_bin_check_passed: false
   test_all_passed: false
-  github_actions_run_id:
-  blocking_issue: full ruby bin/check, test/all, and CI evidence are not attached to this release manifest
+  github_actions_run_id: null
+  blocking_issue: full ruby bin/check, test/all, and CI evidence are not attached
+    to this release manifest
 policy_gateway_report:
   status: gateway_demo_passed
   coverage_status: unproven
@@ -42,6 +43,10 @@ tool_gateway_report:
   demo_tool: finish
   production_gate_status: blocked
   production_ready_claim_allowed: false
+  l3_boolean_approval_rejected: true
+  l3_boolean_gateway_status: approval_required
+  l3_hash_bound_approval_passed: true
+  l3_artifact_gateway_status: passed
 hitl_report:
   status: approval_fixture_passed
   verifier_status: passed
@@ -76,7 +81,8 @@ redteam_report:
     canary_value_emitted: false
     production_ready_claim_allowed: false
     operational_blocking_issues:
-    - production-ready secret canary evidence requires CI redaction transcript and independent review
+    - production-ready secret canary evidence requires CI redaction transcript and
+      independent review
   critical_high_bypass_count: 0
   production_ready_claim_allowed: false
 brain_report:
@@ -114,22 +120,33 @@ self_improvement_report:
   production_ready_claim_allowed: false
 rollback_plan:
   status: documented_local_revert_only
-  summary: revert the release commit and rerun ruby bin/check before any future release claim
+  summary: revert the release commit and rerun ruby bin/check before any future release
+    claim
 operator_drill:
   status: placeholder
-  blocking_issue: operator drill must be run in CI/ops environment before operational readiness can be claimed
+  blocking_issue: operator drill must be run in CI/ops environment before operational
+    readiness can be claimed
 operational_blocking_issues:
 - 'production readiness not claimed: GitHub Actions run id is not attached'
 - operator drill evidence is placeholder only
 - full ruby bin/check evidence is not attached to this release evidence
 - full ruby -Itest test/all.rb evidence is not attached to this release evidence
-- tool gateway demo only exercised finish; full side-effect tool gateway audit is not attached to this release evidence
-- static side-effect surface audit is attached, but runtime universal side-effect enforcement is not proven by this release evidence
-- side-effect surface audit is static classification evidence only; runtime universal enforcement still requires release-bound broker execution evidence
-- production HITL evidence requires a real operator approval artifact, expiry/single-use consumption proof, and audit trail
-- durable replay/resume audit with artifact hash validation is not attached to this release evidence
-- production-ready eval science requires independent holdout, leakage check, CI artifact, and human baseline
-- production-ready red-team requires independent adversarial review, CI artifact, secret canary transcript, and expanded attack coverage
-- production Brain still needs SQLite/concurrency-backed store, backup/restore drill, and independent memory audit evidence
-- production-ready self-improvement requires sandbox patch diff, static checks, eval/red-team pass, HITL v2 approval, canary, rollback plan, and monitor evidence
-p5_evidence_hash: sha256:e67206e8ae4e6a3ad2f39a7019eafacb5559cc0d3d5b4dc48b73ee0f605fafae
+- tool gateway demo exercised finish plus L3 approval gating fixtures, but full side-effect
+  tool gateway audit is not attached to this release evidence
+- static side-effect surface audit is attached, but runtime universal side-effect
+  enforcement is not proven by this release evidence
+- side-effect surface audit is static classification evidence only; runtime universal
+  enforcement still requires release-bound broker execution evidence
+- production HITL evidence requires a real operator approval artifact, expiry/single-use
+  consumption proof, and audit trail
+- durable replay/resume audit with artifact hash validation is not attached to this
+  release evidence
+- production-ready eval science requires independent holdout, leakage check, CI artifact,
+  and human baseline
+- production-ready red-team requires independent adversarial review, CI artifact,
+  secret canary transcript, and expanded attack coverage
+- production Brain still needs SQLite/concurrency-backed store, backup/restore drill,
+  and independent memory audit evidence
+- production-ready self-improvement requires sandbox patch diff, static checks, eval/red-team
+  pass, HITL v2 approval, canary, rollback plan, and monitor evidence
+p5_evidence_hash: sha256:42c6a3bdbc993e76352ec82cc776a2c6993492f3e951b9164624ac769f8b1962

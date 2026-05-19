@@ -79,11 +79,11 @@ class AgentOsV32PolicyKernelTest < Minitest::Test
     assert_match(/args_hash mismatch/, decision.fetch("reason"))
   end
 
-  def test_policy_marks_boolean_l3_approval_as_dev_fixture_only
+  def test_policy_rejects_boolean_l3_approval_without_hitl_artifact
     decision = Aiweb::Policy::Kernel.new.decide(packet: packet("build"), approved: true)
-    assert_equal "allow", decision.fetch("decision")
-    assert_equal "dev_fixture_only", decision.fetch("approval_status")
-    assert_match(/dev_fixture_only/, decision.fetch("reason"))
+    assert_equal "approval_required", decision.fetch("decision")
+    assert_equal "boolean_approval_rejected", decision.fetch("approval_status")
+    assert_match(/HITL v2 approval artifact/, decision.fetch("reason"))
   end
 
   def test_policy_blocks_secret_or_env_paths_before_side_effect

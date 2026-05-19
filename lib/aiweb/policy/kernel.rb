@@ -46,10 +46,9 @@ module Aiweb
             return event(packet, "approval_required", "L3 approval artifact failed: #{approval_check.fetch("blocking_issues", []).join("; ")}", rule_for(registry, "require_approval_for_l3"), "medium", approval_check.fetch("status", "blocked")) unless approval_check["status"] == "passed"
 
             return event(packet, "allow", "policy allow for L3 with passing HITL v2 approval artifact", rule_for(registry, "require_approval_for_l3"), "low", approval_check.fetch("status", "passed"))
-          elsif approved
-            return event(packet, "allow", "policy allow for L3 via dev_fixture_only boolean approval; production paths must use HITL v2 artifact", rule_for(registry, "require_approval_for_l3"), "medium", "dev_fixture_only")
           else
-            return event(packet, "approval_required", "L3 local side effect requires explicit approval artifact or dev_fixture_only boolean approval", rule_for(registry, "require_approval_for_l3"), "medium", "missing")
+            approval_status = approved ? "boolean_approval_rejected" : "missing"
+            return event(packet, "approval_required", "L3 local side effect requires a hash-bound HITL v2 approval artifact; boolean approval is not sufficient", rule_for(registry, "require_approval_for_l3"), "medium", approval_status)
           end
         end
 
