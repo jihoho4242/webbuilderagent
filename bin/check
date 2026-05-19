@@ -1,11 +1,12 @@
 #!/usr/bin/env ruby
 # frozen_string_literal: true
 
-require "open3"
 require "rbconfig"
+require_relative "../lib/aiweb/runtime"
 
 ROOT = File.expand_path("..", __dir__)
 RUBY = RbConfig.ruby
+CHECK_TIMEOUT_SECONDS = Integer(ENV.fetch("AIWEB_BIN_CHECK_TIMEOUT_SECONDS", "900"))
 TEXT_GLOBS = %w[
   .gitattributes
   AGENTS.md
@@ -28,12 +29,22 @@ TEXT_GLOBS = %w[
 
 def run_check(label, *command)
   puts "==> #{label}"
-  stdout, stderr, status = Open3.capture3(*command, chdir: ROOT)
-  print stdout unless stdout.empty?
-  warn stderr unless stderr.empty?
-  return true if status.success?
+  result = Aiweb::Runtime::ProcessRunner.new.capture(
+    Aiweb::Runtime::CommandSpec.new(
+      argv: command,
+      cwd: ROOT,
+      env: ENV.to_h,
+      timeout: CHECK_TIMEOUT_SECONDS,
+      max_output_bytes: 2_000_000,
+      risk_class: "verification_harness",
+      description: label
+    )
+  )
+  print result.stdout unless result.stdout.empty?
+  warn result.stderr unless result.stderr.empty?
+  return true if result.success?
 
-  warn "#{label} failed with exit code #{status.exitstatus || "unknown"}"
+  warn "#{label} failed with exit code #{result.exit_code || result.status || "unknown"}"
   false
 end
 

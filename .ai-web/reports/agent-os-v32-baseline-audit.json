@@ -166,6 +166,11 @@
       "surface": "long-running preview/workbench process launch",
       "status": "launch_spec_enforced_central_process_launcher",
       "finding": "ProcessLauncher now accepts only LaunchSpec through spec:, and scaffold preview, workbench serve, and engine-run sandbox preview callers construct LaunchSpec before spawning. The single Process.spawn boundary remains centralized with EnvPolicy.clean_env and explicit stdio while callers cannot pass loose argv/cwd/env keyword arguments."
+    },
+    {
+      "surface": "bin verification harness subprocesses",
+      "status": "centralized_to_runtime_process_runner",
+      "finding": "bin/check and bin/engine-runtime-matrix-check no longer own direct Open3.capture3 subprocess execution; verification harness commands route through CommandSpec/ProcessRunner while preserving argv execution, repo chdir, bounded output, timeout configuration, and failure stdout/stderr evidence."
     }
   ],
   "preserve_safety_substrate": [

@@ -3,10 +3,10 @@
 
 require "fileutils"
 require "json"
-require "open3"
 require "optparse"
 require "rbconfig"
 require "tmpdir"
+require_relative "../lib/aiweb/runtime"
 
 ROOT = File.expand_path("..", __dir__)
 RUBY = RbConfig.ruby
@@ -44,10 +44,21 @@ def executable(name)
 end
 
 def run!(label, env, *command, chdir:)
-  stdout, stderr, status = Open3.capture3(env, *command, chdir: chdir)
-  return [stdout, stderr] if status.success?
+  result = Aiweb::Runtime::ProcessRunner.new.capture(
+    Aiweb::Runtime::CommandSpec.new(
+      argv: command,
+      cwd: chdir,
+      env: env,
+      timeout: Integer(ENV.fetch("AIWEB_RUNTIME_MATRIX_COMMAND_TIMEOUT_SECONDS", "900")),
+      max_output_bytes: 2_000_000,
+      risk_class: "engine_runtime_matrix_verification",
+      description: label,
+      allow_shell_meta: true
+    )
+  )
+  return [result.stdout, result.stderr] if result.success?
 
-  raise "#{label} failed with exit #{status.exitstatus || "unknown"}\nSTDOUT:\n#{stdout}\nSTDERR:\n#{stderr}"
+  raise "#{label} failed with exit #{result.exit_code || result.status || "unknown"}\nSTDOUT:\n#{result.stdout}\nSTDERR:\n#{result.stderr}"
 end
 
 def current_user

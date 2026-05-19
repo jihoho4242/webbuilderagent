@@ -12,7 +12,7 @@ commit_sha_policy: attach immutable commit sha from CI release job; local static
 github_actions_run_id:
 evidence_files:
 - path: releases/v0.3.2-rc1/p5_gate_report.md
-  sha256: sha256:2ed7c0f2ee137227349f71e52e7ffdf800335e54a0b626477df7b6f409354122
+  sha256: sha256:064c5ba241faadc4dea5c0b48a91b395745f9633fbb606405fd755f4292a2548
 schema_validation_report:
   status: targeted_validation_only
   validation_keys:
@@ -31,7 +31,7 @@ side_effect_surface_audit_report:
   status: static_audit_attached
   scanner: aiweb.side_effect_surface_audit.v1
   coverage_status: classified
-  entry_count: 21
+  entry_count: 19
   unclassified_count: 0
   runtime_universal_enforcement_proven: false
   production_gate_status: blocked
@@ -113,4 +113,4 @@ operational_blocking_issues:
 - production-ready red-team requires independent adversarial review, CI artifact, secret canary transcript, and expanded attack coverage
 - SQLite backend unavailable; JSONL ledger is a local MVP persistence layer
 - production-ready self-improvement requires sandbox patch diff, static checks, eval/red-team pass, HITL v2 approval, canary, rollback plan, and monitor evidence
-p5_evidence_hash: sha256:2ed7c0f2ee137227349f71e52e7ffdf800335e54a0b626477df7b6f409354122
+p5_evidence_hash: sha256:064c5ba241faadc4dea5c0b48a91b395745f9633fbb606405fd755f4292a2548

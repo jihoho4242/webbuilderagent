@@ -6,9 +6,6 @@ module Aiweb
 
     def side_effect_surface_classification(path, line, lines, index)
       context = lines[[index - 8, 0].max..[index + 8, lines.length - 1].min].join("\n")
-      if path == "bin/check" || path == "bin/engine-runtime-matrix-check"
-        return side_effect_classification("local_verification_harness_exception", "documented_exception", nil, "bin/* verification harnesses run local checks only and are not production agent side-effect paths")
-      end
       if %w[aiweb 웹빌더].include?(path) && line.match?(/\A\s*exec\s+/) && side_effect_surface_safe_launcher_exec?(path, line)
         return side_effect_classification("local_cli_launcher_wrapper", "documented_exception", nil, "root launcher delegates to the repo-local aiweb executable")
       end

@@ -333,6 +333,17 @@
         "ProcessLauncher still owns the single Process.spawn boundary with EnvPolicy.clean_env and explicit stdio, while callers cannot bypass the typed launch contract",
         "contract tests now assert all ProcessLauncher callers pass spec: and side-effect surface audit remains classified with unclassified_count=0"
       ]
+    },
+    {
+      "surface": "bin verification harness subprocesses",
+      "status": "centralized_to_runtime_process_runner",
+      "evidence": [
+        "bin/check now uses Aiweb::Runtime::ProcessRunner with CommandSpec instead of direct Open3.capture3 for ruby syntax, load smoke, test suite, and git diff checks",
+        "bin/engine-runtime-matrix-check now uses Aiweb::Runtime::ProcessRunner with CommandSpec instead of direct Open3.capture3 for Docker/Podman build and engine-run smoke commands",
+        "verification harness commands preserve explicit argv execution, repo chdir, bounded output, timeout configuration, and failure stdout/stderr evidence",
+        "stale local_verification_harness_exception classifier was removed from side_effect_broker/classification.rb so future direct bin/* subprocess regressions become unclassified instead of pre-approved",
+        "side-effect surface audit no longer reports local_verification_harness_exception or bin/* direct Open3 entries; entry_count dropped from 21 to 19 with unclassified_count=0"
+      ]
     }
   ],
   "preserved_safety_substrate": [
@@ -425,7 +436,12 @@
     "ruby -Itest test/test_agentification_runtime.rb -n '/process_runner|command_spec|process_launcher|launch_spec/'": "passed: 5 runs, 33 assertions, 0 failures, 0 errors",
     "ruby -Itest test/test_aiweb_cli.rb -n '/preview_records_running_fake_dev_server_duplicate_and_stop|workbench_dry_run|engine_run_captures_screenshot_manifest|engine_run_design_verdict_passes/'": "passed: 4 runs, 775 assertions, 0 failures, 0 errors",
     "ruby -Itest test/test_contracts.rb -n '/side_effect_surface_audit|process_launcher_callers_use_launch_spec/'": "passed: 6 runs, 78 assertions, 0 failures, 0 errors",
-    "ruby -Ilib -e side_effect_surface_audit LaunchSpec classification": "passed: coverage=classified, unclassified=0, entry_count=21; ProcessLauncher entries are central runtime launcher boundary entries and LaunchSpec has no direct side-effect entries"
+    "ruby -Ilib -e side_effect_surface_audit LaunchSpec classification": "passed: coverage=classified, unclassified=0, entry_count=21; ProcessLauncher entries are central runtime launcher boundary entries and LaunchSpec has no direct side-effect entries",
+    "ruby -c bin/check bin/engine-runtime-matrix-check lib/aiweb/project/side_effect_broker/classification.rb test/test_contracts.rb": "passed: Syntax OK",
+    "ruby bin/engine-runtime-matrix-check --dry-run --json after bin ProcessRunner centralization": "passed: planned matrix JSON emitted",
+    "ruby -Itest test/test_contracts.rb -n '/side_effect_surface_audit/' after bin ProcessRunner centralization": "passed: 5 runs, 75 assertions, 0 failures, 0 errors",
+    "ruby -Ilib -e side_effect_surface_audit bin verification classification": "passed: coverage=classified, unclassified=0, entry_count=19, removed local_verification_harness_exception; no bin/* direct Open3 entries remain",
+    "rg Open3.capture3/Open3.popen3 in bin": "passed: no direct Open3.capture3/Open3.popen3 remains in bin scripts"
   },
   "completion_status": "not_complete",
   "why_not_complete": "Top-level fixed script-runner surfaces, stale deploy provider execution, browser deterministic-probe naming claims, CLI/contract Manus wording marketing overclaims, fixture-eval production-readiness overclaims, red-team catalog-fixture overclaims, secret-canary value emission, self-improvement dry-run overclaims, release validation evidence overclaims, P5 policy/tool gateway overclaims, P5 HITL fixture overclaims, P5 replay readiness overclaims, Brain safety wording overclaims, Brain JSON snapshot overclaims, the Codex agent-run worker subprocess, runtime_commands direct git/taskkill process forms, agent-run diff-policy direct git subprocesses, OpenManus readiness direct image inspect subprocess, and agent-run OpenManus direct image inspect preflight, engine-run sandbox runtime attestation direct Docker/Podman probes, Codex agent-run worker direct subprocess execution, and OpenManus agent-run sandbox worker direct subprocess execution, and engine-run agent worker direct subprocess execution, and engine-run capture helper direct subprocess execution, and setup install/supply-chain direct subprocess execution are neutralized, but Manus-grade natural-language web-app agent readiness still requires independent production red-team/release evidence plus a real SQLite/dependency-backed Brain kernel.",

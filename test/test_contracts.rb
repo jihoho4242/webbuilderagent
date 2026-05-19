@@ -120,11 +120,11 @@ class AiwebContractTest < Minitest::Test
     refute entries.any? { |entry| entry.fetch("classification") == "brokered_setup_supply_chain_command" }, "setup install/SBOM/audit commands must use the central ProcessRunner boundary instead of direct Open3"
     refute entries.any? { |entry| entry.fetch("classification") == "brokered_backend_cli_bridge" }, "backend bridge subprocess execution must use the central ProcessRunner boundary instead of direct Open3"
     refute entries.any? { |entry| entry.fetch("classification") == "brokered_lazyweb_http" }, "Lazyweb external HTTP must use the central HttpClient boundary instead of direct Net::HTTP"
+    refute entries.any? { |entry| entry.fetch("classification") == "local_verification_harness_exception" }, "bin verification harness subprocesses must use the central ProcessRunner boundary instead of direct Open3"
 
     classifications = entries.map { |entry| entry.fetch("classification") }
     %w[
       central_runtime_http_client
-      local_verification_harness_exception
       local_cli_launcher_wrapper
     ].each do |classification|
       assert_includes classifications, classification
