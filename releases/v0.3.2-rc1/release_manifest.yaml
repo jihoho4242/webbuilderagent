@@ -12,7 +12,7 @@ commit_sha_policy: attach immutable commit sha from CI release job; local static
 github_actions_run_id:
 evidence_files:
 - path: releases/v0.3.2-rc1/p5_gate_report.md
-  sha256: sha256:96c6370b296eca3748fb52cfead76136c1abec2a0c97e1d187dc8bc265df854e
+  sha256: sha256:f2e15855684404f1c6161cc60db1cbe454be5a4298b594d11e0da971e591d935
 schema_validation_report:
   status: targeted_validation_only
   validation_keys:
@@ -32,6 +32,13 @@ hitl_report:
   verifier_status: passed
   production_gate_status: blocked
   approver_fixture_only: true
+  production_ready_claim_allowed: false
+replay_report:
+  status: replay_demo_passed
+  fixture_status: decision_replay_key_fixture_present
+  production_gate_status: blocked
+  side_effect_free_replay_proven: false
+  replay_run_attached: false
   production_ready_claim_allowed: false
 eval_report:
   status: expanded_fixture_passed
@@ -77,8 +84,9 @@ operational_blocking_issues:
 - full ruby -Itest test/all.rb evidence is not attached to this release evidence
 - whole-repo side-effect policy coverage audit is not attached to this release evidence
 - production HITL evidence requires a real operator approval artifact, expiry/single-use consumption proof, and audit trail
+- durable replay/resume audit with artifact hash validation is not attached to this release evidence
 - production-ready eval science requires independent holdout, leakage check, CI artifact, and human baseline
 - production-ready red-team requires independent adversarial review, CI artifact, secret canary transcript, and expanded attack coverage
 - SQLite backend unavailable; JSONL ledger is a local MVP persistence layer
 - production-ready self-improvement requires sandbox patch diff, static checks, eval/red-team pass, HITL v2 approval, canary, rollback plan, and monitor evidence
-p5_evidence_hash: sha256:96c6370b296eca3748fb52cfead76136c1abec2a0c97e1d187dc8bc265df854e
+p5_evidence_hash: sha256:f2e15855684404f1c6161cc60db1cbe454be5a4298b594d11e0da971e591d935

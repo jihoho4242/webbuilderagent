@@ -15,7 +15,7 @@ Evidence integrity: `releases/v0.3.2-rc1/evidence_integrity_manifest.yaml`
 - Policy coverage: gateway_demo_passed (whole-repo side-effect coverage unproven; production gate blocked)
 - Tool gateway: passed
 - HITL v2: approval_fixture_passed (fixture approver only; production gate blocked)
-- Replay: passed
+- Replay: replay_demo_passed (durable replay/resume audit not attached; production gate blocked)
 - Validation: targeted_validation_only (full ruby bin/check, test/all, and CI evidence not attached)
 - Red-team: catalog_fixture_passed (6 local catalog cases; production gate remains blocked)
 - Red-team secret canary: canary_configured, value emitted=false, production gate blocked
@@ -36,6 +36,7 @@ Evidence integrity: `releases/v0.3.2-rc1/evidence_integrity_manifest.yaml`
 - full ruby -Itest test/all.rb evidence is not attached to this release evidence
 - whole-repo side-effect policy coverage audit is not attached to this release evidence
 - production HITL evidence requires a real operator approval artifact, expiry/single-use consumption proof, and audit trail
+- durable replay/resume audit with artifact hash validation is not attached to this release evidence
 - production-ready eval science requires independent holdout, leakage check, CI artifact, and human baseline
 - production-ready red-team requires independent adversarial review, CI artifact, secret canary transcript, and expanded attack coverage
 - SQLite backend unavailable; JSONL ledger is a local MVP persistence layer

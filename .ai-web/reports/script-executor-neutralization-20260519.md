@@ -26,11 +26,12 @@ WebBuilderAgent is closer to a natural-language, engine-run-centered supervised 
 - Demoted release validation evidence from hardcoded `local_bin_check_passed` / `ruby bin/check` to `targeted_validation_only` unless full `ruby bin/check`, `test/all`, and CI evidence are attached.
 - Demoted P5 policy coverage from global `all_side_effects...=true` to `gateway_demo_passed` with `coverage_status=unproven` until whole-repo side-effect coverage evidence exists.
 - Demoted P5 HITL v2 evidence from fixture `passed` to `approval_fixture_passed` with production gate blocked until real operator approval/audit evidence is attached.
+- Demoted P5 replay evidence from generic pass/side-effect-free wording to `replay_demo_passed` with production gate blocked until durable replay/resume audit evidence is attached.
 
 ## Remaining non-completion reasons
 
 - Red-team evidence is now explicitly catalog-fixture-only and production-blocked; self-improvement is dry-run fixture-only and production-blocked; Brain is safer append-only JSONL but still operationally blocked until a real SQLite/dependency-backed kernel exists; eval fixture pass is explicitly production-blocked.
-- Operator drill, GitHub Actions run ids, full `ruby bin/check`/`test/all` evidence, whole-repo side-effect policy coverage evidence, real HITL operator/audit evidence, and production release evidence are still blockers.
+- Operator drill, GitHub Actions run ids, full `ruby bin/check`/`test/all` evidence, whole-repo side-effect policy coverage evidence, real HITL operator/audit evidence, durable replay/resume audit evidence, and production release evidence are still blockers.
 - External provider/deploy/credential flows remain intentionally blocked; deploy provider execution is now fail-closed until a future engine-run release evidence gate exists.
 
 ## Validation
@@ -42,7 +43,7 @@ WebBuilderAgent is closer to a natural-language, engine-run-centered supervised 
 - `ruby -Itest test/test_aiweb_cli.rb -n '/deploy/'` ? PASS: 8 runs, 290 assertions, 0 failures, 0 errors
 - `ruby -Itest test/test_aiweb_cli.rb -n '/verify_loop|verify-loop|workbench_dry_run|deploy/'` ? PASS: 18 runs, 616 assertions, 0 failures, 0 errors
 - `ruby -Itest test/test_aiweb_cli.rb -n '/engine_run_captures_screenshot_manifest|engine_run_design_verdict_passes|engine_run_design_gate_blocks_copy_back_on_browser_action_recovery_failure|engine_run_preserves_structured_browser_policy_evidence/'` ? PASS: 4 runs, 648 assertions, 0 failures, 0 errors
-- `ruby -Itest test/test_agent_os_v32_release_evidence.rb` ? PASS: 2 runs, 117 assertions, 0 failures, 0 errors
+- `ruby -Itest test/test_agent_os_v32_release_evidence.rb` ? PASS: 2 runs, 137 assertions, 0 failures, 0 errors
 - `ruby -Itest test/test_agent_os_v32_evals.rb` ? PASS: 2 runs, 21 assertions, 0 failures, 0 errors
 - `ruby -Itest test/test_agent_os_v32_brain_and_self_improvement.rb` ? PASS: 6 runs, 46 assertions, 0 failures, 0 errors
 - `ruby -Itest test/test_agent_os_v32_redteam.rb` ? PASS: 4 runs, 38 assertions, 0 failures, 0 errors
@@ -59,4 +60,4 @@ WebBuilderAgent is closer to a natural-language, engine-run-centered supervised 
 
 ## Completion
 
-Not complete. The fixed script-runner deletion part is substantially complete, including fail-closing stale deploy execution, demoting browser scenario wording to deterministic probe evidence, preventing fixture evals and red-team catalog probes from claiming production readiness, redacting secret-canary output, demoting self-improvement dry-runs, release validation claims, policy coverage claims, and HITL fixture claims to production-blocked/targeted evidence, and replacing Brain JSON snapshots with append-only JSONL plus a SQLite blocker; the full objective remains active until Manus-grade/natural-language web-app agent readiness is proven requirement-by-requirement.
+Not complete. The fixed script-runner deletion part is substantially complete, including fail-closing stale deploy execution, demoting browser scenario wording to deterministic probe evidence, preventing fixture evals and red-team catalog probes from claiming production readiness, redacting secret-canary output, demoting self-improvement dry-runs, release validation claims, policy coverage claims, HITL fixture claims, and replay demo claims to production-blocked/targeted evidence, and replacing Brain JSON snapshots with append-only JSONL plus a SQLite blocker; the full objective remains active until Manus-grade/natural-language web-app agent readiness is proven requirement-by-requirement.

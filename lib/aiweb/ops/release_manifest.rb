@@ -42,6 +42,14 @@ module Aiweb
             "approver_fixture_only" => p5_evidence.dig("hitl_v2", "approver_fixture_only"),
             "production_ready_claim_allowed" => p5_evidence.dig("hitl_v2", "production_ready_claim_allowed")
           },
+          "replay_report" => {
+            "status" => p5_evidence.dig("replay", "status"),
+            "fixture_status" => p5_evidence.dig("replay", "fixture_status"),
+            "production_gate_status" => p5_evidence.dig("replay", "production_gate_status"),
+            "side_effect_free_replay_proven" => p5_evidence.dig("replay", "side_effect_free_replay_proven"),
+            "replay_run_attached" => p5_evidence.dig("replay", "replay_run_attached"),
+            "production_ready_claim_allowed" => p5_evidence.dig("replay", "production_ready_claim_allowed")
+          },
           "eval_report" => {
             "status" => p5_evidence.dig("eval", "status"),
             "production_gate_status" => p5_evidence.dig("eval", "production_gate_status"),

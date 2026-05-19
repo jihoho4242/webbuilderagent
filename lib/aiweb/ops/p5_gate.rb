@@ -63,10 +63,23 @@ module Aiweb
             "whole-repo side-effect policy coverage audit is not attached to this release evidence"
           ]
         }
+        replay_evidence = {
+          "status" => "replay_demo_passed",
+          "fixture_status" => "decision_replay_key_fixture_present",
+          "production_gate_status" => "blocked",
+          "side_effect_free_replay" => false,
+          "side_effect_free_replay_proven" => false,
+          "decision_replay_key_present" => true,
+          "replay_run_attached" => false,
+          "production_ready_claim_allowed" => false,
+          "operational_blocking_issues" => [
+            "durable replay/resume audit with artifact hash validation is not attached to this release evidence"
+          ]
+        }
         operational_blockers = [
           "production readiness not claimed: GitHub Actions run id is not attached",
           "operator drill evidence is placeholder only"
-        ] + validation_blocking_issues(validation) + policy_coverage.fetch("operational_blocking_issues", []) + hitl_evidence.fetch("operational_blocking_issues", []) + eval_result.fetch("blocking_issues", []) + redteam.fetch("operational_blocking_issues", []) + brain_audit.fetch("operational_blocking_issues", []) + experiment.fetch("operational_blocking_issues", [])
+        ] + validation_blocking_issues(validation) + policy_coverage.fetch("operational_blocking_issues", []) + hitl_evidence.fetch("operational_blocking_issues", []) + replay_evidence.fetch("operational_blocking_issues", []) + eval_result.fetch("blocking_issues", []) + redteam.fetch("operational_blocking_issues", []) + brain_audit.fetch("operational_blocking_issues", []) + experiment.fetch("operational_blocking_issues", [])
         {
           "schema_version" => 1,
           "release_id" => "v0.3.2-rc1",
@@ -78,7 +91,7 @@ module Aiweb
           "policy_coverage" => policy_coverage,
           "tool_gateway_coverage" => { "status" => gateway_result["status"], "event_order" => gateway_result.fetch("events", []).map { |event| event["event"] } },
           "hitl_v2" => hitl_evidence,
-          "replay" => { "status" => "passed", "side_effect_free_replay" => true, "decision_replay_key_present" => true },
+          "replay" => replay_evidence,
           "redteam" => redteam,
           "eval" => eval_result,
           "brain" => brain_audit.merge("forgotten_memory" => brain_evidence.fetch("forgotten"), "storage_mode" => brain_evidence.fetch("storage_mode")),
