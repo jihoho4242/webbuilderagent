@@ -11,7 +11,7 @@ commit_sha: 61d26a47022cfa25a38911119e601340a826d928
 github_actions_run_id:
 evidence_files:
 - path: releases/v0.3.2-rc1/p5_gate_report.md
-  sha256: sha256:5c277189178f19c26e4fe0d6a7efc540f804600281547e057fb430112e042859
+  sha256: sha256:33c8c3ee1cb4dcf300c13aeb8b0b36056d1d1313664ab6bf347dd062029460a5
 schema_validation_report:
   status: local_bin_check_passed
   command: ruby bin/check
@@ -38,5 +38,5 @@ operational_blocking_issues:
 - operator drill evidence is placeholder only
 - eval/red-team packs are expanded fixtures, not independently reviewed production
   benchmark evidence
-- Personal Brain persistence is MVP and not yet SQLite-backed
-p5_evidence_hash: sha256:5c277189178f19c26e4fe0d6a7efc540f804600281547e057fb430112e042859
+- SQLite backend unavailable; JSONL ledger is a local MVP persistence layer
+p5_evidence_hash: sha256:33c8c3ee1cb4dcf300c13aeb8b0b36056d1d1313664ab6bf347dd062029460a5

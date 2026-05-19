@@ -26,6 +26,9 @@ class AgentOsV32ReleaseEvidenceTest < Minitest::Test
     assert_equal "expanded_fixture_passed", evidence.dig("eval", "status")
     assert_equal "blocked", evidence.dig("eval", "production_gate_status")
     assert_equal false, evidence.dig("eval", "production_ready_claim_allowed")
+    assert_equal "project_local_jsonl_ledger_sqlite_unavailable", evidence.dig("brain", "storage_mode")
+    assert_equal "blocked", evidence.dig("brain", "operational_status")
+    assert_match(/SQLite backend unavailable/, evidence.dig("brain", "operational_blocking_issues").join("\n"))
     assert_equal false, evidence.dig("self_improvement", "proposal", "source_changed")
     assert_equal true, evidence.dig("replay", "side_effect_free_replay")
     assert_equal "passed", evidence.dig("hitl_v2", "status")
@@ -42,6 +45,7 @@ class AgentOsV32ReleaseEvidenceTest < Minitest::Test
     assert manifest.fetch("evidence_files").any? { |item| item.fetch("path") == "releases/v0.3.2-rc1/p5_gate_report.md" }
     assert_includes manifest.fetch("rollback_plan").fetch("status"), "documented"
     assert_equal "placeholder", manifest.fetch("operator_drill").fetch("status")
+    assert_match(/SQLite backend unavailable/, manifest.fetch("operational_blocking_issues").join("\n"))
 
     integrity = YAML.safe_load(File.read(File.join(REPO_ROOT, "releases", "v0.3.2-rc1", "evidence_integrity_manifest.yaml")), permitted_classes: [], aliases: false)
     integrity.fetch("files").each do |entry|

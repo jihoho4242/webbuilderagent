@@ -18,7 +18,7 @@ Evidence hash: `sha256:481d51ca7fd9e22f60472e3896fa2124d5ba692a41a0f048b90fecd36
 - Replay: passed
 - Red-team critical/high bypass count: 0
 - Eval: expanded_fixture_passed (50 synthetic fixture cases; production gate remains blocked)
-- Brain: passed
+- Brain: safety passed (JSONL ledger MVP; SQLite operational gate blocked)
 - Self-improvement source changed: false
 
 ## Scaffold/demo blockers
@@ -30,4 +30,4 @@ Evidence hash: `sha256:481d51ca7fd9e22f60472e3896fa2124d5ba692a41a0f048b90fecd36
 - production readiness not claimed: GitHub Actions run id is not attached
 - operator drill evidence is placeholder only
 - eval/red-team packs are expanded fixtures, not independently reviewed production benchmark evidence
-- Personal Brain persistence is MVP and not yet SQLite-backed
+- SQLite backend unavailable; JSONL ledger is a local MVP persistence layer

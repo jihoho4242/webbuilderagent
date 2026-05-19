@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "json"
+require "fileutils"
 require "tmpdir"
 
 require_relative "support/test_helper"
@@ -9,25 +10,65 @@ require "aiweb"
 
 
 class AgentOsV32BrainAndSelfImprovementTest < Minitest::Test
-  def test_brain_store_persists_project_local_json_mvp_and_honors_tombstones
+  def test_brain_store_persists_project_local_jsonl_ledger_and_honors_tombstones
     Dir.mktmpdir("aiweb-brain-test") do |dir|
       store = Aiweb::Brain::Store.new(root: dir)
       result = store.remember(summary: "Use a compact premium editorial layout", evidence_grade: "operator_approved", source: "test", scope: "project")
 
       assert_equal "passed", result.fetch("status")
-      assert_equal "project_local_json_mvp_sqlite_pending", store.storage_mode
+      assert_equal "project_local_jsonl_ledger_sqlite_unavailable", store.storage_mode
+      assert_equal false, store.sqlite_available?
 
-      path = File.join(dir, ".ai-web", "brain", "brain.json")
+      path = File.join(dir, ".ai-web", "brain", "brain.jsonl")
       assert File.file?(path)
+      events = File.readlines(path, chomp: true).map { |line| JSON.parse(line) }
+      assert_equal ["memory.remembered"], events.map { |event| event.fetch("event") }
 
       reloaded = Aiweb::Brain::Store.new(root: dir)
       assert_equal ["Use a compact premium editorial layout"], reloaded.search.map { |item| item.fetch("summary") }
 
       reloaded.forget(result.fetch("memory_id"))
+      events = File.readlines(path, chomp: true).map { |line| JSON.parse(line) }
+      assert_equal %w[memory.remembered memory.forgotten], events.map { |event| event.fetch("event") }
 
       tombstone_reload = Aiweb::Brain::Store.new(root: dir)
       assert_empty tombstone_reload.search
       assert_equal 0, tombstone_reload.tombstone_leak_count
+      audit = Aiweb::Brain::MemoryAudit.new.audit(tombstone_reload)
+      assert_equal "passed", audit.fetch("status")
+      assert_equal "blocked", audit.fetch("operational_status")
+      assert_match(/SQLite backend unavailable/, audit.fetch("operational_blocking_issues").join("\n"))
+    end
+  end
+
+  def test_brain_store_migrates_legacy_json_snapshot_to_jsonl_ledger
+    Dir.mktmpdir("aiweb-brain-legacy-test") do |dir|
+      brain_dir = File.join(dir, ".ai-web", "brain")
+      FileUtils.mkdir_p(brain_dir)
+      legacy_path = File.join(brain_dir, "brain.json")
+      File.write(
+        legacy_path,
+        JSON.pretty_generate(
+          "items" => [
+            { "id" => "memory-keep", "summary" => "Keep this approved preference", "evidence_grade" => "high" },
+            { "id" => "memory-forget", "summary" => "Do not leak this tombstoned preference", "evidence_grade" => "high" }
+          ],
+          "tombstones" => ["memory-forget"]
+        )
+      )
+
+      migrated = Aiweb::Brain::Store.new(root: dir)
+
+      assert_equal ["Keep this approved preference"], migrated.search.map { |item| item.fetch("summary") }
+      assert_equal 0, migrated.tombstone_leak_count
+
+      ledger_path = File.join(brain_dir, "brain.jsonl")
+      assert File.file?(ledger_path)
+      events = File.readlines(ledger_path, chomp: true).map { |line| JSON.parse(line) }
+      assert_equal %w[memory.remembered memory.forgotten], events.map { |event| event.fetch("event") }
+
+      reloaded = Aiweb::Brain::Store.new(root: dir)
+      assert_equal ["Keep this approved preference"], reloaded.search.map { |item| item.fetch("summary") }
     end
   end
 

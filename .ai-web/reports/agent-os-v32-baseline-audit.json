@@ -31,6 +31,11 @@
       "surface": "fixture eval production-readiness claim",
       "status": "demoted_to_production_gate_blocked",
       "finding": "eval runner no longer reports status=passed when production evidence is missing; expanded fixtures can pass only fixture gate while production_gate_status remains blocked"
+    },
+    {
+      "surface": "Personal Brain persistence claim",
+      "status": "append_only_jsonl_mvp_sqlite_blocked",
+      "finding": "Brain store now uses append-only JSONL remember/forget events and MemoryAudit exposes SQLite-unavailable operational blocker instead of claiming production-grade persistence"
     }
   ],
   "preserve_safety_substrate": [

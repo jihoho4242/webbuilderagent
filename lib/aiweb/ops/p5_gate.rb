@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "json"
+require "tmpdir"
 
 require_relative "../constitution"
 require_relative "../policy"
@@ -23,10 +24,13 @@ module Aiweb
         packet = packet_builder.build(run_id: "p5-demo", goal: "approval demo", requested_tool: "external_deploy", inputs: { demo: true })
         approval = Aiweb::Approval::Artifact.build(run_id: "p5-demo", decision_packet_ids: [packet["packet_id"]], risk_tier: "L4", requested_capabilities: ["external_deploy"], action_diff: "dry-run", args: { demo: true }, evidence: { demo: true }, approver_id: "p5-fixture-approver", second_reviewer_id: "p5-fixture-reviewer")
         approval_check = Aiweb::Approval::Verifier.new.verify(artifact: approval, decision_packet: packet, action_diff: "dry-run", args: { demo: true }, evidence: { demo: true })
-        store = Aiweb::Brain::Store.new
-        mem = store.remember(summary: "Use policy-gated memory proposals only", evidence_grade: "high")
-        forgotten = store.forget(mem["memory_id"])
-        brain_audit = Aiweb::Brain::MemoryAudit.new.audit(store)
+        brain_evidence = Dir.mktmpdir("aiweb-p5-brain") do |brain_root|
+          store = Aiweb::Brain::Store.new(root: brain_root)
+          mem = store.remember(summary: "Use policy-gated memory proposals only", evidence_grade: "high")
+          forgotten = store.forget(mem["memory_id"])
+          audit = Aiweb::Brain::MemoryAudit.new.audit(store)
+          { "audit" => audit, "forgotten" => forgotten, "storage_mode" => store.storage_mode }
+        end
         proposal = Aiweb::SelfImprovement::Governor.new.dry_run_proposal(target_component: "runtime_tool_description", hypothesis: "Improve clarity", eval_plan: { "required" => true }, rollback_plan: { "summary" => "revert proposal" })
         experiment = Aiweb::SelfImprovement::ExperimentRegistry.new.record(proposal)
         redteam = Aiweb::Redteam::Arena.new.run(policy_kernel: policy_kernel, packet_builder: packet_builder)
@@ -36,15 +40,15 @@ module Aiweb
         scaffold_blockers << "tool gateway demo failed" unless gateway_result["status"] == "passed"
         scaffold_blockers.concat(approval_check.fetch("blocking_issues", [])) unless approval_check["status"] == "passed"
         scaffold_blockers << "red-team critical/high bypass remains" unless redteam["critical_high_bypass_count"].to_i.zero?
+        brain_audit = brain_evidence.fetch("audit")
         scaffold_blockers.concat(brain_audit.fetch("blocking_issues", [])) unless brain_audit["status"] == "passed"
         scaffold_blockers << "self-improvement proposal changed source" if proposal["source_changed"] != false
         scaffold_blockers << "eval fixture gate failed" unless eval_result["expanded_fixture_gate_passed"] == true && eval_result["failure_count"].to_i.zero?
         operational_blockers = [
           "production readiness not claimed: GitHub Actions run id is not attached",
           "operator drill evidence is placeholder only",
-          "eval/red-team packs are expanded fixtures, not independently reviewed production benchmark evidence",
-          "Personal Brain persistence is MVP and not yet SQLite-backed"
-        ]
+          "eval/red-team packs are expanded fixtures, not independently reviewed production benchmark evidence"
+        ] + brain_audit.fetch("operational_blocking_issues", [])
         {
           "schema_version" => 1,
           "release_id" => "v0.3.2-rc1",
@@ -59,7 +63,7 @@ module Aiweb
           "replay" => { "status" => "passed", "side_effect_free_replay" => true, "decision_replay_key_present" => true },
           "redteam" => redteam,
           "eval" => eval_result,
-          "brain" => brain_audit.merge("forgotten_memory" => forgotten),
+          "brain" => brain_audit.merge("forgotten_memory" => brain_evidence.fetch("forgotten"), "storage_mode" => brain_evidence.fetch("storage_mode")),
           "self_improvement" => { "proposal" => proposal, "experiment" => experiment },
           "script_executor_neutralization" => { "status" => "top_level_surfaces_neutralized", "top_level_agent_runtime_removed" => true, "verify_loop_role" => "engine_run_compatibility_shim_no_fixed_pipeline", "browser_static_scenario_role" => "deterministic_local_browser_probe" },
           "validation" => validation,
