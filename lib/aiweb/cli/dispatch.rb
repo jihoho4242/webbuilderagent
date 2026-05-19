@@ -383,11 +383,12 @@ module Aiweb
         o.on("--max-cycles N") { |v| options[:max_cycles] = parse_positive_integer(v, "--max-cycles") }
         o.on("--agent AGENT") { |v| options[:agent] = v }
         o.on("--sandbox SANDBOX") { |v| options[:sandbox] = v }
+        o.on("--approval-hash HASH") { |v| options[:approval_hash] = v }
         o.on("--approved") { options[:approved] = true }
         o.on("--force") { options[:force] = true }
       end
       reject_extra_args!("verify-loop")
-      project.verify_loop(max_cycles: opts[:max_cycles] || 3, agent: opts[:agent], sandbox: opts[:sandbox], approved: !!opts[:approved], force: opts[:force], dry_run: @dry_run)
+      project.verify_loop(max_cycles: opts[:max_cycles] || 3, agent: opts[:agent], sandbox: opts[:sandbox], approved: !!opts[:approved], approval_hash: opts[:approval_hash], force: opts[:force], dry_run: @dry_run)
     end
 
     def dispatch_intent

@@ -102,7 +102,8 @@ module Aiweb
 
     def verify_loop_exit_code(result)
       status = result.dig("verify_loop", "status").to_s
-      return EXIT_SUCCESS if %w[dry_run planned passed cancelled].include?(status)
+      return EXIT_SUCCESS if %w[dry_run planned passed no_changes cancelled].include?(status)
+      return EXIT_UNSAFE_EXTERNAL_ACTION if %w[waiting_approval quarantined].include?(status)
       return EXIT_BUDGET_BLOCKED if status == "max_cycles"
       if status == "blocked"
         issues = ((result.dig("verify_loop", "blocking_issues") || []) + (result["blocking_issues"] || [])).join(" ")

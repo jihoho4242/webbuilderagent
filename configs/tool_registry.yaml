@@ -39,10 +39,10 @@ tools:
   verify_loop:
     permission_tier: L3
     risk_tier: L3
-    side_effect_class: legacy_verification_bundle_tool
+    side_effect_class: engine_run_compatibility_shim
     owner: runtime_owner
     dry_run_supported: true
-    agent_engine_role: demoted_tool_probe
+    agent_engine_role: removed_script_runner_facade
   external_deploy:
     permission_tier: L4
     risk_tier: L4

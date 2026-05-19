@@ -14,7 +14,7 @@ class AgentOsV32StaticSurfaceAuditTest < Minitest::Test
 
   def test_script_executor_surfaces_are_demoted_not_claimed_as_canonical_engines
     tool_registry = YAML.safe_load(File.read(File.join(REPO_ROOT, "configs", "tool_registry.yaml")), permitted_classes: [], aliases: false)
-    assert_equal "demoted_tool_probe", tool_registry.dig("tools", "verify_loop", "agent_engine_role")
+    assert_equal "removed_script_runner_facade", tool_registry.dig("tools", "verify_loop", "agent_engine_role")
 
     %w[
       loop.rb
@@ -36,6 +36,14 @@ class AgentOsV32StaticSurfaceAuditTest < Minitest::Test
     assert_includes facade_source, "engine_run("
     assert_includes facade_source, "removed_script_runner"
     refute_includes facade_source, "Aiweb::AgentRuntime::Loop"
+
+    %w[execution.rb reporting.rb].each do |file|
+      refute File.exist?(File.join(REPO_ROOT, "lib", "aiweb", "project", "verify_loop", file)), "legacy verify-loop #{file} must stay deleted"
+    end
+    verify_loop_source = File.read(File.join(REPO_ROOT, "lib", "aiweb", "project", "verify_loop.rb"))
+    assert_includes verify_loop_source, "engine_run("
+    assert_includes verify_loop_source, "fixed_pipeline_present"
+    refute_match(/verify_loop_record_step|build\(dry_run: false\)|preview\(dry_run: false\)|qa_playwright|agent_run\(task: \"latest\"/, verify_loop_source)
   end
 
   def test_baseline_audit_records_inventory_and_preserved_safety_substrate
@@ -43,6 +51,8 @@ class AgentOsV32StaticSurfaceAuditTest < Minitest::Test
     assert_equal 1, audit.fetch("schema_version")
     agent_runtime = audit.fetch("script_executor_inventory").find { |entry| entry.fetch("surface").include?("AgentRuntime") }
     assert_equal "removed", agent_runtime.fetch("status")
+    verify_loop = audit.fetch("script_executor_inventory").find { |entry| entry.fetch("surface") == "verify-loop" }
+    assert_equal "converted_to_engine_run_shim", verify_loop.fetch("status")
     assert_includes audit.fetch("preserve_safety_substrate"), "PathPolicy"
   end
 end

@@ -51,9 +51,9 @@ module Aiweb
           qa-checklist [--force]
           qa-report [--from PATH] [--status passed|failed|blocked] [--duration-minutes N] [--timed-out] [--force]
           repair [--from-qa PATH|latest] [--max-cycles N] [--force]
-          verify-loop [--max-cycles N:1-10] [--agent codex|openmanus] [--sandbox docker|podman] [--approved] [--force]
+          verify-loop [--max-cycles N:1-10] [--agent codex|openmanus] [--sandbox docker|podman] [--approval-hash HASH] [--approved] [--force]
           verify-loop --max-cycles 3 --dry-run
-          verify-loop --max-cycles 3 --agent codex --approved
+          verify-loop --max-cycles 3 --agent codex --approval-hash HASH --approved
           qa-playwright [--url URL] [--task-id ID] [--force]
           qa-screenshot [--url URL] [--task-id ID] [--force]
           qa-a11y [--url URL] [--task-id ID] [--force]
@@ -108,7 +108,7 @@ module Aiweb
           qa-a11y: runs safe local axe accessibility QA against localhost/127.0.0.1 preview; --dry-run does not write files or launch Node
           qa-lighthouse: runs safe local Lighthouse QA against localhost/127.0.0.1 preview; --dry-run does not write files or launch Node
           visual-critique: records safe local visual critique from explicit screenshot/metadata evidence or --from-screenshots latest only; --dry-run plans .ai-web/visual artifacts without writes, browser launch, installs, repair, deploy, network, or .env access
-          verify-loop: legacy ToolGateway-routed verification bundle/probe, not the canonical agent engine; --agent chooses codex or openmanus for implementation repair cycles, OpenManus repair cycles require --sandbox docker|podman for approved execution, --max-cycles is capped at 10, --dry-run writes nothing and plans build -> preview -> QA -> screenshot -> visual critique -> repair/visual-polish -> agent-run cycles, while real execution requires --approved, uses existing local adapters, records .ai-web/runs/verify-loop-<timestamp>/verify-loop.json plus per-cycle evidence and deploy provenance, never installs packages, never deploys, and stops on pass, max cycles, blockers, unsafe action, or agent-run failure
+          verify-loop: legacy compatibility shim only, not the canonical agent engine; --max-cycles is capped at 10, and the hardcoded build -> preview -> QA -> screenshot -> visual critique -> repair/visual-polish -> agent-run script has been removed. --dry-run writes nothing and returns the engine-run approval hash/plan, while real local execution must go through engine-run policy gates via --approved --approval-hash HASH; verify-loop no longer writes verify-loop cycle evidence or deploy provenance and never installs packages, deploys, calls provider CLIs, or reads .env/.env.*
           agent-run --task latest --agent codex --dry-run
           agent-run --task latest --agent codex --approved
           agent-run --task latest --agent openmanus --dry-run
@@ -120,7 +120,7 @@ module Aiweb
           visual-edit: validates a selected data-aiweb-id target and writes only local handoff artifacts; --dry-run writes nothing and never patches source, runs QA/browser/build, deploys, or calls network/AI
           github-sync: local-only GitHub sync planning surface; never runs git push, provider CLIs, network, build/preview/install, or reads .env/.env.*
           deploy-plan: local-only deploy checklist for Cloudflare Pages or Vercel; never runs provider CLIs, network, build/preview/install, or reads .env/.env.*
-          deploy --target cloudflare-pages|vercel --dry-run: reports the deploy plan only without writes/processes; deploy --approved is gated by passing approved verify-loop evidence whose deploy provenance matches the current git/source/package/output/tool-version snapshot plus provider readiness, and records .ai-web/runs/deploy-* evidence before any provider adapter command can run
+          deploy --target cloudflare-pages|vercel --dry-run: reports the deploy plan only without writes/processes; deploy --approved remains gated and must not be unlocked by the removed verify-loop script-runner. Real provider execution should stay blocked until deploy gating is migrated to engine-run release evidence.
           ingest-design: phase-3.5
           next-task: phase-6 through phase-11
           qa-checklist: phase-7 through phase-11

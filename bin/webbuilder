@@ -59,7 +59,7 @@ class WebbuilderLauncher
         웹빌더 --path ~/Desktop/my-site agent-run --task latest --agent codex --dry-run
         웹빌더 --path ~/Desktop/my-site agent-run --task latest --agent codex --approved
         웹빌더 --path ~/Desktop/my-site verify-loop --max-cycles 3 --dry-run
-        웹빌더 --path ~/Desktop/my-site verify-loop --max-cycles 3 --approved
+        웹빌더 --path ~/Desktop/my-site verify-loop --max-cycles 3 --approval-hash HASH --approved
         웹빌더 --path ~/Desktop/my-site run-status
         웹빌더 --path ~/Desktop/my-site run-timeline --limit 20
         웹빌더 --path ~/Desktop/my-site observability-summary --limit 20
@@ -111,8 +111,8 @@ class WebbuilderLauncher
       setup --install --dry-run은 쓰기/프로세스 실행 없이 예정 pnpm install 명령과 setup 로그/메타데이터 경로만 보여준다.
       setup --install의 실제 패키지 설치는 --approved가 있을 때만 로컬에서 실행하고 .ai-web/runs/setup-<timestamp>/stdout.log, stderr.log, setup.json 증거를 기록한다.
       setup은 build, preview, QA, repair, deploy, provider CLI, .env/.env.* 읽기/출력을 수행하지 않는다.
-      verify-loop는 build → preview → qa-playwright → qa-a11y → qa-lighthouse → qa-screenshot → visual-critique → repair/visual-polish → agent-run을 승인된 로컬 루프로 연결한다.
-      verify-loop --dry-run은 파일 쓰기와 프로세스 실행 없이 계획만 보여주며, 실제 루프는 --approved가 필요하고 패키지 설치/배포/provider CLI/.env 접근은 수행하지 않는다.
+      verify-loop는 이제 engine-run compatibility shim이다. build → preview → QA → visual-critique → repair/visual-polish → agent-run 고정 대본 루프는 제거됐다.
+      verify-loop --dry-run은 파일 쓰기와 프로세스 실행 없이 engine-run 승인 해시/계획만 보여주며, 실제 로컬 실행은 --approved --approval-hash HASH로 engine-run 정책/샌드박스/copy-back 게이트에 위임한다.
       run-status, run-cancel, run-resume은 .ai-web/runs/active-run.json과 per-run lifecycle/cancel/resume descriptor를 사용하는 로컬 실행 lifecycle control plane이다.
       run-timeline/timeline과 observability-summary/summary는 안전한 .ai-web/runs JSON 증거를 읽기 전용으로 요약하며 --limit은 최대 50이고 .env/.env.* 및 secret-like key를 노출하지 않는다.
       빌드와 로컬 프리뷰는 runtime-plan 준비 상태가 ready일 때만 웹빌더 build/preview 또는 aiweb build/preview로 실행한다.
@@ -144,7 +144,7 @@ class WebbuilderLauncher
       visual-edit --dry-run은 .ai-web/tasks/visual-edit-*.md 및 .ai-web/visual/visual-edit-*.json 예정 경로만 보고하고 파일을 쓰지 않는다.
       github-sync는 GitHub 동기화 계획만 보여주는 로컬 전용 명령이며 git push, network, provider CLI, build/preview/install, .env/.env.* 접근을 수행하지 않는다.
       deploy-plan은 Cloudflare Pages 또는 Vercel 배포 체크리스트만 보여주는 로컬 전용 명령이며 provider CLI, network, build/preview/install, .env/.env.* 접근을 수행하지 않는다.
-      deploy --dry-run은 쓰기/프로세스 실행 없이 계획만 보고한다. deploy --approved는 통과한 approved verify-loop 증거, output directory, provider CLI readiness가 모두 있을 때만 provider adapter를 실행하고 .ai-web/runs/deploy-*에 stdout/stderr/metadata를 기록한다.
+      deploy --dry-run은 쓰기/프로세스 실행 없이 계획만 보고한다. deploy --approved는 제거된 verify-loop 대본 실행기로 unlock되면 안 되며 engine-run release evidence gate로 이전되기 전까지 실제 provider 실행은 차단 상태로 다룬다.
       --dry-run은 설치/쓰기/빌드/프로세스 실행을 수행하지 않는 사전 점검 경로로 사용한다.
 
       고급 명령은 기존 aiweb 명령과 동일하게 사용할 수 있다.

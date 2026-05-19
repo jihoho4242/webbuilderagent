@@ -26,7 +26,7 @@ module Aiweb
       ["visual_critique", "Record visual critique", "aiweb visual-critique"],
       ["repair", "Create repair packet", "aiweb repair"],
       ["visual_polish", "Plan visual polish loop", "aiweb visual-polish"],
-      ["verify_loop", "Run verify loop", "aiweb verify-loop --max-cycles 3"]
+      ["verify_loop", "Plan engine-run verification handoff", "aiweb verify-loop --max-cycles 3"]
     ].freeze
 
     WORKBENCH_FILE_TREE_EXCLUDES = %w[
@@ -416,7 +416,7 @@ module Aiweb
     def workbench_control_side_effects(command)
       text = command.to_s
       mutates = text.match?(/\b(?:agent|run|design|build|preview|qa-|visual-critique|repair|visual-polish|verify-loop|component-map|visual-edit)\b/)
-      launches = text.match?(/\b(?:agent|build|preview|qa-|verify-loop)\b/)
+      launches = text.match?(/\b(?:agent|build|preview|qa-)\b/)
       approval = text.match?(/\b(?:agent|verify-loop|visual-polish|visual-edit)\b/)
       {
         "mutates_state" => mutates,

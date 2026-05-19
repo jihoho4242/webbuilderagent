@@ -8681,7 +8681,7 @@ class AiwebCliTest < Minitest::Test
     end
   end
 
-  def test_verify_loop_dry_run_plans_closed_loop_without_writes_or_process_execution
+  def test_verify_loop_dry_run_delegates_to_engine_run_without_fixed_steps_or_process_execution
     in_tmp do |dir|
       prepare_profile_d_scaffold_flow
       secret = "SECRET=pr23-verify-loop-dry-run-do-not-leak"
@@ -8700,23 +8700,26 @@ class AiwebCliTest < Minitest::Test
       )
       payload = JSON.parse(stdout)
       loop = payload.fetch("verify_loop")
-      steps = loop.fetch("steps").map { |step| step.fetch("command") || step.fetch("name") }
 
       assert_equal 0, code
       assert_equal "", stderr
       assert_equal true, payload["dry_run"]
       assert_equal true, loop["dry_run"]
       assert_includes %w[planned dry_run], loop["status"]
+      assert_equal "engine-run", loop["canonical_runtime"]
+      assert_equal true, loop["legacy_execution_removed"]
+      assert_equal true, loop["script_executor_neutralized"]
+      assert_equal false, loop["fixed_pipeline_present"]
       assert_equal 3, loop["max_cycles"]
-      %w[build preview qa-playwright qa-screenshot visual-critique visual-polish agent-run].each do |expected_step|
-        assert steps.any? { |step| step.to_s.include?(expected_step) }, "verify-loop dry run should plan #{expected_step}"
-      end
-      assert_match(%r{\A\.ai-web/runs/verify-loop-\d{8}T\d{6}Z/verify-loop\.json\z}, loop["metadata_path"])
+      assert_empty loop.fetch("steps")
+      assert_match(/\A[0-9a-f]{64}\z/, loop["approval_hash"].to_s)
+      assert_match(%r{\A\.ai-web/runs/engine-run-\d{8}T\d{6}Z/engine-run\.json\z}, loop.dig("engine_run", "metadata_path"))
       assert_equal before_entries, project_entries, "verify-loop --dry-run must not write artifacts, generated output, or task packets"
       assert_equal before_state, File.read(".ai-web/state.yaml"), "verify-loop --dry-run must not mutate state"
       assert_equal "#{secret}\n", File.read(".env"), "verify-loop --dry-run must not mutate .env"
       refute File.exist?(marker), "verify-loop --dry-run must not execute pnpm or codex"
       refute Dir.exist?("dist"), "verify-loop --dry-run must not build"
+      assert_empty Dir.glob(".ai-web/runs/verify-loop-*"), "verify-loop shim must not plan legacy verify-loop run dirs"
       refute_includes stdout, secret
     end
   end
@@ -8741,7 +8744,9 @@ class AiwebCliTest < Minitest::Test
       assert_equal "", stderr
       assert_equal "openmanus", loop["agent"]
       assert_equal true, loop["dry_run"]
-      assert_includes payload["next_action"], "--agent openmanus --sandbox docker --approved"
+      assert_equal "engine-run", loop["canonical_runtime"]
+      assert_equal true, loop["legacy_execution_removed"]
+      assert_includes payload["next_action"], "aiweb engine-run --agent openmanus"
       assert_equal before_entries, project_entries, "openmanus verify-loop dry-run must not write artifacts"
       assert_equal before_state, File.read(".ai-web/state.yaml"), "openmanus verify-loop dry-run must not mutate state"
       refute File.exist?(marker), "openmanus verify-loop dry-run must not execute pnpm or openmanus"
@@ -8773,7 +8778,7 @@ class AiwebCliTest < Minitest::Test
     end
   end
 
-  def test_verify_loop_requires_approval_for_real_closed_loop_before_writes_or_processes
+  def test_verify_loop_requires_engine_run_approval_before_writes_or_processes
     in_tmp do |dir|
       prepare_profile_d_scaffold_flow
       secret = "SECRET=pr23-no-approval-do-not-leak"
@@ -8797,6 +8802,10 @@ class AiwebCliTest < Minitest::Test
       assert_equal "", stderr
       assert_equal "blocked", payload.dig("verify_loop", "status")
       assert_equal false, payload.dig("verify_loop", "dry_run")
+      assert_equal "engine-run", payload.dig("verify_loop", "canonical_runtime")
+      assert_equal true, payload.dig("verify_loop", "legacy_execution_removed")
+      assert_equal false, payload.dig("verify_loop", "fixed_pipeline_present")
+      assert_empty payload.dig("verify_loop", "steps")
       assert_match(/approved|approval/i, [payload.dig("error", "message"), payload["blocking_issues"], payload.dig("verify_loop", "blocking_issues")].flatten.compact.join("\n"))
       assert_equal before_entries, project_entries, "unapproved verify-loop must not write build, preview, QA, critique, task, or agent-run artifacts"
       assert_equal before_state, File.read(".ai-web/state.yaml"), "unapproved verify-loop must not mutate state"
@@ -8818,7 +8827,7 @@ class AiwebCliTest < Minitest::Test
     assert_includes stdout, "run-resume"
     assert_includes stdout, "run-timeline"
     assert_includes stdout, "observability-summary"
-    assert_match(/verify-loop: legacy ToolGateway-routed verification bundle\/probe, not the canonical agent engine/i, stdout)
+    assert_match(/verify-loop: legacy compatibility shim only, not the canonical agent engine/i, stdout)
 
     help_stdout, help_stderr, help_code = run_webbuilder("--help")
     assert_equal 0, help_code
@@ -9049,24 +9058,12 @@ class AiwebCliTest < Minitest::Test
     end
   end
 
-  def test_active_run_lock_blocks_real_verify_loop_without_running_tools
+  def test_verify_loop_approved_without_hash_blocks_before_legacy_tooling
     in_tmp do |dir|
       prepare_profile_d_scaffold_flow
       bin_dir = write_fake_verify_loop_tooling(dir)
       marker = File.join(dir, "verify-loop-tool-was-run")
       write_fake_executable(bin_dir, "pnpm", "touch #{marker.shellescape}; exit 99")
-      active_lock = {
-        "schema_version" => 1,
-        "run_id" => "verify-loop-active",
-        "kind" => "verify-loop",
-        "status" => "running",
-        "pid" => Process.pid,
-        "started_at" => Time.now.utc.iso8601,
-        "run_dir" => ".ai-web/runs/verify-loop-active",
-        "metadata_path" => ".ai-web/runs/verify-loop-active/verify-loop.json"
-      }
-      FileUtils.mkdir_p(File.join(".ai-web", "runs"))
-      File.write(File.join(".ai-web", "runs", "active-run.json"), JSON.pretty_generate(active_lock) + "\n")
       before_entries = project_entries
       before_state = File.read(".ai-web/state.yaml")
 
@@ -9076,61 +9073,53 @@ class AiwebCliTest < Minitest::Test
       )
       payload = JSON.parse(stdout)
 
-      assert_equal 1, code
+      assert_equal 5, code
       assert_equal "", stderr
-      assert_match(/active run exists/i, payload.dig("error", "message"))
-      assert_equal before_entries, project_entries, "active-run lock blocker must not write new verify-loop artifacts"
-      assert_equal before_state, File.read(".ai-web/state.yaml"), "active-run lock blocker must not mutate state"
-      refute File.exist?(marker), "active-run lock blocker must not execute verify-loop tools"
+      assert_equal "blocked", payload.dig("verify_loop", "status")
+      assert_equal "engine-run", payload.dig("verify_loop", "canonical_runtime")
+      assert_equal true, payload.dig("verify_loop", "legacy_execution_removed")
+      assert_match(/approval hash|approval/i, payload.fetch("blocking_issues").join("\n"))
+      assert_equal before_entries, project_entries, "approval blocker must not write new verify-loop artifacts"
+      assert_equal before_state, File.read(".ai-web/state.yaml"), "approval blocker must not mutate state"
+      refute File.exist?(marker), "approval blocker must not execute verify-loop tools"
     end
   end
 
-  def test_verify_loop_fake_success_records_cycle_evidence_and_safe_state
+  def test_verify_loop_no_longer_runs_fake_success_cycle_or_writes_legacy_evidence
     in_tmp do |dir|
       prepare_profile_d_scaffold_flow
       File.write(".env", "SECRET=pr23-success-do-not-leak\n")
       bin_dir = write_fake_verify_loop_tooling(dir)
+      marker = File.join(dir, "verify-loop-tool-was-run")
+      write_fake_executable(bin_dir, "pnpm", "touch #{marker.shellescape}; exit 99")
       env = {
         "PATH" => [bin_dir, "/usr/bin", "/bin", "/usr/sbin", "/sbin"].join(File::PATH_SEPARATOR)
       }
+      before_entries = project_entries
+      before_state = File.read(".ai-web/state.yaml")
 
       stdout, stderr, code = run_aiweb_env(env, "verify-loop", "--max-cycles", "3", "--approved", "--json")
       payload = JSON.parse(stdout)
       loop = payload.fetch("verify_loop")
 
-      assert_equal 0, code, stdout
+      assert_equal 5, code, stdout
       assert_equal "", stderr
-      assert_equal "passed", loop["status"]
-      assert_equal 1, loop["cycle_count"]
-      assert_equal "verify loop passed", payload["action_taken"]
-      lifecycle_path = File.join(loop.fetch("run_dir"), "lifecycle.json")
-      assert File.file?(lifecycle_path), "verify-loop should record lifecycle evidence"
-      assert_equal "passed", JSON.parse(File.read(lifecycle_path)).fetch("status")
-      refute File.exist?(File.join(".ai-web", "runs", "active-run.json")), "verify-loop should clear active-run lock after completion"
-      provenance = loop.fetch("provenance")
-      assert_equal 1, provenance.fetch("schema_version")
-      assert_equal "dist", provenance.dig("output", "directory")
-      assert_equal true, provenance.dig("output", "exists")
-      refute_nil provenance.dig("output", "sha256")
-      refute_nil provenance.dig("workspace", "source", "sha256")
-      refute_nil provenance.dig("workspace", "package", "sha256")
-      assert_includes provenance.fetch("tool_versions"), "ruby"
-      assert File.file?(loop.fetch("metadata_path"))
-      assert_equal loop, JSON.parse(File.read(loop.fetch("metadata_path")))
-      %w[build preview qa-playwright qa-a11y qa-lighthouse qa-screenshot visual-critique].each do |step|
-        assert File.file?(File.join(loop.fetch("run_dir"), "cycle-1", "#{step}.json")), "expected verify-loop evidence for #{step}"
-      end
-      state = load_state
-      assert_equal loop.fetch("metadata_path"), state.dig("implementation", "latest_verify_loop")
-      assert_equal "passed", state.dig("implementation", "verify_loop_status")
-      assert_equal 1, state.dig("implementation", "verify_loop_cycle_count")
+      assert_equal "blocked", loop["status"]
+      assert_equal "engine-run", loop["canonical_runtime"]
+      assert_equal true, loop["legacy_execution_removed"]
+      assert_equal false, loop["fixed_pipeline_present"]
+      assert_empty loop["steps"]
+      assert_empty Dir.glob(".ai-web/runs/verify-loop-*"), "verify-loop shim must not write legacy cycle evidence"
+      assert_equal before_entries, project_entries
+      assert_equal before_state, File.read(".ai-web/state.yaml")
+      refute File.exist?(marker), "verify-loop shim must not run fake pnpm"
       assert_equal "SECRET=pr23-success-do-not-leak\n", File.read(".env")
       refute_includes stdout, "pr23-success-do-not-leak"
       refute Dir.exist?(".ai-web/runs/deploy-*"), "verify-loop must not deploy"
     end
   end
 
-  def test_verify_loop_fake_qa_failure_creates_repair_task_and_runs_agent_once
+  def test_verify_loop_fake_qa_failure_does_not_create_repair_task_or_run_agent
     in_tmp do |dir|
       prepare_profile_d_scaffold_flow
       File.write(".env", "SECRET=pr23-repair-do-not-leak\n")
@@ -9146,23 +9135,22 @@ class AiwebCliTest < Minitest::Test
       payload = JSON.parse(stdout)
       loop = payload.fetch("verify_loop")
 
-      assert_equal 3, code, stdout
+      assert_equal 5, code, stdout
       assert_equal "", stderr
-      assert_equal "max_cycles", loop["status"]
-      assert_equal 1, loop["cycle_count"]
-      cycle_steps = loop.fetch("cycles").first.fetch("steps").map { |step| step.fetch("name") }
-      assert_includes cycle_steps, "repair"
-      assert_includes cycle_steps, "agent-run"
-      assert_equal 1, File.readlines(marker).length, "fake codex should run exactly once for one failed cycle"
-      assert_match(/patched by fake verify-loop codex/, File.read("src/components/Hero.astro"))
-      assert Dir.glob(".ai-web/tasks/fix-*.md").any?, "verify-loop QA failure should create a repair task"
-      assert Dir.glob(".ai-web/runs/agent-run-*").any?, "verify-loop should record the approved agent-run evidence"
+      assert_equal "blocked", loop["status"]
+      assert_empty loop.fetch("cycles")
+      assert_empty loop.fetch("steps")
+      assert_equal true, loop["legacy_execution_removed"]
+      assert_empty(File.file?(marker) ? File.readlines(marker) : [], "fake codex must not run through removed verify-loop")
+      refute_match(/patched by fake verify-loop codex/, File.read("src/components/Hero.astro"))
+      assert_empty Dir.glob(".ai-web/tasks/fix-*.md"), "removed verify-loop must not create repair tasks"
+      assert_empty Dir.glob(".ai-web/runs/agent-run-*"), "removed verify-loop must not record agent-run evidence"
       assert_equal "SECRET=pr23-repair-do-not-leak\n", File.read(".env")
       refute_includes stdout, "pr23-repair-do-not-leak"
     end
   end
 
-  def test_verify_loop_max_cycle_cap_stops_deterministically_after_repair_agent_run
+  def test_verify_loop_max_cycle_cap_no_longer_runs_repair_agent_script
     in_tmp do |dir|
       prepare_profile_d_scaffold_flow
       bin_dir = write_fake_verify_loop_tooling(dir)
@@ -9176,12 +9164,12 @@ class AiwebCliTest < Minitest::Test
       stdout, stderr, code = run_aiweb_env(env, "verify-loop", "--max-cycles", "1", "--approved", "--json")
       payload = JSON.parse(stdout)
 
-      assert_equal 3, code, stdout
+      assert_equal 5, code, stdout
       assert_equal "", stderr
-      assert_equal "max_cycles", payload.dig("verify_loop", "status")
-      assert_equal 1, payload.dig("verify_loop", "cycle_count")
-      assert_match(/max cycles/i, payload.dig("verify_loop", "latest_blocker"))
-      assert_equal 1, File.readlines(marker).length
+      assert_equal "blocked", payload.dig("verify_loop", "status")
+      assert_equal 0, payload.dig("verify_loop", "cycle_count")
+      assert_match(/approval/i, payload.dig("verify_loop", "blocking_issues").join("\n"))
+      assert_empty(File.file?(marker) ? File.readlines(marker) : [], "removed verify-loop must not run repair agent script")
     end
   end
 
@@ -9445,6 +9433,7 @@ class AiwebCliTest < Minitest::Test
       assert_equal true, design_control["mutates_state"]
       assert_equal true, preview_control["launches_process"]
       assert_equal true, verify_control["requires_approval"]
+      assert_equal false, verify_control["launches_process"]
       refute_includes stdout, "do-not-touch"
     end
   end

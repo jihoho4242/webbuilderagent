@@ -232,20 +232,23 @@ class AgentificationRuntimeTest < Minitest::Test
     end
   end
 
-  def test_verify_loop_uses_profile_contract_instead_of_profile_d_blockers_for_s
+  def test_verify_loop_is_engine_run_shim_instead_of_profile_d_pipeline_for_s
     in_tmp do |dir|
       prepare_profile_s_project(dir)
 
       payload, code, stderr = json_cmd("--path", dir, "verify-loop", "--max-cycles", "1", "--approved")
 
       assert_equal 5, code, stderr
-      assert_equal "dry_run", payload.dig("verify_loop", "agent_runtime_plan", "status")
-      assert_equal "engine-run", payload.dig("verify_loop", "agent_runtime_plan", "canonical_runtime")
-      assert_equal "removed_script_runner", payload.dig("verify_loop", "agent_runtime_plan", "agent_runtime_execution_role")
+      assert_equal "engine-run", payload.dig("verify_loop", "canonical_runtime")
+      assert_equal true, payload.dig("verify_loop", "legacy_execution_removed")
+      assert_equal true, payload.dig("verify_loop", "script_executor_neutralized")
+      assert_equal false, payload.dig("verify_loop", "fixed_pipeline_present")
+      assert_empty payload.dig("verify_loop", "steps")
       joined = payload["blocking_issues"].join("\n")
-      assert_match(/Profile S does not support build/, joined)
-      assert_match(/Profile S does not support preview/, joined)
-      assert_match(/Profile S does not support browser_qa/, joined)
+      assert_match(/approval/i, joined)
+      refute_match(/Profile S does not support build/, joined)
+      refute_match(/Profile S does not support preview/, joined)
+      refute_match(/Profile S does not support browser_qa/, joined)
       refute_match(/Hero\.astro|SectionCard\.astro|Astro/, joined)
     end
   end

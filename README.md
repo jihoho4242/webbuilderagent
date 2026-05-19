@@ -1,8 +1,8 @@
-# AI Web Director CLI
+﻿# AI Web Director CLI
 
 This repository currently ships a working **AI Web Director CLI**: a supervised local web-building agent/director for planning, scaffold orchestration, evidence capture, local QA, and bounded repair handoff. It is not an unsupervised one-prompt production app generator.
 
-Today the CLI manages the project director workspace: `.ai-web` state, phase gates, quality approvals, task packets, runtime profile contracts, QA reports, agent-session artifacts, rollback/blocker state, and snapshots. It can guide a web project through planning, scaffold/runtime readiness, design prompt handoff, supervised agent planning, implementation task sequencing, QA evidence, and recovery decisions. It still does **not** silently create hosted provider resources, read secrets, deploy, or behave as an unsupervised full-stack SaaS generator.
+Today the CLI manages the project director workspace: `.ai-web` state, phase gates, quality approvals, task packets, runtime profile contracts, QA reports, canonical `engine-run` artifacts, rollback/blocker state, and snapshots. It can guide a web project through planning, scaffold/runtime readiness, design prompt handoff, supervised agent planning, implementation task sequencing, QA evidence, and recovery decisions. It still does **not** silently create hosted provider resources, read secrets, deploy, or behave as an unsupervised full-stack SaaS generator.
 
 For the current Korean document map, product goal, canonical v3.2 Agent OS references, archived-document rules, and next-step roadmap, start with [`docs/README.ko.md`](docs/README.ko.md).
 
@@ -16,24 +16,24 @@ For the current Korean document map, product goal, canonical v3.2 Agent OS refer
 - Gate source-patch `agent-run` implementation work behind a selected design candidate when the task touches app/UI source files.
 - Record QA checklists/results and gate advancement on blocking failures.
 - Capture snapshots and rollback/blocker recovery evidence.
-- Provide a friendly Korean entry point, `웹빌더`, over the lower-level `aiweb` CLI.
-- Expose the PR9 Astro build contract through `aiweb build` / `웹빌더 build`: it must check runtime-plan readiness before executing, preserve `.env` untouched, support `--dry-run` without writes/install/build, record run evidence under `.ai-web`, and report missing package manager, missing `node_modules`, or build failure as explicit statuses.
-- Expose the PR10 local preview contract through `aiweb preview` / `웹빌더 preview`: it must gate on runtime-plan readiness, preserve `.env` untouched, avoid dependency installation, start only the scaffold dev server locally, record run evidence under `.ai-web`, support a no-write/no-process `--dry-run`, support `--stop` for the recorded preview PID, and explicitly avoid Playwright, axe/Lighthouse, repair, deploy, or external hosting.
-- Expose the PR11 safe Playwright browser QA contract through `aiweb qa-playwright` / `웹빌더 qa-playwright`: it must use a running local preview or explicit localhost/127.0.0.1 `--url`, preserve `.env` untouched, never install packages or start preview, require an already-present project-local Playwright executable, record run/QA evidence under `.ai-web`, support no-write/no-process `--dry-run`, and explicitly avoid axe/Lighthouse, automatic repair, deploy, or external hosting.
-- Expose the PR21 local screenshot evidence contract through `aiweb qa-screenshot` / `웹빌더 qa-screenshot`: it captures safe local screenshot evidence for mobile/tablet/desktop from an explicit localhost/127.0.0.1 preview URL, writes `.ai-web/qa/screenshots/*-home.png` plus `metadata.json` and run/result evidence, supports no-write/no-process `--dry-run`, feeds `visual-critique --from-screenshots latest`, and never installs packages, starts preview, auto-repairs, deploys, contacts external hosts, or reads `.env` / `.env.*`.
-- Expose safe accessibility and Lighthouse QA contracts through `aiweb qa-a11y` / `웹빌더 qa-a11y` and `aiweb qa-lighthouse` / `웹빌더 qa-lighthouse`: they follow the same local-preview, no-install, no-repair, no-deploy safety model while requiring already-installed project-local `axe` or `lighthouse` executables.
-- Expose the PR13 safe local repair-loop contract through `aiweb repair` / `웹빌더 repair`: it consumes failed/blocked QA evidence into a bounded `repair_loop` record, pre-repair snapshot, and fix task without installing packages, starting preview, running build/QA, auto-patching source, touching `.env`, deploying, or contacting external hosting.
-- Expose the PR14 safe local visual critique contract through `aiweb visual-critique` / `웹빌더 visual-critique`: it evaluates explicit local screenshot/metadata evidence only, produces deterministic score/approval artifacts under `.ai-web/visual`, supports no-write `--dry-run`, rejects `.env` / `.env.*` paths without reading them, and never launches browsers, captures screenshots, installs packages, auto-repairs source, deploys, contacts external hosting, or calls network/AI services.
-- Expose the PR15 safe local visual polish contract through `aiweb visual-polish --repair` / `웹빌더 visual-polish --repair`: it consumes failed, `repair`, or `redesign` visual critique evidence into a bounded `visual_polish` record, pre-polish snapshot, and polish task without editing source, installing packages, starting preview, running build/QA, capturing screenshots, touching `.env`, deploying, contacting external hosting, or calling network/AI services.
-- Expose the PR22 local source-patch agent-run contract through `aiweb agent-run` / `웹빌더 agent-run`: it requires an explicit task and `--agent codex|openmanus`, supports `--dry-run` without writes or processes, requires `--approved` for real execution, captures stdout/stderr/diff evidence under `.ai-web`, rejects `.env` / `.env.*` access, and does not run build/preview/QA/deploy, provider CLI, or treat `--force` as approval. OpenManus approved execution requires `--sandbox docker|podman`; aiweb constructs and validates a no-network, read-only-root, dropped-capability container command with only the staging workspace mounted writable before any copy-back can occur.
-- Expose the PR23/PR28 local verify-loop contract through `aiweb verify-loop` / `웹빌더 verify-loop`: it is a legacy verification bundle/probe, not the canonical agent engine. It plans or runs the build → preview → Playwright/accessibility/Lighthouse/screenshot QA → visual critique → repair or visual-polish task → approved agent-run cycle as ToolGateway-routed evidence, supports `--agent codex|openmanus`, caps `--max-cycles` at 10, supports no-write/no-process `--dry-run`, requires `--approved` for real local execution, records `.ai-web/runs/verify-loop-<timestamp>/verify-loop.json` plus per-cycle evidence and deploy provenance, blocks missing dependencies with a `setup --install --approved` next action, and never installs packages, deploys, calls provider CLIs, or reads `.env` / `.env.*`.
-- Expose the PR16 local Workbench UI foundation through `aiweb workbench` / `웹빌더 workbench`: it plans or exports `.ai-web/workbench/index.html` and `.ai-web/workbench/workbench.json` from existing Director state/artifacts, represents controls as declarative CLI command descriptors, supports no-write `--dry-run`, excludes `.env` / `.env.*` from surfaced artifacts, and never directly mutates `.ai-web/state.yaml`.
-- Expose the PR17 Component Map + Visual Edit planning foundation through `aiweb component-map` / `웹빌더 component-map` and `aiweb visual-edit` / `웹빌더 visual-edit`: it maps stable `data-aiweb-id` DOM regions to source files in `.ai-web/component-map.json`, creates selected-region visual edit handoff artifacts under `.ai-web/tasks/` and `.ai-web/visual/`, supports no-write `--dry-run`, rejects `.env` / `.env.*` map paths without reading them, and never auto-patches source, runs build/QA/browser/preview, deploys, installs packages, or calls network/AI services.
-- Expose the PR18/PR26 Profile S local scaffold, Supabase secret QA, and local verification surface through `aiweb scaffold --profile S` / `웹빌더 scaffold --profile S`, `aiweb supabase-secret-qa` / `웹빌더 supabase-secret-qa`, and `aiweb supabase-local-verify` / `웹빌더 supabase-local-verify`: Profile S is a local-only Next.js + Supabase SSR placeholder scaffold, uses `supabase/env.example.template` instead of `.env.example`, includes only `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` placeholders, verifies migrations/RLS/storage docs plus SSR stubs locally, and intentionally performs no external Supabase project creation, network calls, provider CLI, deploy, install, build, or preview.
-- Expose the PR19/PR27/PR28 GitHub sync and deploy surfaces through `aiweb github-sync`, `aiweb deploy-plan`, and `aiweb deploy --target cloudflare-pages|vercel --dry-run|--approved` / matching `웹빌더` commands: dry-runs remain no-write/no-process local planning, while approved deploy adapters require passing approved verify-loop evidence whose deploy provenance still matches the current git/source/package/output/tool-version snapshot plus provider readiness before any provider CLI can run; they never run `git push`, install/build/preview, or read `.env` / `.env.*`.
-- Expose the PR20 approved dependency setup surface through `aiweb setup --install --approved` / `웹빌더 setup --install --approved`: `--dry-run` writes nothing and reports the planned install/log paths; a real install requires `--approved`, records stdout/stderr/setup metadata under `.ai-web/runs/setup-<timestamp>/`, warns about package lifecycle scripts, updates only safe setup state, and never builds, previews, runs QA, repairs, deploys, calls provider CLIs, or reads/prints `.env` / `.env.*`.
+- Provide a friendly Korean entry point, `?밸퉴??, over the lower-level `aiweb` CLI.
+- Expose the PR9 Astro build contract through `aiweb build` / `?밸퉴??build`: it must check runtime-plan readiness before executing, preserve `.env` untouched, support `--dry-run` without writes/install/build, record run evidence under `.ai-web`, and report missing package manager, missing `node_modules`, or build failure as explicit statuses.
+- Expose the PR10 local preview contract through `aiweb preview` / `?밸퉴??preview`: it must gate on runtime-plan readiness, preserve `.env` untouched, avoid dependency installation, start only the scaffold dev server locally, record run evidence under `.ai-web`, support a no-write/no-process `--dry-run`, support `--stop` for the recorded preview PID, and explicitly avoid Playwright, axe/Lighthouse, repair, deploy, or external hosting.
+- Expose the PR11 safe Playwright browser QA contract through `aiweb qa-playwright` / `?밸퉴??qa-playwright`: it must use a running local preview or explicit localhost/127.0.0.1 `--url`, preserve `.env` untouched, never install packages or start preview, require an already-present project-local Playwright executable, record run/QA evidence under `.ai-web`, support no-write/no-process `--dry-run`, and explicitly avoid axe/Lighthouse, automatic repair, deploy, or external hosting.
+- Expose the PR21 local screenshot evidence contract through `aiweb qa-screenshot` / `?밸퉴??qa-screenshot`: it captures safe local screenshot evidence for mobile/tablet/desktop from an explicit localhost/127.0.0.1 preview URL, writes `.ai-web/qa/screenshots/*-home.png` plus `metadata.json` and run/result evidence, supports no-write/no-process `--dry-run`, feeds `visual-critique --from-screenshots latest`, and never installs packages, starts preview, auto-repairs, deploys, contacts external hosts, or reads `.env` / `.env.*`.
+- Expose safe accessibility and Lighthouse QA contracts through `aiweb qa-a11y` / `?밸퉴??qa-a11y` and `aiweb qa-lighthouse` / `?밸퉴??qa-lighthouse`: they follow the same local-preview, no-install, no-repair, no-deploy safety model while requiring already-installed project-local `axe` or `lighthouse` executables.
+- Expose the PR13 safe local repair-loop contract through `aiweb repair` / `?밸퉴??repair`: it consumes failed/blocked QA evidence into a bounded `repair_loop` record, pre-repair snapshot, and fix task without installing packages, starting preview, running build/QA, auto-patching source, touching `.env`, deploying, or contacting external hosting.
+- Expose the PR14 safe local visual critique contract through `aiweb visual-critique` / `?밸퉴??visual-critique`: it evaluates explicit local screenshot/metadata evidence only, produces deterministic score/approval artifacts under `.ai-web/visual`, supports no-write `--dry-run`, rejects `.env` / `.env.*` paths without reading them, and never launches browsers, captures screenshots, installs packages, auto-repairs source, deploys, contacts external hosting, or calls network/AI services.
+- Expose the PR15 safe local visual polish contract through `aiweb visual-polish --repair` / `?밸퉴??visual-polish --repair`: it consumes failed, `repair`, or `redesign` visual critique evidence into a bounded `visual_polish` record, pre-polish snapshot, and polish task without editing source, installing packages, starting preview, running build/QA, capturing screenshots, touching `.env`, deploying, contacting external hosting, or calling network/AI services.
+- Expose the PR22 local source-patch agent-run contract through `aiweb agent-run` / `?밸퉴??agent-run`: it requires an explicit task and `--agent codex|openmanus`, supports `--dry-run` without writes or processes, requires `--approved` for real execution, captures stdout/stderr/diff evidence under `.ai-web`, rejects `.env` / `.env.*` access, and does not run build/preview/QA/deploy, provider CLI, or treat `--force` as approval. OpenManus approved execution requires `--sandbox docker|podman`; aiweb constructs and validates a no-network, read-only-root, dropped-capability container command with only the staging workspace mounted writable before any copy-back can occur.
+- Expose `aiweb verify-loop` / `?밸퉴??verify-loop` as a legacy compatibility shim only: the former hardcoded build ??preview ??QA ??visual critique ??repair/visual-polish ??agent-run script has been removed. `--dry-run` writes nothing and returns the canonical `engine-run` approval hash/plan; real local execution must provide `--approved --approval-hash HASH` and is delegated to `engine-run` policy, sandbox, graph, and copy-back gates.
+- Expose the PR16 local Workbench UI foundation through `aiweb workbench` / `?밸퉴??workbench`: it plans or exports `.ai-web/workbench/index.html` and `.ai-web/workbench/workbench.json` from existing Director state/artifacts, represents controls as declarative CLI command descriptors, supports no-write `--dry-run`, excludes `.env` / `.env.*` from surfaced artifacts, and never directly mutates `.ai-web/state.yaml`.
+- Expose the PR17 Component Map + Visual Edit planning foundation through `aiweb component-map` / `?밸퉴??component-map` and `aiweb visual-edit` / `?밸퉴??visual-edit`: it maps stable `data-aiweb-id` DOM regions to source files in `.ai-web/component-map.json`, creates selected-region visual edit handoff artifacts under `.ai-web/tasks/` and `.ai-web/visual/`, supports no-write `--dry-run`, rejects `.env` / `.env.*` map paths without reading them, and never auto-patches source, runs build/QA/browser/preview, deploys, installs packages, or calls network/AI services.
+- Expose the PR18/PR26 Profile S local scaffold, Supabase secret QA, and local verification surface through `aiweb scaffold --profile S` / `?밸퉴??scaffold --profile S`, `aiweb supabase-secret-qa` / `?밸퉴??supabase-secret-qa`, and `aiweb supabase-local-verify` / `?밸퉴??supabase-local-verify`: Profile S is a local-only Next.js + Supabase SSR placeholder scaffold, uses `supabase/env.example.template` instead of `.env.example`, includes only `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` placeholders, verifies migrations/RLS/storage docs plus SSR stubs locally, and intentionally performs no external Supabase project creation, network calls, provider CLI, deploy, install, build, or preview.
+- Expose the PR19/PR27/PR28 GitHub sync and deploy surfaces through `aiweb github-sync`, `aiweb deploy-plan`, and `aiweb deploy --target cloudflare-pages|vercel --dry-run|--approved` / matching `?밸퉴?? commands: dry-runs remain no-write/no-process local planning. Approved deploy remains gated and must not be unlocked by the removed verify-loop script-runner; engine-run deploy evidence migration is a remaining release-gate task before real provider CLI use. They never run `git push`, install/build/preview, or read `.env` / `.env.*`.
+- Expose the PR20 approved dependency setup surface through `aiweb setup --install --approved` / `?밸퉴??setup --install --approved`: `--dry-run` writes nothing and reports the planned install/log paths; a real install requires `--approved`, records stdout/stderr/setup metadata under `.ai-web/runs/setup-<timestamp>/`, warns about package lifecycle scripts, updates only safe setup state, and never builds, previews, runs QA, repairs, deploys, calls provider CLIs, or reads/prints `.env` / `.env.*`.
 - Expose the local backend bridge through `aiweb daemon` / `aiweb backend`: it binds only to localhost-class hosts by default, allows only local browser origins, requires `X-Aiweb-Token` for every `/api/*` request, exposes JSON endpoints for the future web Workbench, invokes this repository's `bin/aiweb` by absolute path instead of shell interpolation, keeps approved source-patch/setup execution behind `X-Aiweb-Approval-Token`, and blocks raw shell, frontend-supplied backend flags, missing project paths, unsafe deploy, and `.env` / `.env.*` paths.
-- Expose the PR29 local run lifecycle control plane through `aiweb run-status`, `aiweb run-cancel`, and `aiweb run-resume` / matching `웹빌더` commands: active runs are locked through `.ai-web/runs/active-run.json`, per-run `lifecycle.json` evidence records status transitions, cancellation writes `cancel-request.json` and is observed at lifecycle checkpoints, and resume records `resume-plan.json` descriptors without launching provider, agent, build, preview, or network commands.
+- Expose the PR29 local run lifecycle control plane through `aiweb run-status`, `aiweb run-cancel`, and `aiweb run-resume` / matching `?밸퉴?? commands: active runs are locked through `.ai-web/runs/active-run.json`, per-run `lifecycle.json` evidence records status transitions, cancellation writes `cancel-request.json` and is observed at lifecycle checkpoints, and resume records `resume-plan.json` descriptors without launching provider, agent, build, preview, or network commands.
 - Expose the PR30 observability surface through `aiweb run-timeline` / `aiweb timeline` and `aiweb observability-summary` / `aiweb summary`: both are read-only views over safe `.ai-web/runs` JSON evidence, cap `--limit` at 50, redact secret-like keys and `.env` paths, and launch no processes.
 
 ## Upgrade direction
@@ -59,39 +59,39 @@ Do **not** use GPT Image 2/reference images as direct implementation-agent input
 11. Review the local Workbench UI panels for chat, artifacts, design, preview, file tree, QA, critique, and run timeline status.
 12. Select a mapped `data-aiweb-id` region and create a bounded visual edit handoff instead of regenerating the full page.
 13. For Supabase-backed work, scaffold Profile S locally with safe SSR placeholders and rerun `supabase-secret-qa` before copying values into a private local env file outside the generator guardrail.
-14. Review local-only GitHub sync and Cloudflare Pages/Vercel deploy dry-run plans; approved deploy adapters require passing verify-loop evidence with matching current workspace/output provenance and provider readiness before any external release work.
+14. Review local-only GitHub sync and Cloudflare Pages/Vercel deploy dry-run plans; approved deploy adapters remain gated and must not treat the removed verify-loop script as a release unlock path.
 15. Run `setup --install --dry-run` to inspect the planned dependency install, then `setup --install --approved` only when you explicitly approve local package installation.
 16. Repair implementation manually or through later approved automation, then deploy later once gates pass and evidence is recorded.
 17. Use `run-status`, `run-cancel`, and `run-resume` to inspect, request cancellation, or record a safe resume descriptor for long local runs.
 18. Use `run-timeline` and `observability-summary` to audit recent local evidence before deciding the next supervised action.
 
-The current Director CLI is the foundation for that loop: state, gates, profile-aware runtime contracts, agent-session artifacts, QA contracts, snapshots, local preview evidence, bounded repair-loop records, visual polish records/tasks/snapshots, component maps, targeted visual edit handoff records, local-only Profile S Supabase scaffold/secret-QA records, verify-loop evidence, and gated deploy-adapter boundaries are in place before the system grows into richer end-to-end generation and source repair automation. It remains supervised and local-first, not an unsupervised full app generator.
+The current Director CLI is the foundation for that loop: state, gates, profile-aware runtime contracts, canonical `engine-run` artifacts, QA contracts, snapshots, local preview evidence, bounded repair-loop records, visual polish records/tasks/snapshots, component maps, targeted visual edit handoff records, local-only Profile S Supabase scaffold/secret-QA records, verify-loop compatibility shims, and gated deploy-adapter boundaries are in place before the system grows into richer end-to-end generation and source repair automation. It remains supervised and local-first, not an unsupervised full app generator.
 
 The intended product surface is eventually a browser Workbench, not terminal UX. This repository is intentionally backend-first right now: `aiweb daemon --dry-run --json` exposes the backend/API contract that a later design-approved frontend should call. The daemon keeps the Ruby Director engine as the backend source of truth and uses guarded `agent-run` jobs for codex/openmanus source patching.
 
 ## Quick start
 
-The friendly entry point is `웹빌더`. Run it with no arguments for a zero-start interview:
+The friendly entry point is `?밸퉴??. Run it with no arguments for a zero-start interview:
 
 ```bash
-웹빌더
+?밸퉴??
 ```
 
 Or pass the idea directly:
 
 ```bash
-웹빌더 --path ~/Desktop/aiweb-premium-service-site \
-  "프리미엄 비즈니스/서비스 웹사이트. 핵심 가치, 서비스 소개, 고객 사례, 상담 문의 섹션이 있는 고품질 랜딩 사이트."
+?밸퉴??--path ~/Desktop/aiweb-premium-service-site \
+  "?꾨━誘몄뾼 鍮꾩쫰?덉뒪/?쒕퉬???뱀궗?댄듃. ?듭떖 媛移? ?쒕퉬???뚭컻, 怨좉컼 ?щ?, ?곷떞 臾몄쓽 ?뱀뀡???덈뒗 怨좏뭹吏??쒕뵫 ?ъ씠??"
 ```
 
-`웹빌더` knows the Director sequence and calls the lower-level `aiweb` engine for you.
+`?밸퉴?? knows the Director sequence and calls the lower-level `aiweb` engine for you.
 
 Low-level equivalent:
 
 ```bash
 ./bin/aiweb start \
   --path ~/Desktop/aiweb-premium-service-site \
-  --idea "프리미엄 비즈니스/서비스 웹사이트. 핵심 가치, 서비스 소개, 고객 사례, 상담 문의 섹션이 있는 고품질 랜딩 사이트."
+  --idea "?꾨━誘몄뾼 鍮꾩쫰?덉뒪/?쒕퉬???뱀궗?댄듃. ?듭떖 媛移? ?쒕퉬???뚭컻, 怨좉컼 ?щ?, ?곷떞 臾몄쓽 ?뱀뀡???덈뒗 怨좏뭹吏??쒕뵫 ?ъ씠??"
 ```
 
 `start` creates the target folder, asks the intent router to recommend a stack profile unless `--profile` is provided, drafts the first interview artifacts, and advances to the phase-0.25 quality gate. Content/docs/SEO work usually routes to Profile D; explicit Supabase/RLS/storage/upload work routes to Profile S; regulated auth/payment/account-heavy work can still route to safer app profiles.
@@ -108,17 +108,16 @@ After scaffold/runtime readiness exists, the supervised agent facade can record 
 ./bin/aiweb --path ~/Desktop/aiweb-premium-service-site agent "verify and improve this site" --mode plan-only --json
 ./bin/aiweb --path ~/Desktop/aiweb-premium-service-site agent "verify local Supabase scaffold" --mode supervised --profile S --json
 ./bin/aiweb --path ~/Desktop/aiweb-premium-service-site agent "run approved local QA gates" --mode supervised --approved --json
-웹빌더 --path ~/Desktop/aiweb-premium-service-site agent "QA 계획 세워줘" --mode plan-only
+?밸퉴??--path ~/Desktop/aiweb-premium-service-site agent "QA 怨꾪쉷 ?몄썙以? --mode plan-only
 ```
 `agent` is the natural-language goal facade for the canonical `engine-run` durable runtime. The legacy AgentRuntime fixed planner/executor and its separate `agent-session-*` timeline/final-report artifacts have been removed so `aiweb agent` no longer pretends that a hardcoded build/preview/browser-QA list is autonomous planning. `plan-only` and global `--dry-run` do not mutate source. In `supervised` and `autonomous-local` modes, execution is delegated to `engine-run` and requires the planned approval hash before local source work; source mutation remains sandbox/copy-back/verifier gated. Deploy/provider actions and `.env` access remain blocked.
-`agent` is the goal facade for the canonical `engine-run` durable runtime, with AgentRuntime artifacts retained as compatibility evidence only. It writes `.ai-web/runs/agent-session-*/agent-session.json`, `timeline.jsonl`, `tool-result-*.json`, `source-patch-manifest.json`, `browser-qa-feedback.json`, and `final-report.json` for real supervised runs. `plan-only` and global `--dry-run` do not mutate source. In `supervised` and `autonomous-local` modes, local side-effect actions such as build/preview/browser QA still pass through DecisionPacket → PolicyKernel → ToolGateway and wait for explicit approval when classified L3 or higher; source mutation remains manifest/verifier gated. Deploy/provider actions and `.env` access remain blocked.
 
 After the scaffold runtime plan reports `ready`, PR20 can install project dependencies with explicit approval:
 
 ```bash
 ./bin/aiweb --path ~/Desktop/aiweb-premium-service-site setup --install --dry-run
 ./bin/aiweb --path ~/Desktop/aiweb-premium-service-site setup --install --approved
-웹빌더 --path ~/Desktop/aiweb-premium-service-site setup --install --approved
+?밸퉴??--path ~/Desktop/aiweb-premium-service-site setup --install --approved
 ```
 
 `setup --install --dry-run` is a no-write/no-process preflight: it reports the planned `pnpm install` command and `.ai-web/runs/setup-<timestamp>/stdout.log`, `stderr.log`, and `setup.json` paths. Omitting both `--dry-run` and `--approved` is blocked and writes nothing. A real approved setup run supports the local `pnpm` install path, records stdout/stderr/setup metadata under `.ai-web/runs/setup-<timestamp>/`, reports lifecycle-script warnings from `package.json`, updates safe setup state such as latest run/package manager/node_modules presence, and intentionally does not build, preview, run QA, repair, deploy, call provider CLIs, or read/print `.env` / `.env.*`.
@@ -145,7 +144,7 @@ After dependencies are present, PR9 adds the build contract:
 
 ```bash
 ./bin/aiweb --path ~/Desktop/aiweb-premium-service-site build --dry-run
-웹빌더 --path ~/Desktop/aiweb-premium-service-site build
+?밸퉴??--path ~/Desktop/aiweb-premium-service-site build
 ```
 
 `build --dry-run` is a no-write preflight: it must not install packages or run the build. A real build records metadata/log evidence under `.ai-web`, never reads or writes `.env`, and returns explicit blocked/failed statuses for missing `pnpm`, missing `node_modules`, runtime-plan not-ready, or build command failures.
@@ -154,8 +153,8 @@ PR10 adds the local preview contract on the same readiness boundary:
 
 ```bash
 ./bin/aiweb --path ~/Desktop/aiweb-premium-service-site preview --dry-run
-웹빌더 --path ~/Desktop/aiweb-premium-service-site preview
-웹빌더 --path ~/Desktop/aiweb-premium-service-site preview --stop
+?밸퉴??--path ~/Desktop/aiweb-premium-service-site preview
+?밸퉴??--path ~/Desktop/aiweb-premium-service-site preview --stop
 ```
 
 `preview --dry-run` is no-write and no-process: it reports the planned scaffold dev command, preview URL, and `.ai-web/runs/<run>/` metadata/log paths without installing dependencies or starting a server. A real preview starts only the local scaffold dev server, records PID/port/URL/cwd/command/status plus stdout/stderr logs under `.ai-web`, never reads or writes `.env`, never installs dependencies, and reports explicit blocked statuses for runtime-plan not-ready, missing `pnpm`, missing `node_modules`, or an already-running recorded preview. `preview --stop` may stop only the recorded preview PID. PR10 preview intentionally does not run Playwright, axe/Lighthouse, repair, deploy, or external hosting.
@@ -168,10 +167,10 @@ PR11 adds the safe local Playwright QA contract as a separate step:
 ./bin/aiweb --path ~/Desktop/aiweb-premium-service-site qa-screenshot --url http://127.0.0.1:4321 --dry-run --json
 ./bin/aiweb --path ~/Desktop/aiweb-premium-service-site qa-a11y --url http://127.0.0.1:4321 --dry-run --json
 ./bin/aiweb --path ~/Desktop/aiweb-premium-service-site qa-lighthouse --url http://127.0.0.1:4321 --dry-run --json
-웹빌더 --path ~/Desktop/aiweb-premium-service-site qa-playwright --url http://127.0.0.1:4321
-웹빌더 --path ~/Desktop/aiweb-premium-service-site qa-screenshot --url http://127.0.0.1:4321
-웹빌더 --path ~/Desktop/aiweb-premium-service-site qa-a11y --url http://127.0.0.1:4321
-웹빌더 --path ~/Desktop/aiweb-premium-service-site qa-lighthouse --url http://127.0.0.1:4321
+?밸퉴??--path ~/Desktop/aiweb-premium-service-site qa-playwright --url http://127.0.0.1:4321
+?밸퉴??--path ~/Desktop/aiweb-premium-service-site qa-screenshot --url http://127.0.0.1:4321
+?밸퉴??--path ~/Desktop/aiweb-premium-service-site qa-a11y --url http://127.0.0.1:4321
+?밸퉴??--path ~/Desktop/aiweb-premium-service-site qa-lighthouse --url http://127.0.0.1:4321
 ```
 
 `qa-playwright --dry-run`, `qa-screenshot --dry-run`, `qa-a11y --dry-run`, and `qa-lighthouse --dry-run` are planning paths only: they must not create run artifacts, start processes, install packages, touch `.env`, or invoke local QA tools. A real QA run uses the explicit localhost/127.0.0.1 `--url` when provided, otherwise the recorded running preview URL. `qa-screenshot` captures safe local screenshot evidence for mobile, tablet, and desktop home-route screenshots into `.ai-web/qa/screenshots/mobile-home.png`, `tablet-home.png`, `desktop-home.png`, and `metadata.json`, plus run/result evidence for later critique. It uses only local Playwright tooling already present in the project. Playwright runs only after `node_modules/.bin/playwright` exists; accessibility QA requires `node_modules/.bin/axe`; Lighthouse QA requires `node_modules/.bin/lighthouse`. Each command records stdout/stderr/tool metadata under `.ai-web/runs/<tool>-qa-*`, writes a schema-compatible QA result under `.ai-web/qa/results/`, and returns deterministic `blocked`, `failed`, or `passed` status in its JSON payload (`playwright_qa`, `screenshot_qa`, `a11y_qa`, or `lighthouse_qa`). Missing runtime readiness, missing preview/URL, missing `pnpm`, or missing local tooling is reported as blocked; these QA commands do not install dependencies, start/stop preview, auto-repair, deploy, or contact external hosting beyond the local preview URL.
@@ -181,7 +180,7 @@ PR13 adds the safe local repair-loop command as a follow-up to failed or blocked
 ```bash
 ./bin/aiweb --path ~/Desktop/aiweb-premium-service-site repair --from-qa latest --dry-run --json
 ./bin/aiweb --path ~/Desktop/aiweb-premium-service-site repair --from-qa .ai-web/qa/results/qa-example.json --max-cycles 2 --json
-웹빌더 --path ~/Desktop/aiweb-premium-service-site repair --from-qa latest --dry-run
+?밸퉴??--path ~/Desktop/aiweb-premium-service-site repair --from-qa latest --dry-run
 ```
 
 `repair --from-qa latest` reads `state.qa.last_result`; an explicit `--from-qa` must point to a QA result JSON and rejects `.env` / `.env.*` paths without reading them. The command is phase-guarded for phase-7 through phase-11 unless `--force` is supplied. If the QA result is not failed, blocked, or timed out, or if the same QA task/source has exceeded `--max-cycles`, it returns a deterministic `repair_loop.status: blocked` and writes nothing. `repair --dry-run` writes nothing, copies no snapshot, starts no process, and reports the planned snapshot, repair record, and fix-task paths. A real repair loop creates a pre-repair snapshot under `.ai-web/snapshots/`, creates or reuses a fix task under `.ai-web/tasks/`, writes `.ai-web/repairs/*.json`, updates `implementation.current_task`, and records a decision. PR13 repair intentionally does not install packages, start/stop preview, run build, run Playwright/axe/Lighthouse, edit source files, auto-patch, deploy, push, or contact external hosting.
@@ -192,7 +191,7 @@ PR14 adds the safe local visual critique command as a local-evidence review step
 ./bin/aiweb --path ~/Desktop/aiweb-premium-service-site visual-critique --from-screenshots latest --dry-run --json
 ./bin/aiweb --path ~/Desktop/aiweb-premium-service-site visual-critique --screenshot ./evidence/home.png --dry-run --json
 ./bin/aiweb --path ~/Desktop/aiweb-premium-service-site visual-critique --screenshot ./evidence/home.png --metadata ./evidence/home.json --task-id golden-page --json
-웹빌더 --path ~/Desktop/aiweb-premium-service-site visual-critique --screenshot ./evidence/home.png --metadata ./evidence/home.json
+?밸퉴??--path ~/Desktop/aiweb-premium-service-site visual-critique --screenshot ./evidence/home.png --metadata ./evidence/home.json
 ```
 
 `visual-critique` accepts explicit local evidence paths or `--from-screenshots latest`; this PR does not launch a browser, take screenshots, call AI/network services, install packages, start/stop preview, deploy, auto-repair, or touch `.env`. `visual-critique --dry-run` writes nothing and reports the planned `.ai-web/visual/` artifact path. A real run records a schema-versioned `visual_critique` payload with numeric scores for hierarchy, typography, spacing, color, originality, mobile polish, brand fit, and intent fit, plus issues, a patch plan, and an approval of `pass`, `repair`, or `redesign`. Low-score `repair` or `redesign` approvals intentionally return a non-success exit code so shell automation cannot treat visual quality failures as passing.
@@ -202,7 +201,7 @@ PR15 adds the safe local visual polish repair-loop command as a follow-up to fai
 ```bash
 ./bin/aiweb --path ~/Desktop/aiweb-premium-service-site visual-polish --repair --from-critique latest --dry-run --json
 ./bin/aiweb --path ~/Desktop/aiweb-premium-service-site visual-polish --repair --from-critique .ai-web/visual/visual-critique-example.json --max-cycles 2 --json
-웹빌더 --path ~/Desktop/aiweb-premium-service-site visual-polish --repair --from-critique latest --dry-run
+?밸퉴??--path ~/Desktop/aiweb-premium-service-site visual-polish --repair --from-critique latest --dry-run
 ```
 
 `visual-polish --repair --from-critique latest` reads the latest visual critique recorded in `state.visual.latest_critique` or `state.qa.latest_visual_critique`; an explicit `--from-critique` must point to a visual critique JSON and rejects `.env` / `.env.*` paths without reading them. The command is phase-guarded for phase-7 through phase-11 unless `--force` is supplied. If the visual critique already passed, or if the same critique source has exceeded `--max-cycles`, it returns a deterministic `visual_polish.status: blocked` and writes nothing. `visual-polish --repair --dry-run` writes nothing, copies no snapshot, starts no process, and reports the planned snapshot, polish record, and polish-task paths. A real visual polish loop creates a pre-polish snapshot under `.ai-web/snapshots/`, creates or reuses a polish task under `.ai-web/tasks/`, writes `.ai-web/visual/polish-*.json`, updates `visual.latest_polish` and `implementation.current_task`, and records a decision. PR15 visual polish intentionally does not edit source files, auto-patch, install packages, start/stop preview, run build, run Playwright/axe/Lighthouse, capture screenshots, deploy, push, contact external hosting, call network/AI services, or touch `.env`.
@@ -214,12 +213,11 @@ PR16 adds the local Workbench UI foundation as a static artifact export:
 ./bin/aiweb --path ~/Desktop/aiweb-premium-service-site workbench --export --json
 ./bin/aiweb --path ~/Desktop/aiweb-premium-service-site workbench --serve --dry-run
 ./bin/aiweb --path ~/Desktop/aiweb-premium-service-site workbench --serve --approved
-웹빌더 --path ~/Desktop/aiweb-premium-service-site workbench --dry-run
-웹빌더 --path ~/Desktop/aiweb-premium-service-site workbench --export
-웹빌더 --path ~/Desktop/aiweb-premium-service-site workbench --serve --dry-run
+?밸퉴??--path ~/Desktop/aiweb-premium-service-site workbench --dry-run
+?밸퉴??--path ~/Desktop/aiweb-premium-service-site workbench --export
+?밸퉴??--path ~/Desktop/aiweb-premium-service-site workbench --serve --dry-run
 ```
 `workbench --dry-run` is a no-write planning path: it reports `workbench.status: planned`, the panel list, declarative control descriptors, and planned `.ai-web/workbench/index.html` / `.ai-web/workbench/workbench.json` paths without creating files or changing `.ai-web/state.yaml`. A real `workbench --export` may write only the Workbench HTML and JSON manifest under `.ai-web/workbench/`; it summarizes existing Director artifacts for panels such as chat/control, plan/artifacts, design candidates, selected `DESIGN.md`, preview, file tree, QA results, visual critique, latest engine-run/agent facade evidence, run timeline, and verify-loop status. Workbench controls are descriptors for existing CLI/daemon commands (`aiweb agent "Improve this local site" --mode supervised`, `aiweb run`, `aiweb design`, `aiweb build`, `aiweb preview`, `aiweb qa-playwright`, `aiweb visual-critique`, `aiweb repair`, `aiweb visual-polish`, `aiweb verify-loop --max-cycles 3`, `aiweb component-map`, `aiweb visual-edit --target DATA_AIWEB_ID --prompt TEXT`) and do not directly write state. Export executes no controls, launches no preview/browser/QA/daemon, installs no packages, calls no network/AI services, and writes no files outside `.ai-web/workbench/index.html` and `.ai-web/workbench/workbench.json`. `workbench --serve --dry-run` plans host/port plus `.ai-web/runs/workbench-serve-*` evidence paths without writes or process execution. `workbench --serve --approved` writes the same Workbench artifacts, starts a localhost/127.0.0.1-only static server, and records `workbench-serve.json` metadata under `.ai-web/runs/workbench-serve-*`; it still executes no Workbench controls and does not mutate `.ai-web/state.yaml`. The file tree and summaries intentionally exclude `.env`, `.env.*`, `.git`, `node_modules`, and bulky generated directories so local secrets are not surfaced.
-`workbench --dry-run` is a no-write planning path: it reports `workbench.status: planned`, the panel list, declarative control descriptors, and planned `.ai-web/workbench/index.html` / `.ai-web/workbench/workbench.json` paths without creating files or changing `.ai-web/state.yaml`. A real `workbench --export` may write only the Workbench HTML and JSON manifest under `.ai-web/workbench/`; it summarizes existing Director artifacts for panels such as chat/control, plan/artifacts, design candidates, selected `DESIGN.md`, preview, file tree, QA results, visual critique, latest AgentRuntime report, run timeline, and verify-loop status. Workbench controls are descriptors for existing CLI/daemon commands (`aiweb agent "Improve this local site" --mode supervised`, `aiweb run`, `aiweb design`, `aiweb build`, `aiweb preview`, `aiweb qa-playwright`, `aiweb visual-critique`, `aiweb repair`, `aiweb visual-polish`, `aiweb verify-loop --max-cycles 3`, `aiweb component-map`, `aiweb visual-edit --target DATA_AIWEB_ID --prompt TEXT`) and do not directly write state. Export executes no controls, launches no preview/browser/QA/daemon, installs no packages, calls no network/AI services, and writes no files outside `.ai-web/workbench/index.html` and `.ai-web/workbench/workbench.json`. `workbench --serve --dry-run` plans host/port plus `.ai-web/runs/workbench-serve-*` evidence paths without writes or process execution. `workbench --serve --approved` writes the same Workbench artifacts, starts a localhost/127.0.0.1-only static server, and records `workbench-serve.json` metadata under `.ai-web/runs/workbench-serve-*`; it still executes no Workbench controls and does not mutate `.ai-web/state.yaml`. The file tree and summaries intentionally exclude `.env`, `.env.*`, `.git`, `node_modules`, and bulky generated directories so local secrets are not surfaced.
 
 PR29 adds a local run lifecycle control plane:
 
@@ -229,12 +227,12 @@ PR29 adds a local run lifecycle control plane:
 ./bin/aiweb --path ~/Desktop/aiweb-premium-service-site run-cancel --run-id active --json
 ./bin/aiweb --path ~/Desktop/aiweb-premium-service-site run-resume --run-id latest --dry-run --json
 ./bin/aiweb --path ~/Desktop/aiweb-premium-service-site run-resume --run-id latest --json
-웹빌더 --path ~/Desktop/aiweb-premium-service-site run-status
-웹빌더 --path ~/Desktop/aiweb-premium-service-site run-cancel --run-id active --dry-run
-웹빌더 --path ~/Desktop/aiweb-premium-service-site run-resume --run-id latest --dry-run
+?밸퉴??--path ~/Desktop/aiweb-premium-service-site run-status
+?밸퉴??--path ~/Desktop/aiweb-premium-service-site run-cancel --run-id active --dry-run
+?밸퉴??--path ~/Desktop/aiweb-premium-service-site run-resume --run-id latest --dry-run
 ```
 
-`run-status` is read-only and reports `.ai-web/runs/active-run.json` plus recent per-run lifecycle summaries. Real long-running commands such as `verify-loop`, approved deploy adapters, and `workbench --serve --approved` create an active-run lock before local execution so another real run cannot silently overlap it. `run-cancel --dry-run` plans the cancel request without writes; a real `run-cancel` writes `.ai-web/runs/<run-id>/cancel-request.json` and updates `<run-id>/lifecycle.json`. `verify-loop` observes cancellation between lifecycle checkpoints and records `status: cancelled`; `workbench --serve` cancellation also sends a local TERM to the recorded localhost server pid. `run-resume` records only `.ai-web/runs/<run-id>/resume-plan.json` with the suggested next command; it does not launch agents, builds, provider CLIs, deploys, or network calls.
+`run-status` is read-only and reports `.ai-web/runs/active-run.json` plus recent per-run lifecycle summaries. Real long-running commands such as `engine-run`, approved deploy adapters, and `workbench --serve --approved` create an active-run lock before local execution so another real run cannot silently overlap it. `run-cancel --dry-run` plans the cancel request without writes; a real `run-cancel` writes `.ai-web/runs/<run-id>/cancel-request.json` and updates `<run-id>/lifecycle.json`. `run-resume` records only `.ai-web/runs/<run-id>/resume-plan.json` with the suggested next command; it does not launch agents, builds, provider CLIs, deploys, or network calls.
 
 PR30 adds read-only timeline and observability summaries:
 
@@ -243,8 +241,8 @@ PR30 adds read-only timeline and observability summaries:
 ./bin/aiweb --path ~/Desktop/aiweb-premium-service-site timeline --limit 10 --json
 ./bin/aiweb --path ~/Desktop/aiweb-premium-service-site observability-summary --limit 20 --json
 ./bin/aiweb --path ~/Desktop/aiweb-premium-service-site summary --limit 10 --json
-웹빌더 --path ~/Desktop/aiweb-premium-service-site run-timeline --limit 20
-웹빌더 --path ~/Desktop/aiweb-premium-service-site observability-summary --limit 20
+?밸퉴??--path ~/Desktop/aiweb-premium-service-site run-timeline --limit 20
+?밸퉴??--path ~/Desktop/aiweb-premium-service-site observability-summary --limit 20
 ```
 
 `run-timeline` returns recent safe `.ai-web/runs/*/*.json` evidence summaries using the same redaction rules as the Workbench run timeline. `observability-summary` adds active-run state, latest verify-loop, latest deploy, recent status counts, and recent blockers. Both commands are read-only, cap `--limit` at 50, exclude `.env` / `.env.*`, and do not mutate `.ai-web/state.yaml`, launch processes, deploy, install, or call network services.
@@ -258,9 +256,9 @@ PR18 adds the local-only Profile S Supabase scaffold and secret QA surface:
 ./bin/aiweb --path ~/Desktop/aiweb-premium-service-site supabase-secret-qa --json
 ./bin/aiweb --path ~/Desktop/aiweb-premium-service-site supabase-local-verify --dry-run --json
 ./bin/aiweb --path ~/Desktop/aiweb-premium-service-site supabase-local-verify --json
-웹빌더 --path ~/Desktop/aiweb-premium-service-site scaffold --profile S --dry-run
-웹빌더 --path ~/Desktop/aiweb-premium-service-site supabase-secret-qa --dry-run
-웹빌더 --path ~/Desktop/aiweb-premium-service-site supabase-local-verify --dry-run
+?밸퉴??--path ~/Desktop/aiweb-premium-service-site scaffold --profile S --dry-run
+?밸퉴??--path ~/Desktop/aiweb-premium-service-site supabase-secret-qa --dry-run
+?밸퉴??--path ~/Desktop/aiweb-premium-service-site supabase-local-verify --dry-run
 ```
 
 Profile S is a local scaffold/QA path for Next.js + Supabase SSR placeholders. It writes a safe non-dot template at `supabase/env.example.template` and intentionally does **not** generate `.env.example` while the no-`.env` guardrail is active. The only documented public placeholders are `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`; service-role, password, private-key, and other secret placeholders are rejected by the secret QA contract. `supabase-secret-qa --dry-run` writes nothing and must not read `.env` / `.env.*`; a real QA run records its artifact at `.ai-web/qa/supabase-secret-qa.json`. `supabase-local-verify` checks generated Profile S files, `supabase/env.example.template`, `supabase/migrations/0001_initial_schema.sql`, RLS/storage docs, and `src/lib/supabase/{client,server}.ts` stubs without contacting Supabase; it records `.ai-web/qa/supabase-local-verify.json` and reports `read_dot_env: false`, `external_actions_performed: false`, and provider CLI/network/deploy disabled. Real Profile S scaffold/QA/verify remains local-only: it does not run `supabase login`, `supabase link`, `supabase projects create`, `supabase init`, `supabase start`, `supabase db push`, package install, build, preview, deploy, external hosting, or other network/project-creation actions.
@@ -270,15 +268,15 @@ PR17 adds the local Component Map + Visual Edit planning foundation:
 ```bash
 ./bin/aiweb --path ~/Desktop/aiweb-premium-service-site component-map --dry-run
 ./bin/aiweb --path ~/Desktop/aiweb-premium-service-site component-map --json
-./bin/aiweb --path ~/Desktop/aiweb-premium-service-site visual-edit --target component.hero.copy --prompt "이 섹션 더 고급스럽게" --dry-run --json
-./bin/aiweb --path ~/Desktop/aiweb-premium-service-site visual-edit --target component.hero.copy --prompt "이 섹션 더 고급스럽게" --from-map latest --json
-웹빌더 --path ~/Desktop/aiweb-premium-service-site component-map --dry-run
-웹빌더 --path ~/Desktop/aiweb-premium-service-site visual-edit --target component.hero.copy --prompt "이 섹션 더 고급스럽게" --dry-run
+./bin/aiweb --path ~/Desktop/aiweb-premium-service-site visual-edit --target component.hero.copy --prompt "???뱀뀡 ??怨좉툒?ㅻ읇寃? --dry-run --json
+./bin/aiweb --path ~/Desktop/aiweb-premium-service-site visual-edit --target component.hero.copy --prompt "???뱀뀡 ??怨좉툒?ㅻ읇寃? --from-map latest --json
+?밸퉴??--path ~/Desktop/aiweb-premium-service-site component-map --dry-run
+?밸퉴??--path ~/Desktop/aiweb-premium-service-site visual-edit --target component.hero.copy --prompt "???뱀뀡 ??怨좉툒?ㅻ읇寃? --dry-run
 ```
 
 `component-map --dry-run` writes nothing and reports the planned `.ai-web/component-map.json` path plus planned/blocked status. A real `component-map` may write only `.ai-web/component-map.json`, with entries for stable `data_aiweb_id`, source path, kind, route, editability, and safe snippet/line summaries from scaffold/source files. It must not read or surface `.env` / `.env.*`, bulky generated directories, or secret-bearing content.
 
-`visual-edit` requires `--target DATA_AIWEB_ID` and `--prompt TEXT`; `--from-map` defaults to `latest`. The command validates that the selected target exists in the component map and creates only local handoff records such as `.ai-web/tasks/visual-edit-*.md` and `.ai-web/visual/visual-edit-*.json`. It intentionally does not patch source files, run build/QA/browser/preview, install packages, deploy, contact external hosting, call network/AI services, or mutate `.ai-web/state.yaml`. Explicit `.env` / `.env.*` map paths are rejected without reading. `visual-edit --dry-run` writes nothing and reports planned task/record paths so a user request like “이 섹션 더 고급스럽게” stays scoped to the selected region instead of triggering full-page regeneration.
+`visual-edit` requires `--target DATA_AIWEB_ID` and `--prompt TEXT`; `--from-map` defaults to `latest`. The command validates that the selected target exists in the component map and creates only local handoff records such as `.ai-web/tasks/visual-edit-*.md` and `.ai-web/visual/visual-edit-*.json`. It intentionally does not patch source files, run build/QA/browser/preview, install packages, deploy, contact external hosting, call network/AI services, or mutate `.ai-web/state.yaml`. Explicit `.env` / `.env.*` map paths are rejected without reading. `visual-edit --dry-run` writes nothing and reports planned task/record paths so a user request like ?쒖씠 ?뱀뀡 ??怨좉툒?ㅻ읇寃뚢?stays scoped to the selected region instead of triggering full-page regeneration.
 
 PR19/PR27 add local-first GitHub sync and deploy commands:
 
@@ -289,13 +287,13 @@ PR19/PR27 add local-first GitHub sync and deploy commands:
 ./bin/aiweb --path ~/Desktop/aiweb-premium-service-site deploy --target vercel --dry-run --json
 ./bin/aiweb --path ~/Desktop/aiweb-premium-service-site deploy --target cloudflare-pages --approved --json
 ./bin/aiweb --path ~/Desktop/aiweb-premium-service-site deploy --target vercel --approved --json
-웹빌더 --path ~/Desktop/aiweb-premium-service-site github-sync
-웹빌더 --path ~/Desktop/aiweb-premium-service-site deploy-plan --target vercel
-웹빌더 --path ~/Desktop/aiweb-premium-service-site deploy --target vercel --dry-run
-웹빌더 --path ~/Desktop/aiweb-premium-service-site deploy --target vercel --approved
+?밸퉴??--path ~/Desktop/aiweb-premium-service-site github-sync
+?밸퉴??--path ~/Desktop/aiweb-premium-service-site deploy-plan --target vercel
+?밸퉴??--path ~/Desktop/aiweb-premium-service-site deploy --target vercel --dry-run
+?밸퉴??--path ~/Desktop/aiweb-premium-service-site deploy --target vercel --approved
 ```
 
-`github-sync` only reports the intended GitHub sync command shape; it does not run `git push`, contact GitHub, invoke provider CLIs, build, preview, install packages, or read `.env` / `.env.*`. `deploy-plan` only reports the target-specific deploy checklist for `cloudflare-pages` or `vercel`; it performs no provider CLI, network, build, preview, install, or `.env` access. `deploy --dry-run` writes nothing and launches no process. `deploy --approved` is blocked unless the state points at a passing approved `verify-loop` evidence file, that evidence carries deploy provenance, the current git/source/package/output/tool-version snapshot still matches that provenance, the scaffold output directory exists, and the selected provider executable is present on `PATH`; approved runs record `.ai-web/runs/deploy-*/deploy.json` plus stdout/stderr logs and update safe deploy state. Do not run approved deploy against real provider credentials until you intend a real external release.
+`github-sync` only reports the intended GitHub sync command shape; it does not run `git push`, contact GitHub, invoke provider CLIs, build, preview, install packages, or read `.env` / `.env.*`. `deploy-plan` only reports the target-specific deploy checklist for `cloudflare-pages` or `vercel`; it performs no provider CLI, network, build, preview, install, or `.env` access. `deploy --dry-run` writes nothing and launches no process. Approved deploy remains blocked unless release evidence/provenance gates pass; because verify-loop no longer produces deploy provenance, real provider execution should remain blocked until deploy gating is migrated to engine-run evidence. Do not run approved deploy against real provider credentials until you intend a real external release.
 
 PR22 adds the local source-patch agent-run surface for repair / visual-polish / visual-edit task packets:
 
@@ -304,24 +302,24 @@ PR22 adds the local source-patch agent-run surface for repair / visual-polish / 
 ./bin/aiweb --path ~/Desktop/aiweb-premium-service-site agent-run --task latest --agent codex --approved --json
 ./bin/aiweb --path ~/Desktop/aiweb-premium-service-site agent-run --task latest --agent openmanus --dry-run --json
 ./bin/aiweb --path ~/Desktop/aiweb-premium-service-site agent-run --task latest --agent openmanus --sandbox docker --approved --json
-웹빌더 --path ~/Desktop/aiweb-premium-service-site agent-run --task latest --agent codex --dry-run
-웹빌더 --path ~/Desktop/aiweb-premium-service-site agent-run --task latest --agent codex --approved
+?밸퉴??--path ~/Desktop/aiweb-premium-service-site agent-run --task latest --agent codex --dry-run
+?밸퉴??--path ~/Desktop/aiweb-premium-service-site agent-run --task latest --agent codex --approved
 ```
 
 `agent-run --dry-run` is a no-write / no-process preflight: it reports the planned `.ai-web/runs/agent-run-<timestamp>/agent-run.json`, `stdout.log`, `stderr.log`, and `.ai-web/diffs/agent-run-<timestamp>.patch` paths without executing a local agent. A real `agent-run` requires `--approved`; omitting `--approved` blocks execution with approval-required semantics and writes nothing. `--agent codex` keeps the original local source-patch adapter. `--agent openmanus` uses an aiweb-managed Docker/Podman sandbox plus JSON file contract, clean environment, no-network/no-MCP guard env, workspace-scoped `.ai-web/tmp/openmanus/<run-id>/` staging directory, hunk/workspace validation, OpenManus result JSON validation, and copy-back of allowed source files only after staged diff validation. Approved OpenManus execution is blocked unless `--sandbox docker|podman` is supplied and aiweb verifies the generated command contains `--network none`, read-only root, dropped capabilities, no-new-privileges, resource limits, restricted tmpfs, and exactly one writable mount for the staging workspace. The command is limited to `.ai-web/tasks/*.md` task packets with `Goal`, `Inputs`, `Constraints`, and machine constraints (`shell_allowed: false`, `network_allowed: false`, `env_access_allowed: false`, `allowed_source_paths:`). It reads only task/design/component-map/selected-design/source context that is already allowed by the task packet, refuses `.env` / `.env.*`, secret-looking paths, symlink/hardlink source paths, and shell/network/package/deploy requests, rejects approved runs that mutate files outside the allowed source list, redacts secret-looking process output, captures stdout/stderr and a source diff patch when it runs, and records the latest run metadata in `.ai-web` safe state. `agent-run` itself does not run build/preview/QA/deploy/provider CLIs and does not treat `--force` as approval.
 
-PR23 adds the first approved local closed loop:
+`verify-loop` remains as an engine-run compatibility shim only:
 
 ```bash
 ./bin/aiweb --path ~/Desktop/aiweb-premium-service-site verify-loop --max-cycles 3 --dry-run --json
-./bin/aiweb --path ~/Desktop/aiweb-premium-service-site verify-loop --max-cycles 3 --approved --json
+./bin/aiweb --path ~/Desktop/aiweb-premium-service-site verify-loop --max-cycles 3 --approval-hash HASH --approved --json
 ./bin/aiweb --path ~/Desktop/aiweb-premium-service-site verify-loop --max-cycles 3 --agent openmanus --dry-run --json
-./bin/aiweb --path ~/Desktop/aiweb-premium-service-site verify-loop --max-cycles 3 --agent openmanus --sandbox docker --approved --json
-웹빌더 --path ~/Desktop/aiweb-premium-service-site verify-loop --max-cycles 3 --dry-run
-웹빌더 --path ~/Desktop/aiweb-premium-service-site verify-loop --max-cycles 3 --approved
+./bin/aiweb --path ~/Desktop/aiweb-premium-service-site verify-loop --max-cycles 3 --agent openmanus --sandbox docker --approval-hash HASH --approved --json
+?밸퉴??--path ~/Desktop/aiweb-premium-service-site verify-loop --max-cycles 3 --dry-run
+?밸퉴??--path ~/Desktop/aiweb-premium-service-site verify-loop --max-cycles 3 --approval-hash HASH --approved
 ```
 
-`verify-loop --dry-run` writes nothing and launches no processes; it only reports the planned build, preview, QA, screenshot, visual critique, repair/visual-polish, and agent-run cycle evidence paths. `verify-loop` is a legacy verification bundle/probe under the Agent OS model, not an autonomous top-level engine. `--max-cycles` accepts 1 through 10. `--agent codex|openmanus` selects which implementation adapter is used for repair cycles; approved OpenManus cycles require `--sandbox docker|podman`. A real verify loop requires `--approved`, requires local dependencies to already exist, and blocks with a `setup --install --approved` next action when `node_modules` or local QA tools are missing. It reuses the existing build/preview/QA/screenshot/visual-critique/repair/visual-polish/agent-run adapters, records per-cycle step JSON under `.ai-web/runs/verify-loop-<timestamp>/cycle-N/`, writes the loop summary to `.ai-web/runs/verify-loop-<timestamp>/verify-loop.json`, records deploy provenance for the current git/source/package/output/tool-version snapshot, updates safe implementation state (`latest_verify_loop`, status, cycle count, latest blocker), and stops on pass, max cycles, blocking issue, unsafe action, or agent-run failure. It never installs packages, deploys, pushes, calls provider CLIs, or reads/prints `.env` / `.env.*`.
+`verify-loop --dry-run` writes nothing and launches no processes; it reports the canonical `engine-run` approval hash and planned engine-run artifacts. The former closed script of build, preview, QA, screenshot, visual critique, repair/visual-polish, and agent-run cycles has been removed. `--max-cycles` accepts 1 through 10. `--agent codex|openmanus` selects the delegated engine-run adapter; approved OpenManus execution still requires `--sandbox docker|podman`. Real local work requires `--approved --approval-hash HASH` and is delegated to `engine-run` instead of writing `.ai-web/runs/verify-loop-*` cycle evidence or deploy provenance. It never installs packages, deploys, pushes, calls provider CLIs, or reads/prints `.env` / `.env.*`.
 
 Phase-sensitive commands are guarded by the Director state machine:
 
@@ -353,7 +351,7 @@ Phase-sensitive commands are guarded by the Director state machine:
 ./bin/aiweb workbench --dry-run
 ./bin/aiweb workbench --serve --dry-run
 ./bin/aiweb component-map --dry-run
-./bin/aiweb visual-edit --target component.hero.copy --prompt "이 섹션 더 고급스럽게" --dry-run
+./bin/aiweb visual-edit --target component.hero.copy --prompt "???뱀뀡 ??怨좉툒?ㅻ읇寃? --dry-run
 ./bin/aiweb agent-run --task latest --agent codex --approved
 ./bin/aiweb agent-run --task latest --agent openmanus --sandbox docker --approved
 ./bin/aiweb verify-loop --max-cycles 3 --approved
@@ -399,7 +397,7 @@ Manual repair/override for guarded commands:
 ./bin/aiweb visual-polish --repair --force --from-critique latest --dry-run
 ./bin/aiweb workbench --force --export
 ./bin/aiweb component-map --force
-./bin/aiweb visual-edit --target component.hero.copy --prompt "이 섹션 더 고급스럽게" --from-map latest --force
+./bin/aiweb visual-edit --target component.hero.copy --prompt "???뱀뀡 ??怨좉툒?ㅻ읇寃? --from-map latest --force
 ./bin/aiweb scaffold --profile S --force
 ./bin/aiweb supabase-secret-qa --force
 ./bin/aiweb supabase-local-verify --force
