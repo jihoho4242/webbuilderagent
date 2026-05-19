@@ -103,9 +103,9 @@
       "finding": "Public engine-run contract no longer markets the runtime as Manus wording; static audit blocks product-level Manus wording claims in README and contract surfaces while preserving OpenManus adapter naming."
     },
     {
-      "surface": "Codex agent-run worker subprocess documented exception",
-      "status": "brokered_with_agent_run_codex_side_effect_broker",
-      "finding": "Codex agent-run no longer relies on a legacy documented exception; approved local source-patch subprocess execution writes side-effect broker events and static audit classifies the Open3.capture3 surface as brokered_agent_run_codex_subprocess."
+      "surface": "Codex agent-run worker subprocess",
+      "status": "centralized_to_runtime_process_runner",
+      "finding": "Codex agent-run no longer owns direct Open3 subprocess execution; approved local source-patch subprocesses route through ProcessRunner/CommandSpec with stdin_data support, still write side-effect broker events, and static side-effect audit has no brokered_agent_run_codex_subprocess entries."
     },
     {
       "surface": "runtime command git revision and preview process-tree direct process forms",

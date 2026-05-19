@@ -7,11 +7,6 @@ module Aiweb
       lib/aiweb/project/runtime_commands/setup/supply_chain/broker.rb
       lib/aiweb/project/runtime_commands/setup/supply_chain.rb
     ].freeze
-    SIDE_EFFECT_AGENT_RUN_WORKER_PATHS = %w[
-      lib/aiweb/project/agent_run.rb
-      lib/aiweb/project/agent_run/codex_runner.rb
-    ].freeze
-
     private
 
     def side_effect_surface_classification(path, line, lines, index)
@@ -58,9 +53,6 @@ module Aiweb
       end
       if path.end_with?("lib/aiweb/project/engine_run/generated_sources.rb") && line.match?(/exec "\$dir\/\$TOOL_NAME"/)
         return side_effect_classification("brokered_generated_tool_broker_delegate", "brokered", "aiweb.engine_run.tool_broker", "generated POSIX tool-broker shim delegates only after package/git/external-network block checks")
-      end
-      if side_effect_path_in?(path, SIDE_EFFECT_AGENT_RUN_WORKER_PATHS) && line.include?("Open3.capture3") && context.include?("append_side_effect_broker_event")
-        return side_effect_classification("brokered_agent_run_codex_subprocess", "brokered", "aiweb.agent_run.codex.side_effect_broker", "Codex agent-run subprocess records side-effect broker events around approved local source-patch execution")
       end
       if path.end_with?("lib/aiweb/project/runtime_commands.rb") && line.include?("Open3.capture3")
         return side_effect_classification("local_runtime_command_exception", "documented_exception", nil, "verify/QA/git revision subprocesses are project-local runtime commands; setup install commands are separately brokered")

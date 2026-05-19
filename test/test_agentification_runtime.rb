@@ -123,6 +123,25 @@ class AgentificationRuntimeTest < Minitest::Test
     end
   end
 
+  def test_process_runner_writes_stdin_through_command_spec
+    in_tmp do |dir|
+      script = File.join(dir, "stdin_probe.rb")
+      File.write(script, "input = STDIN.read\nputs input.reverse\n")
+
+      result = Aiweb::Runtime::ProcessRunner.new.capture(
+        Aiweb::Runtime::CommandSpec.new(
+          argv: [RbConfig.ruby, script],
+          cwd: dir,
+          stdin_data: "agent prompt",
+          timeout: 10
+        )
+      ).to_h
+
+      assert_equal "passed", result["status"]
+      assert_match(/tpmorp tnega/, result["stdout"])
+    end
+  end
+
   def test_process_runner_times_out_with_structured_result
     in_tmp do |dir|
       script = File.join(dir, "slow.rb")

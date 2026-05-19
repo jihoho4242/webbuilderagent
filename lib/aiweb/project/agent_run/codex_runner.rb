@@ -40,21 +40,26 @@ module Aiweb
         append_side_effect_broker_event(side_effect_broker_path, side_effect_broker_events, "policy.decision", side_effect_context.merge("decision" => "allow", "reason" => "explicit --approved bounded agent-run source patch"))
         append_side_effect_broker_event(side_effect_broker_path, side_effect_broker_events, "tool.started", side_effect_context.merge("status" => "running"))
 
-        stdout, stderr, process_status = Open3.capture3(
-          agent_run_process_env(context_path: context_path, source_paths: source_paths, task_source: task_source, run_id: run_id, diff_path: diff_path, metadata_path: metadata_path, side_effect_broker_path: side_effect_broker_path),
-          agent_name,
-          stdin_data: prompt,
-          chdir: root,
-          unsetenv_others: true
+        result = runtime_process_runner.capture(
+          Aiweb::Runtime::CommandSpec.new(
+            argv: [agent_name],
+            cwd: root,
+            env: agent_run_process_env(context_path: context_path, source_paths: source_paths, task_source: task_source, run_id: run_id, diff_path: diff_path, metadata_path: metadata_path, side_effect_broker_path: side_effect_broker_path),
+            stdin_data: prompt,
+            timeout: 600,
+            max_output_bytes: 200_000,
+            risk_class: "agent_run_codex_local_source_patch_worker",
+            description: "agent-run Codex local source patch worker"
+          )
         )
         after_snapshot = agent_run_workspace_snapshot
         unauthorized_changes = agent_run_unauthorized_workspace_changes(before_snapshot, after_snapshot, source_paths)
-        stdout = agent_run_redact_process_output(stdout)
-        stderr = agent_run_redact_process_output(stderr)
-        exit_code = process_status.exitstatus
-        status = process_status.success? && unauthorized_changes.empty? ? "passed" : "failed"
+        stdout = agent_run_redact_process_output(result.stdout)
+        stderr = agent_run_redact_process_output(result.stderr)
+        exit_code = result.exit_code
+        status = result.success? && unauthorized_changes.empty? ? "passed" : "failed"
         blocking_issues = []
-        blocking_issues << "#{agent_name} exited with status #{exit_code}" unless process_status.success?
+        blocking_issues << "#{agent_name} exited with status #{exit_code || result.status}" unless result.success?
         unless unauthorized_changes.empty?
           blocking_issues << "agent-run rejected changes outside allowed source paths: #{unauthorized_changes.join(", ")}"
         end

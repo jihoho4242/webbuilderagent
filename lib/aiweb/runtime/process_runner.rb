@@ -16,7 +16,7 @@ module Aiweb
             chdir: spec.cwd,
             unsetenv_others: true
           ) do |stdin, out, err, wait_thread|
-            stdin.close
+            write_stdin(stdin, spec.stdin_data)
             stdout_thread = Thread.new { out.read.to_s rescue "" }
             stderr_thread = Thread.new { err.read.to_s rescue "" }
             if wait_thread.join(spec.timeout)
@@ -56,6 +56,14 @@ module Aiweb
         Process.kill("KILL", pid)
       rescue Errno::ESRCH, Errno::EINVAL
         nil
+      end
+
+      def write_stdin(stdin, data)
+        stdin.write(data.to_s) unless data.nil?
+      rescue IOError, SystemCallError
+        nil
+      ensure
+        stdin.close unless stdin.closed?
       end
 
       def safe_thread_value(thread)

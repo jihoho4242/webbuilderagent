@@ -113,6 +113,7 @@ class AiwebContractTest < Minitest::Test
     refute entries.any? { |entry| entry.fetch("classification") == "local_runtime_readiness_probe" }, "OpenManus readiness image inspect must use the central ProcessRunner boundary instead of direct Open3"
     refute entries.any? { |entry| entry.fetch("classification") == "openmanus_sandbox_image_preflight" }, "agent-run OpenManus image preflight must use the central ProcessRunner boundary instead of direct Open3"
     refute entries.any? { |entry| entry.fetch("classification") == "sandbox_runtime_attestation_exception" }, "engine-run sandbox runtime attestations must use the central ProcessRunner boundary instead of direct Open3"
+    refute entries.any? { |entry| entry.fetch("classification") == "brokered_agent_run_codex_subprocess" }, "Codex agent-run worker must use the central ProcessRunner boundary instead of direct Open3"
 
     classifications = entries.map { |entry| entry.fetch("classification") }
     %w[
@@ -121,7 +122,6 @@ class AiwebContractTest < Minitest::Test
       brokered_setup_supply_chain_command
       brokered_engine_run_capture_command
       brokered_openmanus_sandbox_subprocess
-      brokered_agent_run_codex_subprocess
       local_verification_harness_exception
       local_cli_launcher_wrapper
     ].each do |classification|
