@@ -159,6 +159,15 @@
         "side_effect_free_replay and side_effect_free_replay_proven remain false until durable replay/resume audit evidence is attached",
         "Release manifest carries replay_report with replay_run_attached=false and production_ready_claim_allowed=false"
       ]
+    },
+    {
+      "surface": "P5/release overclaim regression gap",
+      "status": "static_guard_added",
+      "evidence": [
+        "test_agent_os_v32_static_surface_audit now rejects stale release-ready and production-ready true claims in release evidence surfaces",
+        "The static audit rejects Tool gateway, Replay, and Brain broad pass wording in P5/release reports",
+        "The static audit asserts every fixture-derived release report remains production_gate_status=blocked and production_ready_claim_allowed=false"
+      ]
     }
   ],
   "preserved_safety_substrate": [
@@ -170,7 +179,7 @@
   "validation": {
     "ruby -Ilib -e require aiweb": "passed: ok",
     "ruby -Itest test/test_agentification_runtime.rb": "passed: 11 runs, 138 assertions, 0 failures, 0 errors",
-    "ruby -Itest test/test_agent_os_v32_static_surface_audit.rb": "passed: 2 runs, 51 assertions, 0 failures, 0 errors",
+    "ruby -Itest test/test_agent_os_v32_static_surface_audit.rb": "passed: 3 runs, 84 assertions, 0 failures, 0 errors",
     "ruby -Itest test/test_aiweb_cli.rb -n /verify_loop|verify-loop|workbench_dry_run/": "passed: 14 runs, 403 assertions, 0 failures, 0 errors",
     "ruby -Itest test/test_agent_os_v32_release_evidence.rb": "passed: 2 runs, 167 assertions, 0 failures, 0 errors",
     "ruby -Itest test/test_agent_os_v32_policy_kernel.rb test/test_agent_os_v32_tool_gateway.rb test/test_agent_os_v32_decision_packet.rb": "passed: 9 runs, 35 assertions, 0 failures, 0 errors",

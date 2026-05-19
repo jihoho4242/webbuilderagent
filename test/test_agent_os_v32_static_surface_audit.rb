@@ -65,4 +65,47 @@ class AgentOsV32StaticSurfaceAuditTest < Minitest::Test
     assert_equal "converted_to_engine_run_shim", verify_loop.fetch("status")
     assert_includes audit.fetch("preserve_safety_substrate"), "PathPolicy"
   end
+
+  def test_release_evidence_surfaces_do_not_reintroduce_fixture_readiness_claims
+    evidence_paths = [
+      File.join(REPO_ROOT, "releases", "v0.3.2-rc1", "p5_gate_report.md"),
+      File.join(REPO_ROOT, "releases", "v0.3.2-rc1", "release_manifest.yaml"),
+      File.join(REPO_ROOT, ".ai-web", "reports", "script-executor-neutralization-20260519.json"),
+      File.join(REPO_ROOT, ".ai-web", "reports", "script-executor-neutralization-20260519.md"),
+      File.join(REPO_ROOT, ".ai-web", "reports", "agent-os-v32-baseline-audit.json")
+    ]
+    forbidden_fragments = [
+      "Tool gateway: passed",
+      "Replay: passed",
+      "Brain: safety passed",
+      "side_effect_free_replay: true",
+      "release_ready: true",
+      "production_readiness_claimed: true",
+      "production_ready_claim_allowed: true",
+      "all_side_effects_require_decision_packet_policy_gateway: true"
+    ]
+
+    combined = evidence_paths.map { |path| File.read(path) }.join("\n")
+    forbidden_fragments.each do |fragment|
+      refute_includes combined, fragment
+    end
+
+    manifest = YAML.safe_load(File.read(File.join(REPO_ROOT, "releases", "v0.3.2-rc1", "release_manifest.yaml")), permitted_classes: [], aliases: false)
+    assert_equal false, manifest.fetch("release_ready")
+    assert_equal false, manifest.fetch("production_readiness_claimed")
+    assert_equal false, manifest.dig("policy_gateway_report", "all_side_effects_require_decision_packet_policy_gateway")
+
+    %w[
+      tool_gateway_report
+      hitl_report
+      replay_report
+      eval_report
+      redteam_report
+      brain_report
+      self_improvement_report
+    ].each do |report_key|
+      assert_equal "blocked", manifest.dig(report_key, "production_gate_status"), "#{report_key} must stay production-blocked"
+      assert_equal false, manifest.dig(report_key, "production_ready_claim_allowed"), "#{report_key} must not allow production-ready claims"
+    end
+  end
 end

@@ -29,6 +29,7 @@ WebBuilderAgent is closer to a natural-language, engine-run-centered supervised 
 - Demoted P5 tool gateway evidence from raw `passed` to `gateway_demo_passed` / production-blocked until a full side-effect tool gateway audit exists.
 - Demoted P5 HITL v2 evidence from fixture `passed` to `approval_fixture_passed` with production gate blocked until real operator approval/audit evidence is attached.
 - Demoted P5 replay evidence from generic pass/side-effect-free wording to `replay_demo_passed` with production gate blocked until durable replay/resume audit evidence is attached.
+- Added static audit coverage so stale release-ready / production-ready true claims and broad P5 pass wording cannot be reintroduced in release evidence surfaces.
 
 ## Remaining non-completion reasons
 
@@ -40,7 +41,7 @@ WebBuilderAgent is closer to a natural-language, engine-run-centered supervised 
 
 - `ruby -Ilib -e "require 'aiweb'; puts 'ok'"` ? PASS
 - `ruby -Itest test/test_agentification_runtime.rb` ? PASS: 11 runs, 138 assertions, 0 failures, 0 errors
-- `ruby -Itest test/test_agent_os_v32_static_surface_audit.rb` ? PASS: 2 runs, 51 assertions, 0 failures, 0 errors
+- `ruby -Itest test/test_agent_os_v32_static_surface_audit.rb` ? PASS: 3 runs, 84 assertions, 0 failures, 0 errors
 - `ruby -Itest test/test_aiweb_cli.rb -n '/verify_loop|verify-loop|workbench_dry_run/'` ? PASS: 14 runs, 403 assertions, 0 failures, 0 errors
 - `ruby -Itest test/test_aiweb_cli.rb -n '/deploy/'` ? PASS: 8 runs, 290 assertions, 0 failures, 0 errors
 - `ruby -Itest test/test_aiweb_cli.rb -n '/verify_loop|verify-loop|workbench_dry_run|deploy/'` ? PASS: 18 runs, 616 assertions, 0 failures, 0 errors

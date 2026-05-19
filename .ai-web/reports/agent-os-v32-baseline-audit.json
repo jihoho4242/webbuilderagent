@@ -81,6 +81,11 @@
       "surface": "P5 replay readiness claim",
       "status": "demoted_to_replay_demo_production_blocked",
       "finding": "P5 evidence no longer treats a static replay key fixture as side-effect-free replay readiness; release evidence remains blocked until durable replay/resume audit and artifact hash validation evidence are attached."
+    },
+    {
+      "surface": "P5/release overclaim regression guard",
+      "status": "static_audit_added",
+      "finding": "Static surface audit now blocks stale release-ready, production-ready, broad pass, and fixture-derived readiness claims from returning to P5/release evidence surfaces."
     }
   ],
   "preserve_safety_substrate": [
