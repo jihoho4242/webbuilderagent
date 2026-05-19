@@ -631,58 +631,6 @@ class AiwebCliTest < Minitest::Test
     write_state(state)
   end
 
-  def deploy_provenance_fixture(output_directory: "dist")
-    {
-      "schema_version" => 1,
-      "captured_at" => Time.now.utc.iso8601,
-      "workspace" => {
-        "git" => {
-          "available" => false,
-          "commit_sha" => "unknown",
-          "dirty" => nil,
-          "status_sha256" => nil
-        },
-        "source" => hash_paths_fixture(%w[src public astro.config.mjs astro.config.js next.config.js next.config.mjs tsconfig.json tailwind.config.js tailwind.config.mjs vite.config.js vite.config.mjs], "source"),
-        "package" => hash_paths_fixture(%w[package.json pnpm-lock.yaml package-lock.json yarn.lock bun.lockb], "package")
-      },
-      "output" => hash_paths_fixture([output_directory], "output").merge("directory" => output_directory),
-      "tool_versions" => {
-        "ruby" => RUBY_VERSION,
-        "pnpm" => nil,
-        "playwright" => nil,
-        "axe" => nil,
-        "lighthouse" => nil
-      }
-    }
-  end
-
-  def hash_paths_fixture(paths, label)
-    files = Array(paths).flat_map { |path| hashable_files_fixture(path) }.uniq.sort
-    digest = Digest::SHA256.new
-    files.each do |path|
-      digest.update("#{path}\0")
-      digest.update(Digest::SHA256.file(path).hexdigest)
-      digest.update("\0")
-    end
-    {
-      "label" => label,
-      "exists" => !files.empty?,
-      "file_count" => files.length,
-      "sha256" => files.empty? ? nil : digest.hexdigest
-    }
-  end
-
-  def hashable_files_fixture(path)
-    normalized = path.to_s.tr("\\", "/").sub(%r{\A(?:\./)+}, "")
-    return [] if normalized.empty? || normalized.split("/").any? { |part| part.start_with?(".env") || %w[.git .ai-web node_modules].include?(part) }
-    return [normalized] if File.file?(normalized)
-    return [] unless File.directory?(normalized)
-
-    Dir.glob(File.join(normalized, "**", "*"), File::FNM_DOTMATCH).select { |entry| File.file?(entry) }.map { |entry| entry.tr("\\", "/") }.reject do |entry|
-      entry.split("/").any? { |part| part.start_with?(".env") || %w[.git .ai-web node_modules].include?(part) }
-    end
-  end
-
   def approve_quality_contract
     quality = YAML.load_file(".ai-web/quality.yaml")
     quality["quality"]["approved"] = true
@@ -9819,7 +9767,7 @@ class AiwebCliTest < Minitest::Test
     end
   end
 
-  def test_deploy_approved_blocks_without_passing_verify_loop_evidence
+  def test_deploy_approved_blocks_until_engine_run_release_evidence_exists
     in_tmp do
       prepare_profile_d_scaffold_flow
       set_phase("phase-11")
@@ -9835,72 +9783,66 @@ class AiwebCliTest < Minitest::Test
       deploy = payload.fetch("deploy")
       assert_equal "blocked", deploy.fetch("status")
       message = [payload["blocking_issues"], deploy.fetch("blocking_issues")].flatten.compact.join("\n")
-      assert_match(/verify-loop/i, message)
-      assert_match(/provider CLI|wrangler/i, message)
+      assert_match(/engine-run release evidence/i, message)
+      refute deploy.key?("verify_loop_gate"), "removed verify-loop evidence must not remain a deploy gate"
+      assert_equal "blocked", deploy.dig("release_gate", "status")
+      assert_equal "engine_run_release_evidence", deploy.dig("release_gate", "gate")
+      assert_equal true, deploy.dig("release_gate", "legacy_verify_loop_gate_removed")
       assert_equal false, deploy.fetch("provider_cli_invoked")
       assert_equal false, deploy.fetch("external_deploy_performed")
+      assert_equal false, deploy.fetch("external_actions_allowed")
       assert_equal "blocked", deploy.dig("side_effect_broker", "status")
       assert_equal "deny", deploy.dig("side_effect_broker", "policy", "decision")
-      refute File.exist?(deploy.fetch("side_effect_broker_path")), "approved deploy with missing gates must not write broker events"
-      assert_equal before_entries, project_entries, "approved deploy with missing gates must not write files"
-      assert_equal before_state, File.read(".ai-web/state.yaml"), "approved deploy with missing gates must not mutate state"
+      refute File.exist?(deploy.fetch("side_effect_broker_path")), "approved deploy with missing release evidence must not write broker events"
+      assert_equal before_entries, project_entries, "approved deploy with missing release gate must not write files"
+      assert_equal before_state, File.read(".ai-web/state.yaml"), "approved deploy with missing release gate must not mutate state"
     end
   end
 
-  def test_deploy_approved_blocks_unsafe_verify_loop_evidence_path_without_reading_env
-    in_tmp do
+  def test_deploy_approved_ignores_legacy_verify_loop_state_and_never_reads_env_path
+    in_tmp do |dir|
       prepare_profile_d_scaffold_flow
       set_phase("phase-11")
       state = load_state
       state["implementation"]["latest_verify_loop"] = ".env.deploy"
+      state["implementation"]["verify_loop_status"] = "passed"
       write_state(state)
+      bin_dir = File.join(dir, "fake-deploy-bin")
+      FileUtils.mkdir_p(bin_dir)
+      marker = File.join(dir, "fake-vercel-ran")
+      write_fake_executable(bin_dir, "vercel", "touch #{marker.shellescape}; echo should-not-run; exit 0")
       before_entries = project_entries
       before_state = File.read(".ai-web/state.yaml")
 
-      stdout, stderr, code = run_aiweb("deploy", "--target", "vercel", "--approved", "--json")
+      stdout, stderr, code = run_aiweb_env(
+        { "PATH" => [bin_dir, "/usr/bin", "/bin", "/usr/sbin", "/sbin"].join(File::PATH_SEPARATOR) },
+        "deploy", "--target", "vercel", "--approved", "--json"
+      )
       payload = JSON.parse(stdout)
+      deploy = payload.fetch("deploy")
 
       assert_equal 5, code
       assert_equal "", stderr
-      deploy = payload.fetch("deploy")
       assert_equal "blocked", deploy.fetch("status")
-      assert_equal "blocked", deploy.dig("verify_loop_gate", "status")
-      assert_includes deploy.dig("verify_loop_gate", "blocking_issues").join("\n"), "unsafe"
+      refute deploy.key?("verify_loop_gate"), "legacy verify-loop metadata must be ignored after script-runner removal"
+      assert_equal "blocked", deploy.dig("release_gate", "status")
       assert_equal false, deploy.fetch("provider_cli_invoked")
       assert_equal false, deploy.fetch("external_deploy_performed")
-      assert_equal "blocked", deploy.dig("side_effect_broker", "status")
-      assert_equal "deny", deploy.dig("side_effect_broker", "policy", "decision")
-      refute File.exist?(deploy.fetch("side_effect_broker_path")), "unsafe verify-loop evidence path must not write broker events"
-      assert_equal before_entries, project_entries, "unsafe verify-loop evidence path must not write files"
-      assert_equal before_state, File.read(".ai-web/state.yaml"), "unsafe verify-loop evidence path must not mutate state"
+      refute File.exist?(marker), "legacy verify-loop state must not unlock provider command execution"
+      refute File.exist?(deploy.fetch("side_effect_broker_path")), "blocked deploy must not write broker events"
+      assert_equal before_entries, project_entries, "legacy verify-loop state must not write deploy artifacts"
+      assert_equal before_state, File.read(".ai-web/state.yaml"), "legacy verify-loop state must not mutate state"
+      refute_includes stdout, ".env"
+      refute_includes stdout, "should-not-run"
     end
   end
 
-  def test_deploy_approved_fake_provider_command_records_evidence_and_state
+  def test_deploy_approved_never_executes_fake_provider_cli_without_engine_run_release_gate
     in_tmp do |dir|
       prepare_profile_d_scaffold_flow
       set_phase("phase-11")
       FileUtils.mkdir_p("dist")
       File.write("dist/index.html", "<h1>Deploy fixture</h1>\n")
-      verify_dir = ".ai-web/runs/verify-loop-test"
-      FileUtils.mkdir_p(verify_dir)
-      verify_metadata_path = File.join(verify_dir, "verify-loop.json")
-      File.write(
-        verify_metadata_path,
-        JSON.pretty_generate(
-          "schema_version" => 1,
-          "status" => "passed",
-          "approved" => true,
-          "dry_run" => false,
-          "cycle_count" => 1,
-          "provenance" => deploy_provenance_fixture
-        ) + "\n"
-      )
-      state = load_state
-      state["implementation"]["latest_verify_loop"] = verify_metadata_path
-      state["implementation"]["verify_loop_status"] = "passed"
-      write_state(state)
-
       bin_dir = File.join(dir, "fake-deploy-bin")
       FileUtils.mkdir_p(bin_dir)
       marker = File.join(dir, "fake-vercel-ran")
@@ -9913,413 +9855,36 @@ class AiwebCliTest < Minitest::Test
           exit 0
         SH
       )
-      env = { "PATH" => [bin_dir, "/usr/bin", "/bin", "/usr/sbin", "/sbin"].join(File::PATH_SEPARATOR) }
+      before_entries = project_entries
+      before_state = File.read(".ai-web/state.yaml")
 
-      stdout, stderr, code = run_aiweb_env(env, "deploy", "--target", "vercel", "--approved", "--json")
+      stdout, stderr, code = run_aiweb_env(
+        { "PATH" => [bin_dir, "/usr/bin", "/bin", "/usr/sbin", "/sbin"].join(File::PATH_SEPARATOR) },
+        "deploy", "--target", "vercel", "--approved", "--json"
+      )
       payload = JSON.parse(stdout)
 
-      assert_equal 0, code, stdout
+      assert_equal 5, code
       assert_equal "", stderr
       deploy = payload.fetch("deploy")
-      assert_equal "passed", deploy.fetch("status")
+      assert_equal "blocked", deploy.fetch("status")
       assert_equal "vercel", deploy.fetch("target")
       assert_equal true, deploy.fetch("approved")
       assert_equal false, deploy.fetch("dry_run")
-      assert_equal "passed", deploy.dig("verify_loop_gate", "status")
+      assert_equal "blocked", deploy.dig("release_gate", "status")
       assert_equal "ready", deploy.dig("provider_readiness", "status")
       assert_equal "vercel", deploy.fetch("command").first
-      assert_equal true, deploy.fetch("provider_executed")
-      assert_equal true, deploy.fetch("provider_cli_invoked")
-      assert_equal true, deploy.fetch("writes_performed")
-      assert File.file?(marker), "fake provider command should run only from test-controlled PATH"
-      assert File.file?(deploy.fetch("metadata_path")), "deploy metadata must be recorded"
-      assert File.file?(deploy.fetch("stdout_log")), "deploy stdout log must be recorded"
-      assert File.file?(deploy.fetch("stderr_log")), "deploy stderr log must be recorded"
-      assert File.file?(deploy.fetch("side_effect_broker_path")), "deploy side-effect broker log must be recorded"
-      broker_events = File.readlines(deploy.fetch("side_effect_broker_path"), chomp: true).map { |line| JSON.parse(line) }
-      assert_equal deploy.fetch("side_effect_broker_events"), broker_events
-      assert_equal %w[tool.requested policy.decision tool.started tool.finished], broker_events.map { |event| event.fetch("event") }
-      assert_equal "aiweb.deploy.side_effect_broker", deploy.dig("side_effect_broker", "broker")
-      assert_equal "deploy.provider_cli", deploy.dig("side_effect_broker", "scope")
-      assert_equal "passed", deploy.dig("side_effect_broker", "status")
-      assert_equal true, deploy.dig("side_effect_broker", "events_recorded")
-      assert_equal broker_events.length, deploy.dig("side_effect_broker", "event_count")
-      assert_equal "allow", broker_events.find { |event| event.fetch("event") == "policy.decision" }.fetch("decision")
-      broker_json = JSON.generate(broker_events)
-      refute_includes broker_json, ".env"
-      refute_includes broker_json, "do-not-touch"
-      assert_includes File.read(deploy.fetch("stdout_log")), "fake vercel deploy"
-      artifact = JSON.parse(File.read(deploy.fetch("metadata_path")))
-      assert_equal deploy, artifact
-      state = load_state
-      assert_equal deploy.fetch("metadata_path"), state.dig("deploy", "latest_deploy")
-      assert_equal "vercel", state.dig("deploy", "latest_deploy_target")
-      assert_equal "passed", state.dig("deploy", "latest_deploy_status")
-      refute_includes stdout, ".env"
-      refute_includes File.read(deploy.fetch("stdout_log")), ".env"
-      refute_includes File.read(deploy.fetch("stderr_log")), ".env"
-    end
-  end
-
-  def test_deploy_approved_provider_output_is_redacted_before_logs
-    in_tmp do |dir|
-      prepare_profile_d_scaffold_flow
-      set_phase("phase-11")
-      FileUtils.mkdir_p("dist")
-      File.write("dist/index.html", "<h1>Deploy fixture</h1>\n")
-      verify_dir = ".ai-web/runs/verify-loop-test"
-      FileUtils.mkdir_p(verify_dir)
-      verify_metadata_path = File.join(verify_dir, "verify-loop.json")
-      File.write(
-        verify_metadata_path,
-        JSON.pretty_generate(
-          "schema_version" => 1,
-          "status" => "passed",
-          "approved" => true,
-          "dry_run" => false,
-          "cycle_count" => 1,
-          "provenance" => deploy_provenance_fixture
-        ) + "\n"
-      )
-      state = load_state
-      state["implementation"]["latest_verify_loop"] = verify_metadata_path
-      state["implementation"]["verify_loop_status"] = "passed"
-      write_state(state)
-
-      bin_dir = File.join(dir, "fake-deploy-bin")
-      FileUtils.mkdir_p(bin_dir)
-      marker = File.join(dir, "fake-vercel-ran")
-      write_fake_provider_cli(
-        bin_dir,
-        name: "vercel",
-        marker: marker,
-        stdout_lines: [
-          "SECRET=do-not-touch",
-          "SECRET=do not touch",
-          "KEY=plain-key-secret",
-          "KEY=\"quoted key secret\"",
-          "PRIVATE_KEY=-----BEGIN PRIVATE KEY-----",
-          "PRIVATE_KEY=-----BEGIN PRIVATE KEY-----\nMIISECRETKEYBODY\n-----END PRIVATE KEY-----",
-          "Deploy wrote .env.production",
-          "Authorization: Bearer bearer-secret-token",
-          "preview=https://example.test?access_token=secret-token"
-        ],
-        stderr_lines: [
-          "VERCEL_TOKEN=stderr-token",
-          "VERCEL_TOKEN: colon-stderr-token",
-          "token: colon-secret-token",
-          "credential=.env.local"
-        ]
-      )
-      env = { "PATH" => [bin_dir, "/usr/bin", "/bin", "/usr/sbin", "/sbin"].join(File::PATH_SEPARATOR) }
-
-      stdout, stderr, code = run_aiweb_env(env, "deploy", "--target", "vercel", "--approved", "--json")
-      payload = JSON.parse(stdout)
-
-      assert_equal 0, code, stdout
-      assert_equal "", stderr
-      deploy = payload.fetch("deploy")
-      assert File.file?(marker), "fake provider command should run"
-      stdout_log = File.read(deploy.fetch("stdout_log"))
-      stderr_log = File.read(deploy.fetch("stderr_log"))
-      combined_logs = "#{stdout_log}\n#{stderr_log}"
-      assert_includes stdout_log, "fake vercel deploy"
-      assert_includes combined_logs, "[redacted]"
-      assert_includes combined_logs, "[excluded unsafe environment-file reference]"
-      refute_includes combined_logs, "do-not-touch"
-      refute_includes combined_logs, "do not touch"
-      refute_includes combined_logs, "plain-key-secret"
-      refute_includes combined_logs, "quoted key secret"
-      refute_includes combined_logs, "PRIVATE KEY"
-      refute_includes combined_logs, "MIISECRETKEYBODY"
-      refute_includes combined_logs, "stderr-token"
-      refute_includes combined_logs, "colon-stderr-token"
-      refute_includes combined_logs, "colon-secret-token"
-      refute_includes combined_logs, "bearer-secret-token"
-      refute_includes combined_logs, "secret-token"
-      refute_includes combined_logs, ".env"
-      refute_includes stdout, "do-not-touch"
-      refute_includes stdout, "do not touch"
-      refute_includes stdout, "plain-key-secret"
-      refute_includes stdout, "quoted key secret"
-      refute_includes stdout, "PRIVATE KEY"
-      refute_includes stdout, "MIISECRETKEYBODY"
-      refute_includes stdout, "stderr-token"
-      refute_includes stdout, "colon-stderr-token"
-      refute_includes stdout, "colon-secret-token"
-      refute_includes stdout, "bearer-secret-token"
-      refute_includes stdout, "secret-token"
-    end
-  end
-
-  def test_side_effect_broker_redacts_sensitive_command_flags_and_keeps_helper_internal
-    in_tmp do |dir|
-      project = Aiweb::Project.new(Dir.pwd)
-
-      refute project.respond_to?(:append_side_effect_broker_event), "broker event append must not be a public Project API"
-      redacted = project.send(
-        :redact_side_effect_command,
-        [
-          "vercel",
-          "deploy",
-          "--auth=auth-secret",
-          "--credential",
-          "credential-secret",
-          "--private-key=private-key-secret",
-          "--client-secret",
-          "client-secret-value",
-          "--authorization",
-          "authorization-secret"
-        ]
-      )
-      assert_equal(
-        [
-          "vercel",
-          "deploy",
-          "[REDACTED]",
-          "--credential",
-          "[REDACTED]",
-          "[REDACTED]",
-          "--client-secret",
-          "[REDACTED]",
-          "--authorization",
-          "[REDACTED]"
-        ],
-        redacted
-      )
-
-      assert_raises(Aiweb::UserError) do
-        project.send(:append_side_effect_broker_event, File.join(dir, "outside.jsonl"), [], "tool.requested", {})
-      end
-      refute File.exist?(File.join(dir, "outside.jsonl"))
-    end
-  end
-
-  def test_deploy_approved_failed_provider_records_network_attempt
-    in_tmp do |dir|
-      prepare_profile_d_scaffold_flow
-      set_phase("phase-11")
-      FileUtils.mkdir_p("dist")
-      File.write("dist/index.html", "<h1>Deploy fixture</h1>\n")
-      verify_dir = ".ai-web/runs/verify-loop-test"
-      FileUtils.mkdir_p(verify_dir)
-      verify_metadata_path = File.join(verify_dir, "verify-loop.json")
-      File.write(
-        verify_metadata_path,
-        JSON.pretty_generate(
-          "schema_version" => 1,
-          "status" => "passed",
-          "approved" => true,
-          "dry_run" => false,
-          "cycle_count" => 1,
-          "provenance" => deploy_provenance_fixture
-        ) + "\n"
-      )
-      state = load_state
-      state["implementation"]["latest_verify_loop"] = verify_metadata_path
-      state["implementation"]["verify_loop_status"] = "passed"
-      write_state(state)
-
-      bin_dir = File.join(dir, "fake-deploy-bin")
-      FileUtils.mkdir_p(bin_dir)
-      marker = File.join(dir, "fake-vercel-ran")
-      write_fake_provider_cli(
-        bin_dir,
-        name: "vercel",
-        marker: marker,
-        stdout_lines: ["provider attempted deploy"],
-        stderr_lines: ["provider failed after attempting network"],
-        exit_code: 42
-      )
-      env = { "PATH" => [bin_dir, "/usr/bin", "/bin", "/usr/sbin", "/sbin"].join(File::PATH_SEPARATOR) }
-
-      stdout, stderr, code = run_aiweb_env(env, "deploy", "--target", "vercel", "--approved", "--json")
-      payload = JSON.parse(stdout)
-
-      refute_equal 0, code, stdout
-      assert_equal "", stderr
-      deploy = payload.fetch("deploy")
-      assert_equal "failed", deploy.fetch("status")
-      assert_equal 42, deploy.fetch("exit_code")
-      assert_equal true, deploy.fetch("provider_executed")
-      assert_equal true, deploy.fetch("provider_cli_invoked")
-      assert_equal false, deploy.fetch("external_deploy_performed")
-      assert_equal true, deploy.fetch("network_calls_performed")
-      assert_equal "attempted_unknown_result", deploy.fetch("network_call_status")
-      assert File.file?(marker), "fake provider command should have run"
-      broker_events = File.readlines(deploy.fetch("side_effect_broker_path"), chomp: true).map { |line| JSON.parse(line) }
-      finished = broker_events.find { |event| event.fetch("event") == "tool.finished" }
-      assert_equal "failed", finished.fetch("status")
-      assert_equal 42, finished.fetch("exit_code")
-    end
-  end
-
-  def test_deploy_approved_repeated_runs_get_distinct_broker_paths_with_fixed_time
-    in_tmp do |dir|
-      prepare_profile_d_scaffold_flow
-      set_phase("phase-11")
-      FileUtils.mkdir_p("dist")
-      File.write("dist/index.html", "<h1>Deploy fixture</h1>\n")
-      verify_dir = ".ai-web/runs/verify-loop-test"
-      FileUtils.mkdir_p(verify_dir)
-      verify_metadata_path = File.join(verify_dir, "verify-loop.json")
-      File.write(
-        verify_metadata_path,
-        JSON.pretty_generate(
-          "schema_version" => 1,
-          "status" => "passed",
-          "approved" => true,
-          "dry_run" => false,
-          "cycle_count" => 1,
-          "provenance" => deploy_provenance_fixture
-        ) + "\n"
-      )
-      state = load_state
-      state["implementation"]["latest_verify_loop"] = verify_metadata_path
-      state["implementation"]["verify_loop_status"] = "passed"
-      write_state(state)
-
-      bin_dir = File.join(dir, "fake-deploy-bin")
-      FileUtils.mkdir_p(bin_dir)
-      marker = File.join(dir, "fake-vercel-ran")
-      write_fake_executable(
-        bin_dir,
-        "vercel",
-        <<~SH
-          echo fake vercel deploy "$@"
-          touch #{marker.shellescape}
-          exit 0
-        SH
-      )
-      fixed = Time.utc(2026, 1, 2, 3, 4, 5)
-      env = { "PATH" => [bin_dir, "/usr/bin", "/bin", "/usr/sbin", "/sbin"].join(File::PATH_SEPARATOR) }
-      first_payload = nil
-      second_payload = nil
-
-      with_env_values(env) do
-        Time.stub(:now, fixed) do
-          project = Aiweb::Project.new(Dir.pwd)
-          first_payload = project.deploy(target: "vercel", approved: true)
-          second_payload = project.deploy(target: "vercel", approved: true)
-        end
-      end
-
-      first = first_payload.fetch("deploy")
-      second = second_payload.fetch("deploy")
-      refute_equal first.fetch("run_id"), second.fetch("run_id")
-      refute_equal first.fetch("run_dir"), second.fetch("run_dir")
-      refute_equal first.fetch("side_effect_broker_path"), second.fetch("side_effect_broker_path")
-      assert File.file?(first.fetch("side_effect_broker_path"))
-      assert File.file?(second.fetch("side_effect_broker_path"))
-      assert_equal 4, File.readlines(first.fetch("side_effect_broker_path")).length
-      assert_equal 4, File.readlines(second.fetch("side_effect_broker_path")).length
-    end
-  end
-
-  def test_deploy_approved_blocks_stale_verify_loop_provenance_without_provider_execution
-    in_tmp do |dir|
-      prepare_profile_d_scaffold_flow
-      set_phase("phase-11")
-      FileUtils.mkdir_p("dist")
-      File.write("dist/index.html", "<h1>Deploy fixture</h1>\n")
-      verify_dir = ".ai-web/runs/verify-loop-test"
-      FileUtils.mkdir_p(verify_dir)
-      verify_metadata_path = File.join(verify_dir, "verify-loop.json")
-      File.write(
-        verify_metadata_path,
-        JSON.pretty_generate(
-          "schema_version" => 1,
-          "status" => "passed",
-          "approved" => true,
-          "dry_run" => false,
-          "cycle_count" => 1,
-          "provenance" => deploy_provenance_fixture
-        ) + "\n"
-      )
-      state = load_state
-      state["implementation"]["latest_verify_loop"] = verify_metadata_path
-      state["implementation"]["verify_loop_status"] = "passed"
-      write_state(state)
-      File.write("dist/index.html", "<h1>Mutated after verify-loop</h1>\n")
-
-      bin_dir = File.join(dir, "fake-deploy-bin")
-      FileUtils.mkdir_p(bin_dir)
-      marker = File.join(dir, "fake-vercel-ran")
-      write_fake_executable(bin_dir, "vercel", "touch #{marker.shellescape}; exit 0")
-      before_entries = project_entries
-      before_state = File.read(".ai-web/state.yaml")
-
-      stdout, stderr, code = run_aiweb_env(
-        { "PATH" => [bin_dir, "/usr/bin", "/bin", "/usr/sbin", "/sbin"].join(File::PATH_SEPARATOR) },
-        "deploy", "--target", "vercel", "--approved", "--json"
-      )
-      payload = JSON.parse(stdout)
-      deploy = payload.fetch("deploy")
-      blockers = deploy.fetch("blocking_issues").join("\n")
-
-      assert_equal 5, code
-      assert_equal "", stderr
-      assert_equal "blocked", deploy.fetch("status")
-      assert_equal "blocked", deploy.dig("verify_loop_gate", "status")
-      assert_match(/provenance mismatch.*output\.sha256/i, blockers)
+      assert_equal false, deploy.fetch("provider_executed")
       assert_equal false, deploy.fetch("provider_cli_invoked")
-      assert_equal false, deploy.fetch("external_deploy_performed")
       assert_equal false, deploy.fetch("writes_performed")
-      refute File.exist?(marker), "stale verify-loop provenance must block provider command execution"
-      assert_equal before_entries, project_entries, "stale verify-loop provenance blocker must not write deploy artifacts"
-      assert_equal before_state, File.read(".ai-web/state.yaml"), "stale verify-loop provenance blocker must not mutate state"
-      refute_includes stdout, ".env"
-    end
-  end
-
-  def test_deploy_approved_blocks_legacy_verify_loop_evidence_without_provenance
-    in_tmp do |dir|
-      prepare_profile_d_scaffold_flow
-      set_phase("phase-11")
-      FileUtils.mkdir_p("dist")
-      File.write("dist/index.html", "<h1>Deploy fixture</h1>\n")
-      verify_dir = ".ai-web/runs/verify-loop-legacy"
-      FileUtils.mkdir_p(verify_dir)
-      verify_metadata_path = File.join(verify_dir, "verify-loop.json")
-      File.write(
-        verify_metadata_path,
-        JSON.pretty_generate(
-          "schema_version" => 1,
-          "status" => "passed",
-          "approved" => true,
-          "dry_run" => false,
-          "cycle_count" => 1
-        ) + "\n"
-      )
-      state = load_state
-      state["implementation"]["latest_verify_loop"] = verify_metadata_path
-      state["implementation"]["verify_loop_status"] = "passed"
-      write_state(state)
-
-      bin_dir = File.join(dir, "fake-deploy-bin")
-      FileUtils.mkdir_p(bin_dir)
-      marker = File.join(dir, "fake-vercel-ran")
-      write_fake_executable(bin_dir, "vercel", "touch #{marker.shellescape}; exit 0")
-      before_entries = project_entries
-      before_state = File.read(".ai-web/state.yaml")
-
-      stdout, stderr, code = run_aiweb_env(
-        { "PATH" => [bin_dir, "/usr/bin", "/bin", "/usr/sbin", "/sbin"].join(File::PATH_SEPARATOR) },
-        "deploy", "--target", "vercel", "--approved", "--json"
-      )
-      payload = JSON.parse(stdout)
-      deploy = payload.fetch("deploy")
-
-      assert_equal 5, code
-      assert_equal "", stderr
-      assert_equal "blocked", deploy.fetch("status")
-      assert_equal "blocked", deploy.dig("verify_loop_gate", "status")
-      assert_match(/missing deployment provenance/i, deploy.fetch("blocking_issues").join("\n"))
-      assert_equal false, deploy.fetch("provider_cli_invoked")
-      refute File.exist?(marker), "legacy verify-loop metadata must not unlock provider command execution"
-      assert_equal before_entries, project_entries, "legacy verify-loop provenance blocker must not write deploy artifacts"
-      assert_equal before_state, File.read(".ai-web/state.yaml"), "legacy verify-loop provenance blocker must not mutate state"
-      refute_includes stdout, ".env"
+      refute File.file?(marker), "provider command must stay blocked until engine-run release evidence exists"
+      refute File.file?(deploy.fetch("metadata_path")), "blocked deploy must not write deploy metadata"
+      refute File.file?(deploy.fetch("stdout_log")), "blocked deploy must not write stdout log"
+      refute File.file?(deploy.fetch("stderr_log")), "blocked deploy must not write stderr log"
+      refute File.file?(deploy.fetch("side_effect_broker_path")), "blocked deploy must not write side-effect broker log"
+      assert_equal before_entries, project_entries, "blocked deploy must not write artifacts"
+      assert_equal before_state, File.read(".ai-web/state.yaml"), "blocked deploy must not mutate state"
+      refute_includes stdout, "fake vercel deploy"
     end
   end
 
@@ -10330,7 +9895,7 @@ class AiwebCliTest < Minitest::Test
     ["github-sync", "deploy-plan", "deploy --target", "cloudflare-pages", "vercel", "--approved"].each do |snippet|
       assert_includes aiweb_stdout, snippet
     end
-    assert_includes aiweb_stdout, "deploy provenance"
+    assert_includes aiweb_stdout, "engine-run release evidence"
 
     web_stdout, web_stderr, web_code = run_webbuilder("help")
     assert_equal 0, web_code

@@ -14,33 +14,6 @@ module FakeExecutableTooling
     path
   end
 
-  def write_fake_provider_cli(dir, name:, marker:, stdout_lines: [], stderr_lines: [], exit_code: 0)
-    script_path = File.join(dir, "#{name}-fake-provider.rb")
-    File.write(
-      script_path,
-      <<~RUBY
-        # frozen_string_literal: true
-
-        require "fileutils"
-
-        puts ["fake #{name} deploy", *ARGV].join(" ")
-        #{stdout_lines.inspect}.each { |line| puts line }
-        #{stderr_lines.inspect}.each { |line| warn line }
-        FileUtils.touch(#{marker.inspect})
-        exit #{exit_code.to_i}
-      RUBY
-    )
-    FileUtils.chmod("+x", script_path)
-    executable_path = File.join(dir, windows? ? "#{name}.cmd" : name)
-    if windows?
-      File.write(executable_path, "@echo off\r\n\"#{RbConfig.ruby}\" \"#{script_path}\" %*\r\n")
-    else
-      File.write(executable_path, "#!/bin/sh\nexec #{RbConfig.ruby.shellescape} #{script_path.shellescape} \"$@\"\n")
-    end
-    FileUtils.chmod("+x", executable_path)
-    executable_path
-  end
-
   def windows?
     RbConfig::CONFIG["host_os"].match?(/mswin|mingw|cygwin/i)
   end

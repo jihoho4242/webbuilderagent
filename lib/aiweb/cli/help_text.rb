@@ -108,7 +108,7 @@ module Aiweb
           qa-a11y: runs safe local axe accessibility QA against localhost/127.0.0.1 preview; --dry-run does not write files or launch Node
           qa-lighthouse: runs safe local Lighthouse QA against localhost/127.0.0.1 preview; --dry-run does not write files or launch Node
           visual-critique: records safe local visual critique from explicit screenshot/metadata evidence or --from-screenshots latest only; --dry-run plans .ai-web/visual artifacts without writes, browser launch, installs, repair, deploy, network, or .env access
-          verify-loop: legacy compatibility shim only, not the canonical agent engine; --max-cycles is capped at 10, and the hardcoded build -> preview -> QA -> screenshot -> visual critique -> repair/visual-polish -> agent-run script has been removed. --dry-run writes nothing and returns the engine-run approval hash/plan, while real local execution must go through engine-run policy gates via --approved --approval-hash HASH; verify-loop no longer writes verify-loop cycle evidence or deploy provenance and never installs packages, deploys, calls provider CLIs, or reads .env/.env.*
+          verify-loop: legacy compatibility shim only, not the canonical agent engine; --max-cycles is capped at 10, and the hardcoded build -> preview -> QA -> screenshot -> visual critique -> repair/visual-polish -> agent-run script has been removed. --dry-run writes nothing and returns the engine-run approval hash/plan, while real local execution must go through engine-run policy gates via --approved --approval-hash HASH; verify-loop no longer writes verify-loop cycle evidence and cannot unlock deploy and never installs packages, deploys, calls provider CLIs, or reads .env/.env.*
           agent-run --task latest --agent codex --dry-run
           agent-run --task latest --agent codex --approved
           agent-run --task latest --agent openmanus --dry-run
@@ -120,7 +120,7 @@ module Aiweb
           visual-edit: validates a selected data-aiweb-id target and writes only local handoff artifacts; --dry-run writes nothing and never patches source, runs QA/browser/build, deploys, or calls network/AI
           github-sync: local-only GitHub sync planning surface; never runs git push, provider CLIs, network, build/preview/install, or reads .env/.env.*
           deploy-plan: local-only deploy checklist for Cloudflare Pages or Vercel; never runs provider CLIs, network, build/preview/install, or reads .env/.env.*
-          deploy --target cloudflare-pages|vercel --dry-run: reports the deploy plan only without writes/processes; deploy --approved remains gated and must not be unlocked by the removed verify-loop script-runner. Real provider execution should stay blocked until deploy gating is migrated to engine-run release evidence.
+          deploy --target cloudflare-pages|vercel --dry-run: reports the deploy plan only without writes/processes; deploy --approved is fail-closed and must not be unlocked by the removed verify-loop script-runner. Real provider execution stays disabled until engine-run release evidence owns provenance, HITL approval, rollback evidence, and PolicyKernel side-effect approval.
           ingest-design: phase-3.5
           next-task: phase-6 through phase-11
           qa-checklist: phase-7 through phase-11

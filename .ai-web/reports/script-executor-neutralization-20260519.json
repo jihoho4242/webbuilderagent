@@ -9,8 +9,8 @@
     "not_yet_manus_grade_reasons": [
       "eval/red-team/Brain evidence remains MVP/fixture-grade rather than production benchmark evidence",
       "operator drill, GitHub Actions run ids, and production release evidence are still blockers",
-      "external provider/deploy/credential flows remain intentionally blocked",
-      "browser static scenario probes remain deterministic probes and must not be marketed as autonomous planning"
+      "browser static scenario probes remain deterministic probes and must not be marketed as autonomous planning",
+      "external provider/deploy/credential flows remain intentionally blocked; local deploy provider execution is now fail-closed pending engine-run release evidence"
     ]
   },
   "removed_script_runner_surfaces": [
@@ -42,6 +42,16 @@
         "lib/aiweb/project/verify_loop.rb delegates compatibility requests to engine-run",
         "verify_loop.fixed_pipeline_present=false and steps=[] in shim payload"
       ]
+    },
+    {
+      "surface": "legacy deploy provider CLI execution gate",
+      "status": "deleted_or_fail_closed",
+      "evidence": [
+        "lib/aiweb/project/deploy/execution.rb deleted",
+        "lib/aiweb/project/deploy/provenance.rb deleted",
+        "deploy payload exposes release_gate=engine_run_release_evidence instead of verify_loop_gate",
+        "approved deploy remains blocked and never executes fake provider CLI without future engine-run release evidence"
+      ]
     }
   ],
   "preserved_safety_substrate": [
@@ -64,13 +74,15 @@
     "ruby -Itest test/test_aiweb_cli.rb -n /verify_loop|verify-loop|workbench_dry_run/": "passed: 14 runs, 403 assertions, 0 failures, 0 errors",
     "ruby -Itest test/test_agent_os_v32_release_evidence.rb": "passed: 2 runs, 27 assertions, 0 failures, 0 errors",
     "ruby -Itest test/test_agent_os_v32_policy_kernel.rb test/test_agent_os_v32_tool_gateway.rb test/test_agent_os_v32_decision_packet.rb": "passed: 9 runs, 35 assertions, 0 failures, 0 errors",
-    "ruby -Itest test/test_contracts.rb test/test_schema_locks.rb": "passed: 19 runs, 249 assertions, 0 failures, 0 errors",
     "git diff --check": "passed with line-ending warnings only",
     "ruby -Itest test/all.rb": "timed out after 604s in this session; targeted suites above passed",
     "ruby -Itest test/test_agent_os_v32_tool_gateway.rb": "passed: 4 runs, 14 assertions, 0 failures, 0 errors",
     "ruby -Itest test/test_agent_os_v32_decision_packet.rb": "passed: 3 runs, 22 assertions, 0 failures, 0 errors",
-    "ruby -Itest test/test_schema_locks.rb": "passed: 3 runs, 876 assertions, 0 failures, 0 errors"
+    "ruby -Itest test/test_schema_locks.rb": "passed: 3 runs, 876 assertions, 0 failures, 0 errors",
+    "ruby -Itest test/test_aiweb_cli.rb -n /deploy/": "passed: 8 runs, 290 assertions, 0 failures, 0 errors",
+    "ruby -Itest test/test_contracts.rb": "passed: 19 runs, 247 assertions, 0 failures, 0 errors",
+    "ruby -Itest test/test_aiweb_cli.rb -n /verify_loop|verify-loop|workbench_dry_run|deploy/": "passed: 18 runs, 616 assertions, 0 failures, 0 errors"
   },
   "completion_status": "not_complete",
-  "why_not_complete": "Top-level fixed script-runner surfaces are neutralized, but Manus-grade natural-language web-app agent readiness still requires stronger eval/red-team/Brain/release evidence and completion audit across deterministic browser probes and deploy gating."
+  "why_not_complete": "Top-level fixed script-runner surfaces are neutralized and legacy deploy provider execution is fail-closed, but Manus-grade natural-language web-app agent readiness still requires stronger eval/red-team/Brain/release evidence and completion audit across deterministic browser probes."
 }

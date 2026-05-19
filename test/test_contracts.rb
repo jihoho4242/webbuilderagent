@@ -113,7 +113,6 @@ class AiwebContractTest < Minitest::Test
       brokered_backend_cli_bridge
       brokered_lazyweb_http
       brokered_setup_supply_chain_command
-      brokered_deploy_provider_cli
       brokered_engine_run_capture_command
       brokered_openmanus_sandbox_subprocess
       local_verification_harness_exception

@@ -88,8 +88,8 @@ class WebbuilderLauncher
         웹빌더 --path ~/Desktop/my-site deploy-plan --target cloudflare-pages
         웹빌더 --path ~/Desktop/my-site deploy --target cloudflare-pages --dry-run
         웹빌더 --path ~/Desktop/my-site deploy --target vercel --dry-run
-        웹빌더 --path ~/Desktop/my-site deploy --target cloudflare-pages --approved
-        웹빌더 --path ~/Desktop/my-site deploy --target vercel --approved
+        웹빌더 --path ~/Desktop/my-site deploy --target cloudflare-pages --approved  # ?? fail-closed
+        웹빌더 --path ~/Desktop/my-site deploy --target vercel --approved  # ?? fail-closed
 
       웹빌더가 숙지한 시작 순서:
         Phase 0: 웹 유형 / 난이도 / 릴리즈 범위 결정

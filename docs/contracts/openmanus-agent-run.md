@@ -2,7 +2,7 @@
 
 This contract defines the first supported integration between aiweb and OpenManus.
 
-OpenManus is never the project director. aiweb owns `.ai-web` state, phase gates, task packets, QA evidence, snapshots, patch validation, and deploy provenance. OpenManus is only a bounded implementation adapter behind:
+OpenManus is never the project director. aiweb owns `.ai-web` state, phase gates, task packets, QA evidence, snapshots, patch validation, and release/deploy evidence. OpenManus is only a bounded implementation adapter behind:
 
 ```bash
 aiweb agent-run --task latest --agent openmanus --dry-run --json

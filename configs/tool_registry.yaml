@@ -46,6 +46,8 @@ tools:
   external_deploy:
     permission_tier: L4
     risk_tier: L4
-    side_effect_class: external_provider_action
+    side_effect_class: disabled_external_provider_action
     owner: release_owner
     dry_run_supported: true
+    execution_available: false
+    agent_engine_role: fail_closed_pending_engine_run_release_evidence

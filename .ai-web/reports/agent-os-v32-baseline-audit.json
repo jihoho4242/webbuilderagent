@@ -21,6 +21,11 @@
       "surface": "browser static scenario plan/results",
       "status": "deterministic_probe",
       "finding": "deterministic local browser probe, not autonomous planning"
+    },
+    {
+      "surface": "legacy deploy provider execution",
+      "status": "fail_closed_removed_execution_files",
+      "finding": "deploy/execution.rb and deploy/provenance.rb were removed; deploy now exposes engine_run_release_evidence release_gate and never uses verify-loop evidence as a deploy unlock path"
     }
   ],
   "preserve_safety_substrate": [

@@ -1,15 +1,8 @@
 # frozen_string_literal: true
 
-require "digest"
-require "fileutils"
-require "json"
-require "open3"
 require "securerandom"
-require "timeout"
 
 require_relative "deploy/provider"
-require_relative "deploy/provenance"
-require_relative "deploy/execution"
 
 module Aiweb
   class Project
@@ -88,24 +81,10 @@ module Aiweb
       payload.merge!(pr19_safety_payload(planned_changes))
       payload["planned_changes"] = planned_changes
       if dry_run
-        payload["next_action"] = "obtain explicit approval and passing verify-loop evidence before any provider deployment; this dry-run wrote nothing and ran no provider CLI"
-      elsif deploy_payload["status"] == "blocked"
-        payload["blocking_issues"] = (payload["blocking_issues"] + deploy_payload["blocking_issues"]).uniq
-        payload["next_action"] = "resolve deploy gates, then rerun aiweb deploy --target #{normalized_target} --approved"
+        payload["next_action"] = "review the deploy plan only; provider execution remains blocked until an engine-run release evidence gate exists"
       else
-        payload = deploy_execute_approved(
-          state: state,
-          run_id: run_id,
-          run_dir: run_dir,
-          stdout_path: stdout_path,
-          stderr_path: stderr_path,
-          metadata_path: metadata_path,
-          side_effect_broker_path: side_effect_broker_path,
-          deploy_payload: deploy_payload,
-          planned_changes: planned_changes,
-          normalized_target: normalized_target,
-          force: force
-        )
+        payload["blocking_issues"] = (payload["blocking_issues"] + deploy_payload["blocking_issues"]).uniq
+        payload["next_action"] = "keep deploy local-only until engine-run release evidence migration replaces the removed verify-loop provenance gate"
       end
       payload
     end

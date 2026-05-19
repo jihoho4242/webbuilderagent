@@ -27,12 +27,13 @@ module Aiweb
     def deploy_local_payload(target, state, dry_run:, force:, approved:, run_id:, run_dir:, stdout_path:, stderr_path:, metadata_path:, side_effect_broker_path:)
       descriptor = deploy_provider_descriptor(target, state)
       command = deploy_provider_command(target, descriptor)
-      verify_gate = deploy_verify_loop_gate(state, dry_run: dry_run)
+      release_gate = deploy_release_gate(state, dry_run: dry_run)
       provider_readiness = deploy_provider_readiness(target, descriptor, command)
       blockers = []
       blockers << "--approved is required for real deploy adapter execution" if !dry_run && !approved
-      blockers.concat(verify_gate.fetch("blocking_issues"))
+      blockers.concat(release_gate.fetch("blocking_issues"))
       blockers.concat(provider_readiness.fetch("blocking_issues"))
+      blockers << "provider CLI execution has been removed from this local deploy adapter until engine-run owns release evidence and external side-effect approval" unless dry_run
       blocked = !dry_run && !blockers.empty?
       {
         "schema_version" => 1,
@@ -51,7 +52,7 @@ module Aiweb
         "planned_config_path" => descriptor.fetch("planned_config_path"),
         "planned_changes" => [DEPLOY_PLAN_PATH, descriptor.fetch("planned_config_path"), relative(run_dir), relative(stdout_path), relative(stderr_path), relative(metadata_path), relative(side_effect_broker_path)],
         "descriptor" => descriptor,
-        "verify_loop_gate" => verify_gate,
+        "release_gate" => release_gate,
         "provider_readiness" => provider_readiness,
         "command" => command,
         "side_effect_broker" => deploy_side_effect_broker_plan(
@@ -65,70 +66,40 @@ module Aiweb
         ),
         "side_effect_broker_events" => [],
         "blocking_issues" => blocked ? blockers.uniq : [],
-        "external_actions_allowed" => approved && verify_gate["status"] == "passed" && provider_readiness["status"] == "ready",
+        "external_actions_allowed" => false,
         "external_push_performed" => false,
         "external_deploy_performed" => false,
         "provider_executed" => false,
         "requires_approval" => !approved,
+        "requires_engine_run_release_evidence" => true,
+        "legacy_verify_loop_gate_removed" => true,
         "writes_performed" => false,
         "provider_cli_invoked" => false,
         "network_calls_performed" => false
       }
     end
 
-    def deploy_verify_loop_gate(state, dry_run: false)
-      path = state.dig("implementation", "latest_verify_loop").to_s.strip
-      blockers = []
-      metadata = nil
-      expected_provenance = nil
-      current_provenance = nil
-      provenance_comparison = nil
-      if path.empty?
-        blockers << "passing verify-loop evidence is required before deploy"
-      elsif unsafe_env_path?(path)
-        blockers << "verify-loop evidence path is unsafe"
-      else
-        full = File.expand_path(path, root)
-        if !full.start_with?(aiweb_dir + File::SEPARATOR) || !File.file?(full)
-          blockers << "verify-loop evidence is missing: #{path}"
-        else
-          begin
-            metadata = JSON.parse(File.read(full))
-          rescue JSON::ParserError
-            blockers << "verify-loop evidence is malformed: #{path}"
-          end
-        end
-      end
-      if metadata
-        blockers << "verify-loop must pass before deploy" unless metadata["status"] == "passed"
-        blockers << "verify-loop evidence must be from an approved real run" unless metadata["approved"] == true && metadata["dry_run"] == false
-        expected_provenance = metadata["provenance"]
-        if expected_provenance.nil?
-          blockers << "verify-loop evidence is missing deployment provenance; rerun aiweb verify-loop --max-cycles 3 --approved"
-        elsif !dry_run
-          current_provenance = deploy_workspace_provenance(state, include_tool_versions: true)
-          provenance_comparison = deploy_provenance_comparison(expected_provenance, current_provenance)
-          blockers.concat(provenance_comparison.fetch("blocking_issues"))
-        else
-          provenance_comparison = {
-            "status" => "not_checked",
-            "dry_run" => true,
-            "blocking_issues" => [],
-            "note" => "deploy --dry-run does not execute git/tool version checks"
-          }
-        end
-      end
+    def deploy_release_gate(_state, dry_run: false)
+      return {
+        "status" => "not_checked",
+        "gate" => "engine_run_release_evidence",
+        "dry_run" => true,
+        "path" => nil,
+        "legacy_verify_loop_gate_removed" => true,
+        "provider_cli_execution_available" => false,
+        "policy" => "Deploy dry-run is plan-only and does not check external release evidence.",
+        "blocking_issues" => []
+      } if dry_run
+
+      blockers = ["engine-run release evidence gate is not implemented yet; removed verify-loop provenance must not unlock deploy"]
       {
-        "status" => blockers.empty? ? "passed" : "blocked",
-        "path" => path.empty? ? nil : path,
-        "verify_loop_status" => metadata && metadata["status"],
-        "approved" => metadata && metadata["approved"],
-        "dry_run" => metadata && metadata["dry_run"],
-        "provenance" => {
-          "expected" => expected_provenance,
-          "current" => current_provenance,
-          "comparison" => provenance_comparison
-        },
+        "status" => "blocked",
+        "gate" => "engine_run_release_evidence",
+        "dry_run" => false,
+        "path" => nil,
+        "legacy_verify_loop_gate_removed" => true,
+        "provider_cli_execution_available" => false,
+        "policy" => "Provider deploy remains disabled until engine-run owns release provenance, HITL approval, rollback evidence, and PolicyKernel side-effect approval.",
         "blocking_issues" => blockers
       }
     end
@@ -174,7 +145,8 @@ module Aiweb
         blockers: blockers,
         risk_class: "external_network_deploy",
         policy_extra: {
-          "requires_passing_verify_loop" => true,
+          "requires_engine_run_release_evidence" => true,
+          "legacy_verify_loop_gate_removed" => true,
           "requires_ready_provider_cli" => true
         }
       )
@@ -189,7 +161,7 @@ module Aiweb
         risk_class: "external_network_deploy",
         approved: deploy_payload.fetch("approved"),
         extra: {
-          "verify_loop_status" => deploy_payload.dig("verify_loop_gate", "status"),
+          "release_gate_status" => deploy_payload.dig("release_gate", "status"),
           "provider_readiness_status" => deploy_payload.dig("provider_readiness", "status")
         }
       )

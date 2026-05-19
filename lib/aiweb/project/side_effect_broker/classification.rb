@@ -2,11 +2,6 @@
 
 module Aiweb
   module ProjectSideEffectBroker
-    SIDE_EFFECT_DEPLOY_PROVENANCE_PATHS = %w[
-      lib/aiweb/project/deploy.rb
-      lib/aiweb/project/deploy/execution.rb
-      lib/aiweb/project/deploy/provenance.rb
-    ].freeze
     SIDE_EFFECT_SETUP_SUPPLY_CHAIN_PATHS = %w[
       lib/aiweb/project/runtime_commands/setup.rb
       lib/aiweb/project/runtime_commands/setup/supply_chain/broker.rb
@@ -33,15 +28,6 @@ module Aiweb
       return side_effect_classification("brokered_backend_cli_bridge", "brokered", "aiweb.backend.side_effect_broker", "backend bridge writes broker events before Open3.popen3") if path.end_with?("lib/aiweb/daemon/cli_bridge.rb") && line.include?("Open3.popen3")
       if path.end_with?("lib/aiweb/lazyweb_client.rb") && line.match?(/Net::HTTP/)
         return side_effect_classification("brokered_lazyweb_http", "brokered", "aiweb.lazyweb.side_effect_broker", "LazywebClient emits broker audit events around Net::HTTP")
-      end
-      if side_effect_path_in?(path, SIDE_EFFECT_DEPLOY_PROVENANCE_PATHS) && line.include?("Open3.capture3") && context.include?("append_side_effect_broker_event")
-        return side_effect_classification("brokered_deploy_provider_cli", "brokered", "aiweb.deploy.side_effect_broker", "deploy provider CLI execution is gated by approval/provenance checks and emits side-effect broker events")
-      end
-      if side_effect_path_in?(path, SIDE_EFFECT_DEPLOY_PROVENANCE_PATHS) && line.match?(/git.*status/)
-        return side_effect_classification("local_read_only_git_provenance", "documented_exception", nil, "git status subprocess is local read-only deploy provenance collection")
-      end
-      if side_effect_path_in?(path, SIDE_EFFECT_DEPLOY_PROVENANCE_PATHS) && line.include?("Open3.capture3")
-        return side_effect_classification("local_tool_version_probe", "documented_exception", nil, "tool version subprocesses are short local readiness probes with a timeout and clean environment")
       end
       if path.end_with?("lib/aiweb/project/agent_run/openmanus.rb") && line.include?("image\", \"inspect")
         return side_effect_classification("openmanus_sandbox_image_preflight", "documented_exception", nil, "Docker/Podman image inspect is a local preflight that only checks sandbox image availability")
