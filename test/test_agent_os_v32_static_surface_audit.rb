@@ -71,6 +71,11 @@ class AgentOsV32StaticSurfaceAuditTest < Minitest::Test
     verify_loop = audit.fetch("script_executor_inventory").find { |entry| entry.fetch("surface") == "verify-loop" }
     assert_equal "removed_legacy_script_runner_tombstone", verify_loop.fetch("status")
     assert_includes audit.fetch("preserve_safety_substrate"), "PathPolicy"
+
+    state = YAML.safe_load(File.read(File.join(REPO_ROOT, ".ai-web", "state.yaml")), permitted_classes: [], aliases: false)
+    assert_equal "engine-run", state.dig("implementation", "agent_os_runtime")
+    assert_equal "removed_legacy_script_runner_tombstone_no_engine_run_delegation", state.dig("implementation", "verify_loop_role")
+    refute_equal "read_only_engine_run_migration_shim", state.dig("implementation", "verify_loop_role")
   end
 
   def test_release_evidence_surfaces_do_not_reintroduce_fixture_readiness_claims

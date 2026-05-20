@@ -79,6 +79,7 @@ WebBuilderAgent is closer to a natural-language, engine-run-centered supervised 
 '
 - Verify-loop tombstone hardening: `lib/aiweb/project/verify_loop.rb` no longer calls `engine_run`, emits no approval hash, reports `engine_run_delegation_present=false`, and the backend bridge no longer allows `verify-loop` as a command.
 - Removed stale webbuilder launcher / Korean overview migration-shim wording: `bin/webbuilder` and `docs/README.ko.md` now describe `verify-loop` only as a removed legacy command tombstone with no approval hash and no engine-run delegation.
+- Updated source-of-truth state: `.ai-web/state.yaml` now records `implementation.verify_loop_role=removed_legacy_script_runner_tombstone_no_engine_run_delegation` instead of the stale migration-shim role.
 - Removed webbuilder/help approved-only UX guidance: `aiweb help`, `bin/webbuilder`, and README now present dry-run approval hash review before `--approval-hash HASH --approved` execution, and static audit rejects the stale `[--approved] [--dry-run]` / `--approved --approval-hash HASH` guidance patterns.
 
 
@@ -114,6 +115,9 @@ WebBuilderAgent is closer to a natural-language, engine-run-centered supervised 
 - `ruby -Itest test/test_daemon.rb -n /daemon_dry_run|verify-loop|generic_backend_bridge_rejects_hash_bound/` after verify-loop backend allowlist removal ? PASS: 1 run, 15 assertions, 0 failures, 0 errors
 - `ruby -Itest test/test_agent_os_v32_static_surface_audit.rb` after verify-loop removed tombstone ? PASS: 6 runs, 294 assertions, 0 failures, 0 errors
 - `ruby -Itest test/test_agent_os_v32_static_surface_audit.rb` after launcher/ko verify-loop tombstone wording cleanup ? PASS: 6 runs, 310 assertions, 0 failures, 0 errors
+- `ruby -Itest test/test_agent_os_v32_static_surface_audit.rb` after state verify_loop_role tombstone sync ? PASS: 6 runs, 313 assertions, 0 failures, 0 errors
+- YAML/JSON parse after state verify_loop_role tombstone sync ? PASS: `.ai-web/state.yaml`, script-executor-neutralization report JSON, and baseline audit JSON parsed
+- `git diff --check` after state verify_loop_role tombstone sync ? PASS
 - `ruby -Itest test/test_aiweb_cli.rb -n /test_verify_loop_help_and_webbuilder_dry_run_passthrough/` after launcher tombstone wording cleanup ? PASS: 1 run, 55 assertions, 0 failures, 0 errors
 - `ruby -Itest test/test_agentification_runtime.rb -n '/help_and_readme|verify_loop/'` after launcher tombstone wording cleanup ? PASS: 2 runs, 49 assertions, 0 failures, 0 errors
 - `ruby -c bin/webbuilder` after launcher tombstone wording cleanup ? PASS: Syntax OK
