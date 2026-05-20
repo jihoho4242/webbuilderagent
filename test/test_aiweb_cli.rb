@@ -7987,6 +7987,32 @@ class AiwebCliTest < Minitest::Test
     end
   end
 
+  def test_podman_sandbox_command_uses_keep_id_user_namespace
+    in_tmp do
+      json_cmd("init")
+      workspace = File.join(Dir.pwd, ".ai-web", "tmp", "openmanus", "podman-keep-id")
+      FileUtils.mkdir_p(workspace)
+
+      command = Aiweb::Project.new(Dir.pwd).send(
+        :sandbox_runtime_container_command,
+        provider: "podman",
+        workspace_dir: workspace,
+        image: "openmanus:latest",
+        env: { "AIWEB_NETWORK_ALLOWED" => "0" },
+        pids_limit: 256,
+        memory: "1g",
+        cpus: "1",
+        tmpfs_size: "64m",
+        command: ["openmanus"]
+      )
+
+      assert_includes command, "--userns"
+      assert_equal "keep-id", command[command.index("--userns") + 1]
+      assert_includes command, "--user"
+      refute_match(/\A(?:0(?::0)?|root)(?::|$)/i, command[command.index("--user") + 1])
+    end
+  end
+
   def test_agent_run_source_patch_requires_selected_design_gate_before_planning
     in_tmp do |dir|
       json_cmd("init", "--profile", "D")

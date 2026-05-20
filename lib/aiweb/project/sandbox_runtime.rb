@@ -7,6 +7,7 @@ module Aiweb
     def sandbox_runtime_container_command(provider:, workspace_dir:, image:, env:, pids_limit:, memory:, cpus:, tmpfs_size:, command:)
       [
         provider.to_s, "run", "--rm", "-i",
+        *sandbox_runtime_provider_run_flags(provider),
         "--network", "none",
         "--read-only",
         "--cap-drop", "ALL",
@@ -50,6 +51,10 @@ module Aiweb
       configured = ENV["AIWEB_ENGINE_RUN_SANDBOX_USER"].to_s.strip
       configured = ENV["AIWEB_SANDBOX_USER"].to_s.strip if configured.empty?
       configured.empty? ? "1000:1000" : configured
+    end
+
+    def sandbox_runtime_provider_run_flags(provider)
+      provider.to_s == "podman" ? ["--userns", "keep-id"] : []
     end
 
     def sandbox_runtime_env_flags(env)
