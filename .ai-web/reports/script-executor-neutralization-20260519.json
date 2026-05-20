@@ -426,6 +426,16 @@
         "stale workbench serve approval_hash values are rejected after workbench artifact capability changes",
         "help/README/tests now document workbench --serve --approval-hash HASH --approved"
       ]
+    },
+    {
+      "surface": "backend generic command approved-without-hash bridge shortcut",
+      "status": "hash_bound_bridge_approval_required",
+      "evidence": [
+        "lib/aiweb/daemon/cli_bridge.rb rejects approved hash-bound generic bridge commands unless command args include --approval-hash HASH or --approval-request HASH",
+        "setup and agent-run generic backend command requests with approved=true but no approval hash now fail with HTTP 403 before setup/agent-run artifacts are created",
+        "backend bridge denial still records aiweb.backend.side_effect_broker policy.decision/tool.blocked evidence before any bin/aiweb process launch",
+        "README and docs/contracts/engine-run.md document the backend bridge hash-bound approval boundary"
+      ]
     }
   ],
   "preserved_safety_substrate": [
@@ -543,10 +553,12 @@
     "ruby -c setup/workbench/cli/bin/test surfaces": "passed: Syntax OK for setup.rb, workbench.rb, dispatch.rb, exit_codes.rb, help_text.rb, bin/webbuilder, test_aiweb_cli.rb",
     "ruby -Itest test/test_aiweb_cli.rb -n '/setup_install_|setup_help_and_korean_webbuilder_passthrough_surface|workbench_serve|workbench_help/'": "passed: 34 runs, 1192 assertions, 0 failures, 0 errors",
     "JSON parse updated reports": "passed: agent-os-v32-baseline-audit.json and script-executor-neutralization-20260519.json parse successfully",
-    "git diff --check after workbench approval hardening": "passed with line-ending warnings only"
+    "git diff --check after workbench approval hardening": "passed with line-ending warnings only",
+    "ruby -c lib/aiweb/daemon/cli_bridge.rb test/test_daemon.rb": "passed: Syntax OK",
+    "ruby -Itest test/test_daemon.rb -n '/generic_backend_bridge_rejects_hash_bound|approved_codex_bridge_execution|bridge_rejects_backend_controlled_flags|bridge_broker_blocks/'": "passed: 4 runs, 86 assertions, 0 failures, 0 errors"
   },
   "completion_status": "not_complete",
-  "why_not_complete": "Top-level fixed script-runner surfaces, stale deploy provider execution, browser deterministic-probe naming claims, CLI/contract Manus wording marketing overclaims, fixture-eval production-readiness overclaims, red-team catalog-fixture overclaims, secret-canary value emission, self-improvement dry-run overclaims, release validation evidence overclaims, P5 policy/tool gateway overclaims, P5 HITL fixture overclaims, L3 boolean approval bypasses, verifier-result approval hash bypasses, weak HITL artifact self-integrity checks, engine-run approved-without-hash execution shortcuts, agent-run approved-without-hash execution shortcuts, setup install approved-without-hash execution shortcuts, workbench serve approved-without-hash execution shortcuts, P5 replay readiness overclaims, Brain safety wording overclaims, Brain JSON snapshot/projection/hash-chain evidence gaps, the Codex agent-run worker subprocess, runtime_commands direct git/taskkill process forms, agent-run diff-policy direct git subprocesses, OpenManus readiness direct image inspect subprocess, and agent-run OpenManus direct image inspect preflight, engine-run sandbox runtime attestation direct Docker/Podman probes, Codex agent-run worker direct subprocess execution, and OpenManus agent-run sandbox worker direct subprocess execution, and engine-run agent worker direct subprocess execution, and engine-run capture helper direct subprocess execution, and setup install/supply-chain direct subprocess execution are neutralized, but Manus-grade natural-language web-app agent readiness still requires independent production red-team/release evidence plus a real SQLite/concurrency-backed Brain kernel.",
+  "why_not_complete": "Top-level fixed script-runner surfaces, stale deploy provider execution, browser deterministic-probe naming claims, CLI/contract Manus wording marketing overclaims, fixture-eval production-readiness overclaims, red-team catalog-fixture overclaims, secret-canary value emission, self-improvement dry-run overclaims, release validation evidence overclaims, P5 policy/tool gateway overclaims, P5 HITL fixture overclaims, L3 boolean approval bypasses, verifier-result approval hash bypasses, weak HITL artifact self-integrity checks, engine-run approved-without-hash execution shortcuts, agent-run approved-without-hash execution shortcuts, setup install approved-without-hash execution shortcuts, workbench serve approved-without-hash execution shortcuts, backend generic command approved-without-hash bridge shortcut, P5 replay readiness overclaims, Brain safety wording overclaims, Brain JSON snapshot/projection/hash-chain evidence gaps, the Codex agent-run worker subprocess, runtime_commands direct git/taskkill process forms, agent-run diff-policy direct git subprocesses, OpenManus readiness direct image inspect subprocess, and agent-run OpenManus direct image inspect preflight, engine-run sandbox runtime attestation direct Docker/Podman probes, Codex agent-run worker direct subprocess execution, and OpenManus agent-run sandbox worker direct subprocess execution, and engine-run agent worker direct subprocess execution, and engine-run capture helper direct subprocess execution, and setup install/supply-chain direct subprocess execution are neutralized, but Manus-grade natural-language web-app agent readiness still requires independent production red-team/release evidence plus a real SQLite/concurrency-backed Brain kernel.",
   "completion": {
   }
 }

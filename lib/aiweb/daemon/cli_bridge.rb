@@ -24,6 +24,8 @@ module Aiweb
     BACKEND_CONTROLLED_ARG_PATTERN = /\A--(?:path(?:=|\z)|json\z|dry-run\z|approved\z)/.freeze
     COMMAND_TIMEOUT_SECONDS = 180
     READ_ONLY_COMMANDS = %w[status runtime-plan scaffold-status run-status run-timeline observability-summary qa-report].freeze
+    HASH_BOUND_APPROVED_COMMANDS = %w[agent agent-run engine-run setup verify-loop].freeze
+    APPROVAL_HASH_FLAGS = %w[--approval-hash --approval-request].freeze
     attr_reader :engine_root, :aiweb_bin, :allowed_commands, :command_timeout
 
     def initialize(engine_root: File.expand_path("../../..", __dir__), allowed_commands: DEFAULT_ALLOWED_COMMANDS, command_timeout: COMMAND_TIMEOUT_SECONDS)
@@ -57,7 +59,7 @@ module Aiweb
         ".env and .env.* path segments are rejected before bridge execution",
         "bridge commands time out instead of blocking the backend indefinitely",
         "backend bridge command execution is recorded through aiweb.backend.side_effect_broker evidence before process launch",
-        "approved agent/agent-run/setup/verify-loop execution requires a matching X-Aiweb-Approval-Token header or the API token when no separate approval token is configured",
+        "approved agent/agent-run/setup/verify-loop execution requires a matching X-Aiweb-Approval-Token header plus --approval-hash HASH or --approval-request HASH in command args",
         "engine-run is called by the dedicated backend job API; frontend generic command requests for engine-run are rejected",
         "engine-run exposes the agentic sandbox task runtime through structured command envelopes",
         "agent-run maps to aiweb agent-run --agent codex|openmanus and keeps approval semantics",
@@ -83,6 +85,7 @@ module Aiweb
 
       blocking_issues = []
       blocking_issues << "bridge deploy is dry-run only" if command == "deploy" && !dry_run
+      blocking_issues.concat(hash_bound_approval_blockers(command: command, args: args, dry_run: dry_run, approved: approved))
       broker = bridge_broker_start(project_path: project_path, command: command, args: args, argv: argv, dry_run: dry_run, approved: approved, blocking_issues: blocking_issues)
       if blocking_issues.any?
         bridge_broker_blocked(broker, blocking_issues)
@@ -347,6 +350,24 @@ module Aiweb
           raise UserError.new("bridge args must not include backend-controlled flags (--path, --json, --dry-run, --approved)", 5)
         end
         reject_unsafe_path!(arg, "argument")
+      end
+    end
+
+    def hash_bound_approval_blockers(command:, args:, dry_run:, approved:)
+      return [] unless approved && !dry_run && HASH_BOUND_APPROVED_COMMANDS.include?(command.to_s)
+      return [] if approval_hash_arg_present?(args)
+
+      ["bridge #{command} approved execution requires --approval-hash HASH or --approval-request HASH before --approved can be forwarded"]
+    end
+
+    def approval_hash_arg_present?(args)
+      args.each_with_index.any? do |arg, index|
+        text = arg.to_s
+        if APPROVAL_HASH_FLAGS.include?(text)
+          !args[index + 1].to_s.strip.empty?
+        else
+          APPROVAL_HASH_FLAGS.any? { |flag| text.start_with?("#{flag}=") && !text.split("=", 2).last.to_s.strip.empty? }
+        end
       end
     end
 

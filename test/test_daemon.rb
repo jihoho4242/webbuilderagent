@@ -1799,6 +1799,32 @@ class AiwebDaemonTest < Minitest::Test
     end
   end
 
+  def test_generic_backend_bridge_rejects_hash_bound_approved_commands_without_approval_hash
+    in_tmp do |dir|
+      status, blocked = app.call(
+        "POST",
+        "/api/project/command",
+        approval_headers,
+        JSON.generate("path" => dir, "command" => "setup", "args" => ["--install"], "approved" => true)
+      )
+
+      assert_equal 403, status
+      assert_match(/approval-hash|approval-request/i, blocked["error"])
+      assert_empty Dir.glob(File.join(dir, ".ai-web", "runs", "setup-*")), "bridge must block before setup run artifacts"
+
+      status, blocked = app.call(
+        "POST",
+        "/api/project/command",
+        approval_headers,
+        JSON.generate("path" => dir, "command" => "agent-run", "args" => ["--task", "latest", "--agent", "codex"], "approved" => true)
+      )
+
+      assert_equal 403, status
+      assert_match(/approval-hash|approval-request/i, blocked["error"])
+      assert_empty Dir.glob(File.join(dir, ".ai-web", "runs", "agent-run-*")), "bridge must block before agent-run artifacts"
+    end
+  end
+
   def test_bridge_rejects_backend_controlled_flags_and_env_paths
     in_tmp do |dir|
       [

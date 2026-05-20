@@ -196,6 +196,11 @@
       "surface": "workbench serve approved-without-hash local server process shortcut",
       "status": "removed",
       "finding": "workbench --serve dry-run now emits an approval_hash bound to the localhost serve capability envelope and real local server launch requires the matching --approval-hash plus --approved; missing or stale hashes block before workbench artifacts or ProcessLauncher server processes are created."
+    },
+    {
+      "surface": "backend generic command approved-without-hash bridge shortcut",
+      "status": "removed",
+      "finding": "CodexCliBridge now denies approved hash-bound generic bridge commands unless validated args include --approval-hash HASH or --approval-request HASH; missing hashes record backend side-effect broker denial evidence and block before bin/aiweb launches."
     }
   ],
   "preserve_safety_substrate": [
