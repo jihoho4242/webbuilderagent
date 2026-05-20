@@ -7,6 +7,7 @@ require_relative "../lib/aiweb/runtime"
 ROOT = File.expand_path("..", __dir__)
 RUBY = RbConfig.ruby
 CHECK_TIMEOUT_SECONDS = Integer(ENV.fetch("AIWEB_BIN_CHECK_TIMEOUT_SECONDS", "900"))
+TEST_SUITE_TIMEOUT_SECONDS = Integer(ENV.fetch("AIWEB_TEST_SUITE_TIMEOUT_SECONDS", "3600"))
 TEXT_GLOBS = %w[
   .gitattributes
   AGENTS.md
@@ -27,14 +28,14 @@ TEXT_GLOBS = %w[
   test/**/*.rb
 ].freeze
 
-def run_check(label, *command)
+def run_check(label, *command, timeout: CHECK_TIMEOUT_SECONDS)
   puts "==> #{label}"
   result = Aiweb::Runtime::ProcessRunner.new.capture(
     Aiweb::Runtime::CommandSpec.new(
       argv: command,
       cwd: ROOT,
       env: ENV.to_h,
-      timeout: CHECK_TIMEOUT_SECONDS,
+      timeout: timeout,
       max_output_bytes: 2_000_000,
       risk_class: "verification_harness",
       description: label
@@ -84,7 +85,7 @@ end
 checks << repository_text_guard
 checks << run_check("load smoke", RUBY, "-Ilib", "-e", "require 'aiweb'")
 checks << run_check("warning load smoke", RUBY, "-w", "-Ilib", "-e", "require 'aiweb'")
-checks << run_check("test suite", RUBY, "-Itest", "test/all.rb")
+checks << run_check("test suite", RUBY, "-Itest", "test/all.rb", timeout: TEST_SUITE_TIMEOUT_SECONDS)
 checks << run_check("git diff --check", "git", "diff", "--check")
 
 exit(checks.all? ? 0 : 1)

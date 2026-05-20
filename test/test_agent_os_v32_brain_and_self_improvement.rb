@@ -18,6 +18,7 @@ class AgentOsV32BrainAndSelfImprovementTest < Minitest::Test
       assert_equal "passed", result.fetch("status")
       assert_equal "project_local_jsonl_ledger_with_projection", store.storage_mode
       assert_equal false, store.sqlite_available?
+      assert_equal "missing_dependency", Aiweb::Brain::SQLiteStore.dependency_status.fetch("status")
       assert_equal true, store.concurrency_backed?
       assert_match(/brain\.lock\z/, store.lock_path)
 
@@ -55,8 +56,13 @@ class AgentOsV32BrainAndSelfImprovementTest < Minitest::Test
       assert_equal "passed", pre_drill_audit.fetch("status")
       assert_equal "blocked", pre_drill_audit.fetch("operational_status")
       assert_equal true, pre_drill_audit.dig("metrics", "event_hash_chain_valid")
+      assert_equal "missing_dependency", pre_drill_audit.dig("metrics", "sqlite_dependency_status")
+      assert_equal "missing_dependency", pre_drill_audit.dig("sqlite_dependency", "status")
       assert_equal true, pre_drill_audit.dig("metrics", "search_projection_present")
       assert_equal true, pre_drill_audit.dig("metrics", "concurrency_backed")
+      assert_equal true, pre_drill_audit.dig("metrics", "independent_file_audit_passed")
+      assert_equal "passed", pre_drill_audit.dig("independent_file_audit", "status")
+      assert_equal false, pre_drill_audit.dig("independent_file_audit", "backup_restore_drill_present")
       assert_equal false, pre_drill_audit.dig("metrics", "backup_restore_drill_present")
       assert_equal 0, pre_drill_audit.dig("metrics", "search_projection_lag")
       assert_match(/backup\/restore drill evidence/, pre_drill_audit.fetch("operational_blocking_issues").join("\n"))
@@ -67,8 +73,41 @@ class AgentOsV32BrainAndSelfImprovementTest < Minitest::Test
       assert_equal drill.fetch("source_last_event_hash"), drill.fetch("restored_last_event_hash")
       audit = Aiweb::Brain::MemoryAudit.new.audit(tombstone_reload)
       assert_equal true, audit.dig("metrics", "backup_restore_drill_present")
+      assert_equal true, audit.dig("metrics", "independent_file_audit_passed")
+      assert_equal "passed", audit.dig("independent_file_audit", "status")
+      assert_equal true, audit.dig("independent_file_audit", "backup_restore_drill_matches_ledger")
       refute_match(/backup\/restore drill evidence/, audit.fetch("operational_blocking_issues").join("\n"))
+      refute_match(/independent file-level memory audit evidence/, audit.fetch("operational_blocking_issues").join("\n"))
       assert_match(/SQLite-backed storage evidence/, audit.fetch("operational_blocking_issues").join("\n"))
+      assert_match(/sqlite3 Ruby gem is not available/, audit.fetch("operational_blocking_issues").join("\n"))
+    end
+  end
+
+  def test_sqlite_store_fails_closed_when_dependency_is_missing
+    skip "sqlite3 gem is available in this runtime" if Aiweb::Brain::SQLiteStore.available?
+
+    status = Aiweb::Brain::SQLiteStore.dependency_status
+
+    assert_equal "missing_dependency", status.fetch("status")
+    assert_equal "blocked", status.fetch("production_gate_status")
+    assert_match(/sqlite3 Ruby gem/, status.fetch("blocking_issues").join("\n"))
+    assert_raises(LoadError) { Aiweb::Brain::SQLiteStore.new(root: Dir.pwd) }
+  end
+
+  def test_brain_independent_audit_blocks_tampered_projection
+    Dir.mktmpdir("aiweb-brain-independent-audit-test") do |dir|
+      store = Aiweb::Brain::Store.new(root: dir)
+      store.remember(summary: "Independent audit should verify raw files", evidence_grade: "operator_approved")
+      store.backup_restore_drill!
+      index = JSON.parse(File.read(store.index_path))
+      index["last_event_hash"] = "sha256:tampered"
+      File.write(store.index_path, JSON.pretty_generate(index) + "\n")
+
+      audit = Aiweb::Brain::IndependentAudit.new.audit(store)
+
+      assert_equal "blocked", audit.fetch("status")
+      assert_equal false, audit.fetch("projection_matches_ledger")
+      assert_match(/projection does not match ledger/, audit.fetch("blocking_issues").join("\n"))
     end
   end
 

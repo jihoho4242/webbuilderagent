@@ -79,7 +79,8 @@
         "Brain::Store serializes persistent remember/forget writes through a project-local brain.lock and reloads the ledger before append so reloaded writers preserve the previous_event_hash chain",
         "Brain::Store records a backup/restore drill fixture that replays ledger events and verifies restored count plus last_event_hash",
         "MemoryAudit validates storage_mode, append_only_ledger, event_hash_chain_valid, search_projection_present, search_projection_lag, tombstone leaks, concurrency_backed, backup_restore_drill_present, and operational_status=blocked",
-        "P5 brain evidence reports memory_safety_fixture_passed and keeps the SQLite-backed storage plus independent memory audit production Brain gate blocked"
+        "Aiweb::Brain::IndependentAudit now verifies raw Brain ledger/projection/health/drill files without trusting Store in-memory state, and MemoryAudit includes independent_file_audit_passed evidence",
+        "P5 brain evidence reports memory_safety_fixture_passed and keeps the SQLite-backed storage production Brain gate blocked"
       ]
     },
     {
@@ -87,7 +88,7 @@
       "status": "demoted_to_memory_safety_fixture_and_production_blocked",
       "evidence": [
         "P5Gate brain evidence now reports status=memory_safety_fixture_passed with verifier_status=passed",
-        "Release manifest carries brain_report with ledger_event_count, event_hash_chain_valid, search_projection status, health_report_present, concurrency_backed, backup_restore_drill, production_gate_status=blocked, and production_ready_claim_allowed=false",
+        "Release manifest carries brain_report with ledger_event_count, event_hash_chain_valid, search_projection status, health_report_present, concurrency_backed, backup_restore_drill, independent_file_audit, production_gate_status=blocked, and production_ready_claim_allowed=false",
         "P5 report no longer says Brain safety passed as a broad readiness claim"
       ]
     },
@@ -478,6 +479,22 @@
         "bin/webbuilder setup and verify-loop help now require dry-run approval_hash review plus matching --approval-hash HASH plus --approved before real local execution",
         "README verify-loop guidance now uses --approval-hash HASH --approved order, and static audit rejects stale approved-only help patterns"
       ]
+    },
+    {
+      "surface": "executable version clean-environment regression",
+      "status": "brokered_clean_env_probe_restored",
+      "evidence": [
+        "Aiweb::Project#executable_version now resolves the executable and runs version probes through Aiweb::Runtime::ProcessRunner with CommandSpec argv, subprocess_path_env, timeout, and output cap",
+        "The probe no longer relies on ambient secret-bearing ENV, and test_executable_version_uses_clean_environment verifies OPENAI_API_KEY / FAKE_VERSION_SECRET do not reach the child process"
+      ]
+    },
+    {
+      "surface": "bin/check monolithic timeout ceiling",
+      "status": "test_suite_timeout_separated",
+      "evidence": [
+        "bin/check now keeps the normal verification harness timeout in AIWEB_BIN_CHECK_TIMEOUT_SECONDS but gives the full ruby -Itest test/all.rb integration suite its own AIWEB_TEST_SUITE_TIMEOUT_SECONDS defaulting to 3600 seconds",
+        "This preserves full-suite coverage instead of replacing it with a narrower test subset, while preventing the long CLI/engine-run integration suite from being killed by the shorter syntax/load/smoke timeout budget"
+      ]
     }
   ],
   "preserved_safety_substrate": [
@@ -616,9 +633,31 @@
     "ruby -Itest test/test_aiweb_cli.rb -n '/webbuilder_help_explains_zero_start_workflow|setup_help_and_korean_webbuilder_passthrough_surface|agent_run_help_and_webbuilder_passthrough|verify_loop_help_and_webbuilder_dry_run_passthrough|github_deploy_help_and_webbuilder_passthrough_surface/' after webbuilder approved-only cleanup": "passed: 5 runs, 129 assertions, 0 failures, 0 errors",
     "git diff --check after webbuilder approved-only cleanup": "passed with line-ending warnings only",
     "ruby -Itest test/test_agent_os_v32_brain_and_self_improvement.rb after Brain file-lock/backup drill hardening": "passed: 7 runs, 85 assertions, 0 failures, 0 errors",
-    "ruby -Itest test/test_agent_os_v32_release_evidence.rb after Brain release evidence refresh": "passed: 2 runs, 240 assertions, 0 failures, 0 errors"
+    "ruby -Itest test/test_agent_os_v32_release_evidence.rb after Brain release evidence refresh": "passed: 2 runs, 240 assertions, 0 failures, 0 errors",
+    "repository text guard after CRLF blocker cleanup": "passed: 301 files scanned, 0 CRLF/merge-marker failures",
+    "ruby -Itest test/test_agent_os_v32_brain_and_self_improvement.rb after independent Brain file audit": "passed: 8 runs, 97 assertions, 0 failures, 0 errors",
+    "ruby -Itest test/test_agent_os_v32_release_evidence.rb after independent Brain file audit": "passed: 2 runs, 251 assertions, 0 failures, 0 errors",
+    "ruby -Itest test/test_agent_os_v32_static_surface_audit.rb after independent Brain file audit": "passed: 6 runs, 136 assertions, 0 failures, 0 errors",
+    "JSON/YAML parse plus release integrity hash check after independent Brain file audit": "passed: report JSON, browser schema JSON, release manifest YAML, evidence integrity YAML, p5/release hashes",
+    "git diff --check after independent Brain file audit": "passed",
+    "ruby -Itest test/test_aiweb_cli.rb -n /test_executable_version_uses_clean_environment/ after executable_version restoration": "passed: 1 run, 1 assertion, 0 failures, 0 errors",
+    "ruby -w -Ilib -e require aiweb after side-effect broker unused-context cleanup": "passed: warning load OK with no Ruby warnings",
+    "AIWEB_BIN_CHECK_TIMEOUT_SECONDS=1800 ruby bin/check after partial validation cleanup": "blocked: syntax/load/warning checks progressed, but test/all.rb still timed out after 1800s before full-suite evidence could be attached",
+    "repository text guard after side-effect broker LF normalization": "passed: 301 files scanned, 0 CRLF/merge-marker failures",
+    "ruby -c bin/check after test suite timeout split": "passed: Syntax OK",
+    "ruby -Itest test/test_aiweb_cli.rb -n /test_executable_version_uses_clean_environment/ after timeout split": "passed: 1 run, 1 assertion, 0 failures, 0 errors",
+    "git diff --check after bin/check timeout split": "passed",
+    "ruby -Itest test/test_aiweb_cli_runtime_qa.rb -n '/test_pr12_|test_qa_|test_build_help/' after timeout split": "passed: 25 runs, 693 assertions, 0 failures, 0 errors",
+    "ruby -c lib/aiweb/brain/sqlite_store.rb lib/aiweb/brain/memory_audit.rb lib/aiweb/ops/release_manifest.rb after SQLite adapter skeleton": "passed: Syntax OK for sqlite_store, memory_audit, and release_manifest",
+    "ruby -Itest test/test_agent_os_v32_brain_and_self_improvement.rb after SQLite dependency gate": "passed: 9 runs, 107 assertions, 0 failures, 0 errors",
+    "ruby -Itest test/test_agent_os_v32_release_evidence.rb after SQLite release evidence refresh": "passed: 2 runs, 259 assertions, 0 failures, 0 errors",
+    "ruby -Itest test/test_agent_os_v32_static_surface_audit.rb after SQLite evidence refresh": "passed: 6 runs, 136 assertions, 0 failures, 0 errors",
+    "ruby -w -Ilib -e require aiweb after SQLite adapter": "passed: warning load OK with no Ruby warnings",
+    "JSON/YAML parse plus release integrity hash check after SQLite release evidence refresh": "passed: report JSON, release manifest YAML, evidence integrity YAML, p5/release hashes, sqlite missing blocker asserted",
+    "repository text guard after SQLite adapter": "passed: 303 files scanned, 0 CRLF/merge-marker failures on bin/check text-glob surface",
+    "git diff --check after SQLite adapter": "passed"
   },
   "completion_status": "not_complete",
-  "why_not_complete": "Top-level fixed script-runner surfaces, stale deploy provider execution, browser deterministic-probe naming claims, CLI/contract Manus wording marketing overclaims, fixture-eval production-readiness overclaims, red-team catalog-fixture overclaims, secret-canary value emission, self-improvement dry-run overclaims, release validation evidence overclaims, P5 policy/tool gateway overclaims, P5 HITL fixture overclaims, L3 boolean approval bypasses, verifier-result approval hash bypasses, weak HITL artifact self-integrity checks, engine-run approved-without-hash execution shortcuts, agent-run approved-without-hash execution shortcuts, setup install approved-without-hash execution shortcuts, workbench serve approved-without-hash execution shortcuts, backend generic command approved-without-hash bridge shortcut, implementation MCP broker approved-without-hash connector/file access shortcut, eval-baseline import approved-without-hash corpus overwrite shortcut, P5 replay readiness overclaims, Brain safety wording overclaims, Brain JSON snapshot/projection/hash-chain evidence gaps, the Codex agent-run worker subprocess, runtime_commands direct git/taskkill process forms, agent-run diff-policy direct git subprocesses, OpenManus readiness direct image inspect subprocess, and agent-run OpenManus direct image inspect preflight, engine-run sandbox runtime attestation direct Docker/Podman probes, Codex agent-run worker direct subprocess execution, and OpenManus agent-run sandbox worker direct subprocess execution, and engine-run agent worker direct subprocess execution, and engine-run capture helper direct subprocess execution, and setup install/supply-chain direct subprocess execution are neutralized, but Manus-grade natural-language web-app agent readiness still requires independent production red-team/release evidence plus a real SQLite-backed Brain storage plus independent memory audit evidence.",
+  "why_not_complete": "Top-level fixed script-runner surfaces, stale deploy provider execution, browser deterministic-probe naming claims, CLI/contract Manus wording marketing overclaims, fixture-eval production-readiness overclaims, red-team catalog-fixture overclaims, secret-canary value emission, self-improvement dry-run overclaims, release validation evidence overclaims, P5 policy/tool gateway overclaims, P5 HITL fixture overclaims, L3 boolean approval bypasses, verifier-result approval hash bypasses, weak HITL artifact self-integrity checks, engine-run approved-without-hash execution shortcuts, agent-run approved-without-hash execution shortcuts, setup install approved-without-hash execution shortcuts, workbench serve approved-without-hash execution shortcuts, backend generic command approved-without-hash bridge shortcut, implementation MCP broker approved-without-hash connector/file access shortcut, eval-baseline import approved-without-hash corpus overwrite shortcut, P5 replay readiness overclaims, Brain safety wording overclaims, Brain JSON snapshot/projection/hash-chain evidence gaps, the Codex agent-run worker subprocess, runtime_commands direct git/taskkill process forms, agent-run diff-policy direct git subprocesses, OpenManus readiness direct image inspect subprocess, and agent-run OpenManus direct image inspect preflight, engine-run sandbox runtime attestation direct Docker/Podman probes, Codex agent-run worker direct subprocess execution, and OpenManus agent-run sandbox worker direct subprocess execution, and engine-run agent worker direct subprocess execution, and engine-run capture helper direct subprocess execution, and setup install/supply-chain direct subprocess execution are neutralized, but Manus-grade natural-language web-app agent readiness still requires independent production red-team/release evidence plus real SQLite-backed Brain storage evidence (sqlite3 Ruby gem is not available in this runtime), and full ruby bin/check/test-all evidence remains blocked by long-running test/all timeout.",
   "completion": {}
 }

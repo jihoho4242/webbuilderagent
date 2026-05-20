@@ -7,11 +7,11 @@ production_readiness_claimed: false
 operational_readiness: blocked_pending_ci_operator_drill_and_production_benchmarks
 constitution_hash: sha256:87f5f29f48f18135b27b12f940af93e49e9851df23cf0752d45e0ef4bc73d23c
 p5_evidence_status: scaffold_demo_passed
-commit_sha: c34947027146924c067b7dc45c805bd50fa4e3fe
+commit_sha: 913ccb1b1006e5b4d46cfc4cd06e18b88a82e247
 github_actions_run_id:
 evidence_files:
 - path: releases/v0.3.2-rc1/p5_gate_report.md
-  sha256: sha256:4dd2d340f4fe0f2d2c2d028e61cc6a4284dea77484b20136ab4b4d250471ad65
+  sha256: sha256:6a03d32447e865d18e28f700bc8fa76b221febdfc5ed82461fc607a997813009
 schema_validation_report:
   status: targeted_validation_only
   validation_keys: []
@@ -97,26 +97,26 @@ brain_report:
     schema_version: 1
     status: passed
     storage_mode: project_local_jsonl_ledger_with_projection
-    backup_path: ".ai-web/brain/backups/brain-backup-20260520T015540Z-da088f61.json"
+    backup_path: ".ai-web/brain/backups/brain-backup-20260520T042411Z-ecafd7ce.json"
     source_ledger_event_count: 2
     restored_ledger_event_count: 2
-    source_last_event_hash: sha256:af320927162d97d4b05400add2ffe2e2582276d5475af97712d552b4bc0d4782
-    restored_last_event_hash: sha256:af320927162d97d4b05400add2ffe2e2582276d5475af97712d552b4bc0d4782
+    source_last_event_hash: sha256:e331d01a250ccf339818d77785fd0e609df47022aad46e720c02f3a9e649f210
+    restored_last_event_hash: sha256:e331d01a250ccf339818d77785fd0e609df47022aad46e720c02f3a9e649f210
     source_item_count: 0
     restored_item_count: 0
     restored_tombstone_count: 1
     event_hash_chain_valid: true
     blocking_issues: []
-    recorded_at: '2026-05-20T01:55:40Z'
+    recorded_at: '2026-05-20T04:24:11Z'
   ledger_event_count: 2
   event_hash_chain_valid: true
   search_projection:
     schema_version: 1
     status: ready
     global_rerank: false
-    index_path: C:/Users/rhtn4/AppData/Local/Temp/aiweb-p5-brain20260520-17160-b18tcl/.ai-web/brain/brain-index.json
+    index_path: C:/Users/rhtn4/AppData/Local/Temp/aiweb-p5-brain20260520-18672-3ukxmh/.ai-web/brain/brain-index.json
     ledger_event_count: 2
-    last_event_hash: sha256:af320927162d97d4b05400add2ffe2e2582276d5475af97712d552b4bc0d4782
+    last_event_hash: sha256:e331d01a250ccf339818d77785fd0e609df47022aad46e720c02f3a9e649f210
     search_projection_lag: 0
     event_hash_chain_valid: true
   health_report_present: true
@@ -124,9 +124,11 @@ brain_report:
     storage_mode: project_local_jsonl_ledger_with_projection
     persistent_store: true
     sqlite_available: false
+    sqlite_dependency_status: missing_dependency
     concurrency_backed: true
     lock_path_present: true
     backup_restore_drill_present: true
+    independent_file_audit_passed: true
     append_only_ledger: true
     ledger_event_count: 2
     last_event_hash_present: true
@@ -140,6 +142,30 @@ brain_report:
     pii_over_retention: 0
     search_projection_lag: 0
     context_packet_bloat: 0
+  sqlite_dependency:
+    schema_version: 1
+    adapter: aiweb.brain.sqlite_store.v1
+    status: missing_dependency
+    gem: sqlite3
+    production_gate_status: blocked
+    blocking_issues:
+    - sqlite3 Ruby gem is not available in this runtime; production SQLite-backed
+      Brain evidence cannot be claimed
+  independent_file_audit:
+    schema_version: 1
+    auditor: aiweb.brain.independent_file_audit.v1
+    status: passed
+    storage_mode: project_local_jsonl_ledger_with_projection
+    ledger_event_count: 2
+    last_event_hash: sha256:e331d01a250ccf339818d77785fd0e609df47022aad46e720c02f3a9e649f210
+    event_hash_chain_valid: true
+    projection_matches_ledger: true
+    health_report_matches_ledger: true
+    backup_restore_drill_present: true
+    backup_restore_drill_matches_ledger: true
+    active_item_count: 0
+    tombstone_count: 1
+    blocking_issues: []
   production_gate_status: blocked
   operational_status: blocked
   production_ready_claim_allowed: false
@@ -177,7 +203,8 @@ operational_blocking_issues:
   and human baseline
 - production-ready red-team requires independent adversarial review, CI artifact,
   secret canary transcript, and expanded attack coverage
-- production Brain still needs SQLite-backed storage evidence
-- production Brain still needs independent memory audit evidence
+- 'production Brain still needs SQLite-backed storage evidence: sqlite3 Ruby gem is
+  not available in this runtime; production SQLite-backed Brain evidence cannot be
+  claimed'
 - production-ready self-improvement requires sandbox patch diff, static checks, eval/red-team
   pass, HITL v2 approval, canary, rollback plan, and monitor evidence

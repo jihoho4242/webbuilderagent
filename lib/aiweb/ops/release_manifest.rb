@@ -104,6 +104,8 @@ module Aiweb
             "search_projection" => p5_evidence.dig("brain", "search_projection"),
             "health_report_present" => p5_evidence.dig("brain", "health_report_present"),
             "metrics" => p5_evidence.dig("brain", "metrics"),
+            "sqlite_dependency" => p5_evidence.dig("brain", "sqlite_dependency"),
+            "independent_file_audit" => p5_evidence.dig("brain", "independent_file_audit"),
             "production_gate_status" => p5_evidence.dig("brain", "production_gate_status"),
             "operational_status" => p5_evidence.dig("brain", "operational_status"),
             "production_ready_claim_allowed" => p5_evidence.dig("brain", "production_ready_claim_allowed")

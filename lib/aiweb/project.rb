@@ -1316,6 +1316,26 @@ module Aiweb
       end.find { |path| File.executable?(path) && !File.directory?(path) }
     end
 
+    def executable_version(name, *args)
+      executable = executable_path(name)
+      return nil unless executable
+
+      result = Aiweb::Runtime::ProcessRunner.new.capture(
+        Aiweb::Runtime::CommandSpec.new(
+          argv: [executable, *args.map(&:to_s)],
+          cwd: root,
+          env: subprocess_path_env,
+          timeout: 10,
+          max_output_bytes: 4_096,
+          risk_class: "executable_version_probe",
+          description: "#{name} version probe"
+        )
+      )
+      return nil unless result.success?
+
+      result.stdout.to_s.lines.first.to_s.strip
+    end
+
     def subprocess_path_env
       %w[PATH PATHEXT SYSTEMROOT WINDIR COMSPEC].each_with_object({}) do |key, env|
         env[key] = ENV[key] if ENV[key]
