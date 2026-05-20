@@ -575,6 +575,8 @@ class AiwebContractTest < Minitest::Test
     assert_includes runtime_matrix_script, "\"--dry-run\""
     assert_includes runtime_matrix_script, "approval_hash ="
     assert_includes runtime_matrix_script, "\"--approval-hash\""
+    assert_includes runtime_matrix_script, "openmanus-smoke.sh"
+    refute_includes runtime_matrix_script, "RUN cat > /usr/local/bin/openmanus <<"
     refute File.exist?(File.join(REPO_ROOT, "Gemfile")), "quality gate must remain dependency-free until a Gemfile is explicitly introduced"
   end
 

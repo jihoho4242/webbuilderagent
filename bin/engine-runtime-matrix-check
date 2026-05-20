@@ -95,11 +95,7 @@ Dir.mktmpdir("aiweb-runtime-matrix") do |tmp|
   context = File.join(tmp, "image")
   project = File.join(tmp, "project")
   FileUtils.mkdir_p(context)
-  File.write(File.join(context, "Dockerfile"), <<~DOCKERFILE)
-    FROM #{options.fetch(:base_image)}
-    RUN addgroup -g #{sandbox_gid} aiweb || true
-    RUN adduser -D -u #{sandbox_uid} aiweb || true
-    RUN cat > /usr/local/bin/openmanus <<'SH' && chmod +x /usr/local/bin/openmanus
+  File.write(File.join(context, "openmanus-smoke.sh"), <<~SH)
     #!/bin/sh
     set -eu
     mkdir -p /workspace/_aiweb
@@ -108,7 +104,13 @@ Dir.mktmpdir("aiweb-runtime-matrix") do |tmp|
     fi
     printf '{"schema_version":1,"status":"patched","sandbox_mode":"runtime-matrix-smoke"}\\n' > "${AIWEB_OPENMANUS_RESULT_PATH:-/workspace/_aiweb/engine-result.json}"
     echo "runtime matrix smoke openmanus"
-    SH
+  SH
+  File.write(File.join(context, "Dockerfile"), <<~DOCKERFILE)
+    FROM #{options.fetch(:base_image)}
+    RUN addgroup -g #{sandbox_gid} aiweb || true
+    RUN adduser -D -u #{sandbox_uid} aiweb || true
+    COPY openmanus-smoke.sh /usr/local/bin/openmanus
+    RUN chmod +x /usr/local/bin/openmanus
   DOCKERFILE
 
   matrix.each do |runtime|
