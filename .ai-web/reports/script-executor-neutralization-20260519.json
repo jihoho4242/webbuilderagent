@@ -495,6 +495,57 @@
         "bin/check now keeps the normal verification harness timeout in AIWEB_BIN_CHECK_TIMEOUT_SECONDS but gives the full ruby -Itest test/all.rb integration suite its own AIWEB_TEST_SUITE_TIMEOUT_SECONDS defaulting to 3600 seconds",
         "This preserves full-suite coverage instead of replacing it with a narrower test subset, while preventing the long CLI/engine-run integration suite from being killed by the shorter syntax/load/smoke timeout budget"
       ]
+    },
+    {
+      "surface": "stale side-effect broker documented exceptions for removed direct runtime process paths",
+      "status": "removed",
+      "evidence": [
+        "side_effect_broker/classification.rb no longer classifies runtime_commands system() as local_process_tree_cleanup",
+        "side_effect_broker/classification.rb no longer classifies runtime_commands Open3.capture3 as local_runtime_command_exception",
+        "side_effect_broker/classification.rb no longer classifies qa_artifacts Open3.capture3 as local_qa_artifact_runner",
+        "test_contracts asserts those stale classifier strings stay deleted from the classifier source"
+      ]
+    },
+    {
+      "surface": "run lifecycle approved-only resume descriptors and verify-loop idle guidance",
+      "status": "demoted_to_dry_run_hash_discovery",
+      "evidence": [
+        "run-status idle next_action now recommends aiweb agent natural-language dry-run instead of verify-loop",
+        "observability-summary idle next_action now recommends aiweb agent natural-language dry-run instead of verify-loop",
+        "run-resume next_command for verify-loop handoffs now uses engine-run --dry-run instead of verify-loop --approved",
+        "run-resume next_command for deploy/workbench/setup/agent-run/engine-run now records dry-run/hash-discovery descriptors only",
+        "static surface audit rejects run_lifecycle approved-only resume guidance"
+      ]
+    },
+    {
+      "surface": "Workbench command descriptors as executable-button mental model",
+      "status": "demoted_to_dry_run_descriptors",
+      "evidence": [
+        "WORKBENCH_CONTROLS now use --dry-run for agent/run/design/build/preview/QA/visual-critique/repair/visual-polish descriptors",
+        "the Workbench verify-loop control was replaced with aiweb engine-run --agent codex --mode agentic_local --max-cycles 3 --dry-run",
+        "workbench_control_side_effects treats dry-run descriptors as non-mutating, non-launching, and non-approval execution shortcuts",
+        "test_aiweb_cli asserts every Workbench control command contains --dry-run and advertises no direct mutation/process launch"
+      ]
+    },
+    {
+      "surface": "webbuilder/README verify-loop-first examples",
+      "status": "demoted_to_agent_engine_run_dry_run_guidance",
+      "evidence": [
+        "bin/webbuilder now lists natural-language agent --dry-run and canonical engine-run --dry-run before advanced agent-run",
+        "bin/webbuilder no longer lists verify-loop --max-cycles 3 --approval-hash HASH --approved as an easy operation example",
+        "README Workbench controls now document dry-run descriptors and canonical engine-run dry-run instead of verify-loop control descriptors",
+        "README primary planning path now uses agent/engine-run dry-run examples, leaving verify-loop as compatibility prose only"
+      ]
+    },
+    {
+      "surface": "aiweb help verify-loop approved example",
+      "status": "demoted_to_agent_engine_run_dry_run_guidance",
+      "evidence": [
+        "lib/aiweb/cli/help_text.rb no longer lists verify-loop --max-cycles 3 --agent codex --approval-hash HASH --approved",
+        "aiweb help lists agent \"verify and improve this local scaffold\" --mode supervised --dry-run",
+        "aiweb help lists engine-run --agent codex --mode agentic_local --max-cycles 3 --dry-run",
+        "static surface audit rejects the stale verify-loop approved help example"
+      ]
     }
   ],
   "preserved_safety_substrate": [
@@ -655,7 +706,18 @@
     "ruby -w -Ilib -e require aiweb after SQLite adapter": "passed: warning load OK with no Ruby warnings",
     "JSON/YAML parse plus release integrity hash check after SQLite release evidence refresh": "passed: report JSON, release manifest YAML, evidence integrity YAML, p5/release hashes, sqlite missing blocker asserted",
     "repository text guard after SQLite adapter": "passed: 303 files scanned, 0 CRLF/merge-marker failures on bin/check text-glob surface",
-    "git diff --check after SQLite adapter": "passed"
+    "git diff --check after SQLite adapter": "passed",
+    "ruby -Itest test/test_contracts.rb -n /side_effect_surface_audit/ after stale direct-process classifier removal": "passed: 5 runs, 82 assertions, 0 failures, 0 errors",
+    "ruby -Ilib -e side_effect_surface_audit after stale classifier removal": "passed: coverage=classified, unclassified=0, entry_count=19, stale runtime direct-process classifier entries=false",
+    "ruby -Itest test/test_aiweb_cli.rb -n run lifecycle guidance after dry-run resume demotion": "passed: 3 runs, 74 assertions, 0 failures, 0 errors",
+    "ruby -Itest test/test_agent_os_v32_static_surface_audit.rb after run_lifecycle guidance demotion": "passed: 6 runs, 148 assertions, 0 failures, 0 errors",
+    "ruby -Itest test/test_daemon.rb -n test_backend_job_lifecycle_routes_map_to_bridge_and_require_tokens after run_lifecycle guidance demotion": "passed: 1 run, 25 assertions, 0 failures, 0 errors",
+    "ruby -Itest test/test_aiweb_cli.rb -n /workbench_dry_run/ after Workbench descriptor demotion": "passed: 1 run, 114 assertions, 0 failures, 0 errors",
+    "ruby -Itest test/test_agent_os_v32_static_surface_audit.rb after Workbench descriptor demotion": "passed: 6 runs, 158 assertions, 0 failures, 0 errors",
+    "ruby -Itest test/test_aiweb_cli.rb -n /test_verify_loop_help_and_webbuilder_dry_run_passthrough|workbench_dry_run/ after webbuilder README guidance demotion": "passed: 2 runs, 159 assertions, 0 failures, 0 errors",
+    "ruby -Itest test/test_agent_os_v32_static_surface_audit.rb after webbuilder README guidance demotion": "passed: 6 runs, 172 assertions, 0 failures, 0 errors",
+    "ruby -Itest test/test_aiweb_cli.rb -n /test_verify_loop_help_and_webbuilder_dry_run_passthrough/ after aiweb help demotion": "passed: 1 run, 49 assertions, 0 failures, 0 errors",
+    "ruby -Itest test/test_agent_os_v32_static_surface_audit.rb after aiweb help demotion": "passed: 6 runs, 178 assertions, 0 failures, 0 errors"
   },
   "completion_status": "not_complete",
   "why_not_complete": "Top-level fixed script-runner surfaces, stale deploy provider execution, browser deterministic-probe naming claims, CLI/contract Manus wording marketing overclaims, fixture-eval production-readiness overclaims, red-team catalog-fixture overclaims, secret-canary value emission, self-improvement dry-run overclaims, release validation evidence overclaims, P5 policy/tool gateway overclaims, P5 HITL fixture overclaims, L3 boolean approval bypasses, verifier-result approval hash bypasses, weak HITL artifact self-integrity checks, engine-run approved-without-hash execution shortcuts, agent-run approved-without-hash execution shortcuts, setup install approved-without-hash execution shortcuts, workbench serve approved-without-hash execution shortcuts, backend generic command approved-without-hash bridge shortcut, implementation MCP broker approved-without-hash connector/file access shortcut, eval-baseline import approved-without-hash corpus overwrite shortcut, P5 replay readiness overclaims, Brain safety wording overclaims, Brain JSON snapshot/projection/hash-chain evidence gaps, the Codex agent-run worker subprocess, runtime_commands direct git/taskkill process forms, agent-run diff-policy direct git subprocesses, OpenManus readiness direct image inspect subprocess, and agent-run OpenManus direct image inspect preflight, engine-run sandbox runtime attestation direct Docker/Podman probes, Codex agent-run worker direct subprocess execution, and OpenManus agent-run sandbox worker direct subprocess execution, and engine-run agent worker direct subprocess execution, and engine-run capture helper direct subprocess execution, and setup install/supply-chain direct subprocess execution are neutralized, but Manus-grade natural-language web-app agent readiness still requires independent production red-team/release evidence plus real SQLite-backed Brain storage evidence (sqlite3 Ruby gem is not available in this runtime), and full ruby bin/check/test-all evidence remains blocked by long-running test/all timeout.",

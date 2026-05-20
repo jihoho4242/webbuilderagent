@@ -17,16 +17,16 @@ module Aiweb
     ].freeze
 
     WORKBENCH_CONTROLS = [
-      ["agent", "Run supervised agent", "aiweb agent \"Improve this local site\" --mode supervised"],
-      ["run", "Run director", "aiweb run"],
-      ["design", "Generate design candidates", "aiweb design"],
-      ["build", "Plan or run scaffold build", "aiweb build"],
-      ["preview", "Start local preview", "aiweb preview"],
-      ["qa_playwright", "Run Playwright QA", "aiweb qa-playwright"],
-      ["visual_critique", "Record visual critique", "aiweb visual-critique"],
-      ["repair", "Create repair packet", "aiweb repair"],
-      ["visual_polish", "Plan visual polish loop", "aiweb visual-polish"],
-      ["verify_loop", "Plan engine-run verification handoff", "aiweb verify-loop --max-cycles 3"]
+      ["agent", "Plan supervised natural-language agent run", "aiweb agent \"Improve this local site\" --mode supervised --dry-run"],
+      ["run", "Plan director run", "aiweb run --dry-run"],
+      ["design", "Plan design candidates", "aiweb design --dry-run"],
+      ["build", "Plan scaffold build", "aiweb build --dry-run"],
+      ["preview", "Plan local preview", "aiweb preview --dry-run"],
+      ["qa_playwright", "Plan Playwright QA", "aiweb qa-playwright --dry-run"],
+      ["visual_critique", "Plan visual critique", "aiweb visual-critique --dry-run"],
+      ["repair", "Plan repair packet", "aiweb repair --dry-run"],
+      ["visual_polish", "Plan visual polish loop", "aiweb visual-polish --repair --dry-run"],
+      ["engine_run", "Plan canonical engine-run handoff", "aiweb engine-run --agent codex --mode agentic_local --max-cycles 3 --dry-run"]
     ].freeze
 
     WORKBENCH_FILE_TREE_EXCLUDES = %w[
@@ -491,9 +491,10 @@ module Aiweb
 
     def workbench_control_side_effects(command)
       text = command.to_s
-      mutates = text.match?(/\b(?:agent|run|design|build|preview|qa-|visual-critique|repair|visual-polish|verify-loop|component-map|visual-edit)\b/)
-      launches = text.match?(/\b(?:agent|build|preview|qa-)\b/)
-      approval = text.match?(/\b(?:agent|verify-loop|visual-polish|visual-edit)\b/)
+      dry_run = text.match?(/\s--dry-run\b/)
+      mutates = !dry_run && text.match?(/\b(?:agent|run|design|build|preview|qa-|visual-critique|repair|visual-polish|engine-run|component-map|visual-edit)\b/)
+      launches = !dry_run && text.match?(/\b(?:agent|build|preview|qa-|engine-run)\b/)
+      approval = !dry_run && text.match?(/\b(?:agent|engine-run|visual-polish|visual-edit)\b/)
       {
         "mutates_state" => mutates,
         "launches_process" => launches,

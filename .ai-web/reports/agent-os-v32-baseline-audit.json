@@ -241,6 +241,31 @@
       "surface": "Personal Brain SQLite-backed store adapter",
       "status": "fail_closed_adapter_added_dependency_missing_production_blocked",
       "finding": "Aiweb::Brain::SQLiteStore now fails closed when the sqlite3 Ruby gem is unavailable and MemoryAudit/P5/release evidence records sqlite_dependency_status=missing_dependency with an explicit production Brain blocker, so JSONL fixture evidence cannot be mistaken for real SQLite-backed production readiness."
+    },
+    {
+      "surface": "stale runtime direct-process classifier exceptions",
+      "status": "removed_from_side_effect_allowlist",
+      "finding": "ProjectSideEffectBroker no longer preserves documented-exception classifiers for removed runtime_commands system/Open3 or qa_artifacts Open3 paths; future direct process reintroduction must become unclassified and block universal broker/readiness claims instead of riding a stale fallback allowlist."
+    },
+    {
+      "surface": "run lifecycle resume/next-action approved-only script guidance",
+      "status": "demoted_to_dry_run_hash_discovery",
+      "finding": "run-status and observability-summary now point idle users at the natural-language aiweb agent dry-run surface, while run-resume descriptors for verify-loop/deploy/workbench/setup/agent-run/engine-run now emit dry-run/hash-discovery commands only and record that real execution still requires a matching approval_hash plus --approved."
+    },
+    {
+      "surface": "Workbench command descriptor execution buttons",
+      "status": "demoted_to_dry_run_descriptors",
+      "finding": "Workbench controls no longer advertise mutating/launching command buttons; every control is a dry-run descriptor, the old verify-loop control is replaced by canonical engine-run dry-run handoff, and control side-effect metadata reports no mutation/process/approval shortcut for dry-run descriptors."
+    },
+    {
+      "surface": "Webbuilder/README verify-loop-first guidance",
+      "status": "demoted_to_agent_engine_run_dry_run_guidance",
+      "finding": "Korean webbuilder help and README no longer present verify-loop approved examples as the main next step; they now point users to natural-language agent dry-run and canonical engine-run dry-run planning, while verify-loop remains documented only as a legacy compatibility shim with hash-bound execution requirements."
+    },
+    {
+      "surface": "aiweb CLI help verify-loop approved example",
+      "status": "demoted_to_agent_engine_run_dry_run_guidance",
+      "finding": "CLI help no longer lists verify-loop approved examples in the command examples; the live help now presents natural-language agent dry-run and canonical engine-run dry-run as the primary planning examples, while verify-loop remains labeled as a legacy compatibility shim."
     }
   ],
   "preserve_safety_substrate": [

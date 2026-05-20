@@ -51,9 +51,9 @@ module Aiweb
           qa-checklist [--force]
           qa-report [--from PATH] [--status passed|failed|blocked] [--duration-minutes N] [--timed-out] [--force]
           repair [--from-qa PATH|latest] [--max-cycles N] [--force]
-          verify-loop [--max-cycles N:1-10] [--agent codex|openmanus] [--sandbox docker|podman] [--approval-hash HASH] [--approved] [--force]
-          verify-loop --max-cycles 3 --dry-run
-          verify-loop --max-cycles 3 --agent codex --approval-hash HASH --approved
+          verify-loop [--max-cycles N:1-10] [--agent codex|openmanus] [--sandbox docker|podman] [--approval-hash HASH] [--approved] [--force] (legacy compatibility shim)
+          agent "verify and improve this local scaffold" --mode supervised --dry-run
+          engine-run --agent codex --mode agentic_local --max-cycles 3 --dry-run
           qa-playwright [--url URL] [--task-id ID] [--force]
           qa-screenshot [--url URL] [--task-id ID] [--force]
           qa-a11y [--url URL] [--task-id ID] [--force]

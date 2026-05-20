@@ -11,12 +11,6 @@ module Aiweb
       if path.end_with?("lib/aiweb/project/browser_observer_script.js")
         return side_effect_classification("local_browser_observer_template_literal", "documented_exception", nil, "browser observer JavaScript is written by engine-run and executed only through the local browser-observation path; JavaScript template literals are not shell execution")
       end
-      if path.end_with?("lib/aiweb/project/runtime_commands.rb") && line.include?("system(")
-        return side_effect_classification("local_process_tree_cleanup", "documented_exception", nil, "taskkill/system calls are local cleanup fallbacks for preview process trees")
-      end
-      if path.end_with?("lib/aiweb/project/runtime_commands/qa_artifacts.rb") && line.include?("Open3.capture3")
-        return side_effect_classification("local_qa_artifact_runner", "documented_exception", nil, "QA artifact subprocess is a local static/browser verification command writing run evidence")
-      end
       if path.end_with?("lib/aiweb/runtime/process_runner.rb") && line.match?(/Open3\.(?:capture3|popen3)/)
         return side_effect_classification("central_runtime_process_runner", "brokered", "aiweb.runtime.process_runner", "central CommandSpec/ProcessRunner executes argv-only local commands with scrubbed environment, timeout, output caps, and redaction")
       end
@@ -31,9 +25,6 @@ module Aiweb
       end
       if path.end_with?("lib/aiweb/project/engine_run/generated_sources.rb") && line.match?(/exec "\$dir\/\$TOOL_NAME"/)
         return side_effect_classification("brokered_generated_tool_broker_delegate", "brokered", "aiweb.engine_run.tool_broker", "generated POSIX tool-broker shim delegates only after package/git/external-network block checks")
-      end
-      if path.end_with?("lib/aiweb/project/runtime_commands.rb") && line.include?("Open3.capture3")
-        return side_effect_classification("local_runtime_command_exception", "documented_exception", nil, "verify/QA/git revision subprocesses are project-local runtime commands; setup install commands are separately brokered")
       end
       side_effect_classification("unclassified_direct_side_effect", "unclassified", nil, "direct process/network surface is not yet classified by side-effect broker audit")
     end

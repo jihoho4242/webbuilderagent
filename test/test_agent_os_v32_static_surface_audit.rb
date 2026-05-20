@@ -125,6 +125,8 @@ class AgentOsV32StaticSurfaceAuditTest < Minitest::Test
       lib/aiweb/project/agent_runtime_facade.rb
       lib/aiweb/project/engine_run/run_state.rb
       lib/aiweb/project/verify_loop.rb
+      lib/aiweb/project/run_lifecycle.rb
+      lib/aiweb/project/workbench.rb
       lib/aiweb/project/engine_run/eval_baseline.rb
       docs/schemas/engine-run-human-review-pack.schema.json
       lib/aiweb/cli/help_text.rb
@@ -133,11 +135,26 @@ class AgentOsV32StaticSurfaceAuditTest < Minitest::Test
 
     refute_match(/aiweb agent --mode supervised --approved(?!.*--approval-hash)/, live_guidance.fetch("lib/aiweb/project/agent_runtime_facade.rb"))
     refute_match(/engine-run --resume .*--approved after reviewing/, live_guidance.fetch("lib/aiweb/project/engine_run/run_state.rb"))
+    refute_match(/verify-loop --max-cycles \d+ --approved/, live_guidance.fetch("lib/aiweb/project/run_lifecycle.rb"))
+    refute_match(/workbench", "--serve", "--approved"/, live_guidance.fetch("lib/aiweb/project/run_lifecycle.rb"))
+    refute_match(/setup", "--install", "--approved"/, live_guidance.fetch("lib/aiweb/project/run_lifecycle.rb"))
+    refute_match(/agent-run".*"--approved"/m, live_guidance.fetch("lib/aiweb/project/run_lifecycle.rb"))
+    assert_includes live_guidance.fetch("lib/aiweb/project/run_lifecycle.rb"), 'aiweb agent "improve this website" --mode supervised --dry-run'
+    refute_includes live_guidance.fetch("lib/aiweb/project/workbench.rb"), "aiweb verify-loop --max-cycles 3"
+    assert_includes live_guidance.fetch("lib/aiweb/project/workbench.rb"), "aiweb engine-run --agent codex --mode agentic_local --max-cycles 3 --dry-run"
+    assert_includes live_guidance.fetch("lib/aiweb/project/workbench.rb"), "Plan supervised natural-language agent run"
+    assert_includes live_guidance.fetch("lib/aiweb/project/workbench.rb"), "--mode supervised --dry-run"
     refute_includes live_guidance.fetch("lib/aiweb/project/engine_run/eval_baseline.rb"), "import still requires --approved"
     refute_includes live_guidance.fetch("docs/schemas/engine-run-human-review-pack.schema.json"), "import_requires_approved_flag"
     refute_includes live_guidance.fetch("lib/aiweb/cli/help_text.rb"), '[--approved] [--dry-run]'
+    refute_includes live_guidance.fetch("lib/aiweb/cli/help_text.rb"), "verify-loop --max-cycles 3 --agent codex --approval-hash HASH --approved"
+    assert_includes live_guidance.fetch("lib/aiweb/cli/help_text.rb"), 'agent "verify and improve this local scaffold" --mode supervised --dry-run'
+    assert_includes live_guidance.fetch("lib/aiweb/cli/help_text.rb"), "engine-run --agent codex --mode agentic_local --max-cycles 3 --dry-run"
     refute_match(/setup --install(?:(?!approval_hash).)*stdout\.log/m, live_guidance.fetch("bin/webbuilder"))
     refute_includes live_guidance.fetch("bin/webbuilder"), '--approved --approval-hash HASH'
+    refute_includes live_guidance.fetch("bin/webbuilder"), "verify-loop --max-cycles 3 --approval-hash HASH --approved"
+    assert_includes live_guidance.fetch("bin/webbuilder"), 'agent "improve this website" --mode supervised --dry-run'
+    assert_includes live_guidance.fetch("bin/webbuilder"), "engine-run --agent codex --mode agentic_local --max-cycles 3 --dry-run"
     assert_includes live_guidance.fetch("bin/webbuilder"), '--approval-hash HASH plus --approved'
 
     live_guidance.reject { |relative, _text| relative.end_with?(".schema.json") }.each do |relative, text|
@@ -162,5 +179,9 @@ class AgentOsV32StaticSurfaceAuditTest < Minitest::Test
 
     assert_includes public_docs, "`engine-run` is the supervised, scoped local agentic runtime for WebBuilderAgent."
     assert_includes public_docs, "it is still not an OS-level universal enforcement broker"
+    assert_includes public_docs, "Workbench controls are dry-run descriptors"
+    assert_includes public_docs, "aiweb engine-run --agent codex --mode agentic_local --max-cycles 3 --dry-run"
+    refute_includes public_docs, 'aiweb verify-loop --max-cycles 3`, `aiweb component-map'
+    refute_includes public_docs, "./bin/aiweb --path ~/Desktop/aiweb-premium-service-site verify-loop --max-cycles 3 --approval-hash HASH --approved --json"
   end
 end

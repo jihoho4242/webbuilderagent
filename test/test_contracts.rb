@@ -109,6 +109,7 @@ class AiwebContractTest < Minitest::Test
     refute entries.any? { |entry| entry.fetch("path").end_with?("side_effect_broker.rb") }
     refute entries.any? { |entry| entry.fetch("classification") == "local_runtime_command_exception" }, "git revision probes must use the central ProcessRunner boundary instead of direct Open3 in runtime commands"
     refute entries.any? { |entry| entry.fetch("classification") == "local_process_tree_cleanup" }, "preview process tree cleanup must use the central ProcessRunner boundary instead of direct system calls"
+    refute entries.any? { |entry| entry.fetch("classification") == "local_qa_artifact_runner" }, "QA artifact commands must use the central ProcessRunner boundary instead of direct Open3"
     refute entries.any? { |entry| entry.fetch("classification") == "local_read_only_git_evidence" }, "agent-run git diff/status evidence must use the central ProcessRunner boundary instead of direct Open3"
     refute entries.any? { |entry| entry.fetch("classification") == "local_runtime_readiness_probe" }, "OpenManus readiness image inspect must use the central ProcessRunner boundary instead of direct Open3"
     refute entries.any? { |entry| entry.fetch("classification") == "openmanus_sandbox_image_preflight" }, "agent-run OpenManus image preflight must use the central ProcessRunner boundary instead of direct Open3"
@@ -130,6 +131,11 @@ class AiwebContractTest < Minitest::Test
       assert_includes classifications, classification
     end
     refute_includes classifications, "legacy_agent_run_worker_subprocess"
+
+    classifier_source = File.read(File.join(REPO_ROOT, "lib", "aiweb", "project", "side_effect_broker", "classification.rb"))
+    refute_includes classifier_source, "local_runtime_command_exception", "stale runtime_commands Open3 exceptions must not remain as fallback allowlist entries"
+    refute_includes classifier_source, "local_process_tree_cleanup", "stale runtime_commands system() exceptions must not remain as fallback allowlist entries"
+    refute_includes classifier_source, "local_qa_artifact_runner", "stale qa_artifacts Open3 exceptions must not remain as fallback allowlist entries"
   end
 
   def test_process_launcher_callers_use_launch_spec

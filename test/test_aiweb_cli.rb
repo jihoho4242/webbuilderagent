@@ -9176,7 +9176,9 @@ class AiwebCliTest < Minitest::Test
     stdout, stderr, code = run_aiweb("help")
     assert_equal 0, code
     assert_equal "", stderr
-    assert_includes stdout, "verify-loop --max-cycles 3"
+    assert_includes stdout, 'agent "verify and improve this local scaffold" --mode supervised --dry-run'
+    assert_includes stdout, "engine-run --agent codex --mode agentic_local --max-cycles 3 --dry-run"
+    refute_includes stdout, "verify-loop --max-cycles 3 --agent codex --approval-hash HASH --approved"
     assert_includes stdout, "--max-cycles is capped at 10"
     assert_includes stdout, "run-status"
     assert_includes stdout, "run-cancel"
@@ -9189,6 +9191,9 @@ class AiwebCliTest < Minitest::Test
     assert_equal 0, help_code
     assert_equal "", help_stderr
     assert_match(/verify-loop/, help_stdout)
+    assert_includes help_stdout, "agent \"improve this website\" --mode supervised --dry-run"
+    assert_includes help_stdout, "engine-run --agent codex --mode agentic_local --max-cycles 3 --dry-run"
+    refute_includes help_stdout, "verify-loop --max-cycles 3 --approval-hash HASH --approved"
 
     in_tmp do |dir|
       target = File.join(dir, "passthrough-verify-loop")
@@ -9227,6 +9232,8 @@ class AiwebCliTest < Minitest::Test
       assert_equal "idle", lifecycle.fetch("status")
       assert_nil lifecycle.fetch("active_run")
       assert_equal [], payload.fetch("changed_files")
+      assert_includes payload.fetch("next_action"), 'aiweb agent "improve this website" --mode supervised --dry-run'
+      refute_includes payload.fetch("next_action"), "verify-loop"
       assert_equal before_entries, project_entries, "run-status must not write lifecycle artifacts"
       assert_equal before_state, File.read(".ai-web/state.yaml"), "run-status must not mutate state"
     end
@@ -9333,6 +9340,8 @@ class AiwebCliTest < Minitest::Test
       assert_includes summary.fetch("recent_blockers"), "fake deploy failed"
       assert_equal before_entries, project_entries, "observability-summary must not write artifacts"
       assert_equal before_state, File.read(".ai-web/state.yaml"), "observability-summary must not mutate state"
+      assert_includes payload.fetch("next_action"), 'aiweb agent "improve this website" --mode supervised --dry-run'
+      refute_includes payload.fetch("next_action"), "verify-loop --max-cycles"
 
       alias_stdout, alias_stderr, alias_code = run_aiweb("summary", "--limit", "1", "--json")
       alias_payload = JSON.parse(alias_stdout)
@@ -9400,7 +9409,9 @@ class AiwebCliTest < Minitest::Test
       assert_equal 0, dry_code
       assert_equal "", dry_stderr
       assert_equal "resume_planned", dry_payload.dig("run_lifecycle", "status")
-      assert_equal ["aiweb", "verify-loop", "--max-cycles", "3", "--approved"], dry_payload.dig("run_lifecycle", "resume_plan", "command")
+      assert_equal ["aiweb", "engine-run", "--agent", "codex", "--mode", "agentic_local", "--max-cycles", "3", "--dry-run"], dry_payload.dig("run_lifecycle", "resume_plan", "command")
+      refute_includes dry_payload.dig("run_lifecycle", "resume_plan", "next_command"), "--approved"
+      assert_includes dry_payload.dig("run_lifecycle", "resume_plan", "guardrails"), "real execution still requires a matching approval_hash plus --approved"
       refute File.exist?(File.join(run_dir, "resume-plan.json")), "run-resume --dry-run must not write"
 
       resume_stdout, resume_stderr, resume_code = run_aiweb_env(env, "run-resume", "--run-id", run_id, "--json")
@@ -9409,7 +9420,8 @@ class AiwebCliTest < Minitest::Test
       assert_equal "", resume_stderr
       assert_equal "resume_planned", resume_payload.dig("run_lifecycle", "status")
       assert File.file?(File.join(run_dir, "resume-plan.json"))
-      assert_includes resume_payload.dig("run_lifecycle", "resume_plan", "next_command"), "aiweb verify-loop --max-cycles 3 --approved"
+      assert_includes resume_payload.dig("run_lifecycle", "resume_plan", "next_command"), "aiweb engine-run --agent codex --mode agentic_local --max-cycles 3 --dry-run"
+      refute_includes resume_payload.dig("run_lifecycle", "resume_plan", "next_command"), "--approved"
       refute File.exist?(marker), "run-resume records a descriptor only"
     end
   end
@@ -9764,32 +9776,33 @@ class AiwebCliTest < Minitest::Test
 
       controls = payload.dig("workbench", "controls")
       expected_controls = [
-        "aiweb agent \"Improve this local site\" --mode supervised",
-        "aiweb run",
-        "aiweb design",
-        "aiweb build",
-        "aiweb preview",
-        "aiweb qa-playwright",
-        "aiweb visual-critique",
-        "aiweb repair",
-        "aiweb visual-polish",
-        "aiweb verify-loop --max-cycles 3"
+        "aiweb agent \"Improve this local site\" --mode supervised --dry-run",
+        "aiweb run --dry-run",
+        "aiweb design --dry-run",
+        "aiweb build --dry-run",
+        "aiweb preview --dry-run",
+        "aiweb qa-playwright --dry-run",
+        "aiweb visual-critique --dry-run",
+        "aiweb repair --dry-run",
+        "aiweb visual-polish --repair --dry-run",
+        "aiweb engine-run --agent codex --mode agentic_local --max-cycles 3 --dry-run"
       ]
       assert_equal expected_controls, controls.map { |control| control.fetch("command") }
       controls.each do |control|
         assert_includes ["cli", "cli_descriptor"], control["kind"] || control["mode"]
-        assert_includes [true, false], control["mutates_state"] if control.key?("mutates_state")
-        assert_includes [true, false], control["launches_process"] if control.key?("launches_process")
-        assert_includes [true, false], control["requires_approval"] if control.key?("requires_approval")
+        assert_equal false, control["mutates_state"], "workbench controls must be dry-run descriptors, not mutating buttons"
+        assert_equal false, control["launches_process"], "workbench controls must not advertise direct process launch"
+        assert_equal false, control["requires_approval"], "workbench dry-run descriptors must not be approval-gated execution shortcuts"
+        assert_includes control.fetch("command"), "--dry-run"
         refute_match(/state\.yaml/, control.fetch("command"), "workbench controls must be declarative CLI commands, not direct state writes")
       end
       design_control = controls.find { |control| control.fetch("command") == "aiweb design" }
-      preview_control = controls.find { |control| control.fetch("command") == "aiweb preview" }
-      verify_control = controls.find { |control| control.fetch("command") == "aiweb verify-loop --max-cycles 3" }
-      assert_equal true, design_control["mutates_state"]
-      assert_equal true, preview_control["launches_process"]
-      assert_equal true, verify_control["requires_approval"]
-      assert_equal false, verify_control["launches_process"]
+      preview_control = controls.find { |control| control.fetch("command") == "aiweb preview --dry-run" }
+      engine_control = controls.find { |control| control.fetch("command") == "aiweb engine-run --agent codex --mode agentic_local --max-cycles 3 --dry-run" }
+      assert_nil design_control
+      assert_equal false, preview_control["launches_process"]
+      assert_equal false, engine_control["requires_approval"]
+      refute_includes controls.map { |control| control.fetch("command") }.join("\n"), "verify-loop"
       refute_includes stdout, "do-not-touch"
     end
   end

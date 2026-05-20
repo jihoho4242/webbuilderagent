@@ -13,7 +13,7 @@ module Aiweb
       payload = status_hash(state: state, changed_files: [])
       payload["action_taken"] = "reported run lifecycle"
       payload["run_lifecycle"] = lifecycle
-      payload["next_action"] = lifecycle["active_run"] ? "inspect the active run or request cancellation with aiweb run-cancel --run-id active" : "start a local run such as aiweb verify-loop --max-cycles 3 --dry-run"
+      payload["next_action"] = lifecycle["active_run"] ? "inspect the active run or request cancellation with aiweb run-cancel --run-id active" : 'start a natural-language local run such as aiweb agent "improve this website" --mode supervised --dry-run'
       payload
     end
 
@@ -66,7 +66,7 @@ module Aiweb
       payload = status_hash(state: state, changed_files: [])
       payload["action_taken"] = "reported observability summary"
       payload["observability_summary"] = summary
-      payload["next_action"] = active ? "inspect active run with aiweb run-status --run-id active or request cancellation with aiweb run-cancel --run-id active" : "continue with aiweb verify-loop --max-cycles 3 --dry-run or inspect aiweb run-timeline"
+      payload["next_action"] = active ? "inspect active run with aiweb run-status --run-id active or request cancellation with aiweb run-cancel --run-id active" : 'continue with aiweb agent "improve this website" --mode supervised --dry-run or inspect aiweb run-timeline'
       payload
     end
 
@@ -435,21 +435,23 @@ module Aiweb
       kind = target["kind"].to_s
       command = case kind
                 when "verify-loop"
-                  ["aiweb", "verify-loop", "--max-cycles", metadata.fetch("max_cycles", 3).to_s, "--approved"]
+                  verify_loop_handoff_command(metadata)
                 when "deploy"
                   target_name = metadata["target"].to_s
-                  target_name.empty? ? nil : ["aiweb", "deploy", "--target", target_name, "--approved"]
+                  target_name.empty? ? nil : ["aiweb", "deploy", "--target", target_name, "--dry-run"]
                 when "workbench-serve"
-                  command = ["aiweb", "workbench", "--serve", "--approved"]
+                  command = ["aiweb", "workbench", "--serve", "--dry-run"]
                   command += ["--host", metadata["host"].to_s] unless metadata["host"].to_s.empty?
                   command += ["--port", metadata["port"].to_s] unless metadata["port"].to_s.empty?
                   command
                 when "setup"
-                  ["aiweb", "setup", "--install", "--approved"]
+                  ["aiweb", "setup", "--install", "--dry-run"]
                 when "agent-run"
-                  ["aiweb", "agent-run", "--task", "latest", "--agent", metadata["agent"].to_s.empty? ? "codex" : metadata["agent"].to_s, "--approved"]
+                  command = ["aiweb", "agent-run", "--task", "latest", "--agent", metadata["agent"].to_s.empty? ? "codex" : metadata["agent"].to_s, "--dry-run"]
+                  command += ["--sandbox", metadata["sandbox"].to_s] unless metadata["sandbox"].to_s.empty?
+                  command
                 when "engine-run"
-                  command = ["aiweb", "engine-run", "--resume", target.fetch("run_id"), "--agent", metadata["agent"].to_s.empty? ? "codex" : metadata["agent"].to_s, "--mode", metadata["mode"].to_s.empty? ? "agentic_local" : metadata["mode"].to_s, "--approved"]
+                  command = ["aiweb", "engine-run", "--resume", target.fetch("run_id"), "--agent", metadata["agent"].to_s.empty? ? "codex" : metadata["agent"].to_s, "--mode", metadata["mode"].to_s.empty? ? "agentic_local" : metadata["mode"].to_s, "--dry-run"]
                   command += ["--sandbox", metadata["sandbox"].to_s] unless metadata["sandbox"].to_s.empty?
                   command
                 end
@@ -466,8 +468,15 @@ module Aiweb
         "next_command" => command.shelljoin,
         "executes_process" => false,
         "writes_only_descriptor" => true,
-        "guardrails" => ["resume records a descriptor only", "no provider CLI or agent process is launched by run-resume", "no .env/.env.* access"]
+        "guardrails" => ["resume records a descriptor only", "next_command is dry-run/hash-discovery only", "real execution still requires a matching approval_hash plus --approved", "no provider CLI or agent process is launched by run-resume", "no .env/.env.* access"]
       }
+    end
+
+    def verify_loop_handoff_command(metadata)
+      agent = metadata["agent"].to_s.empty? ? "codex" : metadata["agent"].to_s
+      command = ["aiweb", "engine-run", "--agent", agent, "--mode", "agentic_local", "--max-cycles", metadata.fetch("max_cycles", 3).to_s, "--dry-run"]
+      command += ["--sandbox", metadata["sandbox"].to_s] unless metadata["sandbox"].to_s.empty?
+      command
     end
   end
 end
