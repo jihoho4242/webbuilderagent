@@ -156,7 +156,7 @@ module Aiweb
 
     def implementation_mcp_broker_next_action(record)
       case record["status"]
-      when "planned" then "rerun with --approval-hash #{record["approval_hash"]} --approved to execute the brokered MCP call"
+      when "planned" then "review approval_hash #{record["approval_hash"]}; brokered MCP execution is a lower-level ops action and not a friendly web-building runbook"
       when "blocked" then "inspect #{record["side_effect_broker_path"]} and approval/policy blockers"
       when "passed" then "use #{record["metadata_path"]} as brokered MCP call evidence"
       else "inspect #{record["metadata_path"]}"

@@ -420,7 +420,7 @@
         "lib/aiweb/project/runtime_commands/setup.rb builds setup capability envelopes and expected approval_hash values",
         "setup --install --approved without --approval-hash blocks before run artifacts or package-manager processes",
         "stale setup approval_hash values are rejected after package/lifecycle/audit-exception capability changes",
-        "help/README/contracts now document setup --install --approval-hash HASH --approved"
+        "README/help/bin no longer present setup --install --approval-hash HASH --approved as a friendly web-building runbook; docs now label real install as a lower-level ops action"
       ]
     },
     {
@@ -430,7 +430,7 @@
         "lib/aiweb/project/workbench.rb builds a workbench serve capability envelope and expected approval_hash for localhost/127.0.0.1 server launch",
         "workbench --serve --approved without --approval-hash blocks before artifacts or ProcessLauncher process launch",
         "stale workbench serve approval_hash values are rejected after workbench artifact capability changes",
-        "help/README/tests now document workbench --serve --approval-hash HASH --approved"
+        "README/help/bin no longer present workbench --serve --approval-hash HASH --approved as a friendly Workbench control runbook; docs now label real serve as a lower-level localhost ops action"
       ]
     },
     {
@@ -578,6 +578,101 @@
         "lib/aiweb/cli/help_text.rb no longer lists agent-run --task latest --agent openmanus --sandbox docker --approval-hash HASH --approved examples",
         "bin/webbuilder no longer lists agent-run approved execution examples and labels the remaining dry-run as an advanced adapter preflight",
         "README removes agent-run approved execution examples from the public runbook and points user-facing work to natural-language agent or canonical engine-run"
+      ]
+    },
+    {
+      "surface": "setup user-facing approved install runbooks",
+      "status": "demoted_to_dry_run_ops_guidance",
+      "evidence": [
+        "README setup quick path now lists setup --install --dry-run only and calls real install a lower-level ops action, not a friendly web-building runbook",
+        "lib/aiweb/cli/help_text.rb removes the copy-paste setup --install --approval-hash HASH --approved example while preserving dry-run approval_hash guidance",
+        "bin/webbuilder removes the setup approved example from the friendly operation list and points operators to dry-run evidence first",
+        "static surface audit rejects reintroducing setup approved examples in public README/help/bin surfaces"
+      ]
+    },
+    {
+      "surface": "workbench serve user-facing approved runbooks",
+      "status": "demoted_to_dry_run_ops_guidance",
+      "evidence": [
+        "README Workbench quick path now lists workbench --serve --dry-run only and calls real serve a lower-level localhost ops action, not a Workbench control shortcut",
+        "lib/aiweb/cli/help_text.rb removes the copy-paste workbench --serve --approval-hash HASH --approved example while preserving serve dry-run approval_hash guidance",
+        "bin/webbuilder removes the Workbench serve approved example from the friendly operation list and points operators to dry-run evidence first",
+        "static surface audit rejects reintroducing workbench serve approved examples in public README/help/bin surfaces"
+      ]
+    },
+    {
+      "surface": "agent facade public approved quickstart example",
+      "status": "removed_from_public_quickstart",
+      "evidence": [
+        "README quickstart no longer lists ./bin/aiweb agent \"...\" --mode supervised --approval-hash HASH --approved as a copy-paste first-run example",
+        "public agent examples remain plan-only or supervised dry-run so the dry-run capability envelope stays the first step",
+        "static surface audit rejects reintroducing public natural-language agent approved examples"
+      ]
+    },
+    {
+      "surface": "OpenManus agent-run public approved command example",
+      "status": "demoted_to_contract_dry_run_only",
+      "evidence": [
+        "docs/contracts/openmanus-agent-run.md no longer lists aiweb agent-run --task latest --agent openmanus --sandbox docker --approval-hash HASH --approved --json in its command block",
+        "the OpenManus contract now states lower-level execution commands are intentionally omitted from public runbooks",
+        "static surface audit includes the OpenManus contract in public-doc runbook checks"
+      ]
+    },
+    {
+      "surface": "engine-scheduler approved execute live help runbook",
+      "status": "demoted_to_dry_run_ops_guidance",
+      "evidence": [
+        "lib/aiweb/cli/help_text.rb no longer lists engine-scheduler tick/daemon --approval-hash HASH --approved --execute in the command synopsis",
+        "engine-scheduler help now lists status/tick/daemon dry-run surfaces and describes resume execution as a lower-level ops action through the engine-run bridge after dry-run hash review",
+        "static surface audit rejects reintroducing engine-scheduler approved execute command synopses"
+      ]
+    },
+    {
+      "surface": "mcp-broker approved connector live help runbook",
+      "status": "demoted_to_dry_run_ops_guidance",
+      "evidence": [
+        "lib/aiweb/cli/help_text.rb no longer lists mcp-broker call ... --approval-hash HASH --approved as a command synopsis",
+        "mcp-broker help now lists dry-run connector planning commands and labels real connector calls lower-level approved actions",
+        "static surface audit rejects reintroducing mcp-broker approved connector command synopses"
+      ]
+    },
+    {
+      "surface": "eval-baseline approved import live help runbook",
+      "status": "demoted_to_dry_run_ops_guidance",
+      "evidence": [
+        "lib/aiweb/cli/help_text.rb no longer lists eval-baseline import --path ... --approval-hash HASH --approved as a command synopsis",
+        "eval-baseline help now lists import --dry-run and labels real import lower-level approval-gated evidence handling",
+        "static surface audit rejects reintroducing eval-baseline approved import command synopses"
+      ]
+    },
+    {
+      "surface": "agent-run runtime next_action approved command guidance",
+      "status": "demoted_to_lower_level_adapter_guidance",
+      "evidence": [
+        "lib/aiweb/project/agent_run/openmanus.rb now returns lower-level adapter approval_hash guidance instead of rerun aiweb agent-run ... --approval-hash ... --approved",
+        "lib/aiweb/project/agent_run/metadata_payload.rb and lib/aiweb/cli/agent_run_payload.rb now ask for fresh dry-run approval_hash evidence without emitting approved execution runbooks",
+        "test_aiweb_cli verifies agent-run dry-run next_action includes the approval_hash but not a copy-paste approved command",
+        "static surface audit rejects stale then-rerun-with-approved next_action guidance in agent-run runtime files"
+      ]
+    },
+    {
+      "surface": "setup/workbench runtime next_action approved command guidance",
+      "status": "demoted_to_lower_level_ops_guidance",
+      "evidence": [
+        "lib/aiweb/project/runtime_commands/setup.rb now keeps setup approval_hash evidence but describes real install as a lower-level ops action",
+        "lib/aiweb/project/workbench.rb now keeps serve approval_hash evidence but describes real serve as a lower-level localhost ops action",
+        "test_aiweb_cli verifies setup/workbench dry-run and blocked next_action strings keep approval_hash evidence without copy-paste approved commands",
+        "static surface audit rejects stale then-rerun-with-approved guidance in setup/workbench runtime files"
+      ]
+    },
+    {
+      "surface": "mcp/eval/scheduler runtime next_action approved command guidance",
+      "status": "demoted_to_lower_level_ops_guidance",
+      "evidence": [
+        "lib/aiweb/project/mcp_broker.rb planned next_action now labels broker execution lower-level ops instead of rerun --approval-hash ... --approved",
+        "lib/aiweb/project/engine_run/eval_baseline.rb next_steps and next_action now keep import dry-run/approval_hash evidence without friendly approved import runbooks",
+        "lib/aiweb/project/engine_scheduler_service_domain.rb next_action now labels scheduler execute lower-level engine-run bridge ops instead of a copy-paste --approved --execute command",
+        "targeted engine_scheduler/mcp_broker/eval_baseline tests pass after the demotion"
       ]
     }
   ],
@@ -765,9 +860,19 @@
     "ruby -Itest test/test_agent_os_v32_release_evidence.rb after verify-loop P5 role demotion": "passed: 2 runs, 259 assertions, 0 failures, 0 errors",
     "ruby -Ilib side_effect_surface_audit after verify-loop read-only bridge demotion": "passed: coverage=classified, unclassified=0, entry_count=19",
     "ruby -Itest test/test_aiweb_cli.rb -n /test_agent_run_help_and_webbuilder_passthrough/ after agent-run runbook demotion": "passed: 1 run, 32 assertions, 0 failures, 0 errors",
-    "ruby -Itest test/test_agent_os_v32_static_surface_audit.rb -n /test_live_guidance_does_not_reintroduce_approved_only_execution_shortcuts|test_public_product_docs_do_not_market_engine_run_with_manus_claims/ after agent-run runbook demotion": "passed: 2 runs, 98 assertions, 0 failures, 0 errors"
+    "ruby -Itest test/test_agent_os_v32_static_surface_audit.rb -n /test_live_guidance_does_not_reintroduce_approved_only_execution_shortcuts|test_public_product_docs_do_not_market_engine_run_with_manus_claims/ after agent-run runbook demotion": "passed: 2 runs, 98 assertions, 0 failures, 0 errors",
+    "ruby -Itest test/test_aiweb_cli.rb -n /test_setup_help_and_korean_webbuilder_passthrough_surface|test_workbench_help_and_webbuilder_passthrough/ after setup/workbench runbook demotion": "passed: 2 runs, 63 assertions, 0 failures, 0 errors",
+    "ruby -Itest test/test_agent_os_v32_static_surface_audit.rb after setup/workbench runbook demotion": "passed: 6 runs, 226 assertions, 0 failures, 0 errors",
+    "ruby -Itest test/test_agent_os_v32_static_surface_audit.rb after agent/openmanus public runbook demotion": "passed: 6 runs, 232 assertions, 0 failures, 0 errors",
+    "ruby -Itest test/test_aiweb_cli.rb -n /test_setup_help_and_korean_webbuilder_passthrough_surface|test_workbench_help_and_webbuilder_passthrough|test_agent_run_help_and_webbuilder_passthrough|test_verify_loop_help_and_webbuilder_dry_run_passthrough/ after public runbook demotions": "passed: 4 runs, 146 assertions, 0 failures, 0 errors",
+    "ruby -Itest test/test_agent_os_v32_static_surface_audit.rb after scheduler/mcp/eval live help demotion": "passed: 6 runs, 246 assertions, 0 failures, 0 errors",
+    "ruby -Itest test/test_aiweb_cli.rb -n /test_setup_help_and_korean_webbuilder_passthrough_surface|test_workbench_help_and_webbuilder_passthrough|test_agent_run_help_and_webbuilder_passthrough|test_verify_loop_help_and_webbuilder_dry_run_passthrough/ after scheduler/mcp/eval live help demotion": "passed: 4 runs, 146 assertions, 0 failures, 0 errors",
+    "ruby -Itest test/test_aiweb_cli.rb -n /engine_scheduler|mcp_broker|eval_baseline/ after scheduler/mcp/eval live help demotion": "passed: 14 runs, 633 assertions, 0 failures, 0 errors",
+    "ruby -Itest test/test_agent_os_v32_static_surface_audit.rb after runtime next_action approved guidance demotion": "passed: 6 runs, 292 assertions, 0 failures, 0 errors",
+    "ruby -Itest test/test_aiweb_cli.rb -n /agent_run_dry_run|setup_install_dry_run|setup_install_approved_without_approval_hash|workbench_serve_dry_run|mcp_broker|eval_baseline|engine_scheduler/ after runtime next_action demotion": "passed: 19 runs, 817 assertions, 0 failures, 0 errors",
+    "ruby bin/check after final runbook demotion and ProcessRunner cleanup": "passed: syntax checks, repository text guard, load smoke, warning load smoke, full test suite 486 runs, 12934 assertions, 0 failures, 0 errors, 3 skips, and git diff --check"
   },
   "completion_status": "not_complete",
-  "why_not_complete": "Top-level fixed script-runner surfaces, stale deploy provider execution, browser deterministic-probe naming claims, CLI/contract Manus wording marketing overclaims, fixture-eval production-readiness overclaims, red-team catalog-fixture overclaims, secret-canary value emission, self-improvement dry-run overclaims, release validation evidence overclaims, P5 policy/tool gateway overclaims, P5 HITL fixture overclaims, L3 boolean approval bypasses, verifier-result approval hash bypasses, weak HITL artifact self-integrity checks, engine-run approved-without-hash execution shortcuts, agent-run approved-without-hash execution shortcuts, setup install approved-without-hash execution shortcuts, workbench serve approved-without-hash execution shortcuts, backend generic command approved-without-hash bridge shortcut, implementation MCP broker approved-without-hash connector/file access shortcut, eval-baseline import approved-without-hash corpus overwrite shortcut, P5 replay readiness overclaims, Brain safety wording overclaims, Brain JSON snapshot/projection/hash-chain evidence gaps, the Codex agent-run worker subprocess, runtime_commands direct git/taskkill process forms, agent-run diff-policy direct git subprocesses, OpenManus readiness direct image inspect subprocess, and agent-run OpenManus direct image inspect preflight, engine-run sandbox runtime attestation direct Docker/Podman probes, Codex agent-run worker direct subprocess execution, and OpenManus agent-run sandbox worker direct subprocess execution, and engine-run agent worker direct subprocess execution, and engine-run capture helper direct subprocess execution, and setup install/supply-chain direct subprocess execution are neutralized, but Manus-grade natural-language web-app agent readiness still requires independent production red-team/release evidence plus real SQLite-backed Brain storage evidence (sqlite3 Ruby gem is not available in this runtime), and full ruby bin/check/test-all evidence remains blocked by long-running test/all timeout.",
+  "why_not_complete": "Top-level fixed script-runner surfaces, stale deploy provider execution, browser deterministic-probe naming claims, CLI/contract Manus wording marketing overclaims, fixture-eval production-readiness overclaims, red-team catalog-fixture overclaims, secret-canary value emission, self-improvement dry-run overclaims, release validation evidence overclaims, P5 policy/tool gateway overclaims, P5 HITL fixture overclaims, L3 boolean approval bypasses, verifier-result approval hash bypasses, weak HITL artifact self-integrity checks, engine-run approved-without-hash execution shortcuts, agent-run approved-without-hash execution shortcuts, setup install approved-without-hash execution shortcuts, workbench serve approved-without-hash execution shortcuts, backend generic command approved-without-hash bridge shortcut, implementation MCP broker approved-without-hash connector/file access shortcut, eval-baseline import approved-without-hash corpus overwrite shortcut, P5 replay readiness overclaims, Brain safety wording overclaims, Brain JSON snapshot/projection/hash-chain evidence gaps, the Codex agent-run worker subprocess, runtime_commands direct git/taskkill process forms, agent-run diff-policy direct git subprocesses, OpenManus readiness direct image inspect subprocess, and agent-run OpenManus direct image inspect preflight, engine-run sandbox runtime attestation direct Docker/Podman probes, Codex agent-run worker direct subprocess execution, and OpenManus agent-run sandbox worker direct subprocess execution, and engine-run agent worker direct subprocess execution, and engine-run capture helper direct subprocess execution, and setup install/supply-chain direct subprocess execution are neutralized, but Manus-grade natural-language web-app agent readiness still requires independent production red-team/release evidence plus real SQLite-backed Brain storage evidence (sqlite3 Ruby gem is not available in this runtime), local ruby bin/check/test-all evidence now passes in this commit; Manus-grade readiness still requires GitHub Actions run ids, operator drill evidence, independent production red-team/release evidence, and real SQLite-backed Brain storage evidence.",
   "completion": {}
 }

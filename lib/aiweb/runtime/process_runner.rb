@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "open3"
+require "rbconfig"
 
 module Aiweb
   module Runtime
@@ -13,8 +14,7 @@ module Aiweb
           Open3.popen3(
             EnvPolicy.clean_env(spec.env),
             *spec.argv,
-            chdir: spec.cwd,
-            unsetenv_others: true
+            **spawn_options(spec.cwd)
           ) do |stdin, out, err, wait_thread|
             write_stdin(stdin, spec.stdin_data)
             stdout_thread = Thread.new { out.read.to_s rescue "" }
@@ -50,12 +50,34 @@ module Aiweb
 
       private
 
+      def spawn_options(cwd)
+        options = { chdir: cwd, unsetenv_others: true }
+        options[:pgroup] = true unless windows?
+        options
+      end
+
       def cleanup_process(pid)
-        Process.kill("TERM", pid)
+        return cleanup_windows_process(pid) if windows?
+
+        Process.kill("TERM", -pid)
         sleep 0.1
-        Process.kill("KILL", pid)
+        Process.kill("KILL", -pid)
       rescue Errno::ESRCH, Errno::EINVAL
         nil
+      end
+
+      def cleanup_windows_process(pid)
+        system("taskkill", "/PID", pid.to_s, "/T", "/F", out: File::NULL, err: File::NULL)
+      rescue SystemCallError, IOError
+        begin
+          Process.kill("KILL", pid)
+        rescue Errno::ESRCH, Errno::EINVAL
+          nil
+        end
+      end
+
+      def windows?
+        RbConfig::CONFIG["host_os"].match?(/mswin|mingw|cygwin/i)
       end
 
       def write_stdin(stdin, data)

@@ -875,10 +875,10 @@ module Aiweb
           "planned_stdout_path" => ".ai-web/runs/setup-<timestamp>/stdout.log",
           "planned_stderr_path" => ".ai-web/runs/setup-<timestamp>/stderr.log",
           "planned_metadata_path" => ".ai-web/runs/setup-<timestamp>/setup.json",
-          "guardrails" => ["--approval-hash HASH plus --approved required for real install", "--dry-run writes nothing", "no build/preview/QA/deploy", "no .env/.env.* reads or output"],
+          "guardrails" => ["matching dry-run approval_hash plus explicit approval required for lower-level real install", "--dry-run writes nothing", "no build/preview/QA/deploy", "no .env/.env.* reads or output"],
           "blocking_issues" => ["setup install approval required: #{message}"]
         },
-        "next_action" => "rerun as aiweb setup --install --dry-run, review approval_hash, then rerun with --approval-hash HASH --approved"
+        "next_action" => "rerun as aiweb setup --install --dry-run and review the approval_hash; real install is a lower-level ops action, not a friendly web-building runbook"
       }
     end
 

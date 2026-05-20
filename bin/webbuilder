@@ -66,7 +66,6 @@ class WebbuilderLauncher
         웹빌더 --path ~/Desktop/my-site run-resume --run-id latest --dry-run
         웹빌더 --path ~/Desktop/my-site runtime-plan
         웹빌더 --path ~/Desktop/my-site setup --install --dry-run
-        웹빌더 --path ~/Desktop/my-site setup --install --approval-hash HASH --approved
         웹빌더 --path ~/Desktop/my-site build --dry-run
         웹빌더 --path ~/Desktop/my-site preview --dry-run
         웹빌더 --path ~/Desktop/my-site preview
@@ -80,7 +79,6 @@ class WebbuilderLauncher
         웹빌더 --path ~/Desktop/my-site workbench --dry-run
         웹빌더 --path ~/Desktop/my-site workbench --export
         웹빌더 --path ~/Desktop/my-site workbench --serve --dry-run
-        웹빌더 --path ~/Desktop/my-site workbench --serve --approval-hash HASH --approved
         웹빌더 --path ~/Desktop/my-site component-map --dry-run
         웹빌더 --path ~/Desktop/my-site visual-edit --target component.hero.copy --prompt "이 섹션 더 고급스럽게" --dry-run
         웹빌더 --path ~/Desktop/my-site github-sync
@@ -106,7 +104,7 @@ class WebbuilderLauncher
       supabase-local-verify는 생성된 Profile S 파일, safe template, migrations/RLS/storage 문서, SSR client/server stub을 로컬에서만 검증해 .ai-web/qa/supabase-local-verify.json에 기록하며 Supabase hosted project 생성, provider CLI/network, deploy/install/build/preview, .env 접근을 수행하지 않는다.
       런타임 준비 확인은 runtime-plan 또는 scaffold-status로 패키지 설치/Node 실행 없이 읽기 전용으로 점검한다.
       setup --install --dry-run은 쓰기/프로세스 실행 없이 예정 pnpm install 명령과 setup 로그/메타데이터 경로만 보여준다.
-      setup --install real package install requires reviewing --dry-run approval_hash first, then rerunning with the matching --approval-hash HASH plus --approved; only then may it record .ai-web/runs/setup-<timestamp>/stdout.log, stderr.log, setup.json evidence.
+      setup real package install is a lower-level ops action, not a friendly web-building runbook; inspect setup --install --dry-run approval_hash first, then use the explicit lower-level aiweb approval path only when that exact local install capability is acceptable.
       setup은 build, preview, QA, repair, deploy, provider CLI, .env/.env.* 읽기/출력을 수행하지 않는다.
       verify-loop is now a read-only engine-run migration shim; the fixed build -> preview -> QA -> visual-critique -> repair/visual-polish -> agent-run script loop has been removed.
       New natural-language work should start with agent or engine-run --dry-run to inspect the plan/approval_hash. verify-loop cannot execute local work even with --approved; real local execution must use engine-run directly with matching --approval-hash HASH plus --approved through engine-run policy/sandbox/copy-back gates.
@@ -135,7 +133,7 @@ class WebbuilderLauncher
       workbench controls are --dry-run descriptors for natural-language agent/engine-run planning only; they do not directly mutate .ai-web/state.yaml or execute build/browser/QA/verify-loop scripts.
       workbench export는 control 실행, preview/browser/QA/daemon 실행, 설치, network/AI 호출 없이 .ai-web/workbench/index.html 및 workbench.json만 쓴다.
       workbench --serve --dry-run은 host/port와 .ai-web/workbench/index.html, workbench.json, .ai-web/runs/workbench-serve-* 증거 경로만 계획하고 파일 쓰기/프로세스 실행/state.yaml 변경을 수행하지 않는다.
-      workbench --serve --approval-hash HASH --approved는 127.0.0.1/localhost에만 바인딩하는 로컬 서버를 시작하고 .ai-web/runs/workbench-serve-*에 메타데이터를 기록한다.
+      workbench real serve is a lower-level localhost ops action, not a Workbench control shortcut; use the dry-run approval_hash evidence before any explicit lower-level serve approval.
       component-map은 scaffold/source의 안정적인 data-aiweb-id 영역을 .ai-web/component-map.json으로 매핑한다. --dry-run은 쓰기 없이 예정 경로와 차단 여부만 확인한다.
       visual-edit은 --target DATA_AIWEB_ID와 --prompt TEXT로 선택 영역 편집 handoff만 만든다. source auto-patch, build/QA/browser/preview 실행, deploy, network/AI 호출, .env 접근은 수행하지 않는다.
       visual-edit --dry-run은 .ai-web/tasks/visual-edit-*.md 및 .ai-web/visual/visual-edit-*.json 예정 경로만 보고하고 파일을 쓰지 않는다.

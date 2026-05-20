@@ -208,15 +208,14 @@ module Aiweb
       def engine_scheduler_next_action(service)
         case service["decision"]
         when "no_run"
-          "run aiweb engine-run --dry-run first, review the approval_hash, then execute with --approval-hash HASH --approved; or pass --run-id to inspect a run"
+          "run aiweb engine-run --dry-run first and review the approval_hash; scheduler resume execution is lower-level ops through the engine-run bridge"
         when "noop_terminal"
           "no scheduler action required for terminal run #{service["selected_run_id"]}"
         when "resume_ready"
           if service["execute"]
             "inspect resumed engine-run result and scheduler ledger"
           else
-            hash_suffix = service["expected_approval_hash"].to_s.empty? ? " --approval-hash HASH" : " --approval-hash #{service["expected_approval_hash"]}"
-            "rerun aiweb engine-scheduler tick --run-id #{service["selected_run_id"]}#{hash_suffix} --approved --execute to resume through the bridge"
+            "review resume approval_hash for run #{service["selected_run_id"]}; engine-scheduler execute remains a lower-level engine-run bridge action"
           end
         else
           "inspect #{service.dig("scheduler_artifacts", "checkpoint_path")} and #{service.dig("scheduler_artifacts", "graph_scheduler_state_path")}"

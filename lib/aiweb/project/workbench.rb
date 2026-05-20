@@ -159,7 +159,7 @@ module Aiweb
           workbench: manifest,
           changed_files: blockers.empty? ? planned_changes : [],
           blocking_issues: blockers,
-          next_action: blockers.empty? ? "rerun #{workbench_serve_approved_command(expected_hash, host: bind_host, port: bind_port)} to write artifacts and start the localhost server" : "resolve workbench serve blockers, then rerun with --dry-run or --approval-hash HASH --approved"
+          next_action: blockers.empty? ? "review workbench serve approval_hash #{expected_hash}; real serve is a lower-level localhost ops action, not a Workbench control shortcut" : "resolve workbench serve blockers, then rerun workbench --serve --dry-run for a fresh approval_hash"
         )
       end
 
@@ -182,7 +182,7 @@ module Aiweb
           workbench: manifest,
           changed_files: [],
           blocking_issues: blockers,
-          next_action: "review existing workbench artifacts or rerun #{workbench_serve_approved_command(expected_hash, host: bind_host, port: bind_port)} --force"
+          next_action: "review existing workbench artifacts or rerun workbench --serve --dry-run after deciding whether to replace them"
         )
       end
 

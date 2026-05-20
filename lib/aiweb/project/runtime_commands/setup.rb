@@ -15,7 +15,7 @@ module Aiweb
           command: nil,
           dry_run: dry_run,
           blocking_issues: ["setup currently supports --install only"],
-          next_action: "rerun aiweb setup --install with --dry-run or --approval-hash HASH --approved"
+          next_action: "rerun aiweb setup --install --dry-run; real install is a lower-level ops action after approval_hash review"
         )
       end
 
@@ -139,7 +139,7 @@ module Aiweb
           changed_files: [],
           action_taken: "setup install blocked",
           blocking_issues: approval_blockers,
-          next_action: "rerun aiweb setup --install --dry-run, review approval_hash #{expected_hash}, then rerun #{setup_install_approved_command(expected_hash, audit_exception: audit_exception_plan, lifecycle_enabled_requested: allow_lifecycle_scripts)}"
+          next_action: "rerun aiweb setup --install --dry-run and review approval_hash #{expected_hash}; real install remains a lower-level ops action"
         )
       end
 
@@ -181,7 +181,7 @@ module Aiweb
           changed_files: planned_changes,
           action_taken: "planned setup install",
           blocking_issues: [],
-          next_action: "rerun #{setup_install_approved_command(expected_hash, audit_exception: audit_exception_plan, lifecycle_enabled_requested: allow_lifecycle_scripts)} to execute #{command.inspect} locally"
+          next_action: "review setup approval_hash #{expected_hash}; executing #{command.inspect} is a lower-level ops action, not a friendly web-building runbook"
         )
       end
 
@@ -229,7 +229,7 @@ module Aiweb
         )
 
         if executable_path("pnpm").nil?
-          blocking_issues << "pnpm executable is missing; install pnpm locally, then rerun #{setup_install_approved_command(expected_hash, audit_exception: audit_exception_plan, lifecycle_enabled_requested: allow_lifecycle_scripts)}."
+          blocking_issues << "pnpm executable is missing; install pnpm locally, then rerun aiweb setup --install --dry-run for a fresh approval_hash."
           stderr = blocking_issues.join("\n") + "\n"
           append_side_effect_broker_event(
             side_effect_broker_path,
@@ -585,8 +585,8 @@ module Aiweb
     def setup_next_action(status, approval_hash:, audit_exception:, lifecycle_enabled_requested:)
       case status
       when "passed" then "continue to build/preview/QA only through separately approved roadmap commands"
-      when "blocked" then "resolve the blocked local setup precondition, then rerun #{setup_install_approved_command(approval_hash, audit_exception: audit_exception, lifecycle_enabled_requested: lifecycle_enabled_requested)}"
-      else "inspect .ai-web/runs setup logs, fix the package install issue, then rerun #{setup_install_approved_command(approval_hash, audit_exception: audit_exception, lifecycle_enabled_requested: lifecycle_enabled_requested)}"
+      when "blocked" then "resolve the blocked local setup precondition, then rerun aiweb setup --install --dry-run for a fresh approval_hash"
+      else "inspect .ai-web/runs setup logs, fix the package install issue, then rerun aiweb setup --install --dry-run for a fresh approval_hash"
       end
     end
 

@@ -119,7 +119,7 @@ class AiwebCliTest < Minitest::Test
     assert_equal "", stderr
     hash = payload.dig("agent_run", "approval_hash")
     assert_match(/\A[0-9a-f]{64}\z/, hash)
-    assert_includes payload["next_action"].to_s, "--approval-hash #{hash}"
+    assert_includes payload["next_action"].to_s, hash
     hash
   end
 
@@ -182,7 +182,7 @@ class AiwebCliTest < Minitest::Test
     assert_equal "", stderr
     hash = payload.dig("setup", "approval_hash")
     assert_match(/\A[0-9a-f]{64}\z/, hash)
-    assert_includes payload["next_action"].to_s, "--approval-hash #{hash}"
+    assert_includes payload["next_action"].to_s, hash
     hash
   end
 
@@ -220,7 +220,7 @@ class AiwebCliTest < Minitest::Test
     assert_equal "", stderr
     hash = payload.dig("workbench", "serve", "approval_hash")
     assert_match(/\A[0-9a-f]{64}\z/, hash)
-    assert_includes payload["next_action"].to_s, "--approval-hash #{hash}"
+    assert_includes payload["next_action"].to_s, hash
     hash
   end
 
@@ -258,7 +258,7 @@ class AiwebCliTest < Minitest::Test
     assert_equal "", stderr
     hash = payload.dig("mcp_broker", "approval_hash")
     assert_match(/\A[0-9a-f]{64}\z/, hash)
-    assert_includes payload.fetch("next_action"), "--approval-hash #{hash}"
+    assert_includes payload.fetch("next_action"), hash
     hash
   end
 
@@ -294,7 +294,7 @@ class AiwebCliTest < Minitest::Test
     assert_equal 0, code, "eval-baseline import dry-run should produce approval_hash: #{payload.inspect}"
     hash = payload.dig("eval_baseline", "approval_hash")
     assert_match(/\A[0-9a-f]{64}\z/, hash)
-    assert_includes payload.fetch("next_action"), "--approval-hash #{hash}"
+    assert_includes payload.fetch("next_action"), hash
     hash
   end
 
@@ -3593,7 +3593,7 @@ class AiwebCliTest < Minitest::Test
       env = { "PATH" => [bin_dir, "/usr/bin", "/bin", "/usr/sbin", "/sbin"].join(File::PATH_SEPARATOR) }
       before_entries = project_entries
 
-      payload, code = json_approved_engine_run_with_env(env, "--goal", "build landing page UI", "--agent", "openmanus", "--sandbox", "docker", "--approved")
+      payload, code = json_cmd_with_env(env, "engine-run", "--goal", "build landing page UI", "--agent", "openmanus", "--sandbox", "docker", "--dry-run")
 
       refute_equal 0, code
       assert_equal "blocked", payload.dig("engine_run", "status")
@@ -3740,7 +3740,7 @@ class AiwebCliTest < Minitest::Test
         "PATH" => [bin_dir, "/usr/bin", "/bin", "/usr/sbin", "/sbin"].join(File::PATH_SEPARATOR),
         "AIWEB_LANGGRAPH_IMAGE" => "langgraph:latest"
       }
-      dry_payload, dry_code = json_cmd("engine-run", "--goal", "patch hero", "--agent", "langgraph", "--sandbox", "docker", "--dry-run")
+      dry_payload, dry_code = json_cmd_with_env(env, "engine-run", "--goal", "patch hero", "--agent", "langgraph", "--sandbox", "docker", "--dry-run")
 
       assert_equal 0, dry_code
       payload, code = json_cmd_with_env(env, "engine-run", "--goal", "patch hero", "--agent", "langgraph", "--sandbox", "docker", "--approval-hash", dry_payload.dig("engine_run", "approval_hash"), "--approved")
@@ -3826,7 +3826,7 @@ class AiwebCliTest < Minitest::Test
         "PATH" => [bin_dir, "/usr/bin", "/bin", "/usr/sbin", "/sbin"].join(File::PATH_SEPARATOR),
         "AIWEB_OPENAI_AGENTS_IMAGE" => "openai-agents:latest"
       }
-      dry_payload, dry_code = json_cmd("engine-run", "--goal", "patch hero", "--agent", "openai_agents_sdk", "--sandbox", "docker", "--dry-run")
+      dry_payload, dry_code = json_cmd_with_env(env, "engine-run", "--goal", "patch hero", "--agent", "openai_agents_sdk", "--sandbox", "docker", "--dry-run")
 
       assert_equal 0, dry_code
       payload, code = json_cmd_with_env(env, "engine-run", "--goal", "patch hero", "--agent", "openai_agents_sdk", "--sandbox", "docker", "--approval-hash", dry_payload.dig("engine_run", "approval_hash"), "--approved")
@@ -6620,7 +6620,8 @@ class AiwebCliTest < Minitest::Test
       assert_equal "blocked", payload.dig("setup", "status")
       assert_equal false, payload.dig("setup", "dry_run")
       assert_match(/\A[0-9a-f]{64}\z/, payload.dig("setup", "approval_hash").to_s)
-      assert_includes payload.fetch("next_action"), "--approval-hash #{payload.dig("setup", "approval_hash")}"
+      assert_match(/lower-level ops action|dry-run/i, payload.fetch("next_action"))
+      assert_includes payload.fetch("next_action"), payload.dig("setup", "approval_hash")
       assert_match(/approved|approval/i, [payload.dig("error", "message"), payload["blocking_issues"], payload.dig("setup", "blocking_issues")].flatten.compact.join("\n"))
       assert_match(/approval-hash/i, [payload["blocking_issues"], payload.dig("setup", "blocking_issues")].flatten.compact.join("\n"))
       assert_no_setup_side_effects(before_entries: before_entries, before_state: before_state, env_size: env_size, env_mtime: env_mtime)
@@ -6653,7 +6654,8 @@ class AiwebCliTest < Minitest::Test
       assert_equal true, payload.dig("setup", "dry_run")
       assert_equal false, payload.dig("setup", "requires_approval")
       assert_match(/\A[0-9a-f]{64}\z/, payload.dig("setup", "approval_hash").to_s)
-      assert_includes payload.fetch("next_action"), "--approval-hash #{payload.dig("setup", "approval_hash")}"
+      assert_match(/lower-level ops action/i, payload.fetch("next_action"))
+      assert_includes payload.fetch("next_action"), payload.dig("setup", "approval_hash")
       assert_equal "aiweb.setup.install.v1", payload.dig("setup", "capability", "capability")
       assert_equal ".ai-web/runs/<setup-run>/package-cache", payload.dig("setup", "capability", "package_cache_dir_template")
       assert_includes payload.dig("setup", "capability", "command_argv"), ".ai-web/runs/<setup-run>/package-cache"
@@ -6705,7 +6707,8 @@ class AiwebCliTest < Minitest::Test
       assert_equal true, payload.dig("setup", "approved")
       assert_match(/\A[0-9a-f]{64}\z/, payload.dig("setup", "approval_hash").to_s)
       assert_match(/approval-hash/i, payload.fetch("blocking_issues").join("\n"))
-      assert_includes payload.fetch("next_action"), "--approval-hash #{payload.dig("setup", "approval_hash")}"
+      assert_match(/lower-level ops action|dry-run/i, payload.fetch("next_action"))
+      assert_includes payload.fetch("next_action"), payload.dig("setup", "approval_hash")
       assert_no_setup_side_effects(before_entries: before_entries, before_state: before_state)
       refute File.exist?(marker), "setup must not launch pnpm when the approval hash is missing"
       refute Dir.glob(".ai-web/runs/setup-*").any?, "hash-missing setup must not write run artifacts"
@@ -7787,7 +7790,8 @@ class AiwebCliTest < Minitest::Test
     stdout, stderr, code = run_aiweb("help")
     assert_equal 0, code
     assert_equal "", stderr
-    assert_includes stdout, "setup --install --approval-hash HASH --approved"
+    refute_includes stdout, "setup --install --approval-hash HASH --approved"
+    assert_match(/setup --install: .*lower-level ops action/i, stdout)
     assert_includes stdout, "--allow-lifecycle-scripts"
     assert_includes stdout, "setup --install --dry-run"
 
@@ -7875,7 +7879,8 @@ class AiwebCliTest < Minitest::Test
       assert_equal true, payload.dig("agent_run", "dry_run")
       assert_match(/agent run/i, payload["action_taken"])
       assert_includes %w[planned dry_run], payload.dig("agent_run", "status")
-      assert_match(/\Arerun aiweb agent-run --task latest --agent codex --approval-hash [0-9a-f]{64} --approved/, payload["next_action"])
+      assert_match(/lower-level codex adapter/i, payload["next_action"])
+      assert_includes payload["next_action"], payload.dig("agent_run", "approval_hash")
       assert_match(/\A[0-9a-f]{64}\z/, payload.dig("agent_run", "approval_hash"))
       assert_no_agent_run_side_effects(before_entries: before_entries, before_state: before_state)
       assert_equal before_source, File.read("src/components/Hero.astro"), "agent-run --dry-run must not patch source"
@@ -7909,7 +7914,8 @@ class AiwebCliTest < Minitest::Test
       assert_equal "openmanus", payload.dig("agent_run", "agent")
       assert_equal "implementation-local-no-network", payload.dig("agent_run", "permission_profile")
       assert_equal "planned", payload.dig("agent_run", "status")
-      assert_match(/\Arerun aiweb agent-run --task latest --agent openmanus --sandbox docker --approval-hash [0-9a-f]{64} --approved/, payload["next_action"])
+      assert_match(/lower-level openmanus adapter/i, payload["next_action"])
+      assert_includes payload["next_action"], payload.dig("agent_run", "approval_hash")
       assert_match(/\A[0-9a-f]{64}\z/, payload.dig("agent_run", "approval_hash"))
       assert_includes payload.fetch("planned_changes"), ".ai-web/runs/#{payload.dig("agent_run", "run_id")}/openmanus-context.json"
       assert_equal ["src/components/Hero.astro"], payload.dig("agent_run", "openmanus", "context", "allowed_source_paths")
@@ -9973,7 +9979,8 @@ class AiwebCliTest < Minitest::Test
       assert_equal 17_345, payload.dig("workbench", "serve", "port")
       assert_equal "http://localhost:17345/", payload.dig("workbench", "serve", "url")
       assert_match(/\A[0-9a-f]{64}\z/, payload.dig("workbench", "serve", "approval_hash").to_s)
-      assert_includes payload.fetch("next_action"), "--approval-hash #{payload.dig("workbench", "serve", "approval_hash")}"
+      assert_match(/lower-level localhost ops action/i, payload.fetch("next_action"))
+      assert_includes payload.fetch("next_action"), payload.dig("workbench", "serve", "approval_hash")
       assert_match(%r{\A\.ai-web/runs/workbench-serve-.+/workbench-serve\.json\z}, payload.dig("workbench", "serve", "metadata_path"))
       assert_equal before_entries, project_entries, "workbench --serve --dry-run must not write UI or run artifacts"
       assert_equal before_state, File.read(".ai-web/state.yaml"), "workbench --serve --dry-run must not mutate state"
@@ -10738,7 +10745,8 @@ class AiwebCliTest < Minitest::Test
     assert_equal "", stderr
     assert_includes stdout, "workbench [--export] [--serve] [--approval-hash HASH] [--approved]"
     assert_includes stdout, "workbench --serve --dry-run"
-    assert_includes stdout, "workbench --serve --approval-hash HASH --approved"
+    refute_includes stdout, "workbench --serve --approval-hash HASH --approved"
+    assert_match(/workbench: .*lower-level localhost ops action/i, stdout)
     assert_match(/workbench: .*local .*UI|workbench: .*local UI manifest/i, stdout)
 
     help_stdout, help_stderr, help_code = run_webbuilder("--help")

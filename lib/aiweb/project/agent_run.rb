@@ -237,7 +237,7 @@ module Aiweb
           planned_changes: blockers.empty? ? planned_changes : [],
           action_taken: blockers.empty? ? "planned agent run" : "agent run blocked",
           blocking_issues: blockers.uniq,
-          next_action: blockers.empty? ? agent_run_approved_next_action(agent_name, openmanus_sandbox, expected_hash) : "resolve blockers, rerun aiweb agent-run --task latest --agent #{agent_name} --dry-run, review the approval_hash, then rerun with --approval-hash HASH --approved"
+          next_action: blockers.empty? ? agent_run_approved_next_action(agent_name, openmanus_sandbox, expected_hash) : "resolve blockers, rerun aiweb agent-run --task latest --agent #{agent_name} --dry-run, and review the lower-level adapter approval_hash; use aiweb agent or engine-run for user-facing web-building work"
         )
       end
 

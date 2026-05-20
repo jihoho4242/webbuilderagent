@@ -60,7 +60,7 @@ module Aiweb
         dry_run: false,
         action_taken: "agent run blocked",
         blocking_issues: ["--approved is required for real local agent execution"],
-        next_action: "rerun the agent run as aiweb agent-run --task #{task} --agent #{agent} --dry-run, review the approval_hash, then rerun with --approval-hash HASH --approved"
+        next_action: "review the agent-run dry-run approval_hash; lower-level agent-run execution is not a friendly web-building runbook, so prefer aiweb agent or aiweb engine-run for user-facing work"
       )
     end
     end

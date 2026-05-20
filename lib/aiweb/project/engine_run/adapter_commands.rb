@@ -83,7 +83,7 @@ module Aiweb
         memory: "2g",
         cpus: "2",
         tmpfs_size: "128m",
-        command: ["sh", "-lc", "if command -v python3 >/dev/null 2>&1; then exec python3 /workspace/_aiweb/langgraph-worker.py; else exec python /workspace/_aiweb/langgraph-worker.py; fi"]
+        command: ["python3", "/workspace/_aiweb/langgraph-worker.py"]
       )
     end
 
@@ -99,7 +99,7 @@ module Aiweb
         memory: "2g",
         cpus: "2",
         tmpfs_size: "128m",
-        command: ["sh", "-lc", "if command -v python3 >/dev/null 2>&1; then exec python3 /workspace/_aiweb/openai-agents-worker.py; else exec python /workspace/_aiweb/openai-agents-worker.py; fi"]
+        command: ["python3", "/workspace/_aiweb/openai-agents-worker.py"]
       )
     end
 

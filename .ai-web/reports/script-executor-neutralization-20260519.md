@@ -1,4 +1,4 @@
-# Script Executor Neutralization Audit ? 2026-05-19
+﻿# Script Executor Neutralization Audit ? 2026-05-19
 
 Status: **top-level script-executor surfaces neutralized; Manus-grade completion audit still active**.
 
@@ -68,7 +68,15 @@ WebBuilderAgent is closer to a natural-language, engine-run-centered supervised 
 - Removed verify-loop approved execution delegation: `verify-loop --approval-hash HASH --approved` now blocks as read-only migration guidance, backend bridge non-dry-run verify-loop requests block before `bin/aiweb`, and `configs/tool_registry.yaml` marks verify_loop as L1/read-only with `execution_available=false`.
 - Demoted deploy approved provider execution live guidance: `aiweb help`, `bin/webbuilder`, and README no longer list `deploy --target cloudflare-pages|vercel --approved` as a runnable example; deploy stays a dry-run planning surface plus fail-closed/blocked provider execution prose until future engine-run release evidence gates exist.
 - Demoted agent-run user-facing approved execution runbooks: README, `aiweb help`, and `bin/webbuilder` no longer list `agent-run --task latest --agent ... --approval-hash HASH --approved` as a runnable user path; `agent-run` remains an advanced internal adapter dry-run/preflight surface while natural-language `agent` and canonical `engine-run` own user-facing work.
-
+'
+- Demoted runtime `next_action` approved command guidance for non-canonical lower-level tools: agent-run, setup, Workbench serve, MCP broker, eval-baseline import, and engine-scheduler now preserve approval_hash evidence without emitting friendly copy-paste approved execution commands.
+- Demoted engine-scheduler approved execute live help runbooks: `aiweb help` no longer lists `engine-scheduler tick/daemon ... --approval-hash HASH --approved --execute`; scheduler execution is described as lower-level ops through the engine-run bridge after dry-run hash review.
+- Demoted MCP broker and eval-baseline approved live help runbooks: `aiweb help` now shows dry-run broker/import planning instead of copy-paste `--approval-hash HASH --approved` connector or corpus import commands.
+- Removed public natural-language agent approved quickstart runbook: README no longer lists `agent "..." --mode supervised --approval-hash HASH --approved` as a copy-paste first-run path; dry-run/plan-only examples remain first.
+- Demoted OpenManus agent-run approved contract command: `docs/contracts/openmanus-agent-run.md` now keeps dry-run and sandbox contract guidance but intentionally omits the lower-level approved execution command from public runbooks.
+- Demoted setup user-facing approved install runbooks: README, `aiweb help`, and `bin/webbuilder` no longer list `setup --install --approval-hash HASH --approved` as a friendly web-building path; setup remains a lower-level ops action reached through dry-run approval_hash evidence.
+- Demoted Workbench serve user-facing approved runbooks: README, `aiweb help`, and `bin/webbuilder` no longer list `workbench --serve --approval-hash HASH --approved` as a friendly control shortcut; serve remains a lower-level localhost ops action reached through dry-run approval_hash evidence.
+'
 - Removed webbuilder/help approved-only UX guidance: `aiweb help`, `bin/webbuilder`, and README now present dry-run approval hash review before `--approval-hash HASH --approved` execution, and static audit rejects the stale `[--approved] [--dry-run]` / `--approved --approval-hash HASH` guidance patterns.
 
 
@@ -81,11 +89,21 @@ WebBuilderAgent is closer to a natural-language, engine-run-centered supervised 
 ## Remaining non-completion reasons
 
 - Red-team evidence is now explicitly catalog-fixture-only and production-blocked; self-improvement is dry-run fixture-only and production-blocked; Brain is safer hash-chained JSONL with projection/health evidence, file-lock write serialization, and backup/restore drill evidence, and independent file-audit evidence but still operationally blocked until real SQLite-backed storage evidence exists; the current runtime explicitly reports `sqlite3` Ruby gem missing; eval fixture pass is explicitly production-blocked.
-- Operator drill, GitHub Actions run ids, full `ruby bin/check`/`test/all` evidence, runtime universal side-effect broker enforcement evidence, full side-effect tool gateway audit evidence, real HITL operator/audit evidence, durable replay/resume audit evidence, and production release evidence are still blockers.
+- Operator drill, GitHub Actions run ids, runtime universal side-effect broker enforcement evidence, full side-effect tool gateway audit evidence, real HITL operator/audit evidence, durable replay/resume audit evidence, and production release evidence are still blockers. Fresh local `ruby bin/check` / `test/all` evidence now passes in this commit.
 - External provider/deploy/credential flows remain intentionally blocked; deploy provider execution is now fail-closed until a future engine-run release evidence gate exists.
 
 ## Validation
 
+- `ruby bin/check` after final runbook demotion and ProcessRunner cleanup ? PASS: syntax checks, repository text guard, load smoke, warning load smoke, full test suite 486 runs, 12934 assertions, 0 failures, 0 errors, 3 skips, and `git diff --check`
+- `ruby -Itest test/test_agent_os_v32_static_surface_audit.rb` after runtime next_action approved guidance demotion ? PASS: 6 runs, 292 assertions, 0 failures, 0 errors
+- `ruby -Itest test/test_aiweb_cli.rb -n /agent_run_dry_run|setup_install_dry_run|setup_install_approved_without_approval_hash|workbench_serve_dry_run|mcp_broker|eval_baseline|engine_scheduler/` after runtime next_action demotion ? PASS: 19 runs, 817 assertions, 0 failures, 0 errors
+- `ruby -Itest test/test_agent_os_v32_static_surface_audit.rb` after scheduler/mcp/eval live help demotion ? PASS: 6 runs, 246 assertions, 0 failures, 0 errors
+- `ruby -Itest test/test_aiweb_cli.rb -n /test_setup_help_and_korean_webbuilder_passthrough_surface|test_workbench_help_and_webbuilder_passthrough|test_agent_run_help_and_webbuilder_passthrough|test_verify_loop_help_and_webbuilder_dry_run_passthrough/` after scheduler/mcp/eval live help demotion ? PASS: 4 runs, 146 assertions, 0 failures, 0 errors
+- `ruby -Itest test/test_aiweb_cli.rb -n /engine_scheduler|mcp_broker|eval_baseline/` after scheduler/mcp/eval live help demotion ? PASS: 14 runs, 633 assertions, 0 failures, 0 errors
+- `ruby -Itest test/test_agent_os_v32_static_surface_audit.rb` after agent/openmanus public runbook demotion ? PASS: 6 runs, 232 assertions, 0 failures, 0 errors
+- `ruby -Itest test/test_aiweb_cli.rb -n /test_setup_help_and_korean_webbuilder_passthrough_surface|test_workbench_help_and_webbuilder_passthrough|test_agent_run_help_and_webbuilder_passthrough|test_verify_loop_help_and_webbuilder_dry_run_passthrough/` after public runbook demotions ? PASS: 4 runs, 146 assertions, 0 failures, 0 errors
+- `ruby -Itest test/test_aiweb_cli.rb -n /test_setup_help_and_korean_webbuilder_passthrough_surface|test_workbench_help_and_webbuilder_passthrough/` after setup/workbench runbook demotion ? PASS: 2 runs, 63 assertions, 0 failures, 0 errors
+- `ruby -Itest test/test_agent_os_v32_static_surface_audit.rb` after setup/workbench runbook demotion ? PASS: 6 runs, 226 assertions, 0 failures, 0 errors
 - `ruby -Itest test/test_aiweb_cli.rb -n /test_agent_run_help_and_webbuilder_passthrough/` after agent-run runbook demotion ? PASS: 1 run, 32 assertions, 0 failures, 0 errors
 - `ruby -Itest test/test_agent_os_v32_static_surface_audit.rb -n /test_live_guidance_does_not_reintroduce_approved_only_execution_shortcuts|test_public_product_docs_do_not_market_engine_run_with_manus_claims/` after agent-run runbook demotion ? PASS: 2 runs, 98 assertions, 0 failures, 0 errors
 - `ruby -Ilib side_effect_surface_audit` after verify-loop read-only bridge demotion ? PASS: coverage=classified, unclassified=0, entry_count=19

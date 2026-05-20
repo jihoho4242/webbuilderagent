@@ -85,7 +85,9 @@ class AgentificationRuntimeTest < Minitest::Test
     assert_match(/aiweb agent/, readme)
     assert_match(/Profile S/i, readme)
     assert_match(/not an unsupervised.*production app generator/i, readme)
-    assert_match(/supervised.*approval[-_ ]hash.*--approved/i, readme)
+    assert_match(/agent.*--dry-run/i, readme)
+    assert_match(/lower-level `agent-run`.*approval_hash.*--approved/im, readme)
+    refute_match(/agent\s+"[^"]+"\s+--mode supervised\s+--approval-hash HASH\s+--approved/i, readme)
   end
 
   def test_runtime_path_policy_blocks_env_secret_absolute_and_traversal_paths

@@ -180,9 +180,9 @@ module Aiweb
     def agent_run_approved_next_action(agent_name, sandbox, approval_hash)
       if agent_name == "openmanus"
         chosen = sandbox.to_s.empty? ? "docker" : sandbox
-        "rerun aiweb agent-run --task latest --agent openmanus --sandbox #{chosen} --approval-hash #{approval_hash} --approved to execute the local openmanus patch run in an aiweb-managed sandbox"
+        "review approval_hash #{approval_hash} for the lower-level openmanus adapter with #{chosen} sandbox; prefer aiweb agent or aiweb engine-run for user-facing execution"
       else
-        "rerun aiweb agent-run --task latest --agent #{agent_name} --approval-hash #{approval_hash} --approved to execute the local #{agent_name} patch run"
+        "review approval_hash #{approval_hash} for the lower-level #{agent_name} adapter; prefer aiweb agent or aiweb engine-run for user-facing execution"
       end
     end
 

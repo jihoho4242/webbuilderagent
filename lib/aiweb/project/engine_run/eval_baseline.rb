@@ -337,7 +337,7 @@ module Aiweb
           "Give this review pack to human reviewers with the referenced design fixture/screenshots.",
           "Humans fill #{relative(candidate_path)} using numeric 0..100 scores and reviewer evidence.",
           "Run aiweb eval-baseline validate --path #{relative(candidate_path)}.",
-          "After human approval, run aiweb eval-baseline import --path #{relative(candidate_path)} --dry-run, review the approval_hash, then rerun with --approval-hash HASH --approved.",
+          "After human approval, run aiweb eval-baseline import --path #{relative(candidate_path)} --dry-run and review the approval_hash; lower-level import approval must stay an explicit evidence-handling action, not a friendly runbook.",
           "Run aiweb engine-run so eval-benchmark.json can enforce the calibrated human baseline."
         ],
         "guardrails" => eval_baseline_review_pack_guardrails,
@@ -658,11 +658,11 @@ module Aiweb
       when ["review-pack", "dry_run"]
         "rerun aiweb eval-baseline review-pack without --dry-run to create the human review pack"
       when ["validate", "validated"]
-        "review .ai-web/eval/human-baseline-validation.json, then run aiweb eval-baseline import --path <candidate> --dry-run, review the approval_hash, and rerun with --approval-hash HASH --approved when the corpus is human-provided"
+        "review .ai-web/eval/human-baseline-validation.json, then run aiweb eval-baseline import --path <candidate> --dry-run and review the approval_hash; lower-level import approval must stay explicit evidence handling"
       when ["import", "imported"]
         "run aiweb engine-run so eval-benchmark.json can use the calibrated human baseline"
       when ["validate", "dry_run"], ["import", "dry_run"]
-        action == "import" ? "review the approval_hash, then rerun aiweb eval-baseline import --path <candidate> --approval-hash #{approval_hash || "HASH"} --approved" : "rerun without --dry-run to record validation evidence"
+        action == "import" ? "review approval_hash #{approval_hash || "HASH"} for lower-level human-baseline import approval; do not treat import as a friendly web-building runbook" : "rerun without --dry-run to record validation evidence"
       else
         action == "review-pack" ? "fix the reported human review pack issues and rerun aiweb eval-baseline review-pack" : "fix the reported human baseline issues and rerun aiweb eval-baseline validate --path <candidate>"
       end

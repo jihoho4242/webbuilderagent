@@ -138,6 +138,16 @@ class AgentOsV32StaticSurfaceAuditTest < Minitest::Test
       docs/schemas/engine-run-human-review-pack.schema.json
       lib/aiweb/cli/help_text.rb
       bin/webbuilder
+      lib/aiweb/cli/agent_run_payload.rb
+      lib/aiweb/cli/dispatch.rb
+      lib/aiweb/project/agent_run.rb
+      lib/aiweb/project/agent_run/openmanus.rb
+      lib/aiweb/project/agent_run/metadata_payload.rb
+      lib/aiweb/project/mcp_broker.rb
+      lib/aiweb/project/engine_run/eval_baseline.rb
+      lib/aiweb/project/engine_scheduler_service_domain.rb
+      lib/aiweb/project/runtime_commands/setup.rb
+      lib/aiweb/project/workbench.rb
     ].to_h { |relative| [relative, File.read(File.join(REPO_ROOT, relative))] }
 
     refute_match(/aiweb agent --mode supervised --approved(?!.*--approval-hash)/, live_guidance.fetch("lib/aiweb/project/agent_runtime_facade.rb"))
@@ -159,6 +169,36 @@ class AgentOsV32StaticSurfaceAuditTest < Minitest::Test
     refute_includes live_guidance.fetch("lib/aiweb/cli/help_text.rb"), "agent-run --task latest --agent openmanus --sandbox docker --approval-hash HASH --approved"
     assert_includes live_guidance.fetch("lib/aiweb/cli/help_text.rb"), "agent-run: advanced internal source-patch adapter"
     refute_includes live_guidance.fetch("lib/aiweb/cli/help_text.rb"), "deploy --target cloudflare-pages|vercel --approved"
+    refute_includes live_guidance.fetch("lib/aiweb/cli/help_text.rb"), "setup --install --approval-hash HASH --approved"
+    refute_includes live_guidance.fetch("lib/aiweb/cli/help_text.rb"), "workbench --serve --approval-hash HASH --approved"
+    refute_includes live_guidance.fetch("lib/aiweb/cli/help_text.rb"), "engine-scheduler tick [--run-id latest|ID] [--approval-hash HASH] [--approved] [--execute]"
+    refute_includes live_guidance.fetch("lib/aiweb/cli/help_text.rb"), "engine-scheduler daemon [--run-id latest|ID] [--max-ticks N] [--interval-seconds N] [--workers N] [--approval-hash HASH] [--approved] [--execute]"
+    refute_includes live_guidance.fetch("lib/aiweb/cli/help_text.rb"), "mcp-broker call --server lazyweb --tool lazyweb_health|lazyweb_search [--query QUERY] [--limit N] [--endpoint URL] [--approval-hash HASH] [--approved]"
+    refute_includes live_guidance.fetch("lib/aiweb/cli/help_text.rb"), "eval-baseline import --path .ai-web/eval/candidate-human-baselines.json --approval-hash HASH --approved"
+    assert_includes live_guidance.fetch("lib/aiweb/cli/help_text.rb"), "Real package install remains a lower-level ops action"
+    assert_includes live_guidance.fetch("lib/aiweb/cli/help_text.rb"), "real serve is a lower-level localhost ops action"
+    assert_includes live_guidance.fetch("lib/aiweb/cli/help_text.rb"), "resume execution remains a lower-level ops action"
+    assert_includes live_guidance.fetch("lib/aiweb/cli/help_text.rb"), "mcp-broker call --server lazyweb --tool lazyweb_health|lazyweb_search [--query QUERY] [--limit N] [--endpoint URL] --dry-run"
+    assert_includes live_guidance.fetch("lib/aiweb/cli/help_text.rb"), "eval-baseline import --path .ai-web/eval/candidate-human-baselines.json --dry-run"
+    %w[
+      lib/aiweb/cli/agent_run_payload.rb
+      lib/aiweb/cli/dispatch.rb
+      lib/aiweb/project/agent_run.rb
+      lib/aiweb/project/agent_run/openmanus.rb
+      lib/aiweb/project/agent_run/metadata_payload.rb
+      lib/aiweb/project/mcp_broker.rb
+      lib/aiweb/project/engine_run/eval_baseline.rb
+      lib/aiweb/project/engine_scheduler_service_domain.rb
+      lib/aiweb/project/runtime_commands/setup.rb
+      lib/aiweb/project/workbench.rb
+    ].each do |relative|
+      refute_includes live_guidance.fetch(relative), "then rerun with --approval-hash HASH --approved", "#{relative} must not emit copy-paste approved next_action guidance"
+    end
+    assert_includes live_guidance.fetch("lib/aiweb/project/agent_run/openmanus.rb"), "prefer aiweb agent or aiweb engine-run for user-facing execution"
+    assert_includes live_guidance.fetch("lib/aiweb/project/mcp_broker.rb"), "lower-level ops action"
+    assert_includes live_guidance.fetch("lib/aiweb/project/engine_run/eval_baseline.rb"), "not a friendly runbook"
+    assert_includes live_guidance.fetch("lib/aiweb/project/runtime_commands/setup.rb"), "lower-level ops action"
+    assert_includes live_guidance.fetch("lib/aiweb/project/workbench.rb"), "lower-level localhost ops action"
     assert_includes live_guidance.fetch("lib/aiweb/cli/help_text.rb"), 'agent "verify and improve this local scaffold" --mode supervised --dry-run'
     assert_includes live_guidance.fetch("lib/aiweb/cli/help_text.rb"), "engine-run --agent codex --mode agentic_local --max-cycles 3 --dry-run"
     refute_match(/setup --install(?:(?!approval_hash).)*stdout\.log/m, live_guidance.fetch("bin/webbuilder"))
@@ -166,6 +206,8 @@ class AgentOsV32StaticSurfaceAuditTest < Minitest::Test
     refute_includes live_guidance.fetch("bin/webbuilder"), "verify-loop --max-cycles 3 --approval-hash HASH --approved"
     refute_includes live_guidance.fetch("bin/webbuilder"), "agent-run --task latest --agent codex --approval-hash HASH --approved"
     refute_match(/deploy --target (?:cloudflare-pages|vercel) --approved/, live_guidance.fetch("bin/webbuilder"))
+    refute_includes live_guidance.fetch("bin/webbuilder"), "setup --install --approval-hash HASH --approved"
+    refute_includes live_guidance.fetch("bin/webbuilder"), "workbench --serve --approval-hash HASH --approved"
     assert_includes live_guidance.fetch("bin/webbuilder"), 'agent "improve this website" --mode supervised --dry-run'
     assert_includes live_guidance.fetch("bin/webbuilder"), "engine-run --agent codex --mode agentic_local --max-cycles 3 --dry-run"
     assert_includes live_guidance.fetch("bin/webbuilder"), '--approval-hash HASH plus --approved'
@@ -179,7 +221,8 @@ class AgentOsV32StaticSurfaceAuditTest < Minitest::Test
   def test_public_product_docs_do_not_market_engine_run_with_manus_claims
     public_docs = [
       File.join(REPO_ROOT, "README.md"),
-      File.join(REPO_ROOT, "docs", "contracts", "engine-run.md")
+      File.join(REPO_ROOT, "docs", "contracts", "engine-run.md"),
+      File.join(REPO_ROOT, "docs", "contracts", "openmanus-agent-run.md")
     ].map { |path| File.read(path) }.join("\n")
 
     [
@@ -197,6 +240,13 @@ class AgentOsV32StaticSurfaceAuditTest < Minitest::Test
     refute_includes public_docs, 'aiweb verify-loop --max-cycles 3`, `aiweb component-map'
     refute_includes public_docs, "./bin/aiweb --path ~/Desktop/aiweb-premium-service-site verify-loop --max-cycles 3 --approval-hash HASH --approved --json"
     refute_match(%r{\./bin/aiweb(?: --path [^\n]+)? agent-run --task latest --agent (?:codex|openmanus).*--approval-hash HASH --approved}, public_docs)
+    refute_match(%r{\./bin/aiweb(?: --path [^\n]+)? agent ".*" --mode supervised --approval-hash HASH --approved}, public_docs)
+    refute_match(%r{aiweb agent-run --task latest --agent openmanus --sandbox docker --approval-hash HASH --approved}, public_docs)
     refute_match(%r{\./bin/aiweb(?: --path [^\n]+)? deploy --target (?:cloudflare-pages|vercel) --approved}, public_docs)
+    refute_match(%r{\./bin/aiweb(?: --path [^\n]+)? setup --install --approval-hash HASH --approved}, public_docs)
+    refute_match(%r{\./bin/aiweb(?: --path [^\n]+)? workbench --serve --approval-hash HASH --approved}, public_docs)
+    assert_includes public_docs, "real install is a lower-level ops action"
+    assert_includes public_docs, "Real serve is a lower-level localhost ops action"
+    assert_includes public_docs, "Lower-level execution command intentionally omitted from public runbooks"
   end
 end

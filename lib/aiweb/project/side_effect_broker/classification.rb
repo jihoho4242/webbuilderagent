@@ -14,6 +14,9 @@ module Aiweb
       if path.end_with?("lib/aiweb/runtime/process_runner.rb") && line.match?(/Open3\.(?:capture3|popen3)/)
         return side_effect_classification("central_runtime_process_runner", "brokered", "aiweb.runtime.process_runner", "central CommandSpec/ProcessRunner executes argv-only local commands with scrubbed environment, timeout, output caps, and redaction")
       end
+      if path.end_with?("lib/aiweb/runtime/process_runner.rb") && line.match?(/(?<![.\w-])system\(/)
+        return side_effect_classification("central_runtime_process_runner_cleanup", "brokered", "aiweb.runtime.process_runner", "central ProcessRunner uses argv-only taskkill for Windows timeout cleanup after a CommandSpec-brokered subprocess times out")
+      end
       if path.end_with?("lib/aiweb/runtime/http_client.rb") && line.match?(/Net::HTTP/)
         return side_effect_classification("central_runtime_http_client", "brokered", "aiweb.runtime.http_client", "central HttpRequestSpec/HttpClient executes external HTTP with explicit method, timeout, body cap, and structured result")
       end

@@ -59,8 +59,8 @@
     },
     {
       "surface": "release validation evidence claim",
-      "status": "demoted_to_targeted_validation_only",
-      "finding": "Release manifest no longer hardcodes local_bin_check_passed; P5/release evidence is blocked until full ruby bin/check, test/all, and CI evidence are attached."
+      "status": "local_bin_check_passed_ci_evidence_blocked",
+      "finding": "Release evidence no longer hardcodes local_bin_check_passed; this pass attaches a fresh local ruby bin/check success, while P5/release production readiness still remains blocked until GitHub Actions run ids and operator drill/release evidence are attached."
     },
     {
       "surface": "P5 policy coverage claim",
@@ -281,6 +281,56 @@
       "surface": "agent-run user-facing approved execution runbooks",
       "status": "demoted_to_internal_adapter_dry_run_guidance",
       "finding": "README, aiweb help, and Korean launcher no longer present agent-run --approval-hash HASH --approved as a user-facing runbook; agent-run remains an advanced internal source-patch adapter while natural-language agent and canonical engine-run are the primary web-building surfaces."
+    },
+    {
+      "surface": "setup user-facing approved install runbooks",
+      "status": "demoted_to_dry_run_ops_guidance",
+      "finding": "README, aiweb help, and Korean launcher no longer present setup --install --approval-hash HASH --approved as a friendly web-building runbook; setup remains a lower-level ops action reached only after dry-run approval_hash review."
+    },
+    {
+      "surface": "workbench serve user-facing approved runbooks",
+      "status": "demoted_to_dry_run_ops_guidance",
+      "finding": "README, aiweb help, and Korean launcher no longer present workbench --serve --approval-hash HASH --approved as a friendly Workbench control runbook; serve remains a lower-level localhost ops action reached only after dry-run approval_hash review."
+    },
+    {
+      "surface": "agent facade public approved quickstart example",
+      "status": "removed_from_public_quickstart",
+      "finding": "README no longer presents a natural-language agent --approval-hash HASH --approved example as a first-run copy-paste path; public examples stay plan-only/supervised dry-run first."
+    },
+    {
+      "surface": "OpenManus agent-run public approved command example",
+      "status": "demoted_to_contract_dry_run_only",
+      "finding": "docs/contracts/openmanus-agent-run.md no longer lists the approved OpenManus agent-run command; the contract keeps dry-run and sandbox requirements while stating lower-level execution commands are omitted from public runbooks."
+    },
+    {
+      "surface": "engine-scheduler approved execute live help runbook",
+      "status": "demoted_to_dry_run_ops_guidance",
+      "finding": "aiweb help no longer presents engine-scheduler tick/daemon --approval-hash HASH --approved --execute as a copy-paste command; scheduler execution remains a lower-level engine-run bridge action after dry-run hash review."
+    },
+    {
+      "surface": "mcp-broker approved connector live help runbook",
+      "status": "demoted_to_dry_run_ops_guidance",
+      "finding": "aiweb help no longer presents mcp-broker --approval-hash HASH --approved as a copy-paste connector command; live help shows dry-run broker planning and keeps real connector access as a lower-level approved action."
+    },
+    {
+      "surface": "eval-baseline approved import live help runbook",
+      "status": "demoted_to_dry_run_ops_guidance",
+      "finding": "aiweb help no longer presents eval-baseline import --approval-hash HASH --approved as a copy-paste corpus overwrite command; live help shows import --dry-run and keeps real import as lower-level approval-gated evidence handling."
+    },
+    {
+      "surface": "agent-run runtime next_action approved command guidance",
+      "status": "demoted_to_lower_level_adapter_guidance",
+      "finding": "agent-run dry-run and failure next_action strings no longer emit copy-paste --approval-hash HASH --approved execution commands; they preserve the approval_hash as lower-level adapter evidence and point user-facing work to agent/engine-run."
+    },
+    {
+      "surface": "setup/workbench runtime next_action approved command guidance",
+      "status": "demoted_to_lower_level_ops_guidance",
+      "finding": "setup install and Workbench serve dry-run/blocker next_action strings no longer emit copy-paste approved commands; they keep approval_hash evidence and describe real execution as lower-level ops."
+    },
+    {
+      "surface": "mcp/eval/scheduler runtime next_action approved command guidance",
+      "status": "demoted_to_lower_level_ops_guidance",
+      "finding": "MCP broker, eval-baseline import, and engine-scheduler next_action strings no longer emit copy-paste approved execution/import/execute commands outside the canonical engine-run surface; they direct operators to dry-run evidence and lower-level ops boundaries."
     }
   ],
   "preserve_safety_substrate": [

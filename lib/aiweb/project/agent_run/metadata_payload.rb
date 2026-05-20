@@ -60,9 +60,9 @@ module Aiweb
       when "no_changes"
         "inspect #{metadata["stdout_log"]} and #{metadata["stderr_log"]}; rerun with better source hints if the patch should have changed files"
       when "failed"
-        "inspect #{metadata["stdout_log"]} and #{metadata["stderr_log"]}, rerun aiweb agent-run --task latest --agent #{agent} --dry-run for a fresh approval_hash, then execute with --approval-hash HASH --approved"
+        "inspect #{metadata["stdout_log"]} and #{metadata["stderr_log"]}, then rerun aiweb agent-run --task latest --agent #{agent} --dry-run for a fresh lower-level adapter approval_hash"
       else
-        "add a safe source target to the task packet or component map, rerun aiweb agent-run --task latest --agent #{agent} --dry-run for an approval_hash, then execute with --approval-hash HASH --approved"
+        "add a safe source target to the task packet or component map, then rerun aiweb agent-run --task latest --agent #{agent} --dry-run for a lower-level adapter approval_hash"
       end
     end
 
