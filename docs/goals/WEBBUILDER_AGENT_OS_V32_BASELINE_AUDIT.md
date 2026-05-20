@@ -5,7 +5,7 @@ Status: top-level script-executor surfaces neutralized; completion audit remains
 ## Script-executor inventory
 
 - `AgentRuntime::Loop/Planner/Executor`: removed. `aiweb agent` now delegates natural-language goals directly to the canonical `engine-run` durable runtime instead of producing a fixed build/preview/browser-QA action list.
-- `verify-loop`: converted to a thin `engine-run` compatibility shim. The fixed build/preview/QA/visual-critique/repair/agent-run pipeline and its direct execution helpers have been deleted.
+- `verify-loop`: converted to a read-only `engine-run` migration shim. The fixed build/preview/QA/visual-critique/repair/agent-run pipeline and its direct execution helpers have been deleted, and approved execution delegation is blocked so local work must use `engine-run` directly.
 - Browser deterministic probe surfaces: deterministic local browser probes, not autonomous planning.
 
 ## Safety substrate to preserve

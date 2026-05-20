@@ -14,8 +14,8 @@
     },
     {
       "surface": "verify-loop",
-      "status": "converted_to_engine_run_shim",
-      "finding": "fixed build/preview/QA/visual-critique/repair/agent-run pipeline removed; command now delegates to engine-run compatibility metadata only"
+      "status": "read_only_engine_run_migration_shim",
+      "finding": "fixed build/preview/QA/visual-critique/repair/agent-run pipeline removed; command now calls engine-run dry-run planning only, returns a direct engine-run handoff, and blocks local execution even when --approval-hash HASH --approved is supplied."
     },
     {
       "surface": "browser deterministic probe plan/results",
@@ -215,12 +215,12 @@
     {
       "surface": "approved-only next-action and live guidance shortcuts",
       "status": "removed",
-      "finding": "agent, verify-loop, engine-run resume, eval-baseline import, and human-review-pack guidance no longer tell operators to rerun with --approved alone; static audit keeps live guidance on dry-run review plus matching approval_hash plus --approved."
+      "finding": "agent, engine-run resume, eval-baseline import, and human-review-pack guidance no longer tell operators to rerun with --approved alone; verify-loop is now read-only migration guidance rather than an approval-capable execution path."
     },
     {
       "surface": "webbuilder/help approved-only UX guidance",
       "status": "removed",
-      "finding": "CLI help, README, and Korean webbuilder launcher guidance no longer present agent/setup/verify-loop examples that imply --approved can stand alone; live guidance now orders dry-run review plus matching approval_hash before --approved, with static regression coverage."
+      "finding": "CLI help, README, and Korean webbuilder launcher guidance no longer present agent/setup examples that imply --approved can stand alone, and verify-loop guidance now blocks execution even with --approved; static regression coverage keeps these surfaces from reverting."
     },
     {
       "surface": "Personal Brain independent file audit",
@@ -260,12 +260,27 @@
     {
       "surface": "Webbuilder/README verify-loop-first guidance",
       "status": "demoted_to_agent_engine_run_dry_run_guidance",
-      "finding": "Korean webbuilder help and README no longer present verify-loop approved examples as the main next step; they now point users to natural-language agent dry-run and canonical engine-run dry-run planning, while verify-loop remains documented only as a legacy compatibility shim with hash-bound execution requirements."
+      "finding": "Korean webbuilder help and README no longer present verify-loop approved examples as the main next step; they now point users to natural-language agent dry-run and canonical engine-run dry-run planning, while verify-loop remains documented only as a read-only migration shim with no execution delegation."
     },
     {
       "surface": "aiweb CLI help verify-loop approved example",
       "status": "demoted_to_agent_engine_run_dry_run_guidance",
-      "finding": "CLI help no longer lists verify-loop approved examples in the command examples; the live help now presents natural-language agent dry-run and canonical engine-run dry-run as the primary planning examples, while verify-loop remains labeled as a legacy compatibility shim."
+      "finding": "CLI help no longer lists verify-loop approved examples in the command examples; the live help now presents natural-language agent dry-run and canonical engine-run dry-run as the primary planning examples, while verify-loop is labeled as a read-only migration shim."
+    },
+    {
+      "surface": "deploy approved provider execution live guidance",
+      "status": "demoted_to_dry_run_provider_blocked_guidance",
+      "finding": "aiweb help, Korean launcher help, and README no longer present deploy --approved as a runnable example; provider deploy remains documented as dry-run planning plus fail-closed/blocked execution until future engine-run release evidence gates own provenance, HITL approval, rollback, and PolicyKernel side-effect approval."
+    },
+    {
+      "surface": "verify-loop approved execution delegation",
+      "status": "removed_read_only_migration_shim",
+      "finding": "verify-loop no longer forwards approved execution into engine-run; CLI and backend bridge non-dry-run requests are blocked as read-only migration guidance, so local source work must enter through aiweb engine-run directly."
+    },
+    {
+      "surface": "agent-run user-facing approved execution runbooks",
+      "status": "demoted_to_internal_adapter_dry_run_guidance",
+      "finding": "README, aiweb help, and Korean launcher no longer present agent-run --approval-hash HASH --approved as a user-facing runbook; agent-run remains an advanced internal source-patch adapter while natural-language agent and canonical engine-run are the primary web-building surfaces."
     }
   ],
   "preserve_safety_substrate": [

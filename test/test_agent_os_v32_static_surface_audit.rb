@@ -14,7 +14,9 @@ class AgentOsV32StaticSurfaceAuditTest < Minitest::Test
 
   def test_script_executor_surfaces_are_demoted_not_claimed_as_canonical_engines
     tool_registry = YAML.safe_load(File.read(File.join(REPO_ROOT, "configs", "tool_registry.yaml")), permitted_classes: [], aliases: false)
-    assert_equal "removed_script_runner_facade", tool_registry.dig("tools", "verify_loop", "agent_engine_role")
+    assert_equal "read_only_removed_script_runner_facade", tool_registry.dig("tools", "verify_loop", "agent_engine_role")
+    assert_equal "read_only_engine_run_migration_shim", tool_registry.dig("tools", "verify_loop", "side_effect_class")
+    assert_equal false, tool_registry.dig("tools", "verify_loop", "execution_available")
 
     %w[
       loop.rb
@@ -42,7 +44,11 @@ class AgentOsV32StaticSurfaceAuditTest < Minitest::Test
     end
     verify_loop_source = File.read(File.join(REPO_ROOT, "lib", "aiweb", "project", "verify_loop.rb"))
     assert_includes verify_loop_source, "engine_run("
+    assert_includes verify_loop_source, "read_only_migration_shim"
+    assert_includes verify_loop_source, '"execution_allowed" => false'
     assert_includes verify_loop_source, "fixed_pipeline_present"
+    refute_includes verify_loop_source, "approved: execute_engine"
+    refute_includes verify_loop_source, "execute_engine = approved"
     refute_match(/verify_loop_record_step|build\(dry_run: false\)|preview\(dry_run: false\)|qa_playwright|agent_run\(task: \"latest\"/, verify_loop_source)
 
     browser_actions_source = File.read(File.join(REPO_ROOT, "lib", "aiweb", "project", "engine_run", "preview_browser", "browser_actions.rb"))
@@ -62,7 +68,7 @@ class AgentOsV32StaticSurfaceAuditTest < Minitest::Test
     agent_runtime = audit.fetch("script_executor_inventory").find { |entry| entry.fetch("surface").include?("AgentRuntime") }
     assert_equal "removed", agent_runtime.fetch("status")
     verify_loop = audit.fetch("script_executor_inventory").find { |entry| entry.fetch("surface") == "verify-loop" }
-    assert_equal "converted_to_engine_run_shim", verify_loop.fetch("status")
+    assert_equal "read_only_engine_run_migration_shim", verify_loop.fetch("status")
     assert_includes audit.fetch("preserve_safety_substrate"), "PathPolicy"
   end
 
@@ -116,6 +122,7 @@ class AgentOsV32StaticSurfaceAuditTest < Minitest::Test
     refute_includes help, ["Manus", "-grade"].join
     assert_includes help, "engine-run: supervised local engine-run runtime for bounded web-building tasks"
     assert_includes help, "network/install/deploy/provider CLI/git push remain elevated-approval actions"
+    refute_includes help, "verify-loop [--max-cycles N:1-10] [--agent codex|openmanus] [--sandbox docker|podman] [--approval-hash HASH] [--approved]"
     assert_includes help, 'agent "..." [--mode plan-only|supervised|autonomous-local] [--profile D|S] [--max-steps N] [--dry-run] [--approval-hash HASH] [--approved]'
     refute_includes help, 'agent "..." [--mode plan-only|supervised|autonomous-local] [--profile D|S] [--max-steps N] [--approved] [--dry-run]'
   end
@@ -148,11 +155,17 @@ class AgentOsV32StaticSurfaceAuditTest < Minitest::Test
     refute_includes live_guidance.fetch("docs/schemas/engine-run-human-review-pack.schema.json"), "import_requires_approved_flag"
     refute_includes live_guidance.fetch("lib/aiweb/cli/help_text.rb"), '[--approved] [--dry-run]'
     refute_includes live_guidance.fetch("lib/aiweb/cli/help_text.rb"), "verify-loop --max-cycles 3 --agent codex --approval-hash HASH --approved"
+    refute_includes live_guidance.fetch("lib/aiweb/cli/help_text.rb"), "agent-run --task latest --agent codex --approval-hash HASH --approved"
+    refute_includes live_guidance.fetch("lib/aiweb/cli/help_text.rb"), "agent-run --task latest --agent openmanus --sandbox docker --approval-hash HASH --approved"
+    assert_includes live_guidance.fetch("lib/aiweb/cli/help_text.rb"), "agent-run: advanced internal source-patch adapter"
+    refute_includes live_guidance.fetch("lib/aiweb/cli/help_text.rb"), "deploy --target cloudflare-pages|vercel --approved"
     assert_includes live_guidance.fetch("lib/aiweb/cli/help_text.rb"), 'agent "verify and improve this local scaffold" --mode supervised --dry-run'
     assert_includes live_guidance.fetch("lib/aiweb/cli/help_text.rb"), "engine-run --agent codex --mode agentic_local --max-cycles 3 --dry-run"
     refute_match(/setup --install(?:(?!approval_hash).)*stdout\.log/m, live_guidance.fetch("bin/webbuilder"))
     refute_includes live_guidance.fetch("bin/webbuilder"), '--approved --approval-hash HASH'
     refute_includes live_guidance.fetch("bin/webbuilder"), "verify-loop --max-cycles 3 --approval-hash HASH --approved"
+    refute_includes live_guidance.fetch("bin/webbuilder"), "agent-run --task latest --agent codex --approval-hash HASH --approved"
+    refute_match(/deploy --target (?:cloudflare-pages|vercel) --approved/, live_guidance.fetch("bin/webbuilder"))
     assert_includes live_guidance.fetch("bin/webbuilder"), 'agent "improve this website" --mode supervised --dry-run'
     assert_includes live_guidance.fetch("bin/webbuilder"), "engine-run --agent codex --mode agentic_local --max-cycles 3 --dry-run"
     assert_includes live_guidance.fetch("bin/webbuilder"), '--approval-hash HASH plus --approved'
@@ -183,5 +196,7 @@ class AgentOsV32StaticSurfaceAuditTest < Minitest::Test
     assert_includes public_docs, "aiweb engine-run --agent codex --mode agentic_local --max-cycles 3 --dry-run"
     refute_includes public_docs, 'aiweb verify-loop --max-cycles 3`, `aiweb component-map'
     refute_includes public_docs, "./bin/aiweb --path ~/Desktop/aiweb-premium-service-site verify-loop --max-cycles 3 --approval-hash HASH --approved --json"
+    refute_match(%r{\./bin/aiweb(?: --path [^\n]+)? agent-run --task latest --agent (?:codex|openmanus).*--approval-hash HASH --approved}, public_docs)
+    refute_match(%r{\./bin/aiweb(?: --path [^\n]+)? deploy --target (?:cloudflare-pages|vercel) --approved}, public_docs)
   end
 end

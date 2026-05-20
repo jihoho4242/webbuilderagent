@@ -51,7 +51,7 @@ module Aiweb
           qa-checklist [--force]
           qa-report [--from PATH] [--status passed|failed|blocked] [--duration-minutes N] [--timed-out] [--force]
           repair [--from-qa PATH|latest] [--max-cycles N] [--force]
-          verify-loop [--max-cycles N:1-10] [--agent codex|openmanus] [--sandbox docker|podman] [--approval-hash HASH] [--approved] [--force] (legacy compatibility shim)
+          verify-loop [--max-cycles N:1-10] [--agent codex|openmanus] [--sandbox docker|podman] [--force] (read-only migration shim)
           agent "verify and improve this local scaffold" --mode supervised --dry-run
           engine-run --agent codex --mode agentic_local --max-cycles 3 --dry-run
           qa-playwright [--url URL] [--task-id ID] [--force]
@@ -69,7 +69,7 @@ module Aiweb
           github-sync [--remote NAME] [--branch NAME]
           deploy-plan [--target cloudflare-pages|vercel]
           deploy --target cloudflare-pages|vercel --dry-run
-          deploy --target cloudflare-pages|vercel --approved
+          deploy provider execution disabled until release evidence gates exist
           advance
           rollback [--to PHASE] [--failure CODE] [--reason "..."]
           resolve-blocker --reason "..."
@@ -102,17 +102,15 @@ module Aiweb
           build: runs the scaffolded Astro build for Profile D only after runtime-plan is ready and records .ai-web/runs logs; Profile S remains local-verify-only until safe placeholder-env build support is explicitly implemented
           preview: starts/stops the local scaffold dev server after runtime-plan is ready; --dry-run does not write files or launch Node
           agent: natural-language goal facade over canonical engine-run durable runtime; the legacy AgentRuntime fixed planner/executor has been removed, plan-only/dry-run writes no source, supervised/autonomous-local require an engine-run approval hash before execution, and source mutation remains sandbox/copy-back/verifier gated
-          agent-run: advanced bounded safe execution slot for approved local source-patch task packets used by repair / visual-polish / visual-edit evidence with logs and diff artifacts; --agent supports codex or openmanus; OpenManus approved runs require --sandbox docker|podman; --dry-run does not write files or launch a process and returns the approval hash required for real execution
+          agent-run: advanced internal source-patch adapter for repair / visual-polish / visual-edit task packets; prefer natural-language agent or canonical engine-run for user-facing work, while agent-run dry-runs only expose the bounded adapter envelope and approval hash for lower-level operators
           qa-playwright: runs safe local Playwright QA browser checks against localhost/127.0.0.1 preview; --dry-run does not write files or launch Node
           qa-screenshot: captures safe local screenshot evidence for mobile/tablet/desktop from localhost/127.0.0.1 preview; --dry-run does not write files, launch browsers, install packages, or start preview
           qa-a11y: runs safe local axe accessibility QA against localhost/127.0.0.1 preview; --dry-run does not write files or launch Node
           qa-lighthouse: runs safe local Lighthouse QA against localhost/127.0.0.1 preview; --dry-run does not write files or launch Node
           visual-critique: records safe local visual critique from explicit screenshot/metadata evidence or --from-screenshots latest only; --dry-run plans .ai-web/visual artifacts without writes, browser launch, installs, repair, deploy, network, or .env access
-          verify-loop: legacy compatibility shim only, not the canonical agent engine; --max-cycles is capped at 10, and the hardcoded build -> preview -> QA -> screenshot -> visual critique -> repair/visual-polish -> agent-run script has been removed. --dry-run writes nothing and returns the engine-run approval hash/plan, while real local execution must go through engine-run policy gates via --approval-hash HASH --approved; verify-loop no longer writes verify-loop cycle evidence and cannot unlock deploy and never installs packages, deploys, calls provider CLIs, or reads .env/.env.*
+          verify-loop: read-only migration shim only, not the canonical agent engine; --max-cycles is capped at 10, and the hardcoded build -> preview -> QA -> screenshot -> visual critique -> repair/visual-polish -> agent-run script has been removed. It always delegates only to engine-run dry-run planning, returns the direct engine-run approval hash/plan, blocks local execution even if --approved is supplied, no longer writes verify-loop cycle evidence, cannot unlock deploy, and never installs packages, deploys, calls provider CLIs, or reads .env/.env.*
           agent-run --task latest --agent codex --dry-run
-          agent-run --task latest --agent codex --approval-hash HASH --approved
           agent-run --task latest --agent openmanus --dry-run
-          agent-run --task latest --agent openmanus --sandbox docker --approval-hash HASH --approved
           workbench: plans, exports, or serves a local UI manifest under .ai-web/workbench using declarative CLI controls only; requires initialized .ai-web/state.yaml, --dry-run writes nothing and serve dry-run returns an approval_hash bound to the current localhost serve capability envelope, export writes only workbench artifacts, real serve binds only localhost/127.0.0.1 and requires the matching --approval-hash HASH plus --approved before process launch, executes no controls, and never mutates state.yaml
           daemon: starts the local backend API bridge for the future web Workbench; --dry-run reports endpoints and guardrails without binding a port
           ingest-reference: phase-3 or phase-3.5; writes only .ai-web/design-reference-brief.md pattern constraints, never implementation source, and rejects .env/.env.* or secret-looking reference paths
@@ -126,7 +124,7 @@ module Aiweb
           qa-checklist: phase-7 through phase-11
           qa-report: phase-7 through phase-11
           repair: phase-7 through phase-11; records a bounded local repair-loop task from failed/blocked QA without running build, QA, preview, deploy, package install, or source auto-patches
-          agent-run: phase-7 through phase-11; approved local source-patch task packets only after dry-run approval-hash review, with logs, diff evidence, and no .env/.env.* access; openmanus runs through an aiweb-managed docker/podman sandbox, isolated workspace, JSON contract, and only validated allowed source files are copied back
+          agent-run: phase-7 through phase-11; advanced internal source-patch adapter for selected repair / visual-polish / visual-edit task packets only after dry-run approval-hash review, with logs, diff evidence, and no .env/.env.* access; openmanus runs through an aiweb-managed docker/podman sandbox, isolated workspace, JSON contract, and only validated allowed source files are copied back; user-facing web-building should start through agent or engine-run
           qa-screenshot: phase-7 through phase-11; captures safe local screenshot evidence for critique/human QA without starting preview or installing packages
           visual-critique: phase-7 through phase-11; records deterministic local visual critique evidence from explicit input paths or latest screenshot metadata only
           visual-polish --repair: records safe local visual polish repair loop from failed/repair/redesign critique evidence in phase-7 through phase-11 without source edits, build, QA, preview, browser capture, deploy, package install, network, or AI calls

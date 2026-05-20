@@ -8,4 +8,4 @@ Allowed event order:
 tool.requested -> policy.decision -> tool.started|tool.blocked -> tool.finished
 ```
 
-Legacy fixed pipelines such as the old verify-loop script must not remain as executable agent engines. `verify-loop` may exist only as an engine-run compatibility shim with no bespoke build/preview/QA/repair script.
+Legacy fixed pipelines such as the old verify-loop script must not remain as executable agent engines. `verify-loop` may exist only as a read-only engine-run migration shim with no bespoke build/preview/QA/repair script and no execution delegation.

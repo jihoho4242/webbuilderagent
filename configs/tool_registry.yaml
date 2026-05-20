@@ -37,12 +37,13 @@ tools:
     owner: runtime_owner
     dry_run_supported: true
   verify_loop:
-    permission_tier: L3
-    risk_tier: L3
-    side_effect_class: engine_run_compatibility_shim
+    permission_tier: L1
+    risk_tier: L1
+    side_effect_class: read_only_engine_run_migration_shim
     owner: runtime_owner
     dry_run_supported: true
-    agent_engine_role: removed_script_runner_facade
+    execution_available: false
+    agent_engine_role: read_only_removed_script_runner_facade
   external_deploy:
     permission_tier: L4
     risk_tier: L4

@@ -1822,6 +1822,17 @@ class AiwebDaemonTest < Minitest::Test
       assert_equal 403, status
       assert_match(/approval-hash|approval-request/i, blocked["error"])
       assert_empty Dir.glob(File.join(dir, ".ai-web", "runs", "agent-run-*")), "bridge must block before agent-run artifacts"
+
+      status, blocked = app.call(
+        "POST",
+        "/api/project/command",
+        approval_headers,
+        JSON.generate("path" => dir, "command" => "verify-loop", "args" => ["--max-cycles", "1", "--approval-hash", "h" * 64], "approved" => true)
+      )
+
+      assert_equal 403, status
+      assert_match(/read-only|engine-run/i, blocked["error"])
+      assert_empty Dir.glob(File.join(dir, ".ai-web", "runs", "engine-run-*")), "bridge must block verify-loop before engine-run artifacts"
     end
   end
 

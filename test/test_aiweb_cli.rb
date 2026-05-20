@@ -8969,15 +8969,17 @@ class AiwebCliTest < Minitest::Test
     stdout, stderr, code = run_aiweb("help")
     assert_equal 0, code
     assert_equal "", stderr
-    assert_includes stdout, "agent-run --task latest --agent codex --approval-hash HASH --approved"
     assert_includes stdout, "agent-run --task latest --agent codex --dry-run"
-    assert_includes stdout, "agent-run --task latest --agent openmanus --sandbox docker --approval-hash HASH --approved"
     assert_includes stdout, "agent-run --task latest --agent openmanus --dry-run"
+    refute_includes stdout, "agent-run --task latest --agent codex --approval-hash HASH --approved"
+    refute_includes stdout, "agent-run --task latest --agent openmanus --sandbox docker --approval-hash HASH --approved"
+    assert_match(/agent-run: advanced internal source-patch adapter/i, stdout)
 
     help_stdout, help_stderr, help_code = run_webbuilder("--help")
     assert_equal 0, help_code
     assert_equal "", help_stderr
     assert_match(/agent-run/, help_stdout)
+    refute_includes help_stdout, "agent-run --task latest --agent codex --approval-hash HASH --approved"
 
     in_tmp do |dir|
       target = File.join(dir, "passthrough-agent-run")
@@ -9065,6 +9067,8 @@ class AiwebCliTest < Minitest::Test
       assert_equal "engine-run", loop["canonical_runtime"]
       assert_equal true, loop["legacy_execution_removed"]
       assert_equal true, loop["script_executor_neutralized"]
+      assert_equal true, loop["read_only_migration_shim"]
+      assert_equal false, loop["execution_allowed"]
       assert_equal false, loop["fixed_pipeline_present"]
       assert_equal 3, loop["max_cycles"]
       assert_empty loop.fetch("steps")
@@ -9162,12 +9166,64 @@ class AiwebCliTest < Minitest::Test
       assert_equal true, payload.dig("verify_loop", "legacy_execution_removed")
       assert_equal false, payload.dig("verify_loop", "fixed_pipeline_present")
       assert_empty payload.dig("verify_loop", "steps")
-      assert_match(/approved|approval/i, [payload.dig("error", "message"), payload["blocking_issues"], payload.dig("verify_loop", "blocking_issues")].flatten.compact.join("\n"))
+      assert_equal true, payload.dig("verify_loop", "read_only_migration_shim")
+      assert_equal false, payload.dig("verify_loop", "execution_allowed")
+      assert_equal false, payload.dig("verify_loop", "requires_approval")
+      assert_equal true, payload.dig("verify_loop", "requires_engine_run_direct_execution")
+      assert_match(/read-only|engine-run/i, [payload.dig("error", "message"), payload["blocking_issues"], payload.dig("verify_loop", "blocking_issues")].flatten.compact.join("\n"))
+      assert_includes payload.fetch("next_action"), "aiweb engine-run"
       assert_equal before_entries, project_entries, "unapproved verify-loop must not write build, preview, QA, critique, task, or agent-run artifacts"
       assert_equal before_state, File.read(".ai-web/state.yaml"), "unapproved verify-loop must not mutate state"
       assert_equal "#{secret}\n", File.read(".env"), "unapproved verify-loop must not mutate .env"
       refute File.exist?(marker), "unapproved verify-loop must not execute pnpm or codex"
       refute Dir.exist?("dist"), "unapproved verify-loop must not build"
+      refute_includes stdout, secret
+    end
+  end
+
+  def test_verify_loop_approved_hash_still_only_reports_engine_run_handoff_without_execution
+    in_tmp do |dir|
+      prepare_profile_d_scaffold_flow
+      secret = "SECRET=pr23-approved-shim-do-not-leak"
+      File.write(".env", "#{secret}\n")
+      FileUtils.mkdir_p("node_modules")
+      bin_dir = File.join(dir, "fake-verify-loop-approved-bin")
+      FileUtils.mkdir_p(bin_dir)
+      marker = File.join(dir, "verify-loop-approved-tool-was-run")
+      write_fake_executable(bin_dir, "pnpm", "touch #{marker.shellescape}; echo should-not-run >&2; exit 99")
+      write_fake_executable(bin_dir, "codex", "touch #{marker.shellescape}; echo should-not-run >&2; exit 99")
+      env = { "PATH" => [bin_dir, "/usr/bin", "/bin", "/usr/sbin", "/sbin"].join(File::PATH_SEPARATOR) }
+
+      dry_stdout, dry_stderr, dry_code = run_aiweb_env(env, "verify-loop", "--max-cycles", "3", "--dry-run", "--json")
+      dry_payload = JSON.parse(dry_stdout)
+      approval_hash = dry_payload.dig("verify_loop", "approval_hash")
+      assert_equal 0, dry_code
+      assert_equal "", dry_stderr
+      assert_match(/\A[0-9a-f]{64}\z/, approval_hash.to_s)
+
+      before_entries = project_entries
+      before_state = File.read(".ai-web/state.yaml")
+
+      stdout, stderr, code = run_aiweb_env(
+        env,
+        "verify-loop", "--max-cycles", "3", "--approval-hash", approval_hash, "--approved", "--json"
+      )
+      payload = JSON.parse(stdout)
+
+      assert_equal 5, code
+      assert_equal "", stderr
+      assert_equal "blocked", payload.dig("verify_loop", "status")
+      assert_equal true, payload.dig("verify_loop", "read_only_migration_shim")
+      assert_equal false, payload.dig("verify_loop", "execution_allowed")
+      assert_equal false, payload.dig("verify_loop", "fixed_pipeline_present")
+      assert_empty payload.dig("verify_loop", "steps")
+      assert_match(/read-only|engine-run/i, [payload.dig("error", "message"), payload["blocking_issues"], payload.dig("verify_loop", "blocking_issues")].flatten.compact.join("\n"))
+      assert_includes payload.fetch("next_action"), "aiweb engine-run"
+      assert_equal before_entries, project_entries, "approved verify-loop shim must not write engine-run artifacts"
+      assert_equal before_state, File.read(".ai-web/state.yaml"), "approved verify-loop shim must not mutate state"
+      refute File.exist?(marker), "approved verify-loop shim must not execute pnpm or codex"
+      refute Dir.exist?("dist"), "approved verify-loop shim must not build"
+      assert_empty Dir.glob(".ai-web/runs/verify-loop-*"), "verify-loop shim must not write legacy run dirs"
       refute_includes stdout, secret
     end
   end
@@ -9178,6 +9234,7 @@ class AiwebCliTest < Minitest::Test
     assert_equal "", stderr
     assert_includes stdout, 'agent "verify and improve this local scaffold" --mode supervised --dry-run'
     assert_includes stdout, "engine-run --agent codex --mode agentic_local --max-cycles 3 --dry-run"
+    refute_includes stdout, "verify-loop [--max-cycles N:1-10] [--agent codex|openmanus] [--sandbox docker|podman] [--approval-hash HASH] [--approved]"
     refute_includes stdout, "verify-loop --max-cycles 3 --agent codex --approval-hash HASH --approved"
     assert_includes stdout, "--max-cycles is capped at 10"
     assert_includes stdout, "run-status"
@@ -9185,7 +9242,7 @@ class AiwebCliTest < Minitest::Test
     assert_includes stdout, "run-resume"
     assert_includes stdout, "run-timeline"
     assert_includes stdout, "observability-summary"
-    assert_match(/verify-loop: legacy compatibility shim only, not the canonical agent engine/i, stdout)
+    assert_match(/verify-loop: read-only migration shim only, not the canonical agent engine/i, stdout)
 
     help_stdout, help_stderr, help_code = run_webbuilder("--help")
     assert_equal 0, help_code
@@ -9446,10 +9503,12 @@ class AiwebCliTest < Minitest::Test
       assert_equal "blocked", payload.dig("verify_loop", "status")
       assert_equal "engine-run", payload.dig("verify_loop", "canonical_runtime")
       assert_equal true, payload.dig("verify_loop", "legacy_execution_removed")
-      assert_match(/approval hash|approval/i, payload.fetch("blocking_issues").join("\n"))
-      assert_equal before_entries, project_entries, "approval blocker must not write new verify-loop artifacts"
-      assert_equal before_state, File.read(".ai-web/state.yaml"), "approval blocker must not mutate state"
-      refute File.exist?(marker), "approval blocker must not execute verify-loop tools"
+      assert_equal true, payload.dig("verify_loop", "read_only_migration_shim")
+      assert_equal false, payload.dig("verify_loop", "execution_allowed")
+      assert_match(/read-only|engine-run/i, payload.fetch("blocking_issues").join("\n"))
+      assert_equal before_entries, project_entries, "read-only verify-loop blocker must not write new verify-loop artifacts"
+      assert_equal before_state, File.read(".ai-web/state.yaml"), "read-only verify-loop blocker must not mutate state"
+      refute File.exist?(marker), "read-only verify-loop blocker must not execute verify-loop tools"
     end
   end
 
@@ -9475,6 +9534,8 @@ class AiwebCliTest < Minitest::Test
       assert_equal "blocked", loop["status"]
       assert_equal "engine-run", loop["canonical_runtime"]
       assert_equal true, loop["legacy_execution_removed"]
+      assert_equal true, loop["read_only_migration_shim"]
+      assert_equal false, loop["execution_allowed"]
       assert_equal false, loop["fixed_pipeline_present"]
       assert_empty loop["steps"]
       assert_empty Dir.glob(".ai-web/runs/verify-loop-*"), "verify-loop shim must not write legacy cycle evidence"
@@ -9509,6 +9570,8 @@ class AiwebCliTest < Minitest::Test
       assert_empty loop.fetch("cycles")
       assert_empty loop.fetch("steps")
       assert_equal true, loop["legacy_execution_removed"]
+      assert_equal true, loop["read_only_migration_shim"]
+      assert_equal false, loop["execution_allowed"]
       assert_empty(File.file?(marker) ? File.readlines(marker) : [], "fake codex must not run through removed verify-loop")
       refute_match(/patched by fake verify-loop codex/, File.read("src/components/Hero.astro"))
       assert_empty Dir.glob(".ai-web/tasks/fix-*.md"), "removed verify-loop must not create repair tasks"
@@ -9536,7 +9599,9 @@ class AiwebCliTest < Minitest::Test
       assert_equal "", stderr
       assert_equal "blocked", payload.dig("verify_loop", "status")
       assert_equal 0, payload.dig("verify_loop", "cycle_count")
-      assert_match(/approval/i, payload.dig("verify_loop", "blocking_issues").join("\n"))
+      assert_equal true, payload.dig("verify_loop", "read_only_migration_shim")
+      assert_equal false, payload.dig("verify_loop", "execution_allowed")
+      assert_match(/read-only|engine-run/i, payload.dig("verify_loop", "blocking_issues").join("\n"))
       assert_empty(File.file?(marker) ? File.readlines(marker) : [], "removed verify-loop must not run repair agent script")
     end
   end
@@ -10358,17 +10423,19 @@ class AiwebCliTest < Minitest::Test
     aiweb_stdout, aiweb_stderr, aiweb_code = run_aiweb("help")
     assert_equal 0, aiweb_code
     assert_equal "", aiweb_stderr
-    ["github-sync", "deploy-plan", "deploy --target", "cloudflare-pages", "vercel", "--approved"].each do |snippet|
+    ["github-sync", "deploy-plan", "deploy --target", "cloudflare-pages", "vercel", "--dry-run"].each do |snippet|
       assert_includes aiweb_stdout, snippet
     end
+    refute_includes aiweb_stdout, "deploy --target cloudflare-pages|vercel --approved"
     assert_includes aiweb_stdout, "engine-run release evidence"
 
     web_stdout, web_stderr, web_code = run_webbuilder("help")
     assert_equal 0, web_code
     assert_equal "", web_stderr
-    ["github-sync", "deploy-plan", "deploy", "cloudflare-pages", "vercel", "--approved"].each do |snippet|
+    ["github-sync", "deploy-plan", "deploy", "cloudflare-pages", "vercel", "--dry-run"].each do |snippet|
       assert_includes web_stdout, snippet
     end
+    refute_match(/deploy --target (?:cloudflare-pages|vercel) --approved/, web_stdout)
   end
 
   def test_component_map_dry_run_discovers_profile_d_regions_without_writes
