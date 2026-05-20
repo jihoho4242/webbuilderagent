@@ -29,12 +29,15 @@ module Aiweb
         nil
       end
 
-      def engine_scheduler_service_record(action:, target:, approved:, execute:)
+      def engine_scheduler_service_record(action:, target:, approval_hash:, approved:, execute:)
         selected_run = target && target["run_id"] ? run_lifecycle_record("run_id" => target.fetch("run_id")) : nil
         run_id = selected_run && selected_run["run_id"]
         checkpoint = run_id ? engine_run_resume_checkpoint(run_id) : nil
         resume_context = run_id ? engine_run_resume_context(run_id) : nil
         metadata = run_id ? (read_json_file(File.join(run_lifecycle_run_dir(run_id), "engine-run.json")) || {}) : {}
+        approval_evidence = run_id ? engine_scheduler_resume_approval_evidence(metadata, run_id, resume_context) : {}
+        expected_approval_hash = approval_evidence["approval_hash"]
+        supplied_approval_hash = approval_hash.to_s.strip
         scheduler_artifacts = engine_scheduler_artifacts(run_id, metadata)
         graph = checkpoint.to_h["run_graph"]
         cursor = checkpoint.to_h["run_graph_cursor"]
@@ -49,6 +52,15 @@ module Aiweb
         blockers << "engine scheduler selected run has no readable checkpoint" if run_id && !checkpoint.is_a?(Hash)
         blockers.concat(resume_blockers)
         blockers << "engine scheduler execute requires --approved" if execute && !approved
+        if execute && approved && expected_approval_hash.to_s.empty?
+          derivation_error = approval_evidence["error"].to_s
+          suffix = derivation_error.empty? ? "" : ": #{derivation_error}"
+          blockers << "engine scheduler could not derive the resume capability approval hash#{suffix}"
+        elsif execute && approved && supplied_approval_hash.empty?
+          blockers << "engine scheduler execute requires --approval-hash from the resume capability dry-run"
+        elsif execute && approved && expected_approval_hash && supplied_approval_hash != expected_approval_hash
+          blockers << "engine scheduler approval hash does not match the current resume capability envelope"
+        end
         supported_start = start_node && Aiweb::GraphSchedulerRuntime::SUPPORTED_CONTINUATION_START_NODES.include?(start_node)
         blockers << "engine scheduler start node #{start_node || "(missing)"} is not executable by the local resume bridge" if !terminal && start_node && !supported_start
 
@@ -70,6 +82,9 @@ module Aiweb
           "action" => action,
           "decision" => decision,
           "approved" => approved == true,
+          "approval_hash" => supplied_approval_hash.empty? ? nil : supplied_approval_hash,
+          "expected_approval_hash" => expected_approval_hash,
+          "approval_hash_derivation" => approval_evidence.empty? ? nil : approval_evidence,
           "execute" => execute == true,
           "selected_run" => selected_run,
           "selected_run_id" => run_id,
@@ -82,7 +97,7 @@ module Aiweb
           "terminal_run" => terminal,
           "node_body_executor" => "engine_run_resume_bridge",
           "node_body_execution_mode" => execute ? "approved_inline_resume_bridge" : "deferred_command",
-          "resume_command" => run_id ? engine_scheduler_resume_command(metadata, run_id) : [],
+          "resume_command" => run_id ? engine_scheduler_resume_command(metadata, run_id, expected_approval_hash) : [],
           "resume_blockers" => resume_blockers,
           "graph_node_summary" => graph_nodes.map { |node| node.slice("node_id", "state", "attempt", "side_effect_boundary") },
           "lease" => engine_scheduler_lease(run_id, start_node),
@@ -116,13 +131,50 @@ module Aiweb
         }
       end
 
-      def engine_scheduler_resume_command(metadata, run_id)
+      def engine_scheduler_resume_approval_evidence(metadata, run_id, resume_context)
+        state = load_state
+        goal = engine_run_goal(nil, state, run_id, resume_context)
+        mode = metadata["mode"].to_s.empty? ? "agentic_local" : metadata["mode"].to_s
+        agent = metadata["agent"].to_s.empty? ? "codex" : metadata["agent"].to_s
+        sandbox = metadata["sandbox"].to_s
+        max_cycles = metadata.dig("capability", "limits", "max_cycles") || 3
+        opendesign_contract = engine_run_opendesign_contract(state, goal: goal)
+        capability = engine_run_capability_envelope(
+          run_id: "engine-run-resume-scheduler-preflight",
+          goal: goal,
+          mode: mode,
+          agent: agent,
+          sandbox: sandbox.empty? ? nil : sandbox,
+          max_cycles: max_cycles,
+          resume: run_id,
+          opendesign_contract: opendesign_contract
+        )
+        {
+          "status" => "derived",
+          "approval_hash" => engine_run_approval_hash(capability),
+          "resume_from" => run_id,
+          "agent" => agent,
+          "mode" => mode,
+          "sandbox" => sandbox.empty? ? nil : sandbox,
+          "max_cycles" => max_cycles
+        }
+      rescue StandardError => e
+        {
+          "status" => "failed",
+          "approval_hash" => nil,
+          "resume_from" => run_id,
+          "error" => "#{e.class}: #{e.message}"
+        }
+      end
+
+      def engine_scheduler_resume_command(metadata, run_id, approval_hash = nil)
         agent = metadata["agent"].to_s.empty? ? "codex" : metadata["agent"].to_s
         mode = metadata["mode"].to_s.empty? ? "agentic_local" : metadata["mode"].to_s
         sandbox = metadata["sandbox"].to_s
         max_cycles = metadata.dig("capability", "limits", "max_cycles") || 3
         command = ["aiweb", "engine-run", "--resume", run_id, "--agent", agent, "--mode", mode, "--max-cycles", max_cycles.to_s]
         command.concat(["--sandbox", sandbox]) if agent == "openmanus" && !sandbox.empty?
+        command.concat(["--approval-hash", approval_hash]) unless approval_hash.to_s.empty?
         command << "--approved"
         command
       end
@@ -135,6 +187,7 @@ module Aiweb
           mode: command.include?("--mode") ? command[command.index("--mode") + 1] : "agentic_local",
           sandbox: command.include?("--sandbox") ? command[command.index("--sandbox") + 1] : nil,
           max_cycles: command.include?("--max-cycles") ? command[command.index("--max-cycles") + 1].to_i : 3,
+          approval_hash: service.fetch("approval_hash"),
           approved: true,
           force: true
         }
@@ -155,11 +208,16 @@ module Aiweb
       def engine_scheduler_next_action(service)
         case service["decision"]
         when "no_run"
-          "run aiweb engine-run --approved first, or pass --run-id to inspect a run"
+          "run aiweb engine-run --dry-run first, review the approval_hash, then execute with --approval-hash HASH --approved; or pass --run-id to inspect a run"
         when "noop_terminal"
           "no scheduler action required for terminal run #{service["selected_run_id"]}"
         when "resume_ready"
-          service["execute"] ? "inspect resumed engine-run result and scheduler ledger" : "rerun aiweb engine-scheduler tick --run-id #{service["selected_run_id"]} --approved --execute to resume through the bridge"
+          if service["execute"]
+            "inspect resumed engine-run result and scheduler ledger"
+          else
+            hash_suffix = service["expected_approval_hash"].to_s.empty? ? " --approval-hash HASH" : " --approval-hash #{service["expected_approval_hash"]}"
+            "rerun aiweb engine-scheduler tick --run-id #{service["selected_run_id"]}#{hash_suffix} --approved --execute to resume through the bridge"
+          end
         else
           "inspect #{service.dig("scheduler_artifacts", "checkpoint_path")} and #{service.dig("scheduler_artifacts", "graph_scheduler_state_path")}"
         end

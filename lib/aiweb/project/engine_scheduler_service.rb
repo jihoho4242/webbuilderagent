@@ -24,7 +24,7 @@ module Aiweb
 
     include Domain
 
-    def engine_scheduler(action: "status", run_id: nil, approved: false, execute: false, dry_run: false, force: false, max_ticks: 1, interval_seconds: 0, workers: 1, once: false)
+    def engine_scheduler(action: "status", run_id: nil, approval_hash: nil, approved: false, execute: false, dry_run: false, force: false, max_ticks: 1, interval_seconds: 0, workers: 1, once: false)
       assert_initialized!
       normalized_action = action.to_s.strip.empty? ? "status" : action.to_s.strip
       unless %w[status tick daemon supervisor monitor].include?(normalized_action)
@@ -38,6 +38,7 @@ module Aiweb
         return engine_scheduler_supervisor(
           target: target,
           run_id: run_id,
+          approval_hash: approval_hash,
           approved: approved,
           execute: execute,
           dry_run: dry_run,
@@ -51,6 +52,7 @@ module Aiweb
         return engine_scheduler_daemon(
           target: target,
           run_id: run_id,
+          approval_hash: approval_hash,
           approved: approved,
           execute: execute,
           dry_run: dry_run,
@@ -61,7 +63,7 @@ module Aiweb
         )
       end
 
-      service = engine_scheduler_service_record(action: normalized_action, target: target, approved: approved, execute: execute)
+      service = engine_scheduler_service_record(action: normalized_action, target: target, approval_hash: approval_hash, approved: approved, execute: execute)
       service["status"] = "dry_run" if dry_run && normalized_action == "tick"
 
       if normalized_action == "status" || dry_run
@@ -100,13 +102,14 @@ module Aiweb
       }
     end
 
-    def engine_scheduler_daemon(target:, run_id:, approved:, execute:, dry_run:, max_ticks:, interval_seconds:, workers:, once:)
+    def engine_scheduler_daemon(target:, run_id:, approval_hash:, approved:, execute:, dry_run:, max_ticks:, interval_seconds:, workers:, once:)
       max_ticks = engine_scheduler_normalized_max_ticks(max_ticks, once: once)
       interval_seconds = engine_scheduler_normalized_interval_seconds(interval_seconds)
       workers = engine_scheduler_normalized_workers(workers)
       daemon = engine_scheduler_daemon_record(
         target: target,
         run_id: run_id,
+        approval_hash: approval_hash,
         approved: approved,
         execute: execute,
         dry_run: dry_run,
@@ -164,13 +167,14 @@ module Aiweb
       }
     end
 
-    def engine_scheduler_supervisor(target:, run_id:, approved:, execute:, dry_run:, max_ticks:, interval_seconds:, workers:, once:)
+    def engine_scheduler_supervisor(target:, run_id:, approval_hash:, approved:, execute:, dry_run:, max_ticks:, interval_seconds:, workers:, once:)
       max_ticks = engine_scheduler_normalized_max_ticks(max_ticks, once: once)
       interval_seconds = engine_scheduler_normalized_interval_seconds(interval_seconds)
       workers = engine_scheduler_normalized_workers(workers)
       supervisor = engine_scheduler_supervisor_record(
         target: target,
         run_id: run_id,
+        approval_hash: approval_hash,
         approved: approved,
         execute: execute,
         dry_run: dry_run,
@@ -198,7 +202,7 @@ module Aiweb
       }
     end
 
-    def engine_scheduler_daemon_record(target:, run_id:, approved:, execute:, dry_run:, max_ticks:, interval_seconds:, workers:)
+    def engine_scheduler_daemon_record(target:, run_id:, approval_hash:, approved:, execute:, dry_run:, max_ticks:, interval_seconds:, workers:)
       tick_records = []
       service_records = []
       selected_run_id = nil
@@ -207,7 +211,7 @@ module Aiweb
       tick_index = 0
       loop do
         tick_index += 1
-        service = engine_scheduler_service_record(action: "tick", target: target, approved: approved, execute: execute)
+        service = engine_scheduler_service_record(action: "tick", target: target, approval_hash: approval_hash, approved: approved, execute: execute)
         service["daemon_driver"] = ENGINE_SCHEDULER_DAEMON_DRIVER
         service["daemon_tick_seq"] = tick_index
         selected_run_id ||= service["selected_run_id"]
@@ -286,12 +290,18 @@ module Aiweb
       }
     end
 
-    def engine_scheduler_supervisor_record(target:, run_id:, approved:, execute:, dry_run:, max_ticks:, interval_seconds:, workers:)
+    def engine_scheduler_supervisor_record(target:, run_id:, approval_hash:, approved:, execute:, dry_run:, max_ticks:, interval_seconds:, workers:)
       selected_run = target && target["run_id"] ? run_lifecycle_record("run_id" => target.fetch("run_id")) : nil
       selected_run_id = selected_run && selected_run["run_id"]
       run_selector = run_id.to_s.strip.empty? ? "latest" : run_id.to_s.strip
+      selected_metadata = selected_run_id ? (read_json_file(File.join(run_lifecycle_run_dir(selected_run_id), "engine-run.json")) || {}) : {}
+      selected_resume_context = selected_run_id ? engine_run_resume_context(selected_run_id) : nil
+      approval_evidence = selected_run_id ? engine_scheduler_resume_approval_evidence(selected_metadata, selected_run_id, selected_resume_context) : {}
+      expected_approval_hash = approval_evidence["approval_hash"]
+      supervisor_hash = approval_hash.to_s.strip.empty? ? (expected_approval_hash || "HASH") : approval_hash.to_s.strip
       daemon_argv = ["aiweb", "engine-scheduler", "daemon", "--max-ticks", max_ticks.to_s, "--interval-seconds", interval_seconds.to_s, "--workers", workers.to_s]
       daemon_argv.concat(["--run-id", selected_run_id]) if selected_run_id
+      daemon_argv.concat(["--approval-hash", supervisor_hash])
       daemon_argv << "--approved"
       daemon_argv << "--execute"
       blocking = []
@@ -309,6 +319,8 @@ module Aiweb
         "run_selector" => run_selector,
         "selected_run_id" => selected_run_id,
         "approved" => approved == true,
+        "expected_approval_hash" => expected_approval_hash,
+        "approval_hash_derivation" => approval_evidence.empty? ? nil : approval_evidence,
         "execute" => execute == true,
         "dry_run" => dry_run == true,
         "install_performed" => false,
@@ -327,7 +339,7 @@ module Aiweb
           "argv" => daemon_argv,
           "working_directory" => ".",
           "operator_must_set_working_directory_to_project_root" => true,
-          "approval_boundary" => "--approved --execute resumes only through engine-run bridge"
+          "approval_boundary" => "--approval-hash HASH --approved --execute resumes only through the engine-run bridge"
         },
         "restart_policy" => {
           "mode" => "external_supervisor_restart_on_failure",

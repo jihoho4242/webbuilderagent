@@ -181,6 +181,11 @@
       "surface": "agent-run approved-without-hash execution shortcut",
       "status": "removed",
       "finding": "Direct agent-run local source-patch execution now requires the matching dry-run approval hash; --approved alone blocks before worker processes, run artifacts, or source patches are created. engine-run safe_patch delegates through an internal dry-run hash rather than preserving the public boolean shortcut."
+    },
+    {
+      "surface": "engine-scheduler approved execute resume bridge without hash",
+      "status": "removed",
+      "finding": "engine-scheduler tick/daemon --approved --execute now requires the matching resume capability approval hash; the scheduler records expected_approval_hash from the resume envelope, rejects missing or stale hashes before bridge execution, and only then delegates to engine-run --resume with --approval-hash."
     }
   ],
   "preserve_safety_substrate": [

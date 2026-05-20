@@ -694,6 +694,8 @@ module Aiweb
 
       opts = parse_options do |o, options|
         o.on("--run-id ID") { |v| options[:run_id] = v }
+        o.on("--approval-hash HASH") { |v| options[:approval_hash] = v }
+        o.on("--approval-request HASH") { |v| options[:approval_hash] = v }
         o.on("--approved") { options[:approved] = true }
         o.on("--execute") { options[:execute] = true }
         o.on("--max-ticks N") { |v| options[:max_ticks] = v }
@@ -709,6 +711,7 @@ module Aiweb
       call_project_adapter(:engine_scheduler, {
         action: subcommand,
         run_id: opts[:run_id],
+        approval_hash: opts[:approval_hash],
         approved: !!opts[:approved],
         execute: !!opts[:execute],
         max_ticks: opts[:max_ticks] || 1,

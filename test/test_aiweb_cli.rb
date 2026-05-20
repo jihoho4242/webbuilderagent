@@ -131,6 +131,29 @@ class AiwebCliTest < Minitest::Test
     env ? run_aiweb_env(env, *args) : run_aiweb(*args)
   end
 
+  def engine_run_approval_hash_for(env = nil, *args)
+    full_args = ["engine-run", *args, "--dry-run", "--json"]
+    stdout, stderr, code = env ? run_aiweb_with_env(env, *full_args) : run_aiweb(*full_args)
+    payload = JSON.parse(stdout)
+    assert_equal 0, code, "engine-run dry-run should produce approval_hash: #{stdout} #{stderr}"
+    assert_equal "", stderr
+    hash = payload.dig("engine_run", "approval_hash")
+    assert_match(/\A[0-9a-f]{64}\z/, hash)
+    hash
+  end
+
+  def json_approved_engine_run_with_env(env, *args)
+    clean_args = args.reject { |arg| arg == "--approved" }
+    hash = engine_run_approval_hash_for(env, *clean_args)
+    json_cmd_with_env(env, "engine-run", *clean_args, "--approval-hash", hash, "--approved")
+  end
+
+  def json_approved_engine_run(*args)
+    clean_args = args.reject { |arg| arg == "--approved" }
+    hash = engine_run_approval_hash_for(nil, *clean_args)
+    json_cmd("engine-run", *clean_args, "--approval-hash", hash, "--approved")
+  end
+
   def with_env_values(values)
     old = values.keys.to_h { |key| [key, ENV[key]] }
     values.each { |key, value| value.nil? ? ENV.delete(key) : ENV[key] = value }
@@ -3387,7 +3410,7 @@ class AiwebCliTest < Minitest::Test
       env = { "PATH" => [bin_dir, "/usr/bin", "/bin", "/usr/sbin", "/sbin"].join(File::PATH_SEPARATOR) }
       before_entries = project_entries
 
-      payload, code = json_cmd_with_env(env, "engine-run", "--goal", "build landing page UI", "--agent", "openmanus", "--sandbox", "docker", "--approved")
+      payload, code = json_approved_engine_run_with_env(env, "--goal", "build landing page UI", "--agent", "openmanus", "--sandbox", "docker", "--approved")
 
       refute_equal 0, code
       assert_equal "blocked", payload.dig("engine_run", "status")
@@ -3493,7 +3516,7 @@ class AiwebCliTest < Minitest::Test
       ))
       before_entries = project_entries
 
-      payload, code = json_cmd("engine-run", "--goal", "patch hero", "--agent", "openhands", "--approved")
+      payload, code = json_approved_engine_run("--goal", "patch hero", "--agent", "openhands", "--approved")
 
       refute_equal 0, code
       assert_equal "blocked", payload.dig("engine_run", "status")
@@ -3579,7 +3602,7 @@ class AiwebCliTest < Minitest::Test
       ))
       before_entries = project_entries
 
-      payload, code = json_cmd("engine-run", "--goal", "patch hero", "--agent", "langgraph", "--approved")
+      payload, code = json_approved_engine_run("--goal", "patch hero", "--agent", "langgraph", "--approved")
 
       refute_equal 0, code
       assert_equal "blocked", payload.dig("engine_run", "status")
@@ -3665,7 +3688,7 @@ class AiwebCliTest < Minitest::Test
       ))
       before_entries = project_entries
 
-      payload, code = json_cmd("engine-run", "--goal", "patch hero", "--agent", "openai_agents_sdk", "--approved")
+      payload, code = json_approved_engine_run("--goal", "patch hero", "--agent", "openai_agents_sdk", "--approved")
 
       refute_equal 0, code
       assert_equal "blocked", payload.dig("engine_run", "status")
@@ -3687,7 +3710,7 @@ class AiwebCliTest < Minitest::Test
       bin_dir = write_fake_openmanus_tooling(dir, patch_text: "<section>Hook removed</section>\n", overwrite_workspace: true)
       env = { "PATH" => [bin_dir, "/usr/bin", "/bin", "/usr/sbin", "/sbin"].join(File::PATH_SEPARATOR) }
 
-      payload, code = json_cmd_with_env(env, "engine-run", "--goal", "patch hero", "--agent", "openmanus", "--sandbox", "docker", "--approved")
+      payload, code = json_approved_engine_run_with_env(env, "--goal", "patch hero", "--agent", "openmanus", "--sandbox", "docker", "--approved")
 
       refute_equal 0, code
       assert_equal "blocked", payload.dig("engine_run", "status")
@@ -3717,7 +3740,7 @@ class AiwebCliTest < Minitest::Test
       bin_dir = write_fake_openmanus_tooling(dir, patch_text: "<section data-aiweb-id=\"component.hero.copy\">Aesop exact reference copy</section>\n", overwrite_workspace: true)
       env = { "PATH" => [bin_dir, "/usr/bin", "/bin", "/usr/sbin", "/sbin"].join(File::PATH_SEPARATOR) }
 
-      payload, code = json_cmd_with_env(env, "engine-run", "--goal", "patch hero", "--agent", "openmanus", "--sandbox", "docker", "--approved")
+      payload, code = json_approved_engine_run_with_env(env, "--goal", "patch hero", "--agent", "openmanus", "--sandbox", "docker", "--approved")
 
       refute_equal 0, code
       assert_equal "blocked", payload.dig("engine_run", "status")
@@ -3740,7 +3763,7 @@ class AiwebCliTest < Minitest::Test
       )
       env = { "PATH" => [bin_dir, "/usr/bin", "/bin", "/usr/sbin", "/sbin"].join(File::PATH_SEPARATOR) }
 
-      payload, code = json_cmd_with_env(env, "engine-run", "--goal", "patch site content", "--agent", "openmanus", "--sandbox", "docker", "--approved")
+      payload, code = json_approved_engine_run_with_env(env, "--goal", "patch site content", "--agent", "openmanus", "--sandbox", "docker", "--approved")
 
       refute_equal 0, code
       assert_equal "blocked", payload.dig("engine_run", "status")
@@ -3758,7 +3781,7 @@ class AiwebCliTest < Minitest::Test
       bin_dir = write_fake_engine_openmanus_preview_tooling(dir)
       env = { "PATH" => [bin_dir, "/usr/bin", "/bin", "/usr/sbin", "/sbin"].join(File::PATH_SEPARATOR) }
 
-      payload, code = json_cmd_with_env(env, "engine-run", "--goal", "patch hero", "--agent", "openmanus", "--sandbox", "docker", "--approved")
+      payload, code = json_approved_engine_run_with_env(env, "--goal", "patch hero", "--agent", "openmanus", "--sandbox", "docker", "--approved")
 
       assert_equal 0, code
       assert_equal "ready", payload.dig("engine_run", "preview", "status")
@@ -3784,7 +3807,7 @@ class AiwebCliTest < Minitest::Test
       bin_dir = write_fake_engine_openmanus_preview_tooling(dir, preview_exit_status: 7)
       env = { "PATH" => [bin_dir, "/usr/bin", "/bin", "/usr/sbin", "/sbin"].join(File::PATH_SEPARATOR) }
 
-      payload, code = json_cmd_with_env(env, "engine-run", "--goal", "patch hero", "--agent", "openmanus", "--sandbox", "docker", "--approved")
+      payload, code = json_approved_engine_run_with_env(env, "--goal", "patch hero", "--agent", "openmanus", "--sandbox", "docker", "--approved")
 
       refute_equal 0, code
       assert_equal "failed", payload.dig("engine_run", "status")
@@ -3807,7 +3830,7 @@ class AiwebCliTest < Minitest::Test
       bin_dir = write_fake_engine_openmanus_preview_tooling(dir)
       env = { "PATH" => [bin_dir, "/usr/bin", "/bin", "/usr/sbin", "/sbin"].join(File::PATH_SEPARATOR) }
 
-      payload, code = json_cmd_with_env(env, "engine-run", "--goal", "patch hero", "--agent", "openmanus", "--sandbox", "docker", "--approved")
+      payload, code = json_approved_engine_run_with_env(env, "--goal", "patch hero", "--agent", "openmanus", "--sandbox", "docker", "--approved")
 
       assert_equal 0, code
       manifest_path = payload.dig("engine_run", "screenshot_evidence_path")
@@ -4266,13 +4289,22 @@ class AiwebCliTest < Minitest::Test
       bin_dir = write_fake_openmanus_tooling(dir, patch_text: "<!-- scheduler tick failed patch -->", exit_status: 9)
       env = { "PATH" => [bin_dir, "/usr/bin", "/bin", "/usr/sbin", "/sbin"].join(File::PATH_SEPARATOR) }
 
-      first_payload, first_code = json_cmd_with_env(env, "engine-run", "--goal", "scheduler tick resume", "--agent", "openmanus", "--sandbox", "docker", "--max-cycles", "1", "--approved")
+      first_hash = engine_run_approval_hash_for(env, "--goal", "scheduler tick resume", "--agent", "openmanus", "--sandbox", "docker", "--max-cycles", "1")
+      first_payload, first_code = json_cmd_with_env(env, "engine-run", "--goal", "scheduler tick resume", "--agent", "openmanus", "--sandbox", "docker", "--max-cycles", "1", "--approval-hash", first_hash, "--approved")
       refute_equal 0, first_code
       tick_parent_run_id = first_payload.dig("engine_run", "run_id")
       mark_engine_run_scheduler_resume_candidate!(tick_parent_run_id)
 
       write_fake_openmanus_tooling(dir, patch_text: "<!-- scheduler tick resumed patch -->")
-      tick_payload, tick_code = json_cmd_with_env(env, "engine-scheduler", "tick", "--run-id", tick_parent_run_id, "--approved", "--execute")
+      tick_plan_payload, tick_plan_code = json_cmd_with_env(env, "engine-scheduler", "tick", "--run-id", tick_parent_run_id, "--dry-run")
+      assert_equal 0, tick_plan_code, JSON.pretty_generate(tick_plan_payload)
+      tick_hash = tick_plan_payload.dig("engine_scheduler", "expected_approval_hash")
+      assert_match(/\A[0-9a-f]{64}\z/, tick_hash)
+      blocked_tick_payload, blocked_tick_code = json_cmd_with_env(env, "engine-scheduler", "tick", "--run-id", tick_parent_run_id, "--approved", "--execute")
+      refute_equal 0, blocked_tick_code, JSON.pretty_generate(blocked_tick_payload)
+      assert_equal "blocked", blocked_tick_payload.dig("engine_scheduler", "status")
+      assert_match(/requires --approval-hash/i, blocked_tick_payload.dig("engine_scheduler", "blocking_issues").join(" "))
+      tick_payload, tick_code = json_cmd_with_env(env, "engine-scheduler", "tick", "--run-id", tick_parent_run_id, "--approval-hash", tick_hash, "--approved", "--execute")
 
       assert_equal 0, tick_code, JSON.pretty_generate(tick_payload)
       assert_equal "resume_ready", tick_payload.dig("engine_scheduler", "decision")
@@ -4287,13 +4319,22 @@ class AiwebCliTest < Minitest::Test
       assert_match(/scheduler tick resumed patch/, body)
 
       write_fake_openmanus_tooling(dir, patch_text: "<!-- scheduler daemon failed patch -->", exit_status: 9)
-      second_payload, second_code = json_cmd_with_env(env, "engine-run", "--goal", "scheduler daemon resume", "--agent", "openmanus", "--sandbox", "docker", "--max-cycles", "1", "--approved")
+      second_hash = engine_run_approval_hash_for(env, "--goal", "scheduler daemon resume", "--agent", "openmanus", "--sandbox", "docker", "--max-cycles", "1")
+      second_payload, second_code = json_cmd_with_env(env, "engine-run", "--goal", "scheduler daemon resume", "--agent", "openmanus", "--sandbox", "docker", "--max-cycles", "1", "--approval-hash", second_hash, "--approved")
       refute_equal 0, second_code
       daemon_parent_run_id = second_payload.dig("engine_run", "run_id")
       mark_engine_run_scheduler_resume_candidate!(daemon_parent_run_id)
 
       write_fake_openmanus_tooling(dir, patch_text: "<!-- scheduler daemon resumed patch -->")
-      daemon_payload, daemon_code = json_cmd_with_env(env, "engine-scheduler", "daemon", "--run-id", daemon_parent_run_id, "--max-ticks", "1", "--workers", "1", "--approved", "--execute")
+      daemon_plan_payload, daemon_plan_code = json_cmd_with_env(env, "engine-scheduler", "daemon", "--run-id", daemon_parent_run_id, "--max-ticks", "1", "--workers", "1", "--dry-run")
+      assert_equal 0, daemon_plan_code, JSON.pretty_generate(daemon_plan_payload)
+      daemon_hash = daemon_plan_payload.dig("engine_scheduler", "service_records", 0, "expected_approval_hash")
+      assert_match(/\A[0-9a-f]{64}\z/, daemon_hash)
+      blocked_daemon_payload, blocked_daemon_code = json_cmd_with_env(env, "engine-scheduler", "daemon", "--run-id", daemon_parent_run_id, "--max-ticks", "1", "--workers", "1", "--approved", "--execute")
+      refute_equal 0, blocked_daemon_code, JSON.pretty_generate(blocked_daemon_payload)
+      assert_equal "blocked", blocked_daemon_payload.dig("engine_scheduler", "status")
+      assert_match(/requires --approval-hash/i, blocked_daemon_payload.dig("engine_scheduler", "blocking_issues").join(" "))
+      daemon_payload, daemon_code = json_cmd_with_env(env, "engine-scheduler", "daemon", "--run-id", daemon_parent_run_id, "--max-ticks", "1", "--workers", "1", "--approval-hash", daemon_hash, "--approved", "--execute")
 
       assert_equal 0, daemon_code, JSON.pretty_generate(daemon_payload)
       assert_equal "resume_ready_executed", daemon_payload.dig("engine_scheduler", "stop_reason")
@@ -4614,7 +4655,7 @@ class AiwebCliTest < Minitest::Test
       bin_dir = write_fake_engine_openmanus_preview_tooling(dir)
       env = { "PATH" => [bin_dir, "/usr/bin", "/bin", "/usr/sbin", "/sbin"].join(File::PATH_SEPARATOR) }
 
-      payload, code = json_cmd_with_env(env, "engine-run", "--goal", "patch hero", "--agent", "openmanus", "--sandbox", "docker", "--approved")
+      payload, code = json_approved_engine_run_with_env(env, "--goal", "patch hero", "--agent", "openmanus", "--sandbox", "docker", "--approved")
 
       assert_equal 0, code
       assert_equal "passed", payload.dig("engine_run", "design_verdict", "status")
@@ -4688,7 +4729,7 @@ class AiwebCliTest < Minitest::Test
       bin_dir = write_fake_engine_openmanus_preview_tooling(dir)
       env = { "PATH" => [bin_dir, "/usr/bin", "/bin", "/usr/sbin", "/sbin"].join(File::PATH_SEPARATOR) }
 
-      payload, code = json_cmd_with_env(env, "engine-run", "--goal", "patch hero", "--agent", "openmanus", "--sandbox", "docker", "--max-cycles", "1", "--approved")
+      payload, code = json_approved_engine_run_with_env(env, "--goal", "patch hero", "--agent", "openmanus", "--sandbox", "docker", "--max-cycles", "1", "--approved")
 
       refute_equal 0, code
       assert_equal "failed", payload.dig("engine_run", "status")
@@ -4723,7 +4764,7 @@ class AiwebCliTest < Minitest::Test
       bin_dir = write_fake_engine_openmanus_preview_tooling(dir)
       env = { "PATH" => [bin_dir, "/usr/bin", "/bin", "/usr/sbin", "/sbin"].join(File::PATH_SEPARATOR) }
 
-      payload, code = json_cmd_with_env(env, "engine-run", "--goal", "patch hero", "--agent", "openmanus", "--sandbox", "docker", "--max-cycles", "1", "--approved")
+      payload, code = json_approved_engine_run_with_env(env, "--goal", "patch hero", "--agent", "openmanus", "--sandbox", "docker", "--max-cycles", "1", "--approved")
 
       refute_equal 0, code
       assert_equal "failed", payload.dig("engine_run", "status")
@@ -4750,7 +4791,7 @@ class AiwebCliTest < Minitest::Test
       bin_dir = write_fake_engine_openmanus_preview_tooling(dir)
       env = { "PATH" => [bin_dir, "/usr/bin", "/bin", "/usr/sbin", "/sbin"].join(File::PATH_SEPARATOR) }
 
-      payload, code = json_cmd_with_env(env, "engine-run", "--goal", "patch hero", "--agent", "openmanus", "--sandbox", "docker", "--max-cycles", "1", "--approved")
+      payload, code = json_approved_engine_run_with_env(env, "--goal", "patch hero", "--agent", "openmanus", "--sandbox", "docker", "--max-cycles", "1", "--approved")
 
       refute_equal 0, code
       assert_equal "failed", payload.dig("engine_run", "status")
@@ -4778,7 +4819,7 @@ class AiwebCliTest < Minitest::Test
       bin_dir = write_fake_engine_openmanus_preview_tooling(dir)
       env = { "PATH" => [bin_dir, "/usr/bin", "/bin", "/usr/sbin", "/sbin"].join(File::PATH_SEPARATOR) }
 
-      payload, code = json_cmd_with_env(env, "engine-run", "--goal", "patch hero", "--agent", "openmanus", "--sandbox", "docker", "--max-cycles", "1", "--approved")
+      payload, code = json_approved_engine_run_with_env(env, "--goal", "patch hero", "--agent", "openmanus", "--sandbox", "docker", "--max-cycles", "1", "--approved")
 
       refute_equal 0, code
       assert_equal "failed", payload.dig("engine_run", "status")
@@ -4808,7 +4849,7 @@ class AiwebCliTest < Minitest::Test
       bin_dir = write_fake_engine_openmanus_preview_tooling(dir)
       env = { "PATH" => [bin_dir, "/usr/bin", "/bin", "/usr/sbin", "/sbin"].join(File::PATH_SEPARATOR) }
 
-      payload, code = json_cmd_with_env(env, "engine-run", "--goal", "patch hero", "--agent", "openmanus", "--sandbox", "docker", "--max-cycles", "1", "--approved")
+      payload, code = json_approved_engine_run_with_env(env, "--goal", "patch hero", "--agent", "openmanus", "--sandbox", "docker", "--max-cycles", "1", "--approved")
 
       refute_equal 0, code
       assert_equal "failed", payload.dig("engine_run", "status")
@@ -4841,7 +4882,7 @@ class AiwebCliTest < Minitest::Test
       bin_dir = write_fake_engine_openmanus_preview_tooling(dir)
       env = { "PATH" => [bin_dir, "/usr/bin", "/bin", "/usr/sbin", "/sbin"].join(File::PATH_SEPARATOR) }
 
-      payload, code = json_cmd_with_env(env, "engine-run", "--goal", "patch hero", "--agent", "openmanus", "--sandbox", "docker", "--max-cycles", "1", "--approved")
+      payload, code = json_approved_engine_run_with_env(env, "--goal", "patch hero", "--agent", "openmanus", "--sandbox", "docker", "--max-cycles", "1", "--approved")
 
       refute_equal 0, code
       evidence = payload.dig("engine_run", "screenshot_evidence")
@@ -4892,7 +4933,7 @@ class AiwebCliTest < Minitest::Test
       write_fake_openmanus_tooling(dir, patch_text: "<section data-aiweb-id=\"component.hero.copy\" class=\"bad-spacing bad-typography\">Weak</section>\n", overwrite_workspace: true)
       env = { "PATH" => [bin_dir, "/usr/bin", "/bin", "/usr/sbin", "/sbin"].join(File::PATH_SEPARATOR) }
 
-      payload, code = json_cmd_with_env(env, "engine-run", "--goal", "patch hero", "--agent", "openmanus", "--sandbox", "docker", "--approved")
+      payload, code = json_approved_engine_run_with_env(env, "--goal", "patch hero", "--agent", "openmanus", "--sandbox", "docker", "--approved")
 
       refute_equal 0, code
       assert_equal "failed", payload.dig("engine_run", "status")
@@ -4926,7 +4967,7 @@ class AiwebCliTest < Minitest::Test
       )
       env = { "PATH" => [bin_dir, "/usr/bin", "/bin", "/usr/sbin", "/sbin"].join(File::PATH_SEPARATOR) }
 
-      payload, code = json_cmd_with_env(env, "engine-run", "--goal", "patch hero", "--agent", "openmanus", "--sandbox", "docker", "--max-cycles", "2", "--approved")
+      payload, code = json_approved_engine_run_with_env(env, "--goal", "patch hero", "--agent", "openmanus", "--sandbox", "docker", "--max-cycles", "2", "--approved")
 
       assert_equal 0, code
       assert_equal "passed", payload.dig("engine_run", "status")
@@ -4936,6 +4977,25 @@ class AiwebCliTest < Minitest::Test
       assert_includes event_types, "design.repair.planned"
       assert_includes event_types, "design.repair.started"
       assert_includes event_types, "design.repair.finished"
+    end
+  end
+
+  def test_engine_run_approved_without_approval_hash_blocks_before_artifacts_or_processes
+    in_tmp do |dir|
+      json_cmd("init")
+      FileUtils.mkdir_p("src/components")
+      File.write("src/components/Hero.astro", "<h1>Before</h1>\n")
+      bin_dir = write_fake_openmanus_tooling(dir)
+      env = { "PATH" => [bin_dir, "/usr/bin", "/bin", "/usr/sbin", "/sbin"].join(File::PATH_SEPARATOR) }
+      before_entries = project_entries
+
+      payload, code = json_cmd_with_env(env, "engine-run", "--goal", "patch hero", "--agent", "openmanus", "--sandbox", "docker", "--approved")
+
+      refute_equal 0, code
+      assert_equal "blocked", payload.dig("engine_run", "status")
+      assert_match(/--approval-hash is required/i, payload.dig("engine_run", "blocking_issues").join("\n"))
+      assert_equal before_entries, project_entries, "missing approval hash must block before run artifacts"
+      assert_equal "<h1>Before</h1>\n", File.read("src/components/Hero.astro")
     end
   end
 
@@ -4977,7 +5037,7 @@ class AiwebCliTest < Minitest::Test
       bin_dir = write_fake_openmanus_tooling(dir, secret_path: ".env")
       env = { "PATH" => [bin_dir, "/usr/bin", "/bin", "/usr/sbin", "/sbin"].join(File::PATH_SEPARATOR) }
 
-      payload, code = json_cmd_with_env(env, "engine-run", "--goal", "try unsafe env", "--agent", "openmanus", "--sandbox", "docker", "--approved")
+      payload, code = json_approved_engine_run_with_env(env, "--goal", "try unsafe env", "--agent", "openmanus", "--sandbox", "docker", "--approved")
 
       assert_equal 5, code
       assert_equal "quarantined", payload.dig("engine_run", "status")
@@ -5007,7 +5067,7 @@ class AiwebCliTest < Minitest::Test
       bin_dir = write_fake_openmanus_tooling(dir)
       env = { "PATH" => [bin_dir, "/usr/bin", "/bin", "/usr/sbin", "/sbin"].join(File::PATH_SEPARATOR) }
 
-      payload, code = json_cmd_with_env(env, "engine-run", "--goal", "patch hero", "--agent", "openmanus", "--sandbox", "docker", "--approved")
+      payload, code = json_approved_engine_run_with_env(env, "--goal", "patch hero", "--agent", "openmanus", "--sandbox", "docker", "--approved")
 
       assert_equal 0, code
       manifest = JSON.parse(File.read(File.join(payload.dig("engine_run", "run_dir"), "artifacts", "staged-manifest.json")))
@@ -5044,7 +5104,7 @@ class AiwebCliTest < Minitest::Test
         "FAKE_OPENMANUS_SECRET" => "must-not-leak"
       }
 
-      payload, code = json_cmd_with_env(env, "engine-run", "--goal", "patch hero", "--agent", "openmanus", "--sandbox", "docker", "--approved")
+      payload, code = json_approved_engine_run_with_env(env, "--goal", "patch hero", "--agent", "openmanus", "--sandbox", "docker", "--approved")
 
       assert_equal 0, code
       assert_equal "passed", payload.dig("engine_run", "status")
@@ -5221,7 +5281,7 @@ class AiwebCliTest < Minitest::Test
       bin_dir = write_fake_openmanus_tooling(dir)
       env = { "PATH" => [bin_dir, "/usr/bin", "/bin", "/usr/sbin", "/sbin"].join(File::PATH_SEPARATOR) }
 
-      payload, code = json_cmd_with_env(env, "engine-run", "--goal", "patch hero", "--agent", "openmanus", "--sandbox", "podman", "--approved")
+      payload, code = json_approved_engine_run_with_env(env, "--goal", "patch hero", "--agent", "openmanus", "--sandbox", "podman", "--approved")
 
       assert_equal 0, code
       assert_equal "passed", payload.dig("engine_run", "status")
@@ -5244,7 +5304,7 @@ class AiwebCliTest < Minitest::Test
       bin_dir = write_fake_openmanus_tooling(dir)
       env = { "PATH" => [bin_dir, "/usr/bin", "/bin", "/usr/sbin", "/sbin"].join(File::PATH_SEPARATOR) }
 
-      payload, code = json_cmd_with_env(env, "engine-run", "--goal", "patch hero", "--agent", "openmanus", "--sandbox", "docker", "--approved")
+      payload, code = json_approved_engine_run_with_env(env, "--goal", "patch hero", "--agent", "openmanus", "--sandbox", "docker", "--approved")
 
       refute_equal 0, code
       assert_equal "blocked", payload.dig("engine_run", "status")
@@ -5266,7 +5326,7 @@ class AiwebCliTest < Minitest::Test
       bin_dir = write_fake_openmanus_tooling(dir)
       env = { "PATH" => [bin_dir, "/usr/bin", "/bin", "/usr/sbin", "/sbin"].join(File::PATH_SEPARATOR) }
 
-      payload, code = json_cmd_with_env(env, "engine-run", "--goal", "patch hero", "--agent", "openmanus", "--sandbox", "docker", "--approved")
+      payload, code = json_approved_engine_run_with_env(env, "--goal", "patch hero", "--agent", "openmanus", "--sandbox", "docker", "--approved")
 
       refute_equal 0, code
       assert_equal "blocked", payload.dig("engine_run", "status")
@@ -5286,7 +5346,7 @@ class AiwebCliTest < Minitest::Test
       bin_dir = write_fake_openmanus_tooling(dir)
       env = { "PATH" => [bin_dir, "/usr/bin", "/bin", "/usr/sbin", "/sbin"].join(File::PATH_SEPARATOR) }
 
-      payload, code = json_cmd_with_env(env, "engine-run", "--goal", "patch hero", "--agent", "openmanus", "--sandbox", "docker", "--approved")
+      payload, code = json_approved_engine_run_with_env(env, "--goal", "patch hero", "--agent", "openmanus", "--sandbox", "docker", "--approved")
 
       refute_equal 0, code
       assert_equal "blocked", payload.dig("engine_run", "status")
@@ -5312,7 +5372,7 @@ class AiwebCliTest < Minitest::Test
       bin_dir = write_fake_openmanus_tooling(dir)
       env = { "PATH" => [bin_dir, "/usr/bin", "/bin", "/usr/sbin", "/sbin"].join(File::PATH_SEPARATOR) }
 
-      payload, code = json_cmd_with_env(env, "engine-run", "--goal", "patch hero", "--agent", "openmanus", "--sandbox", "docker", "--approved")
+      payload, code = json_approved_engine_run_with_env(env, "--goal", "patch hero", "--agent", "openmanus", "--sandbox", "docker", "--approved")
 
       refute_equal 0, code
       assert_equal "blocked", payload.dig("engine_run", "status")
@@ -5340,7 +5400,7 @@ class AiwebCliTest < Minitest::Test
         }
       before_entries = project_entries
 
-      payload, code = json_cmd_with_env(env, "engine-run", "--goal", "patch hero", "--agent", "openmanus", "--sandbox", "docker", "--approved")
+      payload, code = json_approved_engine_run_with_env(env, "--goal", "patch hero", "--agent", "openmanus", "--sandbox", "docker", "--approved")
 
       refute_equal 0, code
       assert_equal "blocked", payload.dig("engine_run", "status")
@@ -5361,7 +5421,7 @@ class AiwebCliTest < Minitest::Test
       env = { "PATH" => [bin_dir, "/usr/bin", "/bin", "/usr/sbin", "/sbin"].join(File::PATH_SEPARATOR) }
       before_entries = project_entries
 
-      payload, code = json_cmd_with_env(env, "engine-run", "--goal", "patch hero", "--agent", "openmanus", "--sandbox", "docker", "--approved")
+      payload, code = json_approved_engine_run_with_env(env, "--goal", "patch hero", "--agent", "openmanus", "--sandbox", "docker", "--approved")
 
       refute_equal 0, code
       assert_equal "blocked", payload.dig("engine_run", "status")
@@ -5382,7 +5442,7 @@ class AiwebCliTest < Minitest::Test
       env = { "PATH" => [bin_dir, "/usr/bin", "/bin", "/usr/sbin", "/sbin"].join(File::PATH_SEPARATOR) }
       before_entries = project_entries
 
-      payload, code = json_cmd_with_env(env, "engine-run", "--goal", "patch hero", "--agent", "openmanus", "--sandbox", "docker", "--approved")
+      payload, code = json_approved_engine_run_with_env(env, "--goal", "patch hero", "--agent", "openmanus", "--sandbox", "docker", "--approved")
 
       refute_equal 0, code
       assert_equal "blocked", payload.dig("engine_run", "status")
@@ -5405,7 +5465,7 @@ class AiwebCliTest < Minitest::Test
       }
       before_entries = project_entries
 
-      payload, code = json_cmd_with_env(env, "engine-run", "--goal", "patch hero", "--agent", "openmanus", "--sandbox", "docker", "--approved")
+      payload, code = json_approved_engine_run_with_env(env, "--goal", "patch hero", "--agent", "openmanus", "--sandbox", "docker", "--approved")
 
       refute_equal 0, code
       assert_equal "blocked", payload.dig("engine_run", "status")
@@ -5428,7 +5488,7 @@ class AiwebCliTest < Minitest::Test
       }
       before_entries = project_entries
 
-      payload, code = json_cmd_with_env(env, "engine-run", "--goal", "patch hero", "--agent", "openmanus", "--sandbox", "docker", "--approved")
+      payload, code = json_approved_engine_run_with_env(env, "--goal", "patch hero", "--agent", "openmanus", "--sandbox", "docker", "--approved")
 
       refute_equal 0, code
       assert_equal "blocked", payload.dig("engine_run", "status")
@@ -5451,7 +5511,7 @@ class AiwebCliTest < Minitest::Test
         "AIWEB_OPENMANUS_IMAGE" => pinned
       }
 
-      payload, code = json_cmd_with_env(env, "engine-run", "--goal", "patch hero", "--agent", "openmanus", "--sandbox", "docker", "--approved")
+      payload, code = json_approved_engine_run_with_env(env, "--goal", "patch hero", "--agent", "openmanus", "--sandbox", "docker", "--approved")
 
       assert_equal 0, code
       assert_equal "passed", payload.dig("engine_run", "status")
@@ -5474,7 +5534,7 @@ class AiwebCliTest < Minitest::Test
         "AIWEB_ENGINE_RUN_RUNTIME_MATRIX" => "docker,podman"
       }
 
-      payload, code = json_cmd_with_env(env, "engine-run", "--goal", "patch hero", "--agent", "openmanus", "--sandbox", "docker", "--approved")
+      payload, code = json_approved_engine_run_with_env(env, "--goal", "patch hero", "--agent", "openmanus", "--sandbox", "docker", "--approved")
 
       assert_equal 0, code
       matrix = payload.dig("engine_run", "sandbox_preflight", "runtime_matrix")
@@ -5504,7 +5564,7 @@ class AiwebCliTest < Minitest::Test
         "AIWEB_ENGINE_RUN_RUNTIME_MATRIX" => "docker,podman"
       }
 
-      payload, code = json_cmd_with_env(env, "engine-run", "--goal", "patch hero", "--agent", "openmanus", "--sandbox", "docker", "--approved")
+      payload, code = json_approved_engine_run_with_env(env, "--goal", "patch hero", "--agent", "openmanus", "--sandbox", "docker", "--approved")
 
       refute_equal 0, code
       assert_equal "blocked", payload.dig("engine_run", "status")
@@ -5527,7 +5587,7 @@ class AiwebCliTest < Minitest::Test
         "AIWEB_ENGINE_RUN_RUNTIME_MATRIX" => "docker,kubernetes"
       }
 
-      payload, code = json_cmd_with_env(env, "engine-run", "--goal", "patch hero", "--agent", "openmanus", "--sandbox", "docker", "--approved")
+      payload, code = json_approved_engine_run_with_env(env, "--goal", "patch hero", "--agent", "openmanus", "--sandbox", "docker", "--approved")
 
       refute_equal 0, code
       assert_equal "blocked", payload.dig("engine_run", "status")
@@ -5549,7 +5609,7 @@ class AiwebCliTest < Minitest::Test
       bin_dir = write_fake_openmanus_tooling(dir, stdout_text: "need npm install lucide-react")
       env = { "PATH" => [bin_dir, "/usr/bin", "/bin", "/usr/sbin", "/sbin"].join(File::PATH_SEPARATOR) }
 
-      payload, code = json_cmd_with_env(env, "engine-run", "--goal", "patch hero with icons", "--agent", "openmanus", "--sandbox", "docker", "--approved")
+      payload, code = json_approved_engine_run_with_env(env, "--goal", "patch hero with icons", "--agent", "openmanus", "--sandbox", "docker", "--approved")
 
       assert_equal 5, code
       assert_equal "waiting_approval", payload.dig("engine_run", "status")
@@ -5616,7 +5676,7 @@ class AiwebCliTest < Minitest::Test
       bin_dir = write_fake_openmanus_tooling(dir, broker_blocked_action: "package_install")
       env = { "PATH" => [bin_dir, "/usr/bin", "/bin", "/usr/sbin", "/sbin"].join(File::PATH_SEPARATOR) }
 
-      payload, code = json_cmd_with_env(env, "engine-run", "--goal", "patch hero with package", "--agent", "openmanus", "--sandbox", "docker", "--approved")
+      payload, code = json_approved_engine_run_with_env(env, "--goal", "patch hero with package", "--agent", "openmanus", "--sandbox", "docker", "--approved")
 
       assert_equal 5, code
       assert_equal "waiting_approval", payload.dig("engine_run", "status")
@@ -5737,7 +5797,7 @@ class AiwebCliTest < Minitest::Test
       bin_dir = write_fake_openmanus_tooling(dir, broker_blocked_action: "external_network", broker_args_text: secret_arg)
       env = { "PATH" => [bin_dir, "/usr/bin", "/bin", "/usr/sbin", "/sbin"].join(File::PATH_SEPARATOR) }
 
-      payload, code = json_cmd_with_env(env, "engine-run", "--goal", "patch hero with network", "--agent", "openmanus", "--sandbox", "docker", "--approved")
+      payload, code = json_approved_engine_run_with_env(env, "--goal", "patch hero with network", "--agent", "openmanus", "--sandbox", "docker", "--approved")
 
       assert_equal 5, code
       assert_equal "waiting_approval", payload.dig("engine_run", "status")
@@ -5793,7 +5853,7 @@ class AiwebCliTest < Minitest::Test
       end
       env = { "PATH" => [bin_dir, "/usr/bin", "/bin", "/usr/sbin", "/sbin"].join(File::PATH_SEPARATOR) }
 
-      payload, code = json_cmd_with_env(env, "engine-run", "--goal", "surface verification broker block", "--agent", "openmanus", "--sandbox", "docker", "--approved")
+      payload, code = json_approved_engine_run_with_env(env, "--goal", "surface verification broker block", "--agent", "openmanus", "--sandbox", "docker", "--approved")
 
       assert_equal 5, code
       assert_equal "waiting_approval", payload.dig("engine_run", "status")
@@ -5820,7 +5880,7 @@ class AiwebCliTest < Minitest::Test
       bin_dir = write_fake_openmanus_tooling(dir, agent_result_payload: result_payload)
       env = { "PATH" => [bin_dir, "/usr/bin", "/bin", "/usr/sbin", "/sbin"].join(File::PATH_SEPARATOR) }
 
-      payload, code = json_cmd_with_env(env, "engine-run", "--goal", "patch hero", "--agent", "openmanus", "--sandbox", "docker", "--approved")
+      payload, code = json_approved_engine_run_with_env(env, "--goal", "patch hero", "--agent", "openmanus", "--sandbox", "docker", "--approved")
 
       refute_equal 0, code
       assert_equal "blocked", payload.dig("engine_run", "status")
@@ -5838,7 +5898,7 @@ class AiwebCliTest < Minitest::Test
       bin_dir = write_fake_openmanus_tooling(dir, stdout_text: "need MCP connector github app for repo context")
       env = { "PATH" => [bin_dir, "/usr/bin", "/bin", "/usr/sbin", "/sbin"].join(File::PATH_SEPARATOR) }
 
-      payload, code = json_cmd_with_env(env, "engine-run", "--goal", "patch hero with repo context", "--agent", "openmanus", "--sandbox", "docker", "--approved")
+      payload, code = json_approved_engine_run_with_env(env, "--goal", "patch hero with repo context", "--agent", "openmanus", "--sandbox", "docker", "--approved")
 
       assert_equal 5, code
       assert_equal "waiting_approval", payload.dig("engine_run", "status")
@@ -5866,7 +5926,7 @@ class AiwebCliTest < Minitest::Test
       bin_dir = write_fake_openmanus_tooling(dir, stdout_text: "secret environment leaked to docker")
       env = { "PATH" => [bin_dir, "/usr/bin", "/bin", "/usr/sbin", "/sbin"].join(File::PATH_SEPARATOR) }
 
-      payload, code = json_cmd_with_env(env, "engine-run", "--goal", "patch hero", "--agent", "openmanus", "--sandbox", "docker", "--approved")
+      payload, code = json_approved_engine_run_with_env(env, "--goal", "patch hero", "--agent", "openmanus", "--sandbox", "docker", "--approved")
 
       refute_equal 0, code
       assert_equal "quarantined", payload.dig("engine_run", "status")
@@ -5889,7 +5949,7 @@ class AiwebCliTest < Minitest::Test
       bin_dir = write_fake_engine_openmanus_repair_tooling(dir)
       env = { "PATH" => [bin_dir, "/usr/bin", "/bin", "/usr/sbin", "/sbin"].join(File::PATH_SEPARATOR) }
 
-      payload, code = json_cmd_with_env(env, "engine-run", "--goal", "repair failing build", "--agent", "openmanus", "--sandbox", "docker", "--max-cycles", "2", "--approved")
+      payload, code = json_approved_engine_run_with_env(env, "--goal", "repair failing build", "--agent", "openmanus", "--sandbox", "docker", "--max-cycles", "2", "--approved")
 
       assert_equal 0, code
       assert_equal "passed", payload.dig("engine_run", "status")
@@ -5917,7 +5977,7 @@ class AiwebCliTest < Minitest::Test
       bin_dir = write_fake_engine_openmanus_repair_tooling(dir, agent_result_payload_after_repair: invalid_repair_result)
       env = { "PATH" => [bin_dir, "/usr/bin", "/bin", "/usr/sbin", "/sbin"].join(File::PATH_SEPARATOR) }
 
-      payload, code = json_cmd_with_env(env, "engine-run", "--goal", "repair then emit invalid adapter result", "--agent", "openmanus", "--sandbox", "docker", "--max-cycles", "2", "--approved")
+      payload, code = json_approved_engine_run_with_env(env, "--goal", "repair then emit invalid adapter result", "--agent", "openmanus", "--sandbox", "docker", "--max-cycles", "2", "--approved")
 
       refute_equal 0, code
       assert_equal "blocked", payload.dig("engine_run", "status")
@@ -5939,7 +5999,7 @@ class AiwebCliTest < Minitest::Test
         "FAKE_ENGINE_SECRET" => "must-not-reach-verification"
       }
 
-      payload, code = json_cmd_with_env(env, "engine-run", "--goal", "verify clean env", "--agent", "openmanus", "--sandbox", "docker", "--approved")
+      payload, code = json_approved_engine_run_with_env(env, "--goal", "verify clean env", "--agent", "openmanus", "--sandbox", "docker", "--approved")
 
       assert_equal 0, code
       assert_equal "passed", payload.dig("engine_run", "status")
@@ -5999,14 +6059,14 @@ class AiwebCliTest < Minitest::Test
       bin_dir = write_fake_openmanus_tooling(dir, patch_text: "<!-- first failed patch -->", exit_status: 9)
       env = { "PATH" => [bin_dir, "/usr/bin", "/bin", "/usr/sbin", "/sbin"].join(File::PATH_SEPARATOR) }
 
-      first_payload, first_code = json_cmd_with_env(env, "engine-run", "--goal", "resume hero patch", "--agent", "openmanus", "--sandbox", "docker", "--max-cycles", "1", "--approved")
+      first_payload, first_code = json_approved_engine_run_with_env(env, "--goal", "resume hero patch", "--agent", "openmanus", "--sandbox", "docker", "--max-cycles", "1", "--approved")
 
       refute_equal 0, first_code
       assert_equal "failed", first_payload.dig("engine_run", "status")
       refute_match(/first failed patch/, File.read("src/components/Hero.astro"))
 
       write_fake_openmanus_tooling(dir, patch_text: "<!-- resumed patch -->")
-      payload, code = json_cmd_with_env(env, "engine-run", "--resume", first_payload.dig("engine_run", "run_id"), "--agent", "openmanus", "--sandbox", "docker", "--approved")
+      payload, code = json_approved_engine_run_with_env(env, "--resume", first_payload.dig("engine_run", "run_id"), "--agent", "openmanus", "--sandbox", "docker", "--approved")
 
       assert_equal 0, code
       assert_equal "passed", payload.dig("engine_run", "status")
@@ -6036,7 +6096,7 @@ class AiwebCliTest < Minitest::Test
       bin_dir = write_fake_openmanus_tooling(dir, patch_text: "<!-- first failed patch -->", exit_status: 9)
       env = { "PATH" => [bin_dir, "/usr/bin", "/bin", "/usr/sbin", "/sbin"].join(File::PATH_SEPARATOR) }
 
-      first_payload, first_code = json_cmd_with_env(env, "engine-run", "--goal", "resume hero patch", "--agent", "openmanus", "--sandbox", "docker", "--max-cycles", "1", "--approved")
+      first_payload, first_code = json_approved_engine_run_with_env(env, "--goal", "resume hero patch", "--agent", "openmanus", "--sandbox", "docker", "--max-cycles", "1", "--approved")
 
       refute_equal 0, first_code
       checkpoint_path = first_payload.dig("engine_run", "checkpoint_path")
@@ -6045,7 +6105,7 @@ class AiwebCliTest < Minitest::Test
       File.write(checkpoint_path, JSON.pretty_generate(checkpoint) + "\n")
 
       write_fake_openmanus_tooling(dir, patch_text: "<!-- resumed patch -->")
-      payload, code = json_cmd_with_env(env, "engine-run", "--resume", first_payload.dig("engine_run", "run_id"), "--agent", "openmanus", "--sandbox", "docker", "--approved")
+      payload, code = json_approved_engine_run_with_env(env, "--resume", first_payload.dig("engine_run", "run_id"), "--agent", "openmanus", "--sandbox", "docker", "--approved")
 
       refute_equal 0, code
       assert_equal "blocked", payload.dig("engine_run", "status")
@@ -6062,7 +6122,7 @@ class AiwebCliTest < Minitest::Test
       bin_dir = write_fake_openmanus_tooling(dir, patch_text: "<!-- first failed patch -->", exit_status: 9)
       env = { "PATH" => [bin_dir, "/usr/bin", "/bin", "/usr/sbin", "/sbin"].join(File::PATH_SEPARATOR) }
 
-      first_payload, first_code = json_cmd_with_env(env, "engine-run", "--goal", "resume hero patch", "--agent", "openmanus", "--sandbox", "docker", "--max-cycles", "1", "--approved")
+      first_payload, first_code = json_approved_engine_run_with_env(env, "--goal", "resume hero patch", "--agent", "openmanus", "--sandbox", "docker", "--max-cycles", "1", "--approved")
 
       refute_equal 0, first_code
       checkpoint_path = first_payload.dig("engine_run", "checkpoint_path")
@@ -6072,7 +6132,7 @@ class AiwebCliTest < Minitest::Test
       File.write(checkpoint_path, JSON.pretty_generate(checkpoint) + "\n")
 
       write_fake_openmanus_tooling(dir, patch_text: "<!-- resumed patch -->")
-      payload, code = json_cmd_with_env(env, "engine-run", "--resume", first_payload.dig("engine_run", "run_id"), "--agent", "openmanus", "--sandbox", "docker", "--approved")
+      payload, code = json_approved_engine_run_with_env(env, "--resume", first_payload.dig("engine_run", "run_id"), "--agent", "openmanus", "--sandbox", "docker", "--approved")
 
       refute_equal 0, code
       assert_equal "blocked", payload.dig("engine_run", "status")
@@ -6092,7 +6152,7 @@ class AiwebCliTest < Minitest::Test
       bin_dir = write_fake_openmanus_tooling(dir, patch_path: "package.json", patch_text: first_patch, overwrite_workspace: true)
       env = { "PATH" => [bin_dir, "/usr/bin", "/bin", "/usr/sbin", "/sbin"].join(File::PATH_SEPARATOR) }
 
-      first_payload, first_code = json_cmd_with_env(env, "engine-run", "--goal", "patch package", "--agent", "openmanus", "--sandbox", "docker", "--approved")
+      first_payload, first_code = json_approved_engine_run_with_env(env, "--goal", "patch package", "--agent", "openmanus", "--sandbox", "docker", "--approved")
 
       refute_equal 0, first_code
       assert_equal "waiting_approval", first_payload.dig("engine_run", "status")
@@ -6101,7 +6161,7 @@ class AiwebCliTest < Minitest::Test
       refute_includes File.read("package.json"), "echo patched"
 
       write_fake_openmanus_tooling(dir, patch_path: "package.json", patch_text: "SHOULD_NOT_RERUN_WORKER\n", overwrite_workspace: false)
-      payload, code = json_cmd_with_env(env, "engine-run", "--resume", first_payload.dig("engine_run", "run_id"), "--agent", "openmanus", "--sandbox", "docker", "--approved")
+      payload, code = json_approved_engine_run_with_env(env, "--resume", first_payload.dig("engine_run", "run_id"), "--agent", "openmanus", "--sandbox", "docker", "--approved")
 
       refute_equal 0, code
       assert_equal "blocked", payload.dig("engine_run", "status")
@@ -6126,7 +6186,7 @@ class AiwebCliTest < Minitest::Test
       bin_dir = write_fake_openmanus_tooling(dir, patch_path: "package.json", patch_text: first_patch, overwrite_workspace: true)
       env = { "PATH" => [bin_dir, "/usr/bin", "/bin", "/usr/sbin", "/sbin"].join(File::PATH_SEPARATOR) }
 
-      first_payload, first_code = json_cmd_with_env(env, "engine-run", "--goal", "patch package", "--agent", "openmanus", "--sandbox", "docker", "--approved")
+      first_payload, first_code = json_approved_engine_run_with_env(env, "--goal", "patch package", "--agent", "openmanus", "--sandbox", "docker", "--approved")
 
       refute_equal 0, first_code
       assert_equal "waiting_approval", first_payload.dig("engine_run", "status")
@@ -6143,7 +6203,7 @@ class AiwebCliTest < Minitest::Test
       File.write(checkpoint_path, JSON.pretty_generate(checkpoint) + "\n")
 
       write_fake_openmanus_tooling(dir, patch_path: "package.json", patch_text: "SHOULD_NOT_RERUN_WORKER\n", overwrite_workspace: false)
-      payload, code = json_cmd_with_env(env, "engine-run", "--resume", first_payload.dig("engine_run", "run_id"), "--agent", "openmanus", "--sandbox", "docker", "--approved")
+      payload, code = json_approved_engine_run_with_env(env, "--resume", first_payload.dig("engine_run", "run_id"), "--agent", "openmanus", "--sandbox", "docker", "--approved")
 
       refute_equal 0, code
       assert_equal "blocked", payload.dig("engine_run", "status")
@@ -6162,7 +6222,7 @@ class AiwebCliTest < Minitest::Test
       bin_dir = write_fake_openmanus_tooling(dir, patch_text: "<!-- first failed patch -->", exit_status: 9)
       env = { "PATH" => [bin_dir, "/usr/bin", "/bin", "/usr/sbin", "/sbin"].join(File::PATH_SEPARATOR) }
 
-      first_payload, first_code = json_cmd_with_env(env, "engine-run", "--goal", "resume hero patch", "--agent", "openmanus", "--sandbox", "docker", "--max-cycles", "1", "--approved")
+      first_payload, first_code = json_approved_engine_run_with_env(env, "--goal", "resume hero patch", "--agent", "openmanus", "--sandbox", "docker", "--max-cycles", "1", "--approved")
 
       refute_equal 0, first_code
       checkpoint_path = first_payload.dig("engine_run", "checkpoint_path")
@@ -6171,7 +6231,7 @@ class AiwebCliTest < Minitest::Test
       File.write(checkpoint_path, JSON.pretty_generate(checkpoint) + "\n")
 
       write_fake_openmanus_tooling(dir, patch_text: "<!-- resumed patch -->")
-      payload, code = json_cmd_with_env(env, "engine-run", "--resume", first_payload.dig("engine_run", "run_id"), "--agent", "openmanus", "--sandbox", "docker", "--approved")
+      payload, code = json_approved_engine_run_with_env(env, "--resume", first_payload.dig("engine_run", "run_id"), "--agent", "openmanus", "--sandbox", "docker", "--approved")
 
       refute_equal 0, code
       assert_equal "blocked", payload.dig("engine_run", "status")
@@ -6189,7 +6249,7 @@ class AiwebCliTest < Minitest::Test
         bin_dir = write_fake_openmanus_tooling(dir, patch_text: "<!-- first failed patch -->", exit_status: 9)
         env = { "PATH" => [bin_dir, "/usr/bin", "/bin", "/usr/sbin", "/sbin"].join(File::PATH_SEPARATOR) }
 
-        first_payload, first_code = json_cmd_with_env(env, "engine-run", "--goal", "resume hero patch", "--agent", "openmanus", "--sandbox", "docker", "--max-cycles", "1", "--approved")
+        first_payload, first_code = json_approved_engine_run_with_env(env, "--goal", "resume hero patch", "--agent", "openmanus", "--sandbox", "docker", "--max-cycles", "1", "--approved")
 
         refute_equal 0, first_code
         checkpoint_path = first_payload.dig("engine_run", "checkpoint_path")
@@ -6199,7 +6259,7 @@ class AiwebCliTest < Minitest::Test
         File.write(checkpoint_path, JSON.pretty_generate(checkpoint) + "\n")
 
         write_fake_openmanus_tooling(dir, patch_text: "<!-- resumed patch -->")
-        payload, code = json_cmd_with_env(env, "engine-run", "--resume", first_payload.dig("engine_run", "run_id"), "--agent", "openmanus", "--sandbox", "docker", "--approved")
+        payload, code = json_approved_engine_run_with_env(env, "--resume", first_payload.dig("engine_run", "run_id"), "--agent", "openmanus", "--sandbox", "docker", "--approved")
 
         refute_equal 0, code, missing_key
         assert_equal "blocked", payload.dig("engine_run", "status"), missing_key
@@ -6221,7 +6281,7 @@ class AiwebCliTest < Minitest::Test
         bin_dir = write_fake_openmanus_tooling(dir, patch_text: "<!-- first failed patch -->", exit_status: 9)
         env = { "PATH" => [bin_dir, "/usr/bin", "/bin", "/usr/sbin", "/sbin"].join(File::PATH_SEPARATOR) }
 
-        first_payload, first_code = json_cmd_with_env(env, "engine-run", "--goal", "resume hero patch", "--agent", "openmanus", "--sandbox", "docker", "--max-cycles", "1", "--approved")
+        first_payload, first_code = json_approved_engine_run_with_env(env, "--goal", "resume hero patch", "--agent", "openmanus", "--sandbox", "docker", "--max-cycles", "1", "--approved")
 
         refute_equal 0, first_code
         checkpoint_path = first_payload.dig("engine_run", "checkpoint_path")
@@ -6247,7 +6307,7 @@ class AiwebCliTest < Minitest::Test
         File.write(checkpoint_path, JSON.pretty_generate(checkpoint) + "\n")
 
         write_fake_openmanus_tooling(dir, patch_text: "<!-- resumed patch -->")
-        payload, code = json_cmd_with_env(env, "engine-run", "--resume", first_payload.dig("engine_run", "run_id"), "--agent", "openmanus", "--sandbox", "docker", "--approved")
+        payload, code = json_approved_engine_run_with_env(env, "--resume", first_payload.dig("engine_run", "run_id"), "--agent", "openmanus", "--sandbox", "docker", "--approved")
 
         refute_equal 0, code, hash_key
         assert_equal "blocked", payload.dig("engine_run", "status"), hash_key
@@ -6266,7 +6326,7 @@ class AiwebCliTest < Minitest::Test
       bin_dir = write_fake_openmanus_tooling(dir, patch_text: "<!-- first failed patch -->", exit_status: 9)
       env = { "PATH" => [bin_dir, "/usr/bin", "/bin", "/usr/sbin", "/sbin"].join(File::PATH_SEPARATOR) }
 
-      first_payload, first_code = json_cmd_with_env(env, "engine-run", "--goal", "resume hero patch", "--agent", "openmanus", "--sandbox", "docker", "--max-cycles", "1", "--approved")
+      first_payload, first_code = json_approved_engine_run_with_env(env, "--goal", "resume hero patch", "--agent", "openmanus", "--sandbox", "docker", "--max-cycles", "1", "--approved")
 
       refute_equal 0, first_code
       checkpoint_path = first_payload.dig("engine_run", "checkpoint_path")
@@ -6279,7 +6339,7 @@ class AiwebCliTest < Minitest::Test
       File.write(checkpoint_path, JSON.pretty_generate(checkpoint) + "\n")
 
       write_fake_openmanus_tooling(dir, patch_text: "<!-- resumed patch -->")
-      payload, code = json_cmd_with_env(env, "engine-run", "--resume", first_payload.dig("engine_run", "run_id"), "--agent", "openmanus", "--sandbox", "docker", "--approved")
+      payload, code = json_approved_engine_run_with_env(env, "--resume", first_payload.dig("engine_run", "run_id"), "--agent", "openmanus", "--sandbox", "docker", "--approved")
 
       refute_equal 0, code
       assert_equal "blocked", payload.dig("engine_run", "status")
@@ -6296,7 +6356,7 @@ class AiwebCliTest < Minitest::Test
       bin_dir = write_fake_openmanus_tooling(dir, patch_text: "<!-- first failed patch -->", exit_status: 9)
       env = { "PATH" => [bin_dir, "/usr/bin", "/bin", "/usr/sbin", "/sbin"].join(File::PATH_SEPARATOR) }
 
-      first_payload, first_code = json_cmd_with_env(env, "engine-run", "--goal", "resume hero patch", "--agent", "openmanus", "--sandbox", "docker", "--max-cycles", "1", "--approved")
+      first_payload, first_code = json_approved_engine_run_with_env(env, "--goal", "resume hero patch", "--agent", "openmanus", "--sandbox", "docker", "--max-cycles", "1", "--approved")
 
       refute_equal 0, first_code
       checkpoint_path = first_payload.dig("engine_run", "checkpoint_path")
@@ -6305,7 +6365,7 @@ class AiwebCliTest < Minitest::Test
       File.write(checkpoint_path, JSON.pretty_generate(checkpoint) + "\n")
 
       write_fake_openmanus_tooling(dir, patch_text: "<!-- resumed patch -->")
-      payload, code = json_cmd_with_env(env, "engine-run", "--resume", first_payload.dig("engine_run", "run_id"), "--agent", "openmanus", "--sandbox", "docker", "--approved")
+      payload, code = json_approved_engine_run_with_env(env, "--resume", first_payload.dig("engine_run", "run_id"), "--agent", "openmanus", "--sandbox", "docker", "--approved")
 
       refute_equal 0, code
       assert_equal "blocked", payload.dig("engine_run", "status")
@@ -8254,7 +8314,7 @@ class AiwebCliTest < Minitest::Test
       bin_dir = write_fake_openmanus_tooling(dir)
       env = { "PATH" => [bin_dir, "/usr/bin", "/bin", "/usr/sbin", "/sbin"].join(File::PATH_SEPARATOR) }
 
-      payload, code = json_cmd_with_env(env, "engine-run", "--goal", "patch hero", "--agent", "openmanus", "--sandbox", "docker", "--approved")
+      payload, code = json_approved_engine_run_with_env(env, "--goal", "patch hero", "--agent", "openmanus", "--sandbox", "docker", "--approved")
 
       refute_equal 0, code
       assert_equal "blocked", payload.dig("engine_run", "status")
