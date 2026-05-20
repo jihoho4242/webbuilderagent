@@ -124,6 +124,35 @@ Dir.mktmpdir("aiweb-runtime-matrix") do |tmp|
     "AIWEB_ENGINE_RUN_RUNTIME_MATRIX" => matrix.join(","),
     "AIWEB_ENGINE_RUN_SANDBOX_USER" => current_user
   )
+  run_id = "engine-run-runtime-matrix-smoke-#{Time.now.utc.strftime("%Y%m%dT%H%M%SZ")}"
+  dry_stdout, = run!(
+    "aiweb engine-run runtime matrix approval dry-run",
+    env,
+    RUBY,
+    File.join(ROOT, "bin", "aiweb"),
+    "--json",
+    "--path",
+    project,
+    "engine-run",
+    "--goal",
+    options.fetch(:goal),
+    "--agent",
+    "openmanus",
+    "--sandbox",
+    matrix.first,
+    "--run-id",
+    run_id,
+    "--dry-run",
+    chdir: ROOT
+  )
+  dry_payload = JSON.parse(dry_stdout)
+  dry_engine = dry_payload.fetch("engine_run")
+  unless dry_engine.fetch("status") == "dry_run"
+    raise "runtime matrix approval dry-run did not produce an executable plan\nSTDOUT:\n#{dry_stdout}"
+  end
+  approval_hash = dry_engine.fetch("approval_hash").to_s
+  raise "runtime matrix approval dry-run did not produce approval_hash" if approval_hash.empty?
+
   stdout, stderr = run!(
     "aiweb engine-run runtime matrix",
     env,
@@ -139,6 +168,10 @@ Dir.mktmpdir("aiweb-runtime-matrix") do |tmp|
     "openmanus",
     "--sandbox",
     matrix.first,
+    "--run-id",
+    run_id,
+    "--approval-hash",
+    approval_hash,
     "--approved",
     chdir: ROOT
   )

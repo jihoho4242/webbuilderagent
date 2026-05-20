@@ -552,6 +552,7 @@ class AiwebContractTest < Minitest::Test
 
   def test_repository_quality_gate_is_the_single_ci_entrypoint
     check_script = File.read(File.join(REPO_ROOT, "bin", "check"))
+    runtime_matrix_script = File.read(File.join(REPO_ROOT, "bin", "engine-runtime-matrix-check"))
     ci_workflow = File.read(File.join(REPO_ROOT, ".github", "workflows", "ci.yml"))
     readme = File.read(File.join(REPO_ROOT, "README.md"))
     contract = File.read(File.join(REPO_ROOT, "docs", "contracts", "repository-quality-gate.md"))
@@ -571,6 +572,9 @@ class AiwebContractTest < Minitest::Test
     assert_includes check_script, "\"-w\""
     assert_includes check_script, "test/all.rb"
     assert_includes check_script, "git diff"
+    assert_includes runtime_matrix_script, "\"--dry-run\""
+    assert_includes runtime_matrix_script, "approval_hash ="
+    assert_includes runtime_matrix_script, "\"--approval-hash\""
     refute File.exist?(File.join(REPO_ROOT, "Gemfile")), "quality gate must remain dependency-free until a Gemfile is explicitly introduced"
   end
 
