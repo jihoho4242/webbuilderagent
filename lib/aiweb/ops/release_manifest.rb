@@ -97,6 +97,8 @@ module Aiweb
             "status" => p5_evidence.dig("brain", "status"),
             "verifier_status" => p5_evidence.dig("brain", "verifier_status"),
             "storage_mode" => p5_evidence.dig("brain", "storage_mode"),
+            "concurrency_backed" => p5_evidence.dig("brain", "concurrency_backed"),
+            "backup_restore_drill" => p5_evidence.dig("brain", "backup_restore_drill"),
             "ledger_event_count" => p5_evidence.dig("brain", "ledger_event_count"),
             "event_hash_chain_valid" => p5_evidence.dig("brain", "event_hash_chain_valid"),
             "search_projection" => p5_evidence.dig("brain", "search_projection"),

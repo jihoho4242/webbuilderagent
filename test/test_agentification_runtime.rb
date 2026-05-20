@@ -77,7 +77,7 @@ class AgentificationRuntimeTest < Minitest::Test
     assert_equal 0, code
     assert_equal "", stderr
     assert_includes stdout, 'agent "..."'
-    assert_includes stdout, '[--approved] [--dry-run]'
+    assert_includes stdout, '[--dry-run] [--approval-hash HASH] [--approved]'
     assert_includes stdout, 'start [--path PATH] --idea "..." [--profile A|B|C|D|S]'
 
     readme = File.read(File.expand_path("../README.md", __dir__))
@@ -85,7 +85,7 @@ class AgentificationRuntimeTest < Minitest::Test
     assert_match(/aiweb agent/, readme)
     assert_match(/Profile S/i, readme)
     assert_match(/not an unsupervised.*production app generator/i, readme)
-    assert_match(/supervised.*--approved/i, readme)
+    assert_match(/supervised.*approval[-_ ]hash.*--approved/i, readme)
   end
 
   def test_runtime_path_policy_blocks_env_secret_absolute_and_traversal_paths

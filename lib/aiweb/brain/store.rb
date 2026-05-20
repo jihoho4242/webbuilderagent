@@ -17,6 +17,9 @@ module Aiweb
         @path = @brain_dir ? File.join(@brain_dir, "brain.jsonl") : nil
         @index_path = @brain_dir ? File.join(@brain_dir, "brain-index.json") : nil
         @health_report_path = @brain_dir ? File.join(@brain_dir, "memory-health-report.json") : nil
+        @lock_path = @brain_dir ? File.join(@brain_dir, "brain.lock") : nil
+        @backup_dir = @brain_dir ? File.join(@brain_dir, "backups") : nil
+        @backup_restore_drill_path = @brain_dir ? File.join(@brain_dir, "backup-restore-drill.json") : nil
         @legacy_path = @brain_dir ? File.join(@brain_dir, "brain.json") : nil
         @items = []
         @tombstones = []
@@ -41,15 +44,30 @@ module Aiweb
           "storage" => storage_mode,
           "created_at" => now
         }
-        @items << item
-        append_event!("memory.remembered", "memory_id" => id, "item" => item)
+        if persistent?
+          with_persistent_lock do
+            reload_persistent_state!
+            @items << item
+            append_event_unlocked!("memory.remembered", "memory_id" => id, "item" => item)
+          end
+        else
+          @items << item
+        end
         { "status" => "passed", "memory_id" => id, "blocking_issues" => [] }
       end
 
       def forget(memory_id)
-        @tombstones << memory_id.to_s
-        @items.reject! { |item| item["id"] == memory_id.to_s }
-        append_event!("memory.forgotten", "memory_id" => memory_id.to_s, "forgotten_at" => now)
+        if persistent?
+          with_persistent_lock do
+            reload_persistent_state!
+            @tombstones << memory_id.to_s
+            @items.reject! { |item| item["id"] == memory_id.to_s }
+            append_event_unlocked!("memory.forgotten", "memory_id" => memory_id.to_s, "forgotten_at" => now)
+          end
+        else
+          @tombstones << memory_id.to_s
+          @items.reject! { |item| item["id"] == memory_id.to_s }
+        end
         { "status" => "passed", "memory_id" => memory_id.to_s }
       end
 
@@ -75,6 +93,65 @@ module Aiweb
 
       def health_report_path
         @health_report_path
+      end
+
+      def lock_path
+        @lock_path
+      end
+
+      def backup_restore_drill_path
+        @backup_restore_drill_path
+      end
+
+      def concurrency_backed?
+        persistent? && !@lock_path.to_s.empty?
+      end
+
+      def backup_restore_drill_present?
+        @backup_restore_drill_path && File.file?(@backup_restore_drill_path)
+      end
+
+      def backup_restore_drill!
+        return { "status" => "blocked", "blocking_issues" => ["backup/restore drill requires a persistent project-local Brain store"] } unless persistent?
+
+        with_persistent_lock do
+          reload_persistent_state!
+          write_projection!
+          write_health_report!
+          FileUtils.mkdir_p(@backup_dir)
+          backup_path = File.join(@backup_dir, "brain-backup-#{Time.now.utc.strftime("%Y%m%dT%H%M%SZ")}-#{SecureRandom.hex(4)}.json")
+          backup = {
+            "schema_version" => 1,
+            "storage_mode" => storage_mode,
+            "ledger_path" => relative_to_root(@path),
+            "ledger_events" => @events,
+            "ledger_event_count" => ledger_event_count,
+            "last_event_hash" => last_event_hash,
+            "created_at" => now
+          }
+          File.write(backup_path, JSON.pretty_generate(backup) + "\n")
+          restored = restore_events_for_drill(Array(backup["ledger_events"]))
+          status = restored.fetch("event_hash_chain_valid") && restored.fetch("last_event_hash") == last_event_hash && restored.fetch("item_count") == search.length ? "passed" : "blocked"
+          drill = {
+            "schema_version" => 1,
+            "status" => status,
+            "storage_mode" => storage_mode,
+            "backup_path" => relative_to_root(backup_path),
+            "source_ledger_event_count" => ledger_event_count,
+            "restored_ledger_event_count" => restored.fetch("ledger_event_count"),
+            "source_last_event_hash" => last_event_hash,
+            "restored_last_event_hash" => restored.fetch("last_event_hash"),
+            "source_item_count" => search.length,
+            "restored_item_count" => restored.fetch("item_count"),
+            "restored_tombstone_count" => restored.fetch("tombstone_count"),
+            "event_hash_chain_valid" => restored.fetch("event_hash_chain_valid"),
+            "blocking_issues" => status == "passed" ? [] : ["backup restore drill did not reproduce the Brain ledger state"],
+            "recorded_at" => now
+          }
+          File.write(@backup_restore_drill_path, JSON.pretty_generate(drill) + "\n")
+          write_health_report!
+          drill
+        end
       end
 
       def ledger_event_count
@@ -106,7 +183,12 @@ module Aiweb
       end
 
       def sqlite_available?
-        false
+        begin
+          require "sqlite3"
+          true
+        rescue LoadError
+          false
+        end
       end
 
       def storage_mode
@@ -131,6 +213,19 @@ module Aiweb
         @tombstones = []
       end
 
+      def reload_persistent_state!
+        reset_loaded_state!
+        replay_jsonl_ledger if File.file?(@path)
+      end
+
+      def reset_loaded_state!
+        @items = []
+        @tombstones = []
+        @events = []
+        @last_event_hash = nil
+        @event_hash_chain_valid = true
+      end
+
       def replay_jsonl_ledger
         File.foreach(@path) do |line|
           next if line.strip.empty?
@@ -151,7 +246,7 @@ module Aiweb
         end
       end
 
-      def append_event!(event, payload)
+      def append_event_unlocked!(event, payload)
         return unless @path
 
         FileUtils.mkdir_p(File.dirname(@path))
@@ -176,11 +271,55 @@ module Aiweb
         return unless @path
 
         @items.each do |item|
-          append_event!("memory.remembered", "memory_id" => item["id"], "item" => item)
+          append_event_unlocked!("memory.remembered", "memory_id" => item["id"], "item" => item)
         end
         @tombstones.each do |memory_id|
-          append_event!("memory.forgotten", "memory_id" => memory_id, "forgotten_at" => now)
+          append_event_unlocked!("memory.forgotten", "memory_id" => memory_id, "forgotten_at" => now)
         end
+      end
+
+
+      def with_persistent_lock
+        return yield unless @lock_path
+
+        FileUtils.mkdir_p(File.dirname(@lock_path))
+        File.open(@lock_path, "w") do |lock|
+          lock.flock(File::LOCK_EX)
+          yield
+        ensure
+          lock.flock(File::LOCK_UN) unless lock.closed?
+        end
+      end
+
+      def restore_events_for_drill(events)
+        items = []
+        tombstones = []
+        last_hash = nil
+        valid = true
+        events.each do |event|
+          expected_previous = last_hash.to_s
+          actual_previous = event["previous_event_hash"].to_s
+          valid &&= expected_previous.empty? ? actual_previous.empty? : actual_previous == expected_previous
+          event_hash = event["event_hash"].to_s
+          valid &&= event_hash.empty? || event_hash_for(event.reject { |key, _| key == "event_hash" }) == event_hash
+          last_hash = event_hash unless event_hash.empty?
+          case event["event"]
+          when "memory.remembered"
+            item = event["item"].is_a?(Hash) ? event["item"] : nil
+            items << item if item && !tombstones.include?(item["id"])
+          when "memory.forgotten"
+            memory_id = event["memory_id"].to_s
+            tombstones << memory_id
+            items.reject! { |item| item["id"] == memory_id }
+          end
+        end
+        {
+          "ledger_event_count" => events.length,
+          "last_event_hash" => last_hash,
+          "event_hash_chain_valid" => valid,
+          "item_count" => items.reject { |item| tombstones.include?(item["id"]) }.length,
+          "tombstone_count" => tombstones.uniq.length
+        }
       end
 
       def write_projection!
@@ -215,6 +354,10 @@ module Aiweb
           "ledger_event_count" => ledger_event_count,
           "last_event_hash" => last_event_hash,
           "event_hash_chain_valid" => event_hash_chain_valid?,
+          "concurrency_backed" => concurrency_backed?,
+          "lock_path" => relative_to_root(@lock_path),
+          "backup_restore_drill_present" => backup_restore_drill_present?,
+          "backup_restore_drill_path" => relative_to_root(@backup_restore_drill_path),
           "search_projection_lag" => search_projection_lag,
           "tombstone_leak" => tombstone_leak_count,
           "recorded_at" => now

@@ -18,6 +18,8 @@ class AgentOsV32BrainAndSelfImprovementTest < Minitest::Test
       assert_equal "passed", result.fetch("status")
       assert_equal "project_local_jsonl_ledger_with_projection", store.storage_mode
       assert_equal false, store.sqlite_available?
+      assert_equal true, store.concurrency_backed?
+      assert_match(/brain\.lock\z/, store.lock_path)
 
       path = File.join(dir, ".ai-web", "brain", "brain.jsonl")
       index_path = File.join(dir, ".ai-web", "brain", "brain-index.json")
@@ -49,13 +51,24 @@ class AgentOsV32BrainAndSelfImprovementTest < Minitest::Test
       tombstone_reload = Aiweb::Brain::Store.new(root: dir)
       assert_empty tombstone_reload.search
       assert_equal 0, tombstone_reload.tombstone_leak_count
+      pre_drill_audit = Aiweb::Brain::MemoryAudit.new.audit(tombstone_reload)
+      assert_equal "passed", pre_drill_audit.fetch("status")
+      assert_equal "blocked", pre_drill_audit.fetch("operational_status")
+      assert_equal true, pre_drill_audit.dig("metrics", "event_hash_chain_valid")
+      assert_equal true, pre_drill_audit.dig("metrics", "search_projection_present")
+      assert_equal true, pre_drill_audit.dig("metrics", "concurrency_backed")
+      assert_equal false, pre_drill_audit.dig("metrics", "backup_restore_drill_present")
+      assert_equal 0, pre_drill_audit.dig("metrics", "search_projection_lag")
+      assert_match(/backup\/restore drill evidence/, pre_drill_audit.fetch("operational_blocking_issues").join("\n"))
+
+      drill = tombstone_reload.backup_restore_drill!
+      assert_equal "passed", drill.fetch("status")
+      assert_equal true, File.file?(tombstone_reload.backup_restore_drill_path)
+      assert_equal drill.fetch("source_last_event_hash"), drill.fetch("restored_last_event_hash")
       audit = Aiweb::Brain::MemoryAudit.new.audit(tombstone_reload)
-      assert_equal "passed", audit.fetch("status")
-      assert_equal "blocked", audit.fetch("operational_status")
-      assert_equal true, audit.dig("metrics", "event_hash_chain_valid")
-      assert_equal true, audit.dig("metrics", "search_projection_present")
-      assert_equal 0, audit.dig("metrics", "search_projection_lag")
-      assert_match(/SQLite\/concurrency-backed store/, audit.fetch("operational_blocking_issues").join("\n"))
+      assert_equal true, audit.dig("metrics", "backup_restore_drill_present")
+      refute_match(/backup\/restore drill evidence/, audit.fetch("operational_blocking_issues").join("\n"))
+      assert_match(/SQLite-backed storage evidence/, audit.fetch("operational_blocking_issues").join("\n"))
     end
   end
 
@@ -92,6 +105,23 @@ class AgentOsV32BrainAndSelfImprovementTest < Minitest::Test
       assert_equal ["Keep this approved preference"], reloaded.search.map { |item| item.fetch("summary") }
       assert_equal true, reloaded.event_hash_chain_valid?
       assert_equal 0, reloaded.search_projection_lag
+    end
+  end
+
+  def test_brain_store_file_lock_preserves_hash_chain_across_reloaded_writers
+    Dir.mktmpdir("aiweb-brain-lock-test") do |dir|
+      first = Aiweb::Brain::Store.new(root: dir)
+      second = Aiweb::Brain::Store.new(root: dir)
+
+      first_result = first.remember(summary: "First concurrent-safe preference", evidence_grade: "operator_approved")
+      second_result = second.remember(summary: "Second concurrent-safe preference", evidence_grade: "operator_approved")
+
+      assert_equal "passed", first_result.fetch("status")
+      assert_equal "passed", second_result.fetch("status")
+      reloaded = Aiweb::Brain::Store.new(root: dir)
+      assert_equal 2, reloaded.ledger_event_count
+      assert_equal true, reloaded.event_hash_chain_valid?
+      assert_equal ["First concurrent-safe preference", "Second concurrent-safe preference"], reloaded.search.map { |item| item.fetch("summary") }
     end
   end
 

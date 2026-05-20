@@ -34,13 +34,13 @@
     },
     {
       "surface": "Personal Brain persistence claim",
-      "status": "hash_chained_jsonl_projection_mvp_production_brain_blocked",
-      "finding": "Brain store now uses hash-chained append-only JSONL remember/forget events, writes a bounded brain-index.json search projection and memory-health-report.json, and MemoryAudit blocks production readiness until a SQLite/concurrency-backed store, backup/restore drill, and independent memory audit evidence exist."
+      "status": "hash_chained_jsonl_projection_file_lock_drill_mvp_production_brain_blocked",
+      "finding": "Brain store now uses hash-chained append-only JSONL remember/forget events, writes a bounded brain-index.json search projection and memory-health-report.json, preserves the event chain across reloaded writers with a project-local file lock, and records a backup/restore drill fixture; MemoryAudit still blocks production readiness until SQLite-backed storage and independent memory audit evidence exist."
     },
     {
       "surface": "P5 Brain safety claim",
       "status": "demoted_to_memory_safety_fixture_production_blocked",
-      "finding": "P5 release evidence no longer says Brain safety passed as a broad readiness claim; it reports memory_safety_fixture_passed with ledger count, event hash-chain validity, projection status, and health-report presence, and remains blocked until a real SQLite/concurrency-backed Brain kernel exists."
+      "finding": "P5 release evidence no longer says Brain safety passed as a broad readiness claim; it reports memory_safety_fixture_passed with ledger count, event hash-chain validity, projection status, health-report presence, concurrency_backed=true, and backup_restore_drill=passed, and remains blocked until a real SQLite-backed Brain kernel and independent memory audit evidence exist."
     },
     {
       "surface": "red-team catalog fixture claim",
@@ -216,6 +216,11 @@
       "surface": "approved-only next-action and live guidance shortcuts",
       "status": "removed",
       "finding": "agent, verify-loop, engine-run resume, eval-baseline import, and human-review-pack guidance no longer tell operators to rerun with --approved alone; static audit keeps live guidance on dry-run review plus matching approval_hash plus --approved."
+    },
+    {
+      "surface": "webbuilder/help approved-only UX guidance",
+      "status": "removed",
+      "finding": "CLI help, README, and Korean webbuilder launcher guidance no longer present agent/setup/verify-loop examples that imply --approved can stand alone; live guidance now orders dry-run review plus matching approval_hash before --approved, with static regression coverage."
     }
   ],
   "preserve_safety_substrate": [

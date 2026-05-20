@@ -22,7 +22,7 @@ Evidence integrity: `releases/v0.3.2-rc1/evidence_integrity_manifest.yaml`
 - Red-team secret canary: canary_configured, value emitted=false, production gate blocked
 - Red-team critical/high bypass count: 0
 - Eval: expanded_fixture_passed (50 synthetic fixture cases; production gate remains blocked)
-- Brain: memory_safety_fixture_passed (JSONL ledger + search projection + hash-chain fixture; production Brain gate blocked)
+- Brain: memory_safety_fixture_passed (project_local_jsonl_ledger_with_projection; concurrency_backed=true; backup_restore_drill=passed; production Brain gate blocked)
 - Self-improvement: proposal_fixture_recorded / sandbox_planned (production gate blocked; no patch generated)
 
 ## Scaffold/demo blockers
@@ -35,12 +35,13 @@ Evidence integrity: `releases/v0.3.2-rc1/evidence_integrity_manifest.yaml`
 - operator drill evidence is placeholder only
 - full ruby bin/check evidence is not attached to this release evidence
 - full ruby -Itest test/all.rb evidence is not attached to this release evidence
-- tool gateway demo exercised finish plus L3 approval gating and verifier-result rejection fixtures, but full side-effect tool gateway audit is not attached to this release evidence
+- tool gateway demo exercised finish plus L3 approval gating fixtures, but full side-effect tool gateway audit is not attached to this release evidence
 - static side-effect surface audit is attached, but runtime universal side-effect enforcement is not proven by this release evidence
 - side-effect surface audit is static classification evidence only; runtime universal enforcement still requires release-bound broker execution evidence
 - production HITL evidence requires a real operator approval artifact, expiry/single-use consumption proof, and audit trail
 - durable replay/resume audit with artifact hash validation is not attached to this release evidence
 - production-ready eval science requires independent holdout, leakage check, CI artifact, and human baseline
 - production-ready red-team requires independent adversarial review, CI artifact, secret canary transcript, and expanded attack coverage
-- production Brain still needs SQLite/concurrency-backed store, backup/restore drill, and independent memory audit evidence
+- production Brain still needs SQLite-backed storage evidence
+- production Brain still needs independent memory audit evidence
 - production-ready self-improvement requires sandbox patch diff, static checks, eval/red-team pass, HITL v2 approval, canary, rollback plan, and monitor evidence

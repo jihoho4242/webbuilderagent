@@ -19,7 +19,7 @@ module Aiweb
           run-cancel [--run-id active|ID] [--force]
           run-resume [--run-id latest|ID]
           engine-run [--goal "..."] [--agent codex|openmanus|openhands|langgraph|openai_agents_sdk] [--mode safe_patch|agentic_local] [--sandbox docker|podman] [--max-cycles N] [--run-id RUN_ID] [--approved] [--approval-hash HASH]
-          agent "..." [--mode plan-only|supervised|autonomous-local] [--profile D|S] [--max-steps N] [--approved] [--dry-run]
+          agent "..." [--mode plan-only|supervised|autonomous-local] [--profile D|S] [--max-steps N] [--dry-run] [--approval-hash HASH] [--approved]
           engine-run --dry-run
           engine-scheduler status [--run-id latest|ID]
   engine-scheduler tick [--run-id latest|ID] [--approval-hash HASH] [--approved] [--execute]
@@ -108,7 +108,7 @@ module Aiweb
           qa-a11y: runs safe local axe accessibility QA against localhost/127.0.0.1 preview; --dry-run does not write files or launch Node
           qa-lighthouse: runs safe local Lighthouse QA against localhost/127.0.0.1 preview; --dry-run does not write files or launch Node
           visual-critique: records safe local visual critique from explicit screenshot/metadata evidence or --from-screenshots latest only; --dry-run plans .ai-web/visual artifacts without writes, browser launch, installs, repair, deploy, network, or .env access
-          verify-loop: legacy compatibility shim only, not the canonical agent engine; --max-cycles is capped at 10, and the hardcoded build -> preview -> QA -> screenshot -> visual critique -> repair/visual-polish -> agent-run script has been removed. --dry-run writes nothing and returns the engine-run approval hash/plan, while real local execution must go through engine-run policy gates via --approved --approval-hash HASH; verify-loop no longer writes verify-loop cycle evidence and cannot unlock deploy and never installs packages, deploys, calls provider CLIs, or reads .env/.env.*
+          verify-loop: legacy compatibility shim only, not the canonical agent engine; --max-cycles is capped at 10, and the hardcoded build -> preview -> QA -> screenshot -> visual critique -> repair/visual-polish -> agent-run script has been removed. --dry-run writes nothing and returns the engine-run approval hash/plan, while real local execution must go through engine-run policy gates via --approval-hash HASH --approved; verify-loop no longer writes verify-loop cycle evidence and cannot unlock deploy and never installs packages, deploys, calls provider CLIs, or reads .env/.env.*
           agent-run --task latest --agent codex --dry-run
           agent-run --task latest --agent codex --approval-hash HASH --approved
           agent-run --task latest --agent openmanus --dry-run

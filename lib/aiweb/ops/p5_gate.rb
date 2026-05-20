@@ -45,11 +45,14 @@ module Aiweb
           store = Aiweb::Brain::Store.new(root: brain_root)
           mem = store.remember(summary: "Use policy-gated memory proposals only", evidence_grade: "high")
           forgotten = store.forget(mem["memory_id"])
+          backup_restore_drill = store.backup_restore_drill!
           audit = Aiweb::Brain::MemoryAudit.new.audit(store)
           {
             "audit" => audit,
             "forgotten" => forgotten,
+            "backup_restore_drill" => backup_restore_drill,
             "storage_mode" => store.storage_mode,
+            "concurrency_backed" => store.concurrency_backed?,
             "search_projection" => Aiweb::Brain::SearchProjection.status(store),
             "ledger_event_count" => store.ledger_event_count,
             "event_hash_chain_valid" => store.event_hash_chain_valid?,
@@ -76,6 +79,8 @@ module Aiweb
           "status" => brain_audit["status"] == "passed" ? "memory_safety_fixture_passed" : "memory_safety_fixture_blocked",
           "verifier_status" => brain_audit["status"],
           "storage_mode" => brain_evidence.fetch("storage_mode"),
+          "concurrency_backed" => brain_evidence.fetch("concurrency_backed"),
+          "backup_restore_drill" => brain_evidence.fetch("backup_restore_drill"),
           "ledger_event_count" => brain_evidence.fetch("ledger_event_count"),
           "event_hash_chain_valid" => brain_evidence.fetch("event_hash_chain_valid"),
           "search_projection" => brain_evidence.fetch("search_projection"),
