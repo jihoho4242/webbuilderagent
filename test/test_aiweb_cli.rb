@@ -5736,6 +5736,9 @@ class AiwebCliTest < Minitest::Test
       entries = matrix.fetch("entries").to_h { |entry| [entry.fetch("runtime"), entry] }
       %w[docker podman].each do |runtime|
         assert_equal "passed", entries.fetch(runtime).fetch("status")
+        assert entries.fetch(runtime).key?("inside_container_probe_status")
+        assert entries.fetch(runtime).key?("inside_container_probe_reason")
+        assert entries.fetch(runtime).key?("inside_container_probe_stderr")
         assert_equal "passed", entries.fetch(runtime).dig("runtime_container_inspect", "status")
         assert_equal "passed", entries.fetch(runtime).dig("security_attestation", "status")
         assert_equal "passed", entries.fetch(runtime).dig("egress_denial_probe", "status")

@@ -11,6 +11,19 @@ require_relative "../lib/aiweb/runtime"
 ROOT = File.expand_path("..", __dir__)
 RUBY = RbConfig.ruby
 
+class RuntimeMatrixCommandFailure < RuntimeError
+  attr_reader :label, :exit_code, :status, :stdout, :stderr
+
+  def initialize(label:, exit_code:, status:, stdout:, stderr:)
+    @label = label
+    @exit_code = exit_code
+    @status = status
+    @stdout = stdout.to_s
+    @stderr = stderr.to_s
+    super("#{label} failed with exit #{exit_code || status || "unknown"}")
+  end
+end
+
 options = {
   matrix: ENV.fetch("AIWEB_ENGINE_RUN_RUNTIME_MATRIX", "docker,podman"),
   image: ENV.fetch("AIWEB_OPENMANUS_IMAGE", "aiweb-openmanus-smoke:ci"),
@@ -58,7 +71,13 @@ def run!(label, env, *command, chdir:)
   )
   return [result.stdout, result.stderr] if result.success?
 
-  raise "#{label} failed with exit #{result.exit_code || result.status || "unknown"}\nSTDOUT:\n#{result.stdout}\nSTDERR:\n#{result.stderr}"
+  raise RuntimeMatrixCommandFailure.new(
+    label: label,
+    exit_code: result.exit_code,
+    status: result.status,
+    stdout: result.stdout,
+    stderr: result.stderr
+  )
 end
 
 def current_user
@@ -67,6 +86,51 @@ def current_user
   uid = 1000 if uid.to_i <= 0
   gid = uid if gid.to_i <= 0
   "#{uid}:#{gid}"
+end
+
+def truncated(value, bytes = 120_000)
+  text = value.to_s
+  text.bytesize > bytes ? text.byteslice(0, bytes).to_s + "\n[truncated]" : text
+end
+
+def command_failure_payload(plan, error)
+  payload = {
+    "schema_version" => 1,
+    "status" => "failed",
+    "matrix" => plan.fetch("matrix", []),
+    "image" => plan["image"],
+    "base_image" => plan["base_image"],
+    "sandbox_user" => plan["sandbox_user"],
+    "dry_run" => false,
+    "failed_step" => error.label,
+    "exit_code" => error.exit_code,
+    "process_status" => error.status,
+    "stdout" => truncated(error.stdout),
+    "stderr" => truncated(error.stderr)
+  }
+  parsed = JSON.parse(error.stdout.to_s)
+  if parsed.is_a?(Hash)
+    engine = parsed["engine_run"].is_a?(Hash) ? parsed["engine_run"] : {}
+    payload["engine_run_summary"] = {
+      "run_id" => engine["run_id"],
+      "status" => engine["status"],
+      "blocking_issues" => engine["blocking_issues"],
+      "sandbox_preflight_path" => engine["sandbox_preflight_path"]
+    }
+    payload["runtime_matrix"] = engine.dig("sandbox_preflight", "runtime_matrix")
+  end
+  payload
+rescue JSON::ParserError
+  payload
+end
+
+def emit_runtime_matrix_result(options, result, exit_code)
+  if options[:json]
+    puts JSON.pretty_generate("engine_runtime_matrix_check" => result)
+  else
+    puts(result.map { |key, value| "#{key}: #{value}" }.join("\n"))
+  end
+  exit exit_code
 end
 
 matrix = runtimes(options.fetch(:matrix))
@@ -91,7 +155,8 @@ end
 missing = matrix.reject { |runtime| executable(runtime) }
 raise "missing required runtime executables: #{missing.join(", ")}" unless missing.empty?
 
-Dir.mktmpdir("aiweb-runtime-matrix") do |tmp|
+begin
+  Dir.mktmpdir("aiweb-runtime-matrix") do |tmp|
   context = File.join(tmp, "image")
   project = File.join(tmp, "project")
   FileUtils.mkdir_p(context)
@@ -195,5 +260,19 @@ Dir.mktmpdir("aiweb-runtime-matrix") do |tmp|
     "runtime_matrix" => matrix_evidence,
     "project" => project
   }
-  puts(options[:json] ? JSON.pretty_generate("engine_runtime_matrix_check" => result) : "engine runtime matrix check passed: #{matrix.join(", ")}")
+    emit_runtime_matrix_result(options, result, 0)
+  end
+rescue RuntimeMatrixCommandFailure => e
+  emit_runtime_matrix_result(options, command_failure_payload(plan, e), 1)
+rescue StandardError => e
+  emit_runtime_matrix_result(
+    options,
+    plan.merge(
+      "status" => "failed",
+      "error_class" => e.class.name,
+      "error" => truncated(e.message),
+      "backtrace" => Array(e.backtrace).first(20)
+    ),
+    1
+  )
 end
