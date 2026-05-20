@@ -154,6 +154,96 @@ class AiwebCliTest < Minitest::Test
     json_cmd("engine-run", *clean_args, "--approval-hash", hash, "--approved")
   end
 
+  def setup_install_clean_flags(args)
+    cleaned = []
+    skip_next = false
+    args.each do |arg|
+      if skip_next
+        skip_next = false
+        next
+      end
+      case arg
+      when "--approved", "--dry-run", "--json"
+        next
+      when "--approval-hash", "--approval-request"
+        skip_next = true
+      else
+        cleaned << arg
+      end
+    end
+    cleaned
+  end
+
+  def setup_install_approval_hash_for(env = nil, *args)
+    clean_args = setup_install_clean_flags(args)
+    stdout, stderr, code = env ? run_aiweb_env(env, "setup", "--install", *clean_args, "--dry-run", "--json") : run_aiweb("setup", "--install", *clean_args, "--dry-run", "--json")
+    payload = JSON.parse(stdout)
+    assert_equal 0, code, "setup dry-run should produce approval_hash: #{stdout} #{stderr}"
+    assert_equal "", stderr
+    hash = payload.dig("setup", "approval_hash")
+    assert_match(/\A[0-9a-f]{64}\z/, hash)
+    assert_includes payload["next_action"].to_s, "--approval-hash #{hash}"
+    hash
+  end
+
+  def run_approved_setup_env(env = nil, *args)
+    clean_args = setup_install_clean_flags(args)
+    hash = setup_install_approval_hash_for(env, *clean_args)
+    env ? run_aiweb_env(env, "setup", "--install", *clean_args, "--approval-hash", hash, "--approved", "--json") : run_aiweb("setup", "--install", *clean_args, "--approval-hash", hash, "--approved", "--json")
+  end
+
+  def workbench_serve_clean_flags(args)
+    cleaned = []
+    skip_next = false
+    args.each do |arg|
+      if skip_next
+        skip_next = false
+        next
+      end
+      case arg
+      when "--approved", "--dry-run", "--json"
+        next
+      when "--approval-hash", "--approval-request"
+        skip_next = true
+      else
+        cleaned << arg
+      end
+    end
+    cleaned
+  end
+
+  def workbench_serve_approval_hash_for(*args)
+    clean_args = workbench_serve_clean_flags(args)
+    stdout, stderr, code = run_aiweb("workbench", "--serve", *clean_args, "--dry-run", "--json")
+    payload = JSON.parse(stdout)
+    assert_equal 0, code, "workbench --serve dry-run should produce approval_hash: #{stdout} #{stderr}"
+    assert_equal "", stderr
+    hash = payload.dig("workbench", "serve", "approval_hash")
+    assert_match(/\A[0-9a-f]{64}\z/, hash)
+    assert_includes payload["next_action"].to_s, "--approval-hash #{hash}"
+    hash
+  end
+
+  def run_approved_workbench_serve(*args)
+    clean_args = workbench_serve_clean_flags(args)
+    hash = workbench_serve_approval_hash_for(*clean_args)
+    run_aiweb("workbench", "--serve", *clean_args, "--approval-hash", hash, "--approved", "--json")
+  end
+
+  def project_setup_approval_hash(project, **kwargs)
+    clean_kwargs = kwargs.reject { |key, _| %i[approved approval_hash dry_run].include?(key) }
+    payload = project.setup(**clean_kwargs.merge(install: true, dry_run: true))
+    hash = payload.dig("setup", "approval_hash")
+    assert_match(/\A[0-9a-f]{64}\z/, hash)
+    hash
+  end
+
+  def run_approved_project_setup(project, **kwargs)
+    clean_kwargs = kwargs.reject { |key, _| %i[approved approval_hash dry_run].include?(key) }
+    hash = project_setup_approval_hash(project, **clean_kwargs)
+    project.setup(**clean_kwargs.merge(install: true, approved: true, approval_hash: hash))
+  end
+
   def with_env_values(values)
     old = values.keys.to_h { |key| [key, ENV[key]] }
     values.each { |key, value| value.nil? ? ENV.delete(key) : ENV[key] = value }
@@ -6428,7 +6518,10 @@ class AiwebCliTest < Minitest::Test
       assert_equal "setup install blocked", payload["action_taken"]
       assert_equal "blocked", payload.dig("setup", "status")
       assert_equal false, payload.dig("setup", "dry_run")
+      assert_match(/\A[0-9a-f]{64}\z/, payload.dig("setup", "approval_hash").to_s)
+      assert_includes payload.fetch("next_action"), "--approval-hash #{payload.dig("setup", "approval_hash")}"
       assert_match(/approved|approval/i, [payload.dig("error", "message"), payload["blocking_issues"], payload.dig("setup", "blocking_issues")].flatten.compact.join("\n"))
+      assert_match(/approval-hash/i, [payload["blocking_issues"], payload.dig("setup", "blocking_issues")].flatten.compact.join("\n"))
       assert_no_setup_side_effects(before_entries: before_entries, before_state: before_state, env_size: env_size, env_mtime: env_mtime)
       refute_includes stdout, secret
     end
@@ -6457,6 +6550,12 @@ class AiwebCliTest < Minitest::Test
       assert_equal "planned setup install", payload["action_taken"]
       assert_equal "dry_run", payload.dig("setup", "status")
       assert_equal true, payload.dig("setup", "dry_run")
+      assert_equal false, payload.dig("setup", "requires_approval")
+      assert_match(/\A[0-9a-f]{64}\z/, payload.dig("setup", "approval_hash").to_s)
+      assert_includes payload.fetch("next_action"), "--approval-hash #{payload.dig("setup", "approval_hash")}"
+      assert_equal "aiweb.setup.install.v1", payload.dig("setup", "capability", "capability")
+      assert_equal ".ai-web/runs/<setup-run>/package-cache", payload.dig("setup", "capability", "package_cache_dir_template")
+      assert_includes payload.dig("setup", "capability", "command_argv"), ".ai-web/runs/<setup-run>/package-cache"
       assert_equal "pnpm", payload.dig("setup", "package_manager")
       assert_match(/\Apnpm install --ignore-scripts --registry https:\/\/registry\.npmjs\.org\/ --store-dir \.ai-web\/runs\/setup-\d{8}T\d{12}Z-[0-9a-f]{8}\/package-cache\z/, payload.dig("setup", "command"))
       setup_payload_paths(payload).each do |path|
@@ -6486,6 +6585,59 @@ class AiwebCliTest < Minitest::Test
     end
   end
 
+  def test_setup_install_approved_without_approval_hash_blocks_before_artifacts_or_processes
+    in_tmp do |dir|
+      prepare_profile_d_scaffold_flow
+      marker = File.join(dir, "setup-env-probe.json")
+      bin_dir = write_fake_pnpm_install_tooling(dir, stdout: "fake install should not run", env_probe_path: marker)
+      env = { "PATH" => [bin_dir, "/usr/bin", "/bin", "/usr/sbin", "/sbin"].join(File::PATH_SEPARATOR) }
+      before_entries = project_entries
+      before_state = File.read(".ai-web/state.yaml")
+
+      stdout, stderr, code = run_aiweb_env(env, "setup", "--install", "--approved", "--json")
+      payload = JSON.parse(stdout)
+
+      assert_equal 5, code
+      assert_equal "", stderr
+      assert_equal "setup install blocked", payload["action_taken"]
+      assert_equal "blocked", payload.dig("setup", "status")
+      assert_equal true, payload.dig("setup", "approved")
+      assert_match(/\A[0-9a-f]{64}\z/, payload.dig("setup", "approval_hash").to_s)
+      assert_match(/approval-hash/i, payload.fetch("blocking_issues").join("\n"))
+      assert_includes payload.fetch("next_action"), "--approval-hash #{payload.dig("setup", "approval_hash")}"
+      assert_no_setup_side_effects(before_entries: before_entries, before_state: before_state)
+      refute File.exist?(marker), "setup must not launch pnpm when the approval hash is missing"
+      refute Dir.glob(".ai-web/runs/setup-*").any?, "hash-missing setup must not write run artifacts"
+    end
+  end
+
+  def test_setup_install_rejects_stale_approval_hash_after_install_capability_changes
+    in_tmp do |dir|
+      prepare_profile_d_scaffold_flow
+      bin_dir = write_fake_pnpm_install_tooling(dir, stdout: "fake install should not run")
+      env = { "PATH" => [bin_dir, "/usr/bin", "/bin", "/usr/sbin", "/sbin"].join(File::PATH_SEPARATOR) }
+      stale_hash = setup_install_approval_hash_for(env)
+      package = JSON.parse(File.read("package.json"))
+      package["dependencies"] ||= {}
+      package["dependencies"]["new-dependency-after-approval"] = "^1.0.0"
+      File.write("package.json", JSON.pretty_generate(package) + "\n")
+      before_entries = project_entries
+      before_state = File.read(".ai-web/state.yaml")
+
+      stdout, stderr, code = run_aiweb_env(env, "setup", "--install", "--approval-hash", stale_hash, "--approved", "--json")
+      payload = JSON.parse(stdout)
+
+      assert_equal 5, code
+      assert_equal "", stderr
+      assert_equal "setup install blocked", payload["action_taken"]
+      assert_equal "blocked", payload.dig("setup", "status")
+      assert_match(/does not match/i, payload.fetch("blocking_issues").join("\n"))
+      refute_equal stale_hash, payload.dig("setup", "approval_hash")
+      assert_no_setup_side_effects(before_entries: before_entries, before_state: before_state)
+      refute Dir.glob(".ai-web/runs/setup-*").any?, "stale-hash setup must not write run artifacts"
+    end
+  end
+
   def test_setup_install_approved_records_broker_events_when_pnpm_is_missing
     in_tmp do |dir|
       prepare_profile_d_scaffold_flow
@@ -6498,7 +6650,7 @@ class AiwebCliTest < Minitest::Test
       payload = nil
 
       with_env_values("PATH" => empty_bin) do
-        payload = Aiweb::Project.new(Dir.pwd).setup(install: true, approved: true)
+        payload = run_approved_project_setup(Aiweb::Project.new(Dir.pwd))
       end
 
       assert_equal "setup install blocked", payload["action_taken"]
@@ -6553,7 +6705,7 @@ class AiwebCliTest < Minitest::Test
 
       payload = nil
       with_env_values("PATH" => [bin_dir, "/usr/bin", "/bin", "/usr/sbin", "/sbin"].join(File::PATH_SEPARATOR)) do
-        payload = Aiweb::Project.new(Dir.pwd).setup(install: true, approved: true)
+        payload = run_approved_project_setup(Aiweb::Project.new(Dir.pwd))
       end
 
       assert_equal "setup install blocked", payload["action_taken"]
@@ -6600,7 +6752,7 @@ class AiwebCliTest < Minitest::Test
 
       payload = nil
       with_env_values("PATH" => [bin_dir, "/usr/bin", "/bin", "/usr/sbin", "/sbin"].join(File::PATH_SEPARATOR)) do
-        payload = Aiweb::Project.new(Dir.pwd).setup(install: true, approved: true)
+        payload = run_approved_project_setup(Aiweb::Project.new(Dir.pwd))
       end
 
       assert_equal "setup install blocked", payload["action_taken"]
@@ -6631,7 +6783,7 @@ class AiwebCliTest < Minitest::Test
       env_size = File.size(".env")
       env_mtime = File.mtime(".env")
 
-      stdout, stderr, code = run_aiweb_env({ "PATH" => [bin_dir, "/usr/bin", "/bin", "/usr/sbin", "/sbin"].join(File::PATH_SEPARATOR) }, "setup", "--install", "--approved", "--json")
+      stdout, stderr, code = run_approved_setup_env({ "PATH" => [bin_dir, "/usr/bin", "/bin", "/usr/sbin", "/sbin"].join(File::PATH_SEPARATOR) })
       payload = JSON.parse(stdout)
 
       assert_equal 0, code
@@ -6733,13 +6885,7 @@ class AiwebCliTest < Minitest::Test
       File.write("package.json", JSON.pretty_generate(package) + "\n")
       bin_dir = write_fake_pnpm_install_tooling(dir, stdout: "fake install complete", stderr: "fake lifecycle warning")
 
-      stdout, stderr, code = run_aiweb_env(
-        { "PATH" => [bin_dir, "/usr/bin", "/bin", "/usr/sbin", "/sbin"].join(File::PATH_SEPARATOR) },
-        "setup",
-        "--install",
-        "--approved",
-        "--json"
-      )
+      stdout, stderr, code = run_approved_setup_env({ "PATH" => [bin_dir, "/usr/bin", "/bin", "/usr/sbin", "/sbin"].join(File::PATH_SEPARATOR) })
       payload = JSON.parse(stdout)
 
       assert_equal 0, code, stdout
@@ -6799,6 +6945,11 @@ class AiwebCliTest < Minitest::Test
         { "PATH" => [bin_dir, "/usr/bin", "/bin", "/usr/sbin", "/sbin"].join(File::PATH_SEPARATOR) },
         "setup",
         "--install",
+        "--approval-hash",
+        setup_install_approval_hash_for(
+          { "PATH" => [bin_dir, "/usr/bin", "/bin", "/usr/sbin", "/sbin"].join(File::PATH_SEPARATOR) },
+          "--allow-lifecycle-scripts"
+        ),
         "--approved",
         "--allow-lifecycle-scripts",
         "--json"
@@ -6864,13 +7015,7 @@ class AiwebCliTest < Minitest::Test
         lockfile_after: "lockfileVersion: '9.0'\n# after\n"
       )
 
-      stdout, stderr, code = run_aiweb_env(
-        { "PATH" => [bin_dir, "/usr/bin", "/bin", "/usr/sbin", "/sbin"].join(File::PATH_SEPARATOR) },
-        "setup",
-        "--install",
-        "--approved",
-        "--json"
-      )
+      stdout, stderr, code = run_approved_setup_env({ "PATH" => [bin_dir, "/usr/bin", "/bin", "/usr/sbin", "/sbin"].join(File::PATH_SEPARATOR) })
       payload = JSON.parse(stdout)
 
       assert_equal 0, code, stdout
@@ -6949,13 +7094,7 @@ class AiwebCliTest < Minitest::Test
         lockfile_after: after_lockfile
       )
 
-      stdout, stderr, code = run_aiweb_env(
-        { "PATH" => [bin_dir, "/usr/bin", "/bin", "/usr/sbin", "/sbin"].join(File::PATH_SEPARATOR) },
-        "setup",
-        "--install",
-        "--approved",
-        "--json"
-      )
+      stdout, stderr, code = run_approved_setup_env({ "PATH" => [bin_dir, "/usr/bin", "/bin", "/usr/sbin", "/sbin"].join(File::PATH_SEPARATOR) })
       payload = JSON.parse(stdout)
 
       assert_equal 0, code, stdout
@@ -7036,6 +7175,14 @@ class AiwebCliTest < Minitest::Test
         },
         "setup",
         "--install",
+        "--approval-hash",
+        setup_install_approval_hash_for(
+          {
+            "PATH" => [bin_dir, "/usr/bin", "/bin", "/usr/sbin", "/sbin"].join(File::PATH_SEPARATOR),
+            "SECRET" => "setup-secret-must-not-reach-pnpm",
+            "NPM_TOKEN" => "npm-token-must-not-reach-pnpm"
+          }
+        ),
         "--approved",
         "--json"
       )
@@ -7064,7 +7211,7 @@ class AiwebCliTest < Minitest::Test
       prepare_profile_d_scaffold_flow
       bin_dir = write_fake_pnpm_install_tooling(dir, stdout: "fake install complete", stderr: "fake lifecycle warning", package_json_after: "{ invalid json")
 
-      stdout, stderr, code = run_aiweb_env({ "PATH" => [bin_dir, "/usr/bin", "/bin", "/usr/sbin", "/sbin"].join(File::PATH_SEPARATOR) }, "setup", "--install", "--approved", "--json")
+      stdout, stderr, code = run_approved_setup_env({ "PATH" => [bin_dir, "/usr/bin", "/bin", "/usr/sbin", "/sbin"].join(File::PATH_SEPARATOR) })
       payload = JSON.parse(stdout)
 
       refute_equal 0, code
@@ -7083,7 +7230,7 @@ class AiwebCliTest < Minitest::Test
       prepare_profile_d_scaffold_flow
       bin_dir = write_fake_pnpm_install_tooling(dir, stdout: "fake install complete", stderr: "fake lifecycle warning", package_json_after: JSON.pretty_generate("name" => "emptied-manifest") + "\n")
 
-      stdout, stderr, code = run_aiweb_env({ "PATH" => [bin_dir, "/usr/bin", "/bin", "/usr/sbin", "/sbin"].join(File::PATH_SEPARATOR) }, "setup", "--install", "--approved", "--json")
+      stdout, stderr, code = run_approved_setup_env({ "PATH" => [bin_dir, "/usr/bin", "/bin", "/usr/sbin", "/sbin"].join(File::PATH_SEPARATOR) })
       payload = JSON.parse(stdout)
 
       refute_equal 0, code
@@ -7109,7 +7256,7 @@ class AiwebCliTest < Minitest::Test
         lockfile_after: "lockfileVersion: '9.0'\nimporters:\n  .: [\n"
       )
 
-      stdout, stderr, code = run_aiweb_env({ "PATH" => [bin_dir, "/usr/bin", "/bin", "/usr/sbin", "/sbin"].join(File::PATH_SEPARATOR) }, "setup", "--install", "--approved", "--json")
+      stdout, stderr, code = run_approved_setup_env({ "PATH" => [bin_dir, "/usr/bin", "/bin", "/usr/sbin", "/sbin"].join(File::PATH_SEPARATOR) })
       payload = JSON.parse(stdout)
 
       refute_equal 0, code
@@ -7129,7 +7276,7 @@ class AiwebCliTest < Minitest::Test
       FileUtils.rm_f("pnpm-lock.yaml")
       bin_dir = write_fake_pnpm_install_tooling(dir, stdout: "fake install complete", stderr: "fake lifecycle warning", lockfile_after: nil)
 
-      stdout, stderr, code = run_aiweb_env({ "PATH" => [bin_dir, "/usr/bin", "/bin", "/usr/sbin", "/sbin"].join(File::PATH_SEPARATOR) }, "setup", "--install", "--approved", "--json")
+      stdout, stderr, code = run_approved_setup_env({ "PATH" => [bin_dir, "/usr/bin", "/bin", "/usr/sbin", "/sbin"].join(File::PATH_SEPARATOR) })
       payload = JSON.parse(stdout)
 
       refute_equal 0, code
@@ -7148,17 +7295,19 @@ class AiwebCliTest < Minitest::Test
       prepare_profile_d_scaffold_flow
       bin_dir = write_fake_pnpm_install_tooling(dir, stdout: "fake install complete", stderr: "fake lifecycle warning")
       fixed = Time.utc(2026, 1, 2, 3, 4, 5)
-      suffixes = %w[aaaaaaaa bbbbbbbb]
+      suffixes = %w[aaaaaaaa bbbbbbbb cccccccc]
       env = { "PATH" => [bin_dir, "/usr/bin", "/bin", "/usr/sbin", "/sbin"].join(File::PATH_SEPARATOR) }
       first_payload = nil
       second_payload = nil
 
       with_env_values(env) do
+        project = Aiweb::Project.new(Dir.pwd)
+        approval_hash = project_setup_approval_hash(project)
         Time.stub(:now, fixed) do
           SecureRandom.stub(:hex, ->(_bytes) { suffixes.shift }) do
-            project = Aiweb::Project.new(Dir.pwd)
-            first_payload = project.setup(install: true, approved: true)
-            second_payload = project.setup(install: true, approved: true)
+            first_payload = project.setup(install: true, approved: true, approval_hash: approval_hash)
+            second_hash = project_setup_approval_hash(project)
+            second_payload = project.setup(install: true, approved: true, approval_hash: second_hash)
           end
         end
       end
@@ -7186,7 +7335,7 @@ class AiwebCliTest < Minitest::Test
       )
       bin_dir = write_fake_pnpm_install_tooling(dir, stdout: "fake install complete", stderr: "fake lifecycle warning", audit_json: audit_json, audit_exit_status: 1)
 
-      stdout, stderr, code = run_aiweb_env({ "PATH" => [bin_dir, "/usr/bin", "/bin", "/usr/sbin", "/sbin"].join(File::PATH_SEPARATOR) }, "setup", "--install", "--approved", "--json")
+      stdout, stderr, code = run_approved_setup_env({ "PATH" => [bin_dir, "/usr/bin", "/bin", "/usr/sbin", "/sbin"].join(File::PATH_SEPARATOR) })
       payload = JSON.parse(stdout)
 
       assert_equal 1, code
@@ -7248,14 +7397,10 @@ class AiwebCliTest < Minitest::Test
       )
       bin_dir = write_fake_pnpm_install_tooling(dir, stdout: "fake install complete", stderr: "fake lifecycle warning", audit_json: audit_json, audit_exit_status: 1)
 
-      stdout, stderr, code = run_aiweb_env(
+      stdout, stderr, code = run_approved_setup_env(
         { "PATH" => [bin_dir, "/usr/bin", "/bin", "/usr/sbin", "/sbin"].join(File::PATH_SEPARATOR) },
-        "setup",
-        "--install",
-        "--approved",
         "--audit-exception",
-        exception_path,
-        "--json"
+        exception_path
       )
       payload = JSON.parse(stdout)
 
@@ -7319,14 +7464,10 @@ class AiwebCliTest < Minitest::Test
       )
       bin_dir = write_fake_pnpm_install_tooling(dir, stdout: "fake install complete", stderr: "fake lifecycle warning", audit_json: audit_json, audit_exit_status: 1)
 
-      stdout, stderr, code = run_aiweb_env(
+      stdout, stderr, code = run_approved_setup_env(
         { "PATH" => [bin_dir, "/usr/bin", "/bin", "/usr/sbin", "/sbin"].join(File::PATH_SEPARATOR) },
-        "setup",
-        "--install",
-        "--approved",
         "--audit-exception",
-        exception_path,
-        "--json"
+        exception_path
       )
       payload = JSON.parse(stdout)
 
@@ -7347,7 +7488,7 @@ class AiwebCliTest < Minitest::Test
       audit_json = JSON.generate("error" => { "code" => "EAUTH", "summary" => "registry auth failed" })
       bin_dir = write_fake_pnpm_install_tooling(dir, stdout: "fake install complete", stderr: "fake lifecycle warning", audit_json: audit_json, audit_exit_status: 1)
 
-      stdout, stderr, code = run_aiweb_env({ "PATH" => [bin_dir, "/usr/bin", "/bin", "/usr/sbin", "/sbin"].join(File::PATH_SEPARATOR) }, "setup", "--install", "--approved", "--json")
+      stdout, stderr, code = run_approved_setup_env({ "PATH" => [bin_dir, "/usr/bin", "/bin", "/usr/sbin", "/sbin"].join(File::PATH_SEPARATOR) })
       payload = JSON.parse(stdout)
 
       refute_equal 0, code
@@ -7404,14 +7545,10 @@ class AiwebCliTest < Minitest::Test
       )
       bin_dir = write_fake_pnpm_install_tooling(dir, stdout: "fake install complete", stderr: "fake lifecycle warning", audit_json: audit_json, audit_exit_status: 1)
 
-      stdout, stderr, code = run_aiweb_env(
+      stdout, stderr, code = run_approved_setup_env(
         { "PATH" => [bin_dir, "/usr/bin", "/bin", "/usr/sbin", "/sbin"].join(File::PATH_SEPARATOR) },
-        "setup",
-        "--install",
-        "--approved",
         "--audit-exception",
-        exception_path,
-        "--json"
+        exception_path
       )
       payload = JSON.parse(stdout)
 
@@ -7468,14 +7605,10 @@ class AiwebCliTest < Minitest::Test
       )
       bin_dir = write_fake_pnpm_install_tooling(dir, stdout: "fake install complete", stderr: "fake lifecycle warning", audit_json: audit_json, audit_exit_status: 1)
 
-      stdout, stderr, code = run_aiweb_env(
+      stdout, stderr, code = run_approved_setup_env(
         { "PATH" => [bin_dir, "/usr/bin", "/bin", "/usr/sbin", "/sbin"].join(File::PATH_SEPARATOR) },
-        "setup",
-        "--install",
-        "--approved",
         "--audit-exception",
-        exception_path,
-        "--json"
+        exception_path
       )
       payload = JSON.parse(stdout)
 
@@ -7496,7 +7629,7 @@ class AiwebCliTest < Minitest::Test
       env_size = File.size(".env")
       env_mtime = File.mtime(".env")
 
-      stdout, stderr, code = run_aiweb_env({ "PATH" => [bin_dir, "/usr/bin", "/bin", "/usr/sbin", "/sbin"].join(File::PATH_SEPARATOR) }, "setup", "--install", "--approved", "--json")
+      stdout, stderr, code = run_approved_setup_env({ "PATH" => [bin_dir, "/usr/bin", "/bin", "/usr/sbin", "/sbin"].join(File::PATH_SEPARATOR) })
       payload = JSON.parse(stdout)
 
       assert_equal 1, code
@@ -7553,7 +7686,7 @@ class AiwebCliTest < Minitest::Test
     stdout, stderr, code = run_aiweb("help")
     assert_equal 0, code
     assert_equal "", stderr
-    assert_includes stdout, "setup --install --approved"
+    assert_includes stdout, "setup --install --approval-hash HASH --approved"
     assert_includes stdout, "--allow-lifecycle-scripts"
     assert_includes stdout, "setup --install --dry-run"
 
@@ -7562,13 +7695,24 @@ class AiwebCliTest < Minitest::Test
       Dir.mkdir(target)
       Dir.chdir(target) { prepare_profile_d_scaffold_flow }
       bin_dir = write_fake_pnpm_install_tooling(dir, stdout: "fake Korean wrapper install")
+      env = { "PATH" => [bin_dir, "/usr/bin", "/bin", "/usr/sbin", "/sbin"].join(File::PATH_SEPARATOR) }
+
+      dry_stdout, dry_stderr, dry_code = run_korean_webbuilder_env(
+        env,
+        "--path", target, "setup", "--install", "--dry-run", "--json"
+      )
+      dry_payload = JSON.parse(dry_stdout)
+      approval_hash = dry_payload.dig("setup", "approval_hash")
 
       web_stdout, web_stderr, web_code = run_korean_webbuilder_env(
-        { "PATH" => [bin_dir, "/usr/bin", "/bin", "/usr/sbin", "/sbin"].join(File::PATH_SEPARATOR) },
-        "--path", target, "setup", "--install", "--approved", "--json"
+        env,
+        "--path", target, "setup", "--install", "--approval-hash", approval_hash, "--approved", "--json"
       )
       web_payload = JSON.parse(web_stdout)
 
+      assert_equal 0, dry_code
+      assert_equal "", dry_stderr
+      assert_match(/\A[0-9a-f]{64}\z/, approval_hash.to_s)
       assert_equal 0, web_code
       assert_equal "", web_stderr
       assert_equal "passed", web_payload.dig("setup", "status")
@@ -9649,6 +9793,8 @@ class AiwebCliTest < Minitest::Test
       assert_equal "localhost", payload.dig("workbench", "serve", "host")
       assert_equal 17_345, payload.dig("workbench", "serve", "port")
       assert_equal "http://localhost:17345/", payload.dig("workbench", "serve", "url")
+      assert_match(/\A[0-9a-f]{64}\z/, payload.dig("workbench", "serve", "approval_hash").to_s)
+      assert_includes payload.fetch("next_action"), "--approval-hash #{payload.dig("workbench", "serve", "approval_hash")}"
       assert_match(%r{\A\.ai-web/runs/workbench-serve-.+/workbench-serve\.json\z}, payload.dig("workbench", "serve", "metadata_path"))
       assert_equal before_entries, project_entries, "workbench --serve --dry-run must not write UI or run artifacts"
       assert_equal before_state, File.read(".ai-web/state.yaml"), "workbench --serve --dry-run must not mutate state"
@@ -9675,6 +9821,47 @@ class AiwebCliTest < Minitest::Test
     end
   end
 
+  def test_workbench_serve_approved_without_approval_hash_blocks_without_writes_or_process
+    in_tmp do
+      prepare_profile_d_design_flow
+      before_state = File.read(".ai-web/state.yaml")
+      before_entries = project_entries
+
+      stdout, stderr, code = run_aiweb("workbench", "--serve", "--approved", "--json")
+      payload = JSON.parse(stdout)
+
+      assert_equal 5, code
+      assert_equal "", stderr
+      assert_equal "blocked", payload.dig("workbench", "status")
+      assert_match(/\A[0-9a-f]{64}\z/, payload.dig("workbench", "serve", "approval_hash").to_s)
+      assert_match(/approval-hash/i, [payload.dig("error", "message"), payload["blocking_issues"], payload.dig("workbench", "blocking_issues")].flatten.compact.join("\n"))
+      assert_equal before_entries, project_entries, "approved-without-hash workbench serve must not write artifacts"
+      assert_equal before_state, File.read(".ai-web/state.yaml"), "approved-without-hash workbench serve must not mutate state"
+    end
+  end
+
+  def test_workbench_serve_rejects_stale_approval_hash_after_workbench_artifact_changes
+    in_tmp do
+      prepare_profile_d_design_flow
+      stale_hash = workbench_serve_approval_hash_for("--port", "17347")
+      FileUtils.mkdir_p(".ai-web/workbench")
+      File.write(".ai-web/workbench/index.html", "<p>changed after approval</p>\n")
+      before_state = File.read(".ai-web/state.yaml")
+      before_entries = project_entries
+
+      stdout, stderr, code = run_aiweb("workbench", "--serve", "--port", "17347", "--approval-hash", stale_hash, "--approved", "--json")
+      payload = JSON.parse(stdout)
+
+      assert_equal 5, code
+      assert_equal "", stderr
+      assert_equal "blocked", payload.dig("workbench", "status")
+      assert_match(/does not match/i, payload.fetch("blocking_issues").join("\n"))
+      refute_equal stale_hash, payload.dig("workbench", "serve", "approval_hash")
+      assert_equal before_entries, project_entries, "stale workbench approval must not write run artifacts"
+      assert_equal before_state, File.read(".ai-web/state.yaml"), "stale workbench approval must not mutate state"
+    end
+  end
+
   def test_workbench_serve_blocks_non_localhost_host
     in_tmp do
       prepare_profile_d_design_flow
@@ -9698,7 +9885,7 @@ class AiwebCliTest < Minitest::Test
       port = 17_350 + (Process.pid % 500)
       pid = nil
 
-      stdout, stderr, code = run_aiweb("workbench", "--serve", "--approved", "--port", port.to_s, "--json")
+      stdout, stderr, code = run_approved_workbench_serve("--port", port.to_s)
       payload = JSON.parse(stdout)
       pid = payload.dig("workbench", "serve", "pid").to_i
 
@@ -9708,6 +9895,7 @@ class AiwebCliTest < Minitest::Test
       assert_equal "127.0.0.1", payload.dig("workbench", "serve", "host")
       assert_equal port, payload.dig("workbench", "serve", "port")
       assert_equal true, payload.dig("workbench", "serve", "approved")
+      assert_match(/\A[0-9a-f]{64}\z/, payload.dig("workbench", "serve", "approval_hash").to_s)
       assert_operator pid, :>, 0
       Process.kill(0, pid)
       metadata_path = payload.dig("workbench", "serve", "metadata_path")
@@ -9718,6 +9906,7 @@ class AiwebCliTest < Minitest::Test
       assert_equal "running", metadata.fetch("status")
       assert_equal port, metadata.fetch("port")
       assert_equal true, metadata.fetch("local_only")
+      assert_equal payload.dig("workbench", "serve", "approval_hash"), metadata.fetch("approval_hash")
       assert_equal before_state, File.read(".ai-web/state.yaml"), "workbench serve must not mutate state"
     ensure
       if pid && pid.positive?
@@ -10366,8 +10555,9 @@ class AiwebCliTest < Minitest::Test
     stdout, stderr, code = run_aiweb("help")
     assert_equal 0, code
     assert_equal "", stderr
-    assert_includes stdout, "workbench [--export] [--serve] [--approved]"
+    assert_includes stdout, "workbench [--export] [--serve] [--approval-hash HASH] [--approved]"
     assert_includes stdout, "workbench --serve --dry-run"
+    assert_includes stdout, "workbench --serve --approval-hash HASH --approved"
     assert_match(/workbench: .*local .*UI|workbench: .*local UI manifest/i, stdout)
 
     help_stdout, help_stderr, help_code = run_webbuilder("--help")

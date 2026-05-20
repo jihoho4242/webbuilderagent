@@ -165,6 +165,8 @@ module Aiweb
         opts = parse_options do |o, options|
           o.on("--export") { options[:export] = true }
           o.on("--serve") { options[:serve] = true }
+          o.on("--approval-hash HASH") { |v| options[:approval_hash] = v }
+          o.on("--approval-request HASH") { |v| options[:approval_hash] = v }
           o.on("--approved") { options[:approved] = true }
           o.on("--host HOST") { |v| options[:host] = v }
           o.on("--port N") { |v| options[:port] = parse_positive_integer(v, "--port") }
@@ -173,7 +175,7 @@ module Aiweb
         unless @argv.empty?
           raise UserError.new("workbench does not accept extra positional arguments: #{@argv.join(", ")}", EXIT_VALIDATION_FAILED)
         end
-        project.workbench(export: opts[:export], serve: opts[:serve], approved: !!opts[:approved], host: opts[:host] || "127.0.0.1", port: opts[:port], force: opts[:force], dry_run: @dry_run)
+        project.workbench(export: opts[:export], serve: opts[:serve], approved: !!opts[:approved], approval_hash: opts[:approval_hash], host: opts[:host] || "127.0.0.1", port: opts[:port], force: opts[:force], dry_run: @dry_run)
       when "component-map"
         opts = parse_options do |o, options|
           o.on("--force") { options[:force] = true }
@@ -554,6 +556,8 @@ module Aiweb
     def dispatch_setup_command
       opts = parse_options do |o, options|
         o.on("--install") { options[:install] = true }
+        o.on("--approval-hash HASH") { |v| options[:approval_hash] = v }
+        o.on("--approval-request HASH") { |v| options[:approval_hash] = v }
         o.on("--approved") { options[:approved] = true }
         o.on("--allow-lifecycle-scripts") { options[:allow_lifecycle_scripts] = true }
         o.on("--audit-exception PATH") { |v| options[:audit_exception_path] = v }
@@ -569,7 +573,7 @@ module Aiweb
     end
 
     def dispatch_setup(opts)
-      call_project_adapter(:setup, { install: true, approved: !!opts[:approved], dry_run: @dry_run, audit_exception_path: opts[:audit_exception_path], allow_lifecycle_scripts: !!opts[:allow_lifecycle_scripts] }).tap do |result|
+      call_project_adapter(:setup, { install: true, approved: !!opts[:approved], approval_hash: opts[:approval_hash], dry_run: @dry_run, audit_exception_path: opts[:audit_exception_path], allow_lifecycle_scripts: !!opts[:allow_lifecycle_scripts] }).tap do |result|
         normalize_setup_payload!(result, approved: !!opts[:approved], dry_run: @dry_run)
       end
     rescue UserError => e
@@ -810,7 +814,7 @@ module Aiweb
       return result unless result.is_a?(Hash) && result["setup"].is_a?(Hash)
 
       setup = result["setup"]
-      setup["requires_approval"] = !approved
+      setup["requires_approval"] = !approved unless setup.key?("requires_approval")
       setup["approved"] = approved unless setup.key?("approved")
       setup["dry_run"] = dry_run unless setup.key?("dry_run")
       result
@@ -866,10 +870,10 @@ module Aiweb
           "planned_stdout_path" => ".ai-web/runs/setup-<timestamp>/stdout.log",
           "planned_stderr_path" => ".ai-web/runs/setup-<timestamp>/stderr.log",
           "planned_metadata_path" => ".ai-web/runs/setup-<timestamp>/setup.json",
-          "guardrails" => ["--approved required for real install", "--dry-run writes nothing", "no build/preview/QA/deploy", "no .env/.env.* reads or output"],
+          "guardrails" => ["--approval-hash HASH plus --approved required for real install", "--dry-run writes nothing", "no build/preview/QA/deploy", "no .env/.env.* reads or output"],
           "blocking_issues" => ["setup install approval required: #{message}"]
         },
-        "next_action" => "rerun as aiweb setup --install --dry-run or aiweb setup --install --approved"
+        "next_action" => "rerun as aiweb setup --install --dry-run, review approval_hash, then rerun with --approval-hash HASH --approved"
       }
     end
 

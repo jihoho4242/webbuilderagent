@@ -3,7 +3,9 @@
 require_relative "setup/supply_chain"
 module Aiweb
   module ProjectRuntimeCommands
-    def setup(install: false, approved: false, dry_run: false, audit_exception_path: nil, allow_lifecycle_scripts: false)
+    SETUP_INSTALL_APPROVAL_CACHE_DIR = ".ai-web/runs/<setup-run>/package-cache"
+
+    def setup(install: false, approved: false, approval_hash: nil, dry_run: false, audit_exception_path: nil, allow_lifecycle_scripts: false)
       assert_initialized!
 
       unless install
@@ -13,7 +15,7 @@ module Aiweb
           command: nil,
           dry_run: dry_run,
           blocking_issues: ["setup currently supports --install only"],
-          next_action: "rerun aiweb setup --install with --dry-run or --approved"
+          next_action: "rerun aiweb setup --install with --dry-run or --approval-hash HASH --approved"
         )
       end
 
@@ -50,18 +52,33 @@ module Aiweb
       package_audit_path = setup_paths.fetch(:package_audit_path)
       command_argv = setup_install_argv(package_manager, cache_dir: relative(package_cache_dir))
       command = setup_install_command(package_manager, cache_dir: relative(package_cache_dir))
-      side_effect_broker_plan = setup_side_effect_broker_plan(
-        command_argv: command_argv,
-        broker_path: side_effect_broker_path,
-        dry_run: dry_run,
-        approved: approved,
-        blocked: false,
-        blockers: []
-      )
       planned_changes = setup_install_planned_changes(setup_paths)
       lifecycle_scripts = package_lifecycle_scripts
       lifecycle_warnings = package_lifecycle_script_warnings(lifecycle_scripts)
       audit_exception_plan = setup_audit_exception_plan(audit_exception_path)
+      capability = setup_install_approval_capability(
+        package_manager: package_manager,
+        lifecycle_scripts: lifecycle_scripts,
+        lifecycle_enabled_requested: allow_lifecycle_scripts,
+        audit_exception_path: audit_exception_path,
+        audit_exception: audit_exception_plan
+      )
+      expected_hash = setup_install_approval_hash(capability)
+      supplied_hash = approval_hash.to_s.strip
+      approval_blockers = setup_install_approval_blockers(
+        approved: approved,
+        supplied_hash: supplied_hash,
+        expected_hash: expected_hash
+      )
+      execution_ready = !dry_run && approved && approval_blockers.empty?
+      side_effect_broker_plan = setup_side_effect_broker_plan(
+        command_argv: command_argv,
+        broker_path: side_effect_broker_path,
+        dry_run: dry_run,
+        approved: execution_ready,
+        blocked: !dry_run && !approval_blockers.empty?,
+        blockers: dry_run ? [] : approval_blockers
+      )
       supply_chain_plan = setup_supply_chain_plan(
         package_manager: package_manager,
         command_argv: command_argv,
@@ -72,13 +89,13 @@ module Aiweb
         spdx_sbom_path: spdx_sbom_path,
         package_audit_path: package_audit_path,
         audit_exception: audit_exception_plan,
-        status: approved ? "ready" : (dry_run ? "planned" : "blocked"),
-        blocking_issues: approved || dry_run ? [] : ["--approved is required for real package install"],
+        status: execution_ready ? "ready" : (dry_run ? "planned" : "blocked"),
+        blocking_issues: dry_run ? [] : approval_blockers,
         lifecycle_scripts: lifecycle_scripts,
         lifecycle_enabled_requested: allow_lifecycle_scripts
       )
 
-      unless approved || dry_run
+      unless approval_blockers.empty? || dry_run
         return setup_payload(
           state: state,
           metadata: setup_run_metadata(
@@ -95,16 +112,19 @@ module Aiweb
             lifecycle_script_warnings: lifecycle_warnings,
             lifecycle_enabled_requested: allow_lifecycle_scripts,
             node_modules_present: File.directory?(File.join(root, "node_modules")),
-            blocking_issues: ["--approved is required for real package install"],
+            blocking_issues: approval_blockers,
             dry_run: false,
-            approved: false,
+            approved: approved,
+            approval_hash: expected_hash,
+            supplied_approval_hash: supplied_hash.empty? ? nil : supplied_hash,
+            capability: capability,
             requires_approval: true,
             side_effect_broker_path: relative(side_effect_broker_path),
             side_effect_broker: side_effect_broker_plan.merge(
               "status" => "blocked",
               "policy" => side_effect_broker_plan.fetch("policy").merge(
                 "decision" => "deny",
-                "blocking_issues" => ["--approved is required for real package install"]
+                "blocking_issues" => approval_blockers
               )
             ),
             side_effect_broker_events: [],
@@ -118,8 +138,8 @@ module Aiweb
           ),
           changed_files: [],
           action_taken: "setup install blocked",
-          blocking_issues: ["--approved is required for real package install"],
-          next_action: "rerun aiweb setup --install --approved to execute locally, or --dry-run to inspect planned artifacts"
+          blocking_issues: approval_blockers,
+          next_action: "rerun aiweb setup --install --dry-run, review approval_hash #{expected_hash}, then rerun #{setup_install_approved_command(expected_hash, audit_exception: audit_exception_plan, lifecycle_enabled_requested: allow_lifecycle_scripts)}"
         )
       end
 
@@ -143,6 +163,9 @@ module Aiweb
             blocking_issues: [],
             dry_run: true,
             approved: approved,
+            approval_hash: expected_hash,
+            supplied_approval_hash: supplied_hash.empty? ? nil : supplied_hash,
+            capability: capability,
             requires_approval: false,
             side_effect_broker_path: relative(side_effect_broker_path),
             side_effect_broker: side_effect_broker_plan,
@@ -158,7 +181,7 @@ module Aiweb
           changed_files: planned_changes,
           action_taken: "planned setup install",
           blocking_issues: [],
-          next_action: "rerun aiweb setup --install --approved to execute #{command.inspect} locally"
+          next_action: "rerun #{setup_install_approved_command(expected_hash, audit_exception: audit_exception_plan, lifecycle_enabled_requested: allow_lifecycle_scripts)} to execute #{command.inspect} locally"
         )
       end
 
@@ -197,7 +220,7 @@ module Aiweb
         spdx_sbom_artifact = not_executed_artifacts.fetch(:spdx_sbom)
         audit_artifact = not_executed_artifacts.fetch(:package_audit)
         audit_exception = audit_exception_plan
-        side_effect_context = setup_side_effect_broker_context(command_argv: command_argv, approved: true)
+        side_effect_context = setup_side_effect_broker_context(command_argv: command_argv, approved: true).merge("approval_hash" => expected_hash)
         append_side_effect_broker_event(
           side_effect_broker_path,
           side_effect_broker_events,
@@ -206,7 +229,7 @@ module Aiweb
         )
 
         if executable_path("pnpm").nil?
-          blocking_issues << "pnpm executable is missing; install pnpm locally, then rerun aiweb setup --install --approved."
+          blocking_issues << "pnpm executable is missing; install pnpm locally, then rerun #{setup_install_approved_command(expected_hash, audit_exception: audit_exception_plan, lifecycle_enabled_requested: allow_lifecycle_scripts)}."
           stderr = blocking_issues.join("\n") + "\n"
           append_side_effect_broker_event(
             side_effect_broker_path,
@@ -241,7 +264,7 @@ module Aiweb
             side_effect_broker_path,
             side_effect_broker_events,
             "policy.decision",
-            side_effect_context.merge("decision" => "allow", "reason" => "explicit --approved setup install")
+            side_effect_context.merge("decision" => "allow", "reason" => "explicit hash-bound --approval-hash plus --approved setup install")
           )
           append_side_effect_broker_event(
             side_effect_broker_path,
@@ -406,6 +429,9 @@ module Aiweb
           blocking_issues: blocking_issues,
           dry_run: false,
           approved: true,
+          approval_hash: expected_hash,
+          supplied_approval_hash: supplied_hash.empty? ? nil : supplied_hash,
+          capability: capability,
           requires_approval: false,
           side_effect_broker_path: relative(side_effect_broker_path),
           side_effect_broker: side_effect_broker_plan.merge(
@@ -442,7 +468,7 @@ module Aiweb
           changed_files: compact_changes(changes),
           action_taken: status == "passed" ? "ran setup install" : (status == "blocked" ? "setup install blocked" : "setup install failed"),
           blocking_issues: blocking_issues,
-          next_action: setup_next_action(status)
+          next_action: setup_next_action(status, approval_hash: expected_hash, audit_exception: audit_exception_plan, lifecycle_enabled_requested: allow_lifecycle_scripts)
         )
       end
     end
@@ -518,7 +544,7 @@ module Aiweb
       runtime_command_payload(key: "setup", state: state, metadata: metadata, changed_files: changed_files, action_taken: action_taken, blocking_issues: blocking_issues, next_action: next_action)
     end
 
-    def setup_run_metadata(run_id:, status:, command:, package_manager:, started_at:, finished_at:, exit_code:, stdout_log:, stderr_log:, metadata_path:, lifecycle_script_warnings:, lifecycle_enabled_requested: false, node_modules_present:, blocking_issues:, dry_run:, approved:, requires_approval:, side_effect_broker_path: nil, side_effect_broker: nil, side_effect_broker_events: [], supply_chain_gate_path: nil, supply_chain_gate: nil, sbom_path: nil, cyclonedx_sbom_path: nil, spdx_sbom_path: nil, package_audit_path: nil, audit_exception: nil)
+    def setup_run_metadata(run_id:, status:, command:, package_manager:, started_at:, finished_at:, exit_code:, stdout_log:, stderr_log:, metadata_path:, lifecycle_script_warnings:, lifecycle_enabled_requested: false, node_modules_present:, blocking_issues:, dry_run:, approved:, requires_approval:, approval_hash: nil, supplied_approval_hash: nil, capability: nil, side_effect_broker_path: nil, side_effect_broker: nil, side_effect_broker_events: [], supply_chain_gate_path: nil, supply_chain_gate: nil, sbom_path: nil, cyclonedx_sbom_path: nil, spdx_sbom_path: nil, package_audit_path: nil, audit_exception: nil)
       {
         "schema_version" => 1,
         "run_id" => run_id,
@@ -537,6 +563,9 @@ module Aiweb
         "node_modules_present" => node_modules_present,
         "dry_run" => dry_run,
         "approved" => approved,
+        "approval_hash" => approval_hash,
+        "supplied_approval_hash" => supplied_approval_hash,
+        "capability" => capability,
         "requires_approval" => requires_approval,
         "blocking_issues" => blocking_issues
       }.tap do |metadata|
@@ -553,12 +582,97 @@ module Aiweb
       end
     end
 
-    def setup_next_action(status)
+    def setup_next_action(status, approval_hash:, audit_exception:, lifecycle_enabled_requested:)
       case status
       when "passed" then "continue to build/preview/QA only through separately approved roadmap commands"
-      when "blocked" then "resolve the blocked local setup precondition, then rerun aiweb setup --install --approved"
-      else "inspect .ai-web/runs setup logs, fix the package install issue, then rerun aiweb setup --install --approved"
+      when "blocked" then "resolve the blocked local setup precondition, then rerun #{setup_install_approved_command(approval_hash, audit_exception: audit_exception, lifecycle_enabled_requested: lifecycle_enabled_requested)}"
+      else "inspect .ai-web/runs setup logs, fix the package install issue, then rerun #{setup_install_approved_command(approval_hash, audit_exception: audit_exception, lifecycle_enabled_requested: lifecycle_enabled_requested)}"
       end
+    end
+
+    def setup_install_approval_capability(package_manager:, lifecycle_scripts:, lifecycle_enabled_requested:, audit_exception_path:, audit_exception:)
+      {
+        "schema_version" => 1,
+        "capability" => "aiweb.setup.install.v1",
+        "constitution_hash" => Aiweb::Constitution::Loader.new.content_hash,
+        "policy_kernel_version" => Aiweb::Tools::DecisionPacket::POLICY_KERNEL_VERSION,
+        "risk_class" => "setup_package_install",
+        "tool_name" => "setup.install",
+        "package_manager" => package_manager,
+        "command_argv" => setup_install_argv(package_manager, cache_dir: SETUP_INSTALL_APPROVAL_CACHE_DIR),
+        "cwd" => ".",
+        "registry" => {
+          "url" => setup_supply_chain_registry_url,
+          "host" => setup_supply_chain_registry_host
+        },
+        "package_cache_dir_template" => SETUP_INSTALL_APPROVAL_CACHE_DIR,
+        "tracked_file_snapshot" => setup_supply_chain_file_snapshot,
+        "dependency_semantics" => setup_supply_chain_dependency_snapshot,
+        "lockfile_semantics" => setup_supply_chain_lockfile_snapshot,
+        "lifecycle_scripts" => Array(lifecycle_scripts),
+        "lifecycle_enabled_requested" => lifecycle_enabled_requested,
+        "lifecycle_policy" => "default install requires --ignore-scripts; lifecycle-enabled install is fail-closed until sandbox and egress evidence exists",
+        "audit_exception" => setup_audit_exception_approval_snapshot(audit_exception_path, audit_exception),
+        "child_env_policy" => setup_child_env_policy,
+        "network_policy" => {
+          "external_network_allowed" => false,
+          "registry_allowlist" => [setup_supply_chain_registry_host],
+          "network_refs_static_allowlist_enforced" => true
+        },
+        "side_effect_boundary" => {
+          "requires_dry_run_review" => true,
+          "requires_matching_approval_hash" => true,
+          "writes_under" => %w[.ai-web/runs node_modules package-locks],
+          "forbidden" => %w[build preview qa deploy provider_cli env_read git_push lifecycle_scripts_by_default]
+        }
+      }
+    end
+
+    def setup_audit_exception_approval_snapshot(audit_exception_path, audit_exception)
+      raw_path = audit_exception_path.to_s.strip
+      base = {
+        "status" => audit_exception["status"],
+        "path" => audit_exception["path"],
+        "blocking_issues" => Array(audit_exception["blocking_issues"])
+      }
+      return base if raw_path.empty? || audit_exception["path"].to_s.empty?
+
+      path_info = setup_audit_exception_path_info(raw_path)
+      return base.merge("path_status" => path_info["status"], "blocking_issues" => (base["blocking_issues"] + Array(path_info["blocking_issues"])).uniq) unless path_info["status"] == "provided"
+
+      if File.file?(path_info.fetch("full_path"))
+        raw = File.read(path_info.fetch("full_path"))
+        base.merge(
+          "path_status" => "provided",
+          "file_present" => true,
+          "bytes" => raw.bytesize,
+          "sha256" => Digest::SHA256.hexdigest(raw),
+          "secret_scan_status" => redact_side_effect_process_output(raw) == raw ? "passed" : "blocked"
+        )
+      else
+        base.merge("path_status" => "provided", "file_present" => false)
+      end
+    rescue SystemCallError => e
+      base.merge("path_status" => "unreadable", "blocking_issues" => (base["blocking_issues"] + ["setup audit exception could not be fingerprinted: #{e.message}"]).uniq)
+    end
+
+    def setup_install_approval_hash(capability)
+      Digest::SHA256.hexdigest(JSON.generate(capability))
+    end
+
+    def setup_install_approval_blockers(approved:, supplied_hash:, expected_hash:)
+      return ["--approved and --approval-hash HASH are required for real package install"] unless approved
+      return ["--approval-hash is required for real setup install"] if supplied_hash.to_s.empty?
+      return ["setup approval hash does not match the current install capability envelope"] unless supplied_hash == expected_hash
+
+      []
+    end
+
+    def setup_install_approved_command(approval_hash, audit_exception:, lifecycle_enabled_requested:)
+      parts = ["aiweb", "setup", "--install", "--approval-hash", approval_hash.to_s, "--approved"]
+      parts << "--allow-lifecycle-scripts" if lifecycle_enabled_requested
+      parts.concat(["--audit-exception", audit_exception["path"].to_s]) if audit_exception.is_a?(Hash) && !audit_exception["path"].to_s.empty?
+      Shellwords.join(parts)
     end
 
     def setup_package_manager(scaffold, metadata, package_json)

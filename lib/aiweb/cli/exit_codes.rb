@@ -227,7 +227,7 @@ module Aiweb
       return EXIT_ADAPTER_UNAVAILABLE if status == "blocked" && (result["action_taken"].to_s =~ /unavailable/)
       return EXIT_SUCCESS if %w[planned exported ready running already_running].include?(status)
       return EXIT_PHASE_BLOCKED if status == "blocked" && ((result.dig("workbench", "blocking_issues") || []) + (result["blocking_issues"] || [])).join(" ").match?(/phase/i)
-      return EXIT_UNSAFE_EXTERNAL_ACTION if status == "blocked" && ((result.dig("workbench", "blocking_issues") || []) + (result["blocking_issues"] || [])).join(" ").match?(/approved|unsafe|host|localhost|127\.0\.0\.1/i)
+      return EXIT_UNSAFE_EXTERNAL_ACTION if status == "blocked" && ((result.dig("workbench", "blocking_issues") || []) + (result["blocking_issues"] || [])).join(" ").match?(/approved|approval|unsafe|host|localhost|127\.0\.0\.1/i)
 
       EXIT_VALIDATION_FAILED
     end

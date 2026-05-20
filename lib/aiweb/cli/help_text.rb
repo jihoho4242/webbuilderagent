@@ -40,7 +40,7 @@ module Aiweb
           scaffold --profile D [--force]
           scaffold --profile S [--force]
           setup --install --dry-run
-          setup --install --approved [--allow-lifecycle-scripts] [--audit-exception .ai-web/approvals/setup-audit-exception.json]
+          setup --install --approval-hash HASH --approved [--allow-lifecycle-scripts] [--audit-exception .ai-web/approvals/setup-audit-exception.json]
           supabase-secret-qa [--force]
           supabase-local-verify [--force]
           runtime-plan (alias: scaffold-status)
@@ -60,9 +60,9 @@ module Aiweb
           qa-lighthouse [--url URL] [--task-id ID] [--force]
           visual-critique [--screenshot PATH] [--metadata PATH] [--from-screenshots latest] [--task-id ID] [--force]
           visual-polish --repair [--from-critique PATH|latest] [--max-cycles N] [--force]
-          workbench [--export] [--serve] [--approved] [--host localhost|127.0.0.1] [--port N] [--force]
+          workbench [--export] [--serve] [--approval-hash HASH] [--approved] [--host localhost|127.0.0.1] [--port N] [--force]
           workbench --serve --dry-run
-          workbench --serve --approved
+          workbench --serve --approval-hash HASH --approved
           daemon [--host 127.0.0.1] [--port 4242]
           component-map [--force]
           visual-edit --target DATA_AIWEB_ID --prompt TEXT [--from-map PATH|latest] [--force]
@@ -89,7 +89,7 @@ module Aiweb
           design: creates deterministic HTML design candidates without app scaffold
           select-design: records selected HTML candidate without overwriting DESIGN.md
           scaffold: creates Profile D Astro-style static app skeleton or Profile S local Next.js + Supabase SSR scaffold without installing packages, creating .env.example, contacting Supabase, deploying, or running build/preview
-          setup --install: PR20 dependency install surface; --dry-run writes nothing and reports planned pnpm install/log paths, while a real install requires --approved, records stdout/stderr/setup metadata under .ai-web/runs/setup-<timestamp>/, warns on lifecycle scripts, updates safe setup state, and never builds/previews/runs QA/deploys or reads .env/.env.*; --allow-lifecycle-scripts is fail-closed until sandbox and egress-firewall evidence exists; critical/high audit findings stay blocked unless --audit-exception points to an approved .ai-web/approvals JSON file with expiry and rollback plan
+          setup --install: PR20 dependency install surface; --dry-run writes nothing and reports planned pnpm install/log paths plus an approval_hash bound to the current install capability envelope, while a real install requires --approval-hash HASH plus --approved, records stdout/stderr/setup metadata under .ai-web/runs/setup-<timestamp>/, warns on lifecycle scripts, updates safe setup state, and never builds/previews/runs QA/deploys or reads .env/.env.*; --allow-lifecycle-scripts is fail-closed until sandbox and egress-firewall evidence exists; critical/high audit findings stay blocked unless --audit-exception points to an approved .ai-web/approvals JSON file with expiry and rollback plan
           supabase-secret-qa: reruns local-only Profile S secret guard QA against safe scaffold/template paths, including supabase/env.example.template, and records .ai-web/qa/supabase-secret-qa.json; --dry-run writes nothing and never reads .env/.env.*
           supabase-local-verify: verifies generated Profile S files, safe Supabase template, migrations/RLS/storage docs, and SSR client/server stubs locally, records .ai-web/qa/supabase-local-verify.json, and never creates hosted Supabase projects, runs provider CLI/network, deploys, installs, builds, previews, or reads .env/.env.*
           runtime-plan/scaffold-status: read-only profile-aware runtime readiness metadata; Profile D reports build/preview/browser QA readiness and Profile S reports local-only Supabase verification readiness without installing or launching Node
@@ -113,7 +113,7 @@ module Aiweb
           agent-run --task latest --agent codex --approval-hash HASH --approved
           agent-run --task latest --agent openmanus --dry-run
           agent-run --task latest --agent openmanus --sandbox docker --approval-hash HASH --approved
-          workbench: plans, exports, or serves a local UI manifest under .ai-web/workbench using declarative CLI controls only; requires initialized .ai-web/state.yaml, --dry-run writes nothing, export writes only workbench artifacts, serve binds only localhost/127.0.0.1 and requires --approved for real process launch, executes no controls, and never mutates state.yaml
+          workbench: plans, exports, or serves a local UI manifest under .ai-web/workbench using declarative CLI controls only; requires initialized .ai-web/state.yaml, --dry-run writes nothing and serve dry-run returns an approval_hash bound to the current localhost serve capability envelope, export writes only workbench artifacts, real serve binds only localhost/127.0.0.1 and requires the matching --approval-hash HASH plus --approved before process launch, executes no controls, and never mutates state.yaml
           daemon: starts the local backend API bridge for the future web Workbench; --dry-run reports endpoints and guardrails without binding a port
           ingest-reference: phase-3 or phase-3.5; writes only .ai-web/design-reference-brief.md pattern constraints, never implementation source, and rejects .env/.env.* or secret-looking reference paths
           component-map: scans stable data-aiweb-id regions into .ai-web/component-map.json; --dry-run writes nothing and never reads .env/.env.*

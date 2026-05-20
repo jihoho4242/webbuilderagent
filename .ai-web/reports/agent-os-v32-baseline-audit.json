@@ -186,6 +186,16 @@
       "surface": "engine-scheduler approved execute resume bridge without hash",
       "status": "removed",
       "finding": "engine-scheduler tick/daemon --approved --execute now requires the matching resume capability approval hash; the scheduler records expected_approval_hash from the resume envelope, rejects missing or stale hashes before bridge execution, and only then delegates to engine-run --resume with --approval-hash."
+    },
+    {
+      "surface": "setup install approved-without-hash package-manager execution shortcut",
+      "status": "removed",
+      "finding": "setup --install now emits a dry-run approval_hash bound to the install capability envelope and blocks --approved real package-manager execution unless the matching --approval-hash is supplied; stale hashes after package/lifecycle/audit-exception changes are rejected before artifacts or processes are created."
+    },
+    {
+      "surface": "workbench serve approved-without-hash local server process shortcut",
+      "status": "removed",
+      "finding": "workbench --serve dry-run now emits an approval_hash bound to the localhost serve capability envelope and real local server launch requires the matching --approval-hash plus --approved; missing or stale hashes block before workbench artifacts or ProcessLauncher server processes are created."
     }
   ],
   "preserve_safety_substrate": [

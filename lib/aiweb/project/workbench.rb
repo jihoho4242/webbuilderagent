@@ -42,8 +42,8 @@ module Aiweb
       vendor/bundle
     ].freeze
 
-    def workbench(export: false, serve: false, approved: false, host: "127.0.0.1", port: nil, dry_run: false, force: false)
-      return workbench_serve(approved: approved, host: host, port: port, dry_run: dry_run, force: force) if serve
+    def workbench(export: false, serve: false, approved: false, approval_hash: nil, host: "127.0.0.1", port: nil, dry_run: false, force: false)
+      return workbench_serve(approved: approved, approval_hash: approval_hash, host: host, port: port, dry_run: dry_run, force: force) if serve
 
       state, state_error = workbench_state_snapshot
       paths = workbench_paths
@@ -78,7 +78,7 @@ module Aiweb
       )
     end
 
-    def workbench_serve(approved:, host:, port:, dry_run:, force:)
+    def workbench_serve(approved:, approval_hash:, host:, port:, dry_run:, force:)
       state, state_error = workbench_state_snapshot
       paths = workbench_paths
       bind_host = workbench_serve_host(host)
@@ -90,15 +90,19 @@ module Aiweb
       stderr_path = File.join(run_dir, "stderr.log")
       metadata_path = File.join(run_dir, "workbench-serve.json")
       url = "http://#{bind_host}:#{bind_port}/"
+      capability = workbench_serve_approval_capability(state: state, host: bind_host, port: bind_port, url: url, paths: paths)
+      expected_hash = workbench_serve_approval_hash(capability)
+      supplied_hash = approval_hash.to_s.strip
+      approval_blockers = workbench_serve_approval_blockers(approved: approved, supplied_hash: supplied_hash, expected_hash: expected_hash)
       blockers = []
       blockers << state_error if state_error
       blockers << "workbench --serve requires localhost or 127.0.0.1 host" unless workbench_serve_allowed_host?(bind_host)
-      blockers << "workbench --serve requires --approved for real local serving" if !dry_run && !approved
+      blockers.concat(approval_blockers) unless dry_run
       planned_changes = [paths["index_html"], paths["manifest_json"], relative(run_dir), relative(stdout_path), relative(stderr_path), relative(metadata_path)]
       running = blockers.empty? ? running_workbench_serve_metadata : nil
 
       if running
-        already = running.merge("status" => "already_running", "dry_run" => dry_run, "approved" => approved, "blocking_issues" => [])
+        already = running.merge("status" => "already_running", "dry_run" => dry_run, "approved" => approved, "approval_hash" => expected_hash, "supplied_approval_hash" => supplied_hash.empty? ? nil : supplied_hash, "blocking_issues" => [])
         manifest = workbench_manifest(
           state: state,
           status: "already_running",
@@ -134,6 +138,9 @@ module Aiweb
         workbench_paths: paths,
         dry_run: dry_run,
         approved: approved,
+        approval_hash: expected_hash,
+        supplied_approval_hash: supplied_hash.empty? ? nil : supplied_hash,
+        capability: capability,
         blocking_issues: blockers
       )
       manifest = workbench_manifest(
@@ -152,7 +159,7 @@ module Aiweb
           workbench: manifest,
           changed_files: blockers.empty? ? planned_changes : [],
           blocking_issues: blockers,
-          next_action: blockers.empty? ? "rerun aiweb workbench --serve --approved to write artifacts and start the localhost server" : "resolve workbench serve blockers, then rerun with --dry-run or --approved"
+          next_action: blockers.empty? ? "rerun #{workbench_serve_approved_command(expected_hash, host: bind_host, port: bind_port)} to write artifacts and start the localhost server" : "resolve workbench serve blockers, then rerun with --dry-run or --approval-hash HASH --approved"
         )
       end
 
@@ -175,7 +182,7 @@ module Aiweb
           workbench: manifest,
           changed_files: [],
           blocking_issues: blockers,
-          next_action: "review existing workbench artifacts or rerun aiweb workbench --serve --approved --force"
+          next_action: "review existing workbench artifacts or rerun #{workbench_serve_approved_command(expected_hash, host: bind_host, port: bind_port)} --force"
         )
       end
 
@@ -232,6 +239,9 @@ module Aiweb
           workbench_paths: paths,
           dry_run: false,
           approved: true,
+          approval_hash: expected_hash,
+          supplied_approval_hash: supplied_hash.empty? ? nil : supplied_hash,
+          capability: capability,
           blocking_issues: []
         )
         manifest["status"] = "running"
@@ -300,7 +310,7 @@ module Aiweb
           "does not directly write .ai-web/state.yaml",
           "excludes local environment secret files from file-tree and artifact summaries",
           "local artifact/server only; no install, build, preview, QA, deploy, provider network, or AI calls",
-          "serve mode binds only to localhost or 127.0.0.1 and requires --approved for real process launch"
+          "serve mode binds only to localhost or 127.0.0.1 and requires --approval-hash HASH plus --approved for real process launch"
         ],
         "blocking_issues" => blocking_issues
       }
@@ -324,7 +334,66 @@ module Aiweb
       [RbConfig.ruby, "-run", "-e", "httpd", File.join(root, ".ai-web", "workbench"), "-b", host.to_s, "-p", port.to_i.to_s]
     end
 
-    def workbench_serve_metadata(run_id:, status:, host:, port:, url:, command:, pid:, started_at:, finished_at:, stdout_log:, stderr_log:, metadata_path:, workbench_paths:, dry_run:, approved:, blocking_issues:)
+    def workbench_serve_approval_capability(state:, host:, port:, url:, paths:)
+      {
+        "schema_version" => 1,
+        "capability" => "aiweb.workbench.serve.v1",
+        "constitution_hash" => Aiweb::Constitution::Loader.new.content_hash,
+        "policy_kernel_version" => Aiweb::Tools::DecisionPacket::POLICY_KERNEL_VERSION,
+        "risk_class" => "workbench_local_server",
+        "host" => host,
+        "port" => port,
+        "url" => url,
+        "local_only" => true,
+        "command" => workbench_serve_command(host, port),
+        "cwd" => root,
+        "state_sha256" => File.file?(state_path) ? Digest::SHA256.file(state_path).hexdigest : nil,
+        "workbench_paths" => paths,
+        "workbench_artifact_fingerprints" => workbench_artifact_fingerprints(paths),
+        "serve_boundary" => {
+          "requires_dry_run_review" => true,
+          "requires_matching_approval_hash" => true,
+          "allowed_hosts" => %w[localhost 127.0.0.1],
+          "writes_under" => %w[.ai-web/workbench .ai-web/runs/workbench-serve-*],
+          "forbidden" => %w[workbench_control_execution install build preview qa deploy provider_cli external_network env_read state_mutation]
+        },
+        "state_present" => state.is_a?(Hash)
+      }
+    end
+
+    def workbench_artifact_fingerprints(paths)
+      paths.to_h.transform_values do |relative_path|
+        path = File.join(root, relative_path.to_s)
+        if File.file?(path)
+          {
+            "present" => true,
+            "bytes" => File.size(path),
+            "sha256" => Digest::SHA256.file(path).hexdigest
+          }
+        else
+          { "present" => false }
+        end
+      end
+    end
+
+    def workbench_serve_approval_hash(capability)
+      Digest::SHA256.hexdigest(JSON.generate(capability))
+    end
+
+    def workbench_serve_approval_blockers(approved:, supplied_hash:, expected_hash:)
+      return ["workbench --serve requires --approved and --approval-hash HASH for real local serving"] unless approved
+      return ["--approval-hash is required for real workbench serve"] if supplied_hash.to_s.empty?
+      return ["workbench serve approval hash does not match the current serve capability envelope"] unless supplied_hash == expected_hash
+
+      []
+    end
+
+    def workbench_serve_approved_command(approval_hash, host:, port:)
+      parts = ["aiweb", "workbench", "--serve", "--host", host.to_s, "--port", port.to_i.to_s, "--approval-hash", approval_hash.to_s, "--approved"]
+      Shellwords.join(parts)
+    end
+
+    def workbench_serve_metadata(run_id:, status:, host:, port:, url:, command:, pid:, started_at:, finished_at:, stdout_log:, stderr_log:, metadata_path:, workbench_paths:, dry_run:, approved:, approval_hash: nil, supplied_approval_hash: nil, capability: nil, blocking_issues:)
       {
         "schema_version" => 1,
         "run_id" => run_id,
@@ -344,6 +413,9 @@ module Aiweb
         "workbench_paths" => workbench_paths,
         "dry_run" => dry_run,
         "approved" => approved,
+        "approval_hash" => approval_hash,
+        "supplied_approval_hash" => supplied_approval_hash,
+        "capability" => capability,
         "blocking_issues" => blocking_issues
       }
     end
@@ -351,7 +423,7 @@ module Aiweb
     def workbench_serve_summary(metadata)
       return nil unless metadata
 
-      metadata.slice("status", "host", "port", "url", "local_only", "pid", "metadata_path", "stdout_log", "stderr_log", "approved", "dry_run", "blocking_issues")
+      metadata.slice("status", "host", "port", "url", "local_only", "pid", "metadata_path", "stdout_log", "stderr_log", "approved", "approval_hash", "supplied_approval_hash", "dry_run", "blocking_issues")
     end
 
     def running_workbench_serve_metadata
