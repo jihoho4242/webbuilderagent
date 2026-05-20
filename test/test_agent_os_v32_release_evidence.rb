@@ -254,4 +254,51 @@ class AgentOsV32ReleaseEvidenceTest < Minitest::Test
       assert_equal "sha256:#{Digest::SHA256.file(absolute).hexdigest}", entry.fetch("sha256")
     end
   end
+
+  def test_release_manifest_attaches_ci_and_operator_drill_evidence_when_supplied
+    github_actions = {
+      "run_id" => 123456,
+      "head_sha" => "a" * 40,
+      "workflow_name" => "CI",
+      "status" => "completed",
+      "conclusion" => "success",
+      "url" => "https://github.example/actions/runs/123456"
+    }
+    operator_drill = {
+      "status" => "local_dry_run_passed",
+      "evidence_path" => "releases/v0.3.2-rc1/operator_drill_report.json",
+      "steps" => [
+        { "name" => "run-status", "status" => "passed" },
+        { "name" => "engine-run dry-run", "status" => "passed" }
+      ],
+      "blocking_issue" => "local drill only; production CI/ops drill still required"
+    }
+    validation = {
+      "ruby bin/check" => "passed: full local suite",
+      "ruby -Itest test/all.rb" => "passed: full test suite"
+    }
+
+    evidence = Aiweb::Ops::P5Gate.new.evidence(validation: validation, github_actions: github_actions, operator_drill: operator_drill)
+    blockers = evidence.fetch("operational_blocking_issues").join("\n")
+    refute_match(/GitHub Actions run id is not attached/, blockers)
+    assert_match(/operator drill evidence is local_dry_run_passed/, blockers)
+    assert_equal 123456, evidence.dig("github_actions", "run_id")
+    assert_equal "completed", evidence.dig("github_actions", "status")
+    assert_equal "success", evidence.dig("github_actions", "conclusion")
+    assert_equal "local_dry_run_passed", evidence.dig("operator_drill", "status")
+    assert_equal false, evidence.dig("operator_drill", "production_ready_claim_allowed")
+
+    manifest = Aiweb::Ops::ReleaseManifest.new.build(evidence)
+    assert_equal 123456, manifest.fetch("github_actions_run_id")
+    assert_equal 123456, manifest.dig("schema_validation_report", "github_actions_run_id")
+    assert_equal "full_local_validation_attached", manifest.dig("schema_validation_report", "status")
+    assert_equal true, manifest.dig("schema_validation_report", "ruby_bin_check_passed")
+    assert_equal true, manifest.dig("schema_validation_report", "test_all_passed")
+    assert_nil manifest.dig("schema_validation_report", "blocking_issue")
+    assert_equal "completed", manifest.dig("github_actions_report", "status")
+    assert_equal "success", manifest.dig("github_actions_report", "conclusion")
+    assert_equal "local_dry_run_passed", manifest.dig("operator_drill", "status")
+    assert_equal "releases/v0.3.2-rc1/operator_drill_report.json", manifest.dig("operator_drill", "evidence_path")
+    assert_equal false, manifest.dig("operator_drill", "production_ready_claim_allowed")
+  end
 end

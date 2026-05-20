@@ -15,7 +15,7 @@ require_relative "../redteam"
 module Aiweb
   module Ops
     class P5Gate
-      def evidence(validation: {})
+      def evidence(validation: {}, github_actions: nil, operator_drill: nil)
         constitution = Aiweb::Constitution::Verifier.new.verify
         packet_builder = Aiweb::Tools::DecisionPacket.new
         policy_kernel = Aiweb::Policy::Kernel.new
@@ -145,10 +145,9 @@ module Aiweb
             "durable replay/resume audit with artifact hash validation is not attached to this release evidence"
           ]
         }
-        operational_blockers = [
-          "production readiness not claimed: GitHub Actions run id is not attached",
-          "operator drill evidence is placeholder only"
-        ] + validation_blocking_issues(validation) + tool_gateway_evidence.fetch("operational_blocking_issues", []) + policy_coverage.fetch("operational_blocking_issues", []) + side_effect_surface_audit_evidence.fetch("operational_blocking_issues", []) + hitl_evidence.fetch("operational_blocking_issues", []) + replay_evidence.fetch("operational_blocking_issues", []) + eval_result.fetch("blocking_issues", []) + redteam.fetch("operational_blocking_issues", []) + brain_audit.fetch("operational_blocking_issues", []) + experiment.fetch("operational_blocking_issues", [])
+        github_actions_evidence = github_actions_evidence(github_actions)
+        operator_drill_evidence = operator_drill_evidence(operator_drill)
+        operational_blockers = github_actions_blocking_issues(github_actions_evidence) + operator_drill_blocking_issues(operator_drill_evidence) + validation_blocking_issues(validation) + tool_gateway_evidence.fetch("operational_blocking_issues", []) + policy_coverage.fetch("operational_blocking_issues", []) + side_effect_surface_audit_evidence.fetch("operational_blocking_issues", []) + hitl_evidence.fetch("operational_blocking_issues", []) + replay_evidence.fetch("operational_blocking_issues", []) + eval_result.fetch("blocking_issues", []) + redteam.fetch("operational_blocking_issues", []) + brain_audit.fetch("operational_blocking_issues", []) + experiment.fetch("operational_blocking_issues", [])
         {
           "schema_version" => 1,
           "release_id" => "v0.3.2-rc1",
@@ -167,6 +166,8 @@ module Aiweb
           "brain" => brain_release_evidence.merge("forgotten_memory" => brain_evidence.fetch("forgotten")),
           "self_improvement" => { "proposal" => proposal, "experiment" => experiment },
           "script_executor_neutralization" => { "status" => "top_level_surfaces_neutralized", "top_level_agent_runtime_removed" => true, "verify_loop_role" => "removed_legacy_script_runner_tombstone_no_engine_run_delegation", "browser_static_scenario_role" => "deterministic_local_browser_probe" },
+          "github_actions" => github_actions_evidence,
+          "operator_drill" => operator_drill_evidence,
           "validation" => validation,
           "scaffold_demo_blocking_issues" => scaffold_blockers,
           "operational_blocking_issues" => operational_blockers,
@@ -175,6 +176,52 @@ module Aiweb
       end
 
       private
+
+      def github_actions_evidence(github_actions)
+        data = github_actions.is_a?(Hash) ? github_actions : {}
+        run_id = data["run_id"] || data[:run_id] || data["databaseId"] || data[:databaseId]
+        status = (data["status"] || data[:status] || (run_id ? "unknown" : "missing")).to_s
+        conclusion = data["conclusion"] || data[:conclusion]
+        {
+          "schema_version" => 1,
+          "status" => status.empty? ? "unknown" : status,
+          "run_id" => run_id,
+          "head_sha" => data["head_sha"] || data[:head_sha] || data["headSha"] || data[:headSha],
+          "workflow_name" => data["workflow_name"] || data[:workflow_name] || data["workflowName"] || data[:workflowName],
+          "url" => data["url"] || data[:url],
+          "conclusion" => conclusion.to_s.empty? ? nil : conclusion,
+          "production_gate_status" => "blocked",
+          "production_ready_claim_allowed" => false
+        }
+      end
+
+      def github_actions_blocking_issues(evidence)
+        return ["production readiness not claimed: GitHub Actions run id is not attached"] if evidence["run_id"].to_s.empty?
+        return [] if evidence["status"] == "completed" && evidence["conclusion"] == "success"
+
+        ["GitHub Actions run #{evidence["run_id"]} is attached but not completed successfully (status=#{evidence["status"]}, conclusion=#{evidence["conclusion"] || "none"})"]
+      end
+
+      def operator_drill_evidence(operator_drill)
+        data = operator_drill.is_a?(Hash) ? operator_drill : {}
+        status = (data["status"] || data[:status] || "placeholder").to_s
+        {
+          "schema_version" => 1,
+          "status" => status.empty? ? "placeholder" : status,
+          "evidence_path" => data["evidence_path"] || data[:evidence_path],
+          "steps" => data["steps"] || data[:steps] || [],
+          "production_gate_status" => "blocked",
+          "production_ready_claim_allowed" => false,
+          "blocking_issue" => data["blocking_issue"] || data[:blocking_issue] || "operator drill must be run in CI/ops environment before operational readiness can be claimed"
+        }
+      end
+
+      def operator_drill_blocking_issues(evidence)
+        return ["operator drill evidence is placeholder only"] if evidence["status"] == "placeholder"
+        return [] if evidence["status"] == "production_drill_passed"
+
+        ["operator drill evidence is #{evidence["status"]}; production CI/ops drill is still required"]
+      end
 
       def validation_blocking_issues(validation)
         text = validation.to_s

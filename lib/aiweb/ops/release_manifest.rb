@@ -25,7 +25,8 @@ module Aiweb
           "constitution_hash" => p5_evidence.fetch("constitution_hash"),
           "p5_evidence_status" => p5_evidence.fetch("scaffold_demo_blocking_issues", []).empty? ? "scaffold_demo_passed" : "scaffold_demo_blocked",
           "commit_sha" => current_commit_sha,
-          "github_actions_run_id" => nil,
+          "github_actions_run_id" => github_actions_run_id(p5_evidence),
+          "github_actions_report" => github_actions_report(p5_evidence),
           "evidence_files" => evidence_files,
           "schema_validation_report" => validation_report(p5_evidence),
           "policy_gateway_report" => {
@@ -122,10 +123,7 @@ module Aiweb
             "status" => "documented_local_revert_only",
             "summary" => "revert the release commit and rerun ruby bin/check before any future release claim"
           },
-          "operator_drill" => {
-            "status" => "placeholder",
-            "blocking_issue" => "operator drill must be run in CI/ops environment before operational readiness can be claimed"
-          },
+          "operator_drill" => operator_drill_report(p5_evidence),
           "operational_blocking_issues" => p5_evidence.fetch("operational_blocking_issues", [])
         }
       end
@@ -169,8 +167,52 @@ module Aiweb
           "validation_keys" => validation.is_a?(Hash) ? validation.keys.map(&:to_s).sort : [],
           "ruby_bin_check_passed" => bin_check_passed,
           "test_all_passed" => test_all_passed,
-          "github_actions_run_id" => nil,
+          "github_actions_run_id" => github_actions_run_id(p5_evidence),
           "blocking_issue" => status == "full_local_validation_attached" ? nil : "full ruby bin/check, test/all, and CI evidence are not attached to this release manifest"
+        }
+      end
+
+      def github_actions_run_id(p5_evidence)
+        github_actions_report(p5_evidence)["run_id"]
+      end
+
+      def github_actions_report(p5_evidence)
+        report = p5_evidence["github_actions"]
+        return default_github_actions_report unless report.is_a?(Hash)
+
+        default_github_actions_report.merge(report)
+      end
+
+      def default_github_actions_report
+        {
+          "schema_version" => 1,
+          "status" => "missing",
+          "run_id" => nil,
+          "head_sha" => nil,
+          "workflow_name" => nil,
+          "url" => nil,
+          "conclusion" => nil,
+          "production_gate_status" => "blocked",
+          "production_ready_claim_allowed" => false
+        }
+      end
+
+      def operator_drill_report(p5_evidence)
+        report = p5_evidence["operator_drill"]
+        return default_operator_drill_report unless report.is_a?(Hash)
+
+        default_operator_drill_report.merge(report)
+      end
+
+      def default_operator_drill_report
+        {
+          "schema_version" => 1,
+          "status" => "placeholder",
+          "evidence_path" => nil,
+          "steps" => [],
+          "production_gate_status" => "blocked",
+          "production_ready_claim_allowed" => false,
+          "blocking_issue" => "operator drill must be run in CI/ops environment before operational readiness can be claimed"
         }
       end
     end
