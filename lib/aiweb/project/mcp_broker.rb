@@ -4,6 +4,8 @@ require "digest"
 require "pathname"
 require "time"
 
+require_relative "../constitution/loader"
+require_relative "../tools/decision_packet"
 require_relative "mcp_broker_drivers"
 require_relative "mcp_broker_policy"
 require_relative "mcp_broker/execution"
@@ -37,17 +39,20 @@ module Aiweb
     include Drivers
     include Policy
 
-    def mcp_broker(action: "call", server: nil, tool: nil, query: nil, limit: 1, endpoint: nil, approved: false, dry_run: false, force: false)
+    def mcp_broker(action: "call", server: nil, tool: nil, query: nil, limit: 1, endpoint: nil, approved: false, approval_hash: nil, dry_run: false, force: false)
       assert_initialized!
       normalized_action = action.to_s.strip.empty? ? "call" : action.to_s.strip
       raise UserError.new("mcp-broker action must be call", 1) unless normalized_action == "call"
 
       request = implementation_mcp_broker_request(server: server, tool: tool, query: query, limit: limit, endpoint: endpoint, approved: approved)
+      capability = implementation_mcp_broker_approval_capability(request)
+      expected_hash = implementation_mcp_broker_approval_hash(capability)
       run_id = "mcp-broker-#{Time.now.utc.strftime("%Y%m%dT%H%M%S%6NZ")}-#{SecureRandom.hex(4)}"
       run_dir = File.join(aiweb_dir, "runs", run_id)
       broker_path = File.join(run_dir, "side-effect-broker.jsonl")
       metadata_path = File.join(run_dir, "mcp-broker.json")
       blockers = implementation_mcp_broker_blockers(request)
+      blockers.concat(implementation_mcp_broker_approval_blockers(approved: approved, supplied_hash: approval_hash, expected_hash: expected_hash)) unless dry_run
       blocked = !blockers.empty?
       broker = side_effect_broker_plan(
         broker: IMPLEMENTATION_MCP_BROKER_ID,
@@ -68,6 +73,9 @@ module Aiweb
         request: request,
         broker_path: broker_path,
         metadata_path: metadata_path,
+        capability: capability,
+        approval_hash: expected_hash,
+        supplied_approval_hash: approval_hash,
         broker: broker,
         blockers: blockers,
         result: nil
@@ -89,7 +97,7 @@ module Aiweb
 
     private
 
-    def implementation_mcp_broker_record(run_id:, status:, request:, broker_path:, metadata_path:, broker:, blockers:, result:)
+    def implementation_mcp_broker_record(run_id:, status:, request:, broker_path:, metadata_path:, capability:, approval_hash:, supplied_approval_hash:, broker:, blockers:, result:)
       {
         "schema_version" => 1,
         "run_id" => run_id,
@@ -107,6 +115,9 @@ module Aiweb
         "per_call_audit" => true,
         "side_effect_broker_path" => relative(broker_path),
         "metadata_path" => relative(metadata_path),
+        "approval_hash" => approval_hash,
+        "supplied_approval_hash" => supplied_approval_hash.to_s.strip.empty? ? nil : supplied_approval_hash.to_s,
+        "approval_capability" => capability,
         "side_effect_broker" => broker,
         "connector_policy" => implementation_mcp_broker_connector_policy(request),
         "blocking_issues" => blockers,
@@ -145,11 +156,50 @@ module Aiweb
 
     def implementation_mcp_broker_next_action(record)
       case record["status"]
-      when "planned" then "rerun with --approved to execute the brokered MCP call"
+      when "planned" then "rerun with --approval-hash #{record["approval_hash"]} --approved to execute the brokered MCP call"
       when "blocked" then "inspect #{record["side_effect_broker_path"]} and approval/policy blockers"
       when "passed" then "use #{record["metadata_path"]} as brokered MCP call evidence"
       else "inspect #{record["metadata_path"]}"
       end
+    end
+
+    def implementation_mcp_broker_approval_capability(request)
+      {
+        "schema_version" => 1,
+        "capability" => "aiweb.mcp_broker.call.v1",
+        "constitution_hash" => Aiweb::Constitution::Loader.new.content_hash,
+        "policy_kernel_version" => Aiweb::Tools::DecisionPacket::POLICY_KERNEL_VERSION,
+        "broker_driver" => IMPLEMENTATION_MCP_BROKER_ID,
+        "scope" => implementation_mcp_broker_scope(request),
+        "server" => request.fetch("server"),
+        "tool" => request.fetch("tool"),
+        "arguments" => implementation_mcp_broker_redact_value(request.fetch("arguments")),
+        "endpoint" => request.fetch("endpoint"),
+        "credential_source" => request.fetch("credential_source"),
+        "delegated_identity" => request.fetch("delegated_identity"),
+        "network_destinations" => request.fetch("network_destinations"),
+        "output_redaction" => request.fetch("output_redaction"),
+        "connector_policy" => implementation_mcp_broker_connector_policy(request),
+        "state_sha256" => File.file?(state_path) ? Digest::SHA256.file(state_path).hexdigest : nil,
+        "execution_boundary" => {
+          "requires_dry_run_review" => true,
+          "requires_matching_approval_hash" => true,
+          "writes_under" => %w[.ai-web/runs/mcp-broker-*],
+          "forbidden" => %w[generic_mcp_runner unknown_connectors env_read raw_secret_output unbrokered_network unbrokered_file_content]
+        }
+      }
+    end
+
+    def implementation_mcp_broker_approval_hash(capability)
+      Digest::SHA256.hexdigest(JSON.generate(capability))
+    end
+
+    def implementation_mcp_broker_approval_blockers(approved:, supplied_hash:, expected_hash:)
+      return [] unless approved
+      return ["mcp-broker approved execution requires --approval-hash HASH from the matching dry-run capability envelope"] if supplied_hash.to_s.strip.empty?
+      return ["mcp-broker approval hash does not match the current broker capability envelope"] unless supplied_hash.to_s.strip == expected_hash
+
+      []
     end
 
   end

@@ -20,6 +20,8 @@
     "per_call_audit",
     "side_effect_broker_path",
     "metadata_path",
+    "approval_hash",
+    "approval_capability",
     "side_effect_broker",
     "connector_policy",
     "blocking_issues",
@@ -94,6 +96,50 @@
     "metadata_path": {
       "type": "string",
       "pattern": "^\\.ai-web/runs/mcp-broker-.+/mcp-broker\\.json$"
+    },
+    "approval_hash": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "supplied_approval_hash": {
+      "type": ["string", "null"],
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "approval_capability": {
+      "type": "object",
+      "required": [
+        "schema_version",
+        "capability",
+        "broker_driver",
+        "server",
+        "tool",
+        "arguments",
+        "endpoint",
+        "connector_policy",
+        "execution_boundary"
+      ],
+      "properties": {
+        "schema_version": { "const": 1 },
+        "capability": { "const": "aiweb.mcp_broker.call.v1" },
+        "broker_driver": { "const": "aiweb.implementation_mcp_broker" },
+        "server": { "type": "string", "minLength": 1 },
+        "tool": { "type": "string", "minLength": 1 },
+        "arguments": { "type": "object" },
+        "endpoint": { "type": "string" },
+        "connector_policy": { "$ref": "#/$defs/connector_policy" },
+        "execution_boundary": {
+          "type": "object",
+          "required": ["requires_dry_run_review", "requires_matching_approval_hash", "writes_under", "forbidden"],
+          "properties": {
+            "requires_dry_run_review": { "const": true },
+            "requires_matching_approval_hash": { "const": true },
+            "writes_under": { "type": "array", "items": { "type": "string" } },
+            "forbidden": { "type": "array", "items": { "type": "string" } }
+          },
+          "additionalProperties": true
+        }
+      },
+      "additionalProperties": true
     },
     "side_effect_broker": {
       "type": "object",

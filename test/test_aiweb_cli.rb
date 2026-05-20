@@ -230,6 +230,80 @@ class AiwebCliTest < Minitest::Test
     run_aiweb("workbench", "--serve", *clean_args, "--approval-hash", hash, "--approved", "--json")
   end
 
+  def mcp_broker_clean_flags(args)
+    cleaned = []
+    skip_next = false
+    args.each do |arg|
+      if skip_next
+        skip_next = false
+        next
+      end
+      case arg
+      when "--approved", "--dry-run", "--json"
+        next
+      when "--approval-hash", "--approval-request"
+        skip_next = true
+      else
+        cleaned << arg
+      end
+    end
+    cleaned
+  end
+
+  def mcp_broker_approval_hash_for(env = nil, *args)
+    clean_args = mcp_broker_clean_flags(args)
+    stdout, stderr, code = env ? run_aiweb_env(env, "mcp-broker", "call", *clean_args, "--dry-run", "--json") : run_aiweb("mcp-broker", "call", *clean_args, "--dry-run", "--json")
+    payload = JSON.parse(stdout)
+    assert_equal 0, code, "mcp-broker dry-run should produce approval_hash: #{stdout} #{stderr}"
+    assert_equal "", stderr
+    hash = payload.dig("mcp_broker", "approval_hash")
+    assert_match(/\A[0-9a-f]{64}\z/, hash)
+    assert_includes payload.fetch("next_action"), "--approval-hash #{hash}"
+    hash
+  end
+
+  def json_approved_mcp_broker(env = nil, *args)
+    clean_args = mcp_broker_clean_flags(args)
+    hash = mcp_broker_approval_hash_for(env, *clean_args)
+    env ? json_cmd_with_env(env, "mcp-broker", "call", *clean_args, "--approval-hash", hash, "--approved") : json_cmd("mcp-broker", "call", *clean_args, "--approval-hash", hash, "--approved")
+  end
+
+  def eval_baseline_import_clean_flags(args)
+    cleaned = []
+    skip_next = false
+    args.each do |arg|
+      if skip_next
+        skip_next = false
+        next
+      end
+      case arg
+      when "--approved", "--dry-run", "--json"
+        next
+      when "--approval-hash", "--approval-request"
+        skip_next = true
+      else
+        cleaned << arg
+      end
+    end
+    cleaned
+  end
+
+  def eval_baseline_import_approval_hash_for(*args)
+    clean_args = eval_baseline_import_clean_flags(args)
+    payload, code = json_cmd("eval-baseline", "import", *clean_args, "--dry-run")
+    assert_equal 0, code, "eval-baseline import dry-run should produce approval_hash: #{payload.inspect}"
+    hash = payload.dig("eval_baseline", "approval_hash")
+    assert_match(/\A[0-9a-f]{64}\z/, hash)
+    assert_includes payload.fetch("next_action"), "--approval-hash #{hash}"
+    hash
+  end
+
+  def json_approved_eval_baseline_import(*args)
+    clean_args = eval_baseline_import_clean_flags(args)
+    hash = eval_baseline_import_approval_hash_for(*clean_args)
+    json_cmd("eval-baseline", "import", *clean_args, "--approval-hash", hash, "--approved")
+  end
+
   def project_setup_approval_hash(project, **kwargs)
     clean_kwargs = kwargs.reject { |key, _| %i[approved approval_hash dry_run].include?(key) }
     payload = project.setup(**clean_kwargs.merge(install: true, dry_run: true))
@@ -611,9 +685,25 @@ class AiwebCliTest < Minitest::Test
       dry_payload, dry_code = json_cmd("eval-baseline", "import", "--path", source, "--approved", "--dry-run")
       assert_equal 0, dry_code
       assert_equal "dry_run", dry_payload.dig("eval_baseline", "status")
+      assert_match(/\A[0-9a-f]{64}\z/, dry_payload.dig("eval_baseline", "approval_hash").to_s)
       refute File.exist?(target), "dry-run import must not write target corpus"
 
-      payload, code = json_cmd("eval-baseline", "import", "--path", source, "--approved")
+      missing_hash_payload, missing_hash_code = json_cmd("eval-baseline", "import", "--path", source, "--approved")
+      assert_equal 5, missing_hash_code
+      assert_equal "blocked", missing_hash_payload.dig("eval_baseline", "status")
+      assert_match(/approval-hash/i, missing_hash_payload.fetch("blocking_issues").join(" "))
+      refute File.exist?(target), "approved import without hash must not write target corpus"
+
+      stale_hash_payload, stale_hash_code = json_cmd("eval-baseline", "import", "--path", source, "--approval-hash", "0" * 64, "--approved")
+      assert_equal 5, stale_hash_code
+      assert_equal "blocked", stale_hash_payload.dig("eval_baseline", "status")
+      assert_match(/approval hash does not match/i, stale_hash_payload.fetch("blocking_issues").join(" "))
+      refute File.exist?(target), "stale approval hash must not write target corpus"
+
+      dry_payload, _dry_code = json_cmd("eval-baseline", "import", "--path", source, "--dry-run")
+      approval_hash = dry_payload.dig("eval_baseline", "approval_hash")
+      assert_match(/\A[0-9a-f]{64}\z/, approval_hash.to_s)
+      payload, code = json_cmd("eval-baseline", "import", "--path", source, "--approval-hash", approval_hash, "--approved")
       assert_equal 0, code, payload.inspect
       assert_equal "imported", payload.dig("eval_baseline", "status")
       assert File.file?(target)
@@ -637,7 +727,10 @@ class AiwebCliTest < Minitest::Test
       secret = "AIWEB_TEST_API_KEY=fake-redaction-test-value"
       write_human_baseline_corpus(source, fixture_id: fixture_id, reviewer_count: 0, secret_note: secret)
 
-      payload, code = json_cmd("eval-baseline", "import", "--path", source, "--approved")
+      dry_payload, _dry_code = json_cmd("eval-baseline", "import", "--path", source, "--dry-run")
+      approval_hash = dry_payload.dig("eval_baseline", "approval_hash")
+      assert_match(/\A[0-9a-f]{64}\z/, approval_hash.to_s)
+      payload, code = json_cmd("eval-baseline", "import", "--path", source, "--approval-hash", approval_hash, "--approved")
 
       assert_equal 5, code
       assert_equal "blocked", payload.dig("eval_baseline", "status")
@@ -4486,7 +4579,17 @@ class AiwebCliTest < Minitest::Test
         assert_equal "deny", blocked_events.find { |event| event.fetch("event") == "policy.decision" }.fetch("decision")
 
         env = { "LAZYWEB_MCP_TOKEN" => "secret-token" }
-        payload, code = json_cmd_with_env(env, "mcp-broker", "call", "--server", "lazyweb", "--tool", "lazyweb_search", "--query", "pricing page", "--limit", "1", "--endpoint", "#{endpoint}?token=secret-token", "--approved")
+        missing_hash_payload, missing_hash_code = json_cmd_with_env(env, "mcp-broker", "call", "--server", "lazyweb", "--tool", "lazyweb_search", "--query", "pricing page", "--limit", "1", "--endpoint", "#{endpoint}?token=secret-token", "--approved")
+        refute_equal 0, missing_hash_code
+        assert_equal "blocked", missing_hash_payload.dig("mcp_broker", "status")
+        assert_match(/approval-hash/i, missing_hash_payload.fetch("blocking_issues").join(" "))
+
+        stale_hash_payload, stale_hash_code = json_cmd_with_env(env, "mcp-broker", "call", "--server", "lazyweb", "--tool", "lazyweb_search", "--query", "pricing page", "--limit", "1", "--endpoint", "#{endpoint}?token=secret-token", "--approval-hash", "0" * 64, "--approved")
+        refute_equal 0, stale_hash_code
+        assert_equal "blocked", stale_hash_payload.dig("mcp_broker", "status")
+        assert_match(/approval hash does not match/i, stale_hash_payload.fetch("blocking_issues").join(" "))
+
+        payload, code = json_approved_mcp_broker(env, "--server", "lazyweb", "--tool", "lazyweb_search", "--query", "pricing page", "--limit", "1", "--endpoint", "#{endpoint}?token=secret-token")
         assert_equal 0, code
         assert_equal "passed", payload.dig("mcp_broker", "status")
         assert_equal "aiweb.implementation_mcp_broker", payload.dig("mcp_broker", "broker_driver")
@@ -4510,16 +4613,14 @@ class AiwebCliTest < Minitest::Test
     in_tmp do
       json_cmd("init")
 
-      payload, code = json_cmd(
-        "mcp-broker",
-        "call",
+      payload, code = json_approved_mcp_broker(
+        nil,
         "--server",
         "github",
         "--tool",
         "issues_search",
         "--query",
-        "bug report",
-        "--approved"
+        "bug report"
       )
 
       refute_equal 0, code
@@ -4559,7 +4660,7 @@ class AiwebCliTest < Minitest::Test
       FileUtils.mkdir_p("src")
       File.write("src/app.js", "console.log('metadata only')\n")
 
-      payload, code = json_cmd("mcp-broker", "call", "--server", "project_files", "--tool", "project_file_metadata", "--query", "src/app.js", "--approved")
+      payload, code = json_approved_mcp_broker(nil, "--server", "project_files", "--tool", "project_file_metadata", "--query", "src/app.js")
       assert_equal 0, code, payload.inspect
       assert_equal "passed", payload.dig("mcp_broker", "status")
       assert_equal "implementation_worker.mcp.project_files", payload.dig("mcp_broker", "scope")
@@ -4576,7 +4677,7 @@ class AiwebCliTest < Minitest::Test
       refute_includes metadata_text, "console.log('metadata only')"
 
       File.write(".env", "SECRET=should-not-read\n")
-      blocked_payload, blocked_code = json_cmd("mcp-broker", "call", "--server", "project_files", "--tool", "project_file_metadata", "--query", ".env", "--approved")
+      blocked_payload, blocked_code = json_approved_mcp_broker(nil, "--server", "project_files", "--tool", "project_file_metadata", "--query", ".env")
       refute_equal 0, blocked_code
       assert_equal "blocked", blocked_payload.dig("mcp_broker", "status")
       assert_match(/must not reference \.env/i, blocked_payload.fetch("blocking_issues").join("\n"))
@@ -4596,7 +4697,7 @@ class AiwebCliTest < Minitest::Test
       File.write("src/style.css", ".hero { color: red; }\n")
       File.write("src/.env.local", "SECRET=must-not-leak\n")
 
-      payload, code = json_cmd("mcp-broker", "call", "--server", "project_files", "--tool", "project_file_list", "--query", "src", "--limit", "2", "--approved")
+      payload, code = json_approved_mcp_broker(nil, "--server", "project_files", "--tool", "project_file_list", "--query", "src", "--limit", "2")
       assert_equal 0, code, payload.inspect
       assert_equal "passed", payload.dig("mcp_broker", "status")
       assert_equal "implementation_worker.mcp.project_files", payload.dig("mcp_broker", "scope")
@@ -4622,18 +4723,18 @@ class AiwebCliTest < Minitest::Test
       assert_equal %w[tool.requested policy.decision tool.started tool.finished], events.map { |event| event.fetch("event") }
       assert_equal "allow", events.find { |event| event.fetch("event") == "policy.decision" }.fetch("decision")
 
-      blocked_payload, blocked_code = json_cmd("mcp-broker", "call", "--server", "project_files", "--tool", "project_file_list", "--query", ".env", "--approved")
+      blocked_payload, blocked_code = json_approved_mcp_broker(nil, "--server", "project_files", "--tool", "project_file_list", "--query", ".env")
       refute_equal 0, blocked_code
       assert_equal "blocked", blocked_payload.dig("mcp_broker", "status")
       assert_match(/must not reference \.env/i, blocked_payload.fetch("blocking_issues").join("\n"))
       refute_includes JSON.generate(blocked_payload), "must-not-leak"
 
-      traversal_payload, traversal_code = json_cmd("mcp-broker", "call", "--server", "project_files", "--tool", "project_file_list", "--query", "../outside", "--approved")
+      traversal_payload, traversal_code = json_approved_mcp_broker(nil, "--server", "project_files", "--tool", "project_file_list", "--query", "../outside")
       refute_equal 0, traversal_code
       assert_equal "blocked", traversal_payload.dig("mcp_broker", "status")
       assert_match(/must not traverse outside project/i, traversal_payload.fetch("blocking_issues").join("\n"))
 
-      runs_payload, runs_code = json_cmd("mcp-broker", "call", "--server", "project_files", "--tool", "project_file_list", "--query", ".ai-web/runs", "--approved")
+      runs_payload, runs_code = json_approved_mcp_broker(nil, "--server", "project_files", "--tool", "project_file_list", "--query", ".ai-web/runs")
       refute_equal 0, runs_code
       assert_equal "blocked", runs_payload.dig("mcp_broker", "status")
       assert_match(/generated run artifacts/i, runs_payload.fetch("blocking_issues").join("\n"))
@@ -4646,7 +4747,7 @@ class AiwebCliTest < Minitest::Test
       FileUtils.mkdir_p("src")
       File.binwrite("src/app.js", "line one\nline two\nline three\n")
 
-      payload, code = json_cmd("mcp-broker", "call", "--server", "project_files", "--tool", "project_file_excerpt", "--query", "src/app.js", "--limit", "2", "--approved")
+      payload, code = json_approved_mcp_broker(nil, "--server", "project_files", "--tool", "project_file_excerpt", "--query", "src/app.js", "--limit", "2")
       assert_equal 0, code, payload.inspect
       assert_equal "passed", payload.dig("mcp_broker", "status")
       assert_equal "implementation_worker.mcp.project_files", payload.dig("mcp_broker", "scope")
@@ -4670,14 +4771,14 @@ class AiwebCliTest < Minitest::Test
       assert_equal "allow", events.find { |event| event.fetch("event") == "policy.decision" }.fetch("decision")
 
       File.write("src/note.txt", "SECRET=must-not-leak\n")
-      blocked_payload, blocked_code = json_cmd("mcp-broker", "call", "--server", "project_files", "--tool", "project_file_excerpt", "--query", "src/note.txt", "--approved")
+      blocked_payload, blocked_code = json_approved_mcp_broker(nil, "--server", "project_files", "--tool", "project_file_excerpt", "--query", "src/note.txt")
       refute_equal 0, blocked_code
       assert_equal "blocked", blocked_payload.dig("mcp_broker", "status")
       assert_match(/secret-like content/i, blocked_payload.fetch("blocking_issues").join("\n"))
       refute_includes JSON.generate(blocked_payload), "must-not-leak"
 
       File.binwrite("src/binary.bin", "safe\x00binary")
-      binary_payload, binary_code = json_cmd("mcp-broker", "call", "--server", "project_files", "--tool", "project_file_excerpt", "--query", "src/binary.bin", "--approved")
+      binary_payload, binary_code = json_approved_mcp_broker(nil, "--server", "project_files", "--tool", "project_file_excerpt", "--query", "src/binary.bin")
       refute_equal 0, binary_code
       assert_equal "blocked", binary_payload.dig("mcp_broker", "status")
       assert_match(/binary files/i, binary_payload.fetch("blocking_issues").join("\n"))
@@ -4694,7 +4795,7 @@ class AiwebCliTest < Minitest::Test
       FileUtils.mkdir_p("node_modules/pkg")
       File.write("node_modules/pkg/index.js", "needle ignored\n")
 
-      payload, code = json_cmd("mcp-broker", "call", "--server", "project_files", "--tool", "project_file_search", "--query", "src::needle", "--limit", "2", "--approved")
+      payload, code = json_approved_mcp_broker(nil, "--server", "project_files", "--tool", "project_file_search", "--query", "src::needle", "--limit", "2")
       assert_equal 0, code, payload.inspect
       assert_equal "passed", payload.dig("mcp_broker", "status")
       assert_equal "implementation_worker.mcp.project_files", payload.dig("mcp_broker", "scope")
@@ -4718,12 +4819,12 @@ class AiwebCliTest < Minitest::Test
       assert_equal %w[tool.requested policy.decision tool.started tool.finished], events.map { |event| event.fetch("event") }
       assert_equal "allow", events.find { |event| event.fetch("event") == "policy.decision" }.fetch("decision")
 
-      unsafe_payload, unsafe_code = json_cmd("mcp-broker", "call", "--server", "project_files", "--tool", "project_file_search", "--query", "../outside::needle", "--approved")
+      unsafe_payload, unsafe_code = json_approved_mcp_broker(nil, "--server", "project_files", "--tool", "project_file_search", "--query", "../outside::needle")
       refute_equal 0, unsafe_code
       assert_equal "blocked", unsafe_payload.dig("mcp_broker", "status")
       assert_match(/must not traverse outside project/i, unsafe_payload.fetch("blocking_issues").join("\n"))
 
-      secret_pattern_payload, secret_pattern_code = json_cmd("mcp-broker", "call", "--server", "project_files", "--tool", "project_file_search", "--query", "src::SECRET=must-not-leak", "--approved")
+      secret_pattern_payload, secret_pattern_code = json_approved_mcp_broker(nil, "--server", "project_files", "--tool", "project_file_search", "--query", "src::SECRET=must-not-leak")
       refute_equal 0, secret_pattern_code
       assert_equal "blocked", secret_pattern_payload.dig("mcp_broker", "status")
       assert_match(/pattern must not be secret-like/i, secret_pattern_payload.fetch("blocking_issues").join("\n"))

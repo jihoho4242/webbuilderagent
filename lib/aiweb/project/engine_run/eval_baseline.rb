@@ -1,8 +1,11 @@
 # frozen_string_literal: true
 
+require_relative "../../constitution/loader"
+require_relative "../../tools/decision_packet"
+
 module Aiweb
   module ProjectEngineRun
-    def eval_baseline(action: "validate", source_path: nil, output_path: nil, fixture_id: nil, approved: false, dry_run: false)
+    def eval_baseline(action: "validate", source_path: nil, output_path: nil, fixture_id: nil, approved: false, approval_hash: nil, dry_run: false)
       assert_initialized!
 
       normalized_action = action.to_s.strip.empty? ? "validate" : action.to_s.strip
@@ -32,8 +35,13 @@ module Aiweb
       if validation["source_status"] == "ready" && validation["calibrated_fixture_count"].to_i.zero?
         blockers << "human baseline corpus contains no calibrated fixtures with positive reviewer evidence"
       end
+      approval_capability = normalized_action == "import" ? eval_baseline_import_approval_capability(source: source, target_path: target_path, validation: validation, fixture_id: fixture_id) : nil
+      expected_approval_hash = approval_capability ? eval_baseline_import_approval_hash(approval_capability) : nil
       if normalized_action == "import" && !dry_run && !approved
         blockers << "--approved is required to import human baseline corpus"
+      end
+      if normalized_action == "import" && !dry_run && approved
+        blockers.concat(eval_baseline_import_approval_blockers(supplied_hash: approval_hash, expected_hash: expected_approval_hash))
       end
       blockers = blockers.uniq
 
@@ -83,6 +91,9 @@ module Aiweb
         "action" => normalized_action,
         "dry_run" => dry_run,
         "approved" => approved,
+        "approval_hash" => expected_approval_hash,
+        "supplied_approval_hash" => approval_hash.to_s.strip.empty? ? nil : approval_hash.to_s,
+        "approval_capability" => approval_capability,
         "source_path" => eval_baseline_path_label(source),
         "target_path" => relative(target_path),
         "validation_path" => dry_run ? nil : (changes.include?(relative(validation_path)) ? relative(validation_path) : nil),
@@ -106,7 +117,7 @@ module Aiweb
         "blocking_issues" => blockers,
         "missing_artifacts" => validation["missing_artifacts"],
         "eval_baseline" => eval_payload,
-        "next_action" => eval_baseline_next_action(normalized_action, status)
+        "next_action" => eval_baseline_next_action(normalized_action, status, approval_hash: expected_approval_hash)
       }
     end
 
@@ -268,7 +279,7 @@ module Aiweb
           "reviewer_requirements" => [
             "reviewers must be real humans or an explicitly approved human review panel",
             "agents must not invent reviewer identities, scores, notes, or evidence references",
-            "candidate corpus must be validated before import and import still requires --approved"
+            "candidate corpus must be validated before import and import still requires matching --approval-hash HASH plus --approved"
           ]
         },
         "human_input_contract" => {
@@ -319,14 +330,14 @@ module Aiweb
           "agent_must_not_fill_scores" => true,
           "agent_must_not_invent_reviewer_ids" => true,
           "template_contains_placeholders_only" => true,
-          "import_requires_approved_flag" => true,
+          "import_requires_hash_bound_approval" => true,
           "validate_rejects_uncalibrated_or_secret_corpus" => true
         },
         "next_steps" => [
           "Give this review pack to human reviewers with the referenced design fixture/screenshots.",
           "Humans fill #{relative(candidate_path)} using numeric 0..100 scores and reviewer evidence.",
           "Run aiweb eval-baseline validate --path #{relative(candidate_path)}.",
-          "After human approval, run aiweb eval-baseline import --path #{relative(candidate_path)} --approved.",
+          "After human approval, run aiweb eval-baseline import --path #{relative(candidate_path)} --dry-run, review the approval_hash, then rerun with --approval-hash HASH --approved.",
           "Run aiweb engine-run so eval-benchmark.json can enforce the calibrated human baseline."
         ],
         "guardrails" => eval_baseline_review_pack_guardrails,
@@ -341,7 +352,7 @@ module Aiweb
         "no prepopulated human scores",
         "project-local JSON output only",
         "no .env/.env.* writes",
-        "human baseline import still requires validation and --approved"
+        "human baseline import still requires validation plus matching --approval-hash HASH and --approved"
       ]
     end
 
@@ -593,6 +604,41 @@ module Aiweb
       }
     end
 
+    def eval_baseline_import_approval_capability(source:, target_path:, validation:, fixture_id:)
+      {
+        "schema_version" => 1,
+        "capability" => "aiweb.eval_baseline.import.v1",
+        "constitution_hash" => Aiweb::Constitution::Loader.new.content_hash,
+        "policy_kernel_version" => Aiweb::Tools::DecisionPacket::POLICY_KERNEL_VERSION,
+        "source_path" => eval_baseline_path_label(source),
+        "source_sha256" => File.file?(source) ? Digest::SHA256.file(source).hexdigest : nil,
+        "target_path" => relative(target_path),
+        "fixture_filter" => fixture_id.to_s.strip.empty? ? nil : fixture_id.to_s.strip,
+        "corpus_readiness" => validation["corpus_readiness"],
+        "fixture_count" => validation["fixture_count"],
+        "calibrated_fixture_count" => validation["calibrated_fixture_count"],
+        "invalid_fixture_count" => validation["invalid_fixture_count"],
+        "fixtures" => validation["fixtures"],
+        "execution_boundary" => {
+          "requires_dry_run_review" => true,
+          "requires_matching_approval_hash" => true,
+          "writes_under" => %w[.ai-web/eval/human-baselines.json .ai-web/eval/human-baseline-validation.json],
+          "forbidden" => %w[fabricated_reviewer_evidence env_read raw_secret_output uncalibrated_corpus_import production_ready_overclaim]
+        }
+      }
+    end
+
+    def eval_baseline_import_approval_hash(capability)
+      Digest::SHA256.hexdigest(JSON.generate(capability))
+    end
+
+    def eval_baseline_import_approval_blockers(supplied_hash:, expected_hash:)
+      return ["eval-baseline import approved execution requires --approval-hash HASH from the matching dry-run capability envelope"] if supplied_hash.to_s.strip.empty?
+      return ["eval-baseline import approval hash does not match the current human-baseline import capability envelope"] unless supplied_hash.to_s.strip == expected_hash
+
+      []
+    end
+
     def eval_baseline_guardrails
       [
         "no fabricated reviewer evidence",
@@ -600,23 +646,23 @@ module Aiweb
         "no .env/.env.* reads",
         "no raw secrets or environment values",
         "scores must be numeric 0..100",
-        "import requires --approved",
+        "import requires matching --approval-hash HASH plus --approved",
         "dry-run writes nothing"
       ]
     end
 
-    def eval_baseline_next_action(action, status)
+    def eval_baseline_next_action(action, status, approval_hash: nil)
       case [action, status]
       when ["review-pack", "created"]
         "send .ai-web/eval/human-review-pack.json to human reviewers, write .ai-web/eval/candidate-human-baselines.json with real human scores, then run aiweb eval-baseline validate --path .ai-web/eval/candidate-human-baselines.json"
       when ["review-pack", "dry_run"]
         "rerun aiweb eval-baseline review-pack without --dry-run to create the human review pack"
       when ["validate", "validated"]
-        "review .ai-web/eval/human-baseline-validation.json, then run aiweb eval-baseline import --path <candidate> --approved when the corpus is human-provided"
+        "review .ai-web/eval/human-baseline-validation.json, then run aiweb eval-baseline import --path <candidate> --dry-run, review the approval_hash, and rerun with --approval-hash HASH --approved when the corpus is human-provided"
       when ["import", "imported"]
         "run aiweb engine-run so eval-benchmark.json can use the calibrated human baseline"
       when ["validate", "dry_run"], ["import", "dry_run"]
-        "rerun without --dry-run to record validation evidence, or add --approved for import"
+        action == "import" ? "review the approval_hash, then rerun aiweb eval-baseline import --path <candidate> --approval-hash #{approval_hash || "HASH"} --approved" : "rerun without --dry-run to record validation evidence"
       else
         action == "review-pack" ? "fix the reported human review pack issues and rerun aiweb eval-baseline review-pack" : "fix the reported human baseline issues and rerun aiweb eval-baseline validate --path <candidate>"
       end

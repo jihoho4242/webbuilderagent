@@ -201,6 +201,21 @@
       "surface": "backend generic command approved-without-hash bridge shortcut",
       "status": "removed",
       "finding": "CodexCliBridge now denies approved hash-bound generic bridge commands unless validated args include --approval-hash HASH or --approval-request HASH; missing hashes record backend side-effect broker denial evidence and block before bin/aiweb launches."
+    },
+    {
+      "surface": "implementation MCP broker approved-without-hash connector/file access shortcut",
+      "status": "removed",
+      "finding": "mcp-broker dry-runs now emit an approval_hash bound to the broker capability envelope; real approved Lazyweb/project_files calls require matching --approval-hash or --approval-request plus --approved, and missing/stale hashes block before connector or project-file driver execution."
+    },
+    {
+      "surface": "eval-baseline import approved-without-hash corpus overwrite shortcut",
+      "status": "removed",
+      "finding": "eval-baseline import dry-runs now emit an approval_hash bound to the human-baseline import capability envelope; real imports require matching --approval-hash or --approval-request plus --approved before .ai-web/eval/human-baselines.json can be written."
+    },
+    {
+      "surface": "approved-only next-action and live guidance shortcuts",
+      "status": "removed",
+      "finding": "agent, verify-loop, engine-run resume, eval-baseline import, and human-review-pack guidance no longer tell operators to rerun with --approved alone; static audit keeps live guidance on dry-run review plus matching approval_hash plus --approved."
     }
   ],
   "preserve_safety_substrate": [

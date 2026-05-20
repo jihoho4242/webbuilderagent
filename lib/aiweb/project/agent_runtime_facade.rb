@@ -73,8 +73,9 @@ module Aiweb
       return engine_payload["next_action"] if engine_payload["next_action"].to_s.match?(/select a design candidate|resolve/i)
       return "review engine-run evidence and continue with aiweb engine-scheduler or run-resume if needed" if approved && !dry_run && mode != "plan-only"
 
-      hash_suffix = approval_hash.to_s.empty? ? "" : " --approval-hash #{approval_hash}"
-      "review the engine-run plan, then rerun aiweb agent --mode supervised --approved#{hash_suffix} only when the capability envelope is acceptable"
+      return "review the engine-run plan, then rerun aiweb agent --mode supervised --dry-run to obtain an approval_hash before any --approved execution" if approval_hash.to_s.empty?
+
+      "review the engine-run plan, then rerun aiweb agent --mode supervised --approval-hash #{approval_hash} --approved only when the capability envelope is acceptable"
     end
   end
 end

@@ -233,6 +233,10 @@ class AiwebSchemaLockTest < Minitest::Test
     assert_equal "string", implementation_mcp_broker.dig("properties", "server", "type")
     assert_equal "string", implementation_mcp_broker.dig("properties", "tool", "type")
     assert_equal true, implementation_mcp_broker.dig("properties", "per_call_audit", "const")
+    assert_includes implementation_mcp_broker.fetch("required"), "approval_hash"
+    assert_includes implementation_mcp_broker.fetch("required"), "approval_capability"
+    assert_equal "aiweb.mcp_broker.call.v1", implementation_mcp_broker.dig("properties", "approval_capability", "properties", "capability", "const")
+    assert_equal true, implementation_mcp_broker.dig("properties", "approval_capability", "properties", "execution_boundary", "properties", "requires_matching_approval_hash", "const")
     assert_equal "aiweb.implementation_mcp_broker", implementation_mcp_broker.dig("properties", "side_effect_broker", "properties", "broker", "const")
     assert_includes implementation_mcp_broker.dig("properties", "side_effect_broker", "properties", "policy", "properties", "allowed_tools", "items", "enum"), "lazyweb_health"
     assert_includes implementation_mcp_broker.dig("properties", "side_effect_broker", "properties", "policy", "properties", "allowed_tools", "items", "enum"), "project_file_metadata"
@@ -389,6 +393,7 @@ class AiwebSchemaLockTest < Minitest::Test
     assert_equal true, human_review_pack.dig("properties", "human_input_contract", "properties", "agent_must_not_fill_scores", "const")
     assert_equal "engine-run-human-baselines.schema.json", human_review_pack.dig("properties", "human_input_contract", "properties", "candidate_schema", "const")
     assert_equal ".ai-web/eval/human-baselines.json", human_review_pack.dig("properties", "output_paths", "properties", "import_target_path", "const")
+    assert_equal true, human_review_pack.dig("properties", "anti_fabrication_policy", "properties", "import_requires_hash_bound_approval", "const")
     %w[clean_cache_install dependency_diff sbom audit vulnerability_copy_back_gate execution_evidence].each do |field|
       assert_includes supply_chain_gate.fetch("required"), field
     end

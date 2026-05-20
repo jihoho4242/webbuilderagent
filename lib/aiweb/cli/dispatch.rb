@@ -645,13 +645,15 @@ module Aiweb
         o.on("--path PATH") { |v| options[:path] = v }
         o.on("--output PATH") { |v| options[:output] = v }
         o.on("--fixture-id ID") { |v| options[:fixture_id] = v }
+        o.on("--approval-hash HASH") { |v| options[:approval_hash] = v }
+        o.on("--approval-request HASH") { |v| options[:approval_hash] = v }
         o.on("--approved") { options[:approved] = true }
       end
       unless @argv.empty?
         raise UserError.new("eval-baseline #{subcommand} does not accept extra positional arguments: #{@argv.join(", ")}", EXIT_VALIDATION_FAILED)
       end
 
-      project.eval_baseline(action: subcommand, source_path: opts[:path], output_path: opts[:output], fixture_id: opts[:fixture_id], approved: !!opts[:approved], dry_run: @dry_run)
+      project.eval_baseline(action: subcommand, source_path: opts[:path], output_path: opts[:output], fixture_id: opts[:fixture_id], approved: !!opts[:approved], approval_hash: opts[:approval_hash], dry_run: @dry_run)
     end
 
     def dispatch_engine_run
@@ -739,6 +741,8 @@ module Aiweb
         o.on("--query QUERY") { |v| options[:query] = v }
         o.on("--limit N") { |v| options[:limit] = v }
         o.on("--endpoint URL") { |v| options[:endpoint] = v }
+        o.on("--approval-hash HASH") { |v| options[:approval_hash] = v }
+        o.on("--approval-request HASH") { |v| options[:approval_hash] = v }
         o.on("--approved") { options[:approved] = true }
         o.on("--force") { options[:force] = true }
       end
@@ -754,6 +758,7 @@ module Aiweb
         limit: opts[:limit] || 1,
         endpoint: opts[:endpoint],
         approved: !!opts[:approved],
+        approval_hash: opts[:approval_hash],
         force: opts[:force],
         dry_run: @dry_run
       })

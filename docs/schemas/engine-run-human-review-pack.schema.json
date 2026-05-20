@@ -101,7 +101,7 @@
         "agent_must_not_fill_scores",
         "agent_must_not_invent_reviewer_ids",
         "template_contains_placeholders_only",
-        "import_requires_approved_flag",
+        "import_requires_hash_bound_approval",
         "validate_rejects_uncalibrated_or_secret_corpus"
       ],
       "properties": {
@@ -109,7 +109,7 @@
         "agent_must_not_fill_scores": { "const": true },
         "agent_must_not_invent_reviewer_ids": { "const": true },
         "template_contains_placeholders_only": { "const": true },
-        "import_requires_approved_flag": { "const": true },
+        "import_requires_hash_bound_approval": { "const": true },
         "validate_rejects_uncalibrated_or_secret_corpus": { "const": true }
       },
       "additionalProperties": false

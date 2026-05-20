@@ -118,6 +118,26 @@ class AgentOsV32StaticSurfaceAuditTest < Minitest::Test
     assert_includes help, "network/install/deploy/provider CLI/git push remain elevated-approval actions"
   end
 
+  def test_live_guidance_does_not_reintroduce_approved_only_execution_shortcuts
+    live_guidance = %w[
+      lib/aiweb/project/agent_runtime_facade.rb
+      lib/aiweb/project/engine_run/run_state.rb
+      lib/aiweb/project/verify_loop.rb
+      lib/aiweb/project/engine_run/eval_baseline.rb
+      docs/schemas/engine-run-human-review-pack.schema.json
+    ].to_h { |relative| [relative, File.read(File.join(REPO_ROOT, relative))] }
+
+    refute_match(/aiweb agent --mode supervised --approved(?!.*--approval-hash)/, live_guidance.fetch("lib/aiweb/project/agent_runtime_facade.rb"))
+    refute_match(/engine-run --resume .*--approved after reviewing/, live_guidance.fetch("lib/aiweb/project/engine_run/run_state.rb"))
+    refute_includes live_guidance.fetch("lib/aiweb/project/engine_run/eval_baseline.rb"), "import still requires --approved"
+    refute_includes live_guidance.fetch("docs/schemas/engine-run-human-review-pack.schema.json"), "import_requires_approved_flag"
+
+    live_guidance.reject { |relative, _text| relative.end_with?(".schema.json") }.each do |relative, text|
+      assert_includes text, "approval_hash", "#{relative} should keep hash-bound approval guidance"
+    end
+    assert_includes live_guidance.fetch("docs/schemas/engine-run-human-review-pack.schema.json"), "import_requires_hash_bound_approval"
+  end
+
   def test_public_product_docs_do_not_market_engine_run_with_manus_claims
     public_docs = [
       File.join(REPO_ROOT, "README.md"),

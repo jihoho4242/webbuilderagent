@@ -162,8 +162,9 @@ module Aiweb
       sandbox = metadata["sandbox"].to_s
       sandbox_args = agent == "openmanus" && !sandbox.empty? ? " --sandbox #{sandbox}" : ""
       if metadata["dry_run"] || metadata["requires_approval"]
-        approval_suffix = approval_hash.empty? ? "" : " --approval-hash #{approval_hash}"
-        return "use aiweb engine-run --agent #{agent} --mode agentic_local#{sandbox_args} --max-cycles #{metadata["max_cycles"]}#{approval_suffix} --approved; verify-loop is only a compatibility shim"
+        return "rerun aiweb verify-loop --max-cycles #{metadata["max_cycles"]} --dry-run to obtain an approval_hash before any --approved execution; verify-loop is only a compatibility shim" if approval_hash.empty?
+
+        return "use aiweb engine-run --agent #{agent} --mode agentic_local#{sandbox_args} --max-cycles #{metadata["max_cycles"]} --approval-hash #{approval_hash} --approved; verify-loop is only a compatibility shim"
       end
 
       engine_payload["next_action"] || "inspect engine-run evidence"

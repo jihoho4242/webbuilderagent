@@ -46,7 +46,7 @@ module Aiweb
       when "waiting_approval"
         "review copy_back_policy approval_issues in #{metadata["metadata_path"]}; rerun only after granting the specific elevated capability"
       when "cancelled"
-        "resume with aiweb engine-run --resume #{metadata["run_id"]} --approved after reviewing #{metadata["checkpoint_path"]}"
+        "review #{metadata["checkpoint_path"]}, run aiweb engine-run --resume #{metadata["run_id"]} --dry-run to obtain the resume approval_hash, then rerun with --approval-hash HASH --approved"
       when "quarantined"
         "review redacted quarantine evidence at #{metadata["quarantine_path"]}; copy-back is blocked until manual release outside engine-run"
       else

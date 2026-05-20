@@ -436,6 +436,37 @@
         "backend bridge denial still records aiweb.backend.side_effect_broker policy.decision/tool.blocked evidence before any bin/aiweb process launch",
         "README and docs/contracts/engine-run.md document the backend bridge hash-bound approval boundary"
       ]
+    },
+    {
+      "surface": "implementation MCP broker approved-without-hash connector/file access shortcut",
+      "status": "hash_bound_mcp_broker_approval_required",
+      "evidence": [
+        "mcp-broker dry-run now emits approval_hash and approval_capability in the broker record",
+        "real approved Lazyweb and project_files broker calls require matching --approval-hash HASH or --approval-request HASH plus --approved",
+        "missing or stale MCP broker approval hashes block with side-effect broker denial evidence before connector/file drivers run",
+        "implementation-mcp-broker schema now requires approval_hash and approval_capability with requires_matching_approval_hash=true",
+        "CLI help and engine-run contract docs updated to remove approved-only MCP execution wording"
+      ]
+    },
+    {
+      "surface": "eval-baseline import approved-without-hash corpus overwrite shortcut",
+      "status": "hash_bound_eval_baseline_import_required",
+      "evidence": [
+        "eval-baseline import dry-run emits approval_hash and approval_capability for the exact source corpus hash, fixture summaries, target path, and import boundary",
+        "real eval-baseline import requires matching --approval-hash HASH or --approval-request HASH plus --approved",
+        "missing/stale import hashes block before .ai-web/eval/human-baselines.json is written",
+        "human review pack schema now records import_requires_hash_bound_approval=true",
+        "CLI help and engine-run contract docs updated to remove approved-only import wording"
+      ]
+    },
+    {
+      "surface": "approved-only next-action and live guidance shortcuts",
+      "status": "hash_bound_guidance_required",
+      "evidence": [
+        "agent facade, verify-loop shim, engine-run cancelled/resume guidance, eval-baseline next_action, and human-review-pack reviewer guidance now require dry-run review plus matching --approval-hash HASH and --approved instead of approved-only reruns",
+        "static surface audit rejects stale approved-only aiweb agent, engine-run resume, eval-baseline import, and human-review-pack schema wording",
+        "human review pack schema keeps import_requires_hash_bound_approval and no longer exposes import_requires_approved_flag"
+      ]
     }
   ],
   "preserved_safety_substrate": [
@@ -443,9 +474,7 @@
     "engine-run durable runtime remains canonical",
     "PolicyKernel, ToolGateway, DecisionPacket, HITL, sandbox/copy-back boundaries remain intact"
   ],
-  "remaining_script_runner_candidates": [
-
-  ],
+  "remaining_script_runner_candidates": [],
   "validation": {
     "ruby -Ilib -e require aiweb": "passed: ok",
     "ruby -Itest test/test_agentification_runtime.rb": "passed: 14 runs, 158 assertions, 0 failures, 0 errors",
@@ -555,10 +584,23 @@
     "JSON parse updated reports": "passed: agent-os-v32-baseline-audit.json and script-executor-neutralization-20260519.json parse successfully",
     "git diff --check after workbench approval hardening": "passed with line-ending warnings only",
     "ruby -c lib/aiweb/daemon/cli_bridge.rb test/test_daemon.rb": "passed: Syntax OK",
-    "ruby -Itest test/test_daemon.rb -n '/generic_backend_bridge_rejects_hash_bound|approved_codex_bridge_execution|bridge_rejects_backend_controlled_flags|bridge_broker_blocks/'": "passed: 4 runs, 86 assertions, 0 failures, 0 errors"
+    "ruby -Itest test/test_daemon.rb -n '/generic_backend_bridge_rejects_hash_bound|approved_codex_bridge_execution|bridge_rejects_backend_controlled_flags|bridge_broker_blocks/'": "passed: 4 runs, 86 assertions, 0 failures, 0 errors",
+    "ruby -c lib/aiweb/project/mcp_broker.rb lib/aiweb/cli/dispatch.rb test/test_aiweb_cli.rb": "passed: Syntax OK",
+    "ruby -Itest test/test_aiweb_cli.rb -n '/mcp_broker/'": "passed: 6 runs, 307 assertions, 0 failures, 0 errors",
+    "ruby -Itest test/test_schema_locks.rb after MCP broker approval hash schema lock": "passed: 3 runs, 889 assertions, 0 failures, 0 errors",
+    "ruby -Itest test/test_contracts.rb -n '/side_effect_surface_audit/' after MCP broker approval hash hardening": "passed: 5 runs, 75 assertions, 0 failures, 0 errors",
+    "ruby -c lib/aiweb/project/engine_run/eval_baseline.rb lib/aiweb/cli/dispatch.rb test/test_aiweb_cli.rb": "passed: Syntax OK",
+    "ruby -Itest test/test_aiweb_cli.rb -n '/eval_baseline/'": "passed: 6 runs, 121 assertions, 0 failures, 0 errors",
+    "ruby -Itest test/test_schema_locks.rb after eval-baseline hash-bound import schema lock": "passed: 3 runs, 890 assertions, 0 failures, 0 errors",
+    "ruby -Itest test/test_agent_os_v32_static_surface_audit.rb after approved-only guidance cleanup": "passed: 6 runs, 120 assertions, 0 failures, 0 errors",
+    "ruby -c hash-bound approval guidance and broker surfaces": "passed: Syntax OK for agent facade, run_state, verify_loop, eval_baseline, mcp_broker, CLI dispatch/help, and changed tests",
+    "ruby -Itest test/test_aiweb_cli.rb -n '/mcp_broker|eval_baseline/'": "passed: 12 runs, 428 assertions, 0 failures, 0 errors",
+    "ruby -Itest test/test_schema_locks.rb after broker/eval hash-bound schema locks": "passed: 3 runs, 890 assertions, 0 failures, 0 errors",
+    "ruby -Itest test/test_contracts.rb -n '/side_effect_surface_audit/' after approved-only guidance cleanup": "passed: 5 runs, 75 assertions, 0 failures, 0 errors",
+    "JSON parse updated broker/eval schemas and neutralization reports": "passed: implementation-mcp-broker.schema.json, engine-run-human-review-pack.schema.json, agent-os-v32-baseline-audit.json, and script-executor-neutralization-20260519.json",
+    "git diff --check after approved-only guidance cleanup": "passed with line-ending warnings only"
   },
   "completion_status": "not_complete",
-  "why_not_complete": "Top-level fixed script-runner surfaces, stale deploy provider execution, browser deterministic-probe naming claims, CLI/contract Manus wording marketing overclaims, fixture-eval production-readiness overclaims, red-team catalog-fixture overclaims, secret-canary value emission, self-improvement dry-run overclaims, release validation evidence overclaims, P5 policy/tool gateway overclaims, P5 HITL fixture overclaims, L3 boolean approval bypasses, verifier-result approval hash bypasses, weak HITL artifact self-integrity checks, engine-run approved-without-hash execution shortcuts, agent-run approved-without-hash execution shortcuts, setup install approved-without-hash execution shortcuts, workbench serve approved-without-hash execution shortcuts, backend generic command approved-without-hash bridge shortcut, P5 replay readiness overclaims, Brain safety wording overclaims, Brain JSON snapshot/projection/hash-chain evidence gaps, the Codex agent-run worker subprocess, runtime_commands direct git/taskkill process forms, agent-run diff-policy direct git subprocesses, OpenManus readiness direct image inspect subprocess, and agent-run OpenManus direct image inspect preflight, engine-run sandbox runtime attestation direct Docker/Podman probes, Codex agent-run worker direct subprocess execution, and OpenManus agent-run sandbox worker direct subprocess execution, and engine-run agent worker direct subprocess execution, and engine-run capture helper direct subprocess execution, and setup install/supply-chain direct subprocess execution are neutralized, but Manus-grade natural-language web-app agent readiness still requires independent production red-team/release evidence plus a real SQLite/concurrency-backed Brain kernel.",
-  "completion": {
-  }
+  "why_not_complete": "Top-level fixed script-runner surfaces, stale deploy provider execution, browser deterministic-probe naming claims, CLI/contract Manus wording marketing overclaims, fixture-eval production-readiness overclaims, red-team catalog-fixture overclaims, secret-canary value emission, self-improvement dry-run overclaims, release validation evidence overclaims, P5 policy/tool gateway overclaims, P5 HITL fixture overclaims, L3 boolean approval bypasses, verifier-result approval hash bypasses, weak HITL artifact self-integrity checks, engine-run approved-without-hash execution shortcuts, agent-run approved-without-hash execution shortcuts, setup install approved-without-hash execution shortcuts, workbench serve approved-without-hash execution shortcuts, backend generic command approved-without-hash bridge shortcut, implementation MCP broker approved-without-hash connector/file access shortcut, eval-baseline import approved-without-hash corpus overwrite shortcut, P5 replay readiness overclaims, Brain safety wording overclaims, Brain JSON snapshot/projection/hash-chain evidence gaps, the Codex agent-run worker subprocess, runtime_commands direct git/taskkill process forms, agent-run diff-policy direct git subprocesses, OpenManus readiness direct image inspect subprocess, and agent-run OpenManus direct image inspect preflight, engine-run sandbox runtime attestation direct Docker/Podman probes, Codex agent-run worker direct subprocess execution, and OpenManus agent-run sandbox worker direct subprocess execution, and engine-run agent worker direct subprocess execution, and engine-run capture helper direct subprocess execution, and setup install/supply-chain direct subprocess execution are neutralized, but Manus-grade natural-language web-app agent readiness still requires independent production red-team/release evidence plus a real SQLite/concurrency-backed Brain kernel.",
+  "completion": {}
 }
