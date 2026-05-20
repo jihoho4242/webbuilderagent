@@ -14,8 +14,8 @@ class AgentOsV32StaticSurfaceAuditTest < Minitest::Test
 
   def test_script_executor_surfaces_are_demoted_not_claimed_as_canonical_engines
     tool_registry = YAML.safe_load(File.read(File.join(REPO_ROOT, "configs", "tool_registry.yaml")), permitted_classes: [], aliases: false)
-    assert_equal "read_only_removed_script_runner_facade", tool_registry.dig("tools", "verify_loop", "agent_engine_role")
-    assert_equal "read_only_engine_run_migration_shim", tool_registry.dig("tools", "verify_loop", "side_effect_class")
+    assert_equal "removed_legacy_script_runner_no_delegation", tool_registry.dig("tools", "verify_loop", "agent_engine_role")
+    assert_equal "removed_legacy_script_runner_tombstone", tool_registry.dig("tools", "verify_loop", "side_effect_class")
     assert_equal false, tool_registry.dig("tools", "verify_loop", "execution_available")
 
     %w[
@@ -43,8 +43,9 @@ class AgentOsV32StaticSurfaceAuditTest < Minitest::Test
       refute File.exist?(File.join(REPO_ROOT, "lib", "aiweb", "project", "verify_loop", file)), "legacy verify-loop #{file} must stay deleted"
     end
     verify_loop_source = File.read(File.join(REPO_ROOT, "lib", "aiweb", "project", "verify_loop.rb"))
-    assert_includes verify_loop_source, "engine_run("
-    assert_includes verify_loop_source, "read_only_migration_shim"
+    refute_includes verify_loop_source, "engine_run("
+    assert_includes verify_loop_source, "removed_command_tombstone"
+    assert_includes verify_loop_source, '"engine_run_delegation_present" => false'
     assert_includes verify_loop_source, '"execution_allowed" => false'
     assert_includes verify_loop_source, "fixed_pipeline_present"
     refute_includes verify_loop_source, "approved: execute_engine"
@@ -68,7 +69,7 @@ class AgentOsV32StaticSurfaceAuditTest < Minitest::Test
     agent_runtime = audit.fetch("script_executor_inventory").find { |entry| entry.fetch("surface").include?("AgentRuntime") }
     assert_equal "removed", agent_runtime.fetch("status")
     verify_loop = audit.fetch("script_executor_inventory").find { |entry| entry.fetch("surface") == "verify-loop" }
-    assert_equal "read_only_engine_run_migration_shim", verify_loop.fetch("status")
+    assert_equal "removed_legacy_script_runner_tombstone", verify_loop.fetch("status")
     assert_includes audit.fetch("preserve_safety_substrate"), "PathPolicy"
   end
 

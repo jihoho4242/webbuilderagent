@@ -14,8 +14,8 @@
     },
     {
       "surface": "verify-loop",
-      "status": "read_only_engine_run_migration_shim",
-      "finding": "fixed build/preview/QA/visual-critique/repair/agent-run pipeline removed; command now calls engine-run dry-run planning only, returns a direct engine-run handoff, and blocks local execution even when --approval-hash HASH --approved is supplied."
+      "status": "removed_legacy_script_runner_tombstone",
+      "finding": "fixed build/preview/QA/visual-critique/repair/agent-run pipeline removed; command is now a removed legacy tombstone with no engine-run delegation, no approval hash, no cycle evidence writer, and blocked local execution even when --approval-hash HASH --approved is supplied."
     },
     {
       "surface": "browser deterministic probe plan/results",
@@ -215,7 +215,7 @@
     {
       "surface": "approved-only next-action and live guidance shortcuts",
       "status": "removed",
-      "finding": "agent, engine-run resume, eval-baseline import, and human-review-pack guidance no longer tell operators to rerun with --approved alone; verify-loop is now read-only migration guidance rather than an approval-capable execution path."
+      "finding": "agent, engine-run resume, eval-baseline import, and human-review-pack guidance no longer tell operators to rerun with --approved alone; verify-loop is now removed-command tombstone guidance rather than an approval-capable execution path."
     },
     {
       "surface": "webbuilder/help approved-only UX guidance",
@@ -260,12 +260,12 @@
     {
       "surface": "Webbuilder/README verify-loop-first guidance",
       "status": "demoted_to_agent_engine_run_dry_run_guidance",
-      "finding": "Korean webbuilder help and README no longer present verify-loop approved examples as the main next step; they now point users to natural-language agent dry-run and canonical engine-run dry-run planning, while verify-loop remains documented only as a read-only migration shim with no execution delegation."
+      "finding": "Korean webbuilder help and README no longer present verify-loop approved examples as the main next step; they now point users to natural-language agent dry-run and canonical engine-run dry-run planning, while verify-loop remains documented only as a removed-command tombstone with no execution delegation."
     },
     {
       "surface": "aiweb CLI help verify-loop approved example",
       "status": "demoted_to_agent_engine_run_dry_run_guidance",
-      "finding": "CLI help no longer lists verify-loop approved examples in the command examples; the live help now presents natural-language agent dry-run and canonical engine-run dry-run as the primary planning examples, while verify-loop is labeled as a read-only migration shim."
+      "finding": "CLI help no longer lists verify-loop approved examples in the command examples; the live help now presents natural-language agent dry-run and canonical engine-run dry-run as the primary planning examples, while verify-loop is labeled as a removed legacy script-runner tombstone."
     },
     {
       "surface": "deploy approved provider execution live guidance",
@@ -274,8 +274,8 @@
     },
     {
       "surface": "verify-loop approved execution delegation",
-      "status": "removed_read_only_migration_shim",
-      "finding": "verify-loop no longer forwards approved execution into engine-run; CLI and backend bridge non-dry-run requests are blocked as read-only migration guidance, so local source work must enter through aiweb engine-run directly."
+      "status": "removed_legacy_command_tombstone",
+      "finding": "verify-loop no longer forwards approved execution or dry-run planning into engine-run; CLI and backend bridge requests are blocked/removed as tombstone guidance, so local source work must enter through aiweb agent or aiweb engine-run directly."
     },
     {
       "surface": "agent-run user-facing approved execution runbooks",

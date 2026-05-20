@@ -16,7 +16,7 @@ module Aiweb
       run-status run-timeline observability-summary run-cancel run-resume
       design-system design-prompt design select-design ingest-reference scaffold setup build preview qa-playwright
       qa-screenshot qa-a11y qa-lighthouse visual-critique repair visual-polish workbench
-      component-map visual-edit engine-run agent agent-run verify-loop github-sync deploy-plan deploy qa-checklist qa-report
+      component-map visual-edit engine-run agent agent-run github-sync deploy-plan deploy qa-checklist qa-report
       next-task advance rollback resolve-blocker snapshot supabase-secret-qa
     ].freeze
 
@@ -59,7 +59,7 @@ module Aiweb
         ".env and .env.* path segments are rejected before bridge execution",
         "bridge commands time out instead of blocking the backend indefinitely",
         "backend bridge command execution is recorded through aiweb.backend.side_effect_broker evidence before process launch",
-        "approved agent/agent-run/setup execution requires a matching X-Aiweb-Approval-Token header plus --approval-hash HASH or --approval-request HASH in command args; verify-loop is a read-only migration shim and cannot execute local work",
+        "approved agent/agent-run/setup execution requires a matching X-Aiweb-Approval-Token header plus --approval-hash HASH or --approval-request HASH in command args; verify-loop is removed from the backend bridge",
         "engine-run is called by the dedicated backend job API; frontend generic command requests for engine-run are rejected",
         "engine-run exposes the agentic sandbox task runtime through structured command envelopes",
         "agent-run maps to aiweb agent-run --agent codex|openmanus and keeps approval semantics",
@@ -85,7 +85,6 @@ module Aiweb
 
       blocking_issues = []
       blocking_issues << "bridge deploy is dry-run only" if command == "deploy" && !dry_run
-      blocking_issues << "bridge verify-loop is a read-only migration shim; use engine-run directly for local execution" if command == "verify-loop" && !dry_run
       blocking_issues.concat(hash_bound_approval_blockers(command: command, args: args, dry_run: dry_run, approved: approved))
       broker = bridge_broker_start(project_path: project_path, command: command, args: args, argv: argv, dry_run: dry_run, approved: approved, blocking_issues: blocking_issues)
       if blocking_issues.any?

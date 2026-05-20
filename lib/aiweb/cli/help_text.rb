@@ -50,7 +50,7 @@ module Aiweb
           qa-checklist [--force]
           qa-report [--from PATH] [--status passed|failed|blocked] [--duration-minutes N] [--timed-out] [--force]
           repair [--from-qa PATH|latest] [--max-cycles N] [--force]
-          verify-loop [--max-cycles N:1-10] [--agent codex|openmanus] [--sandbox docker|podman] [--force] (read-only migration shim)
+          verify-loop (removed legacy script runner; tombstone only, use agent/engine-run --dry-run)
           agent "verify and improve this local scaffold" --mode supervised --dry-run
           engine-run --agent codex --mode agentic_local --max-cycles 3 --dry-run
           qa-playwright [--url URL] [--task-id ID] [--force]
@@ -106,7 +106,7 @@ module Aiweb
           qa-a11y: runs safe local axe accessibility QA against localhost/127.0.0.1 preview; --dry-run does not write files or launch Node
           qa-lighthouse: runs safe local Lighthouse QA against localhost/127.0.0.1 preview; --dry-run does not write files or launch Node
           visual-critique: records safe local visual critique from explicit screenshot/metadata evidence or --from-screenshots latest only; --dry-run plans .ai-web/visual artifacts without writes, browser launch, installs, repair, deploy, network, or .env access
-          verify-loop: read-only migration shim only, not the canonical agent engine; --max-cycles is capped at 10, and the hardcoded build -> preview -> QA -> screenshot -> visual critique -> repair/visual-polish -> agent-run script has been removed. It always delegates only to engine-run dry-run planning, returns the direct engine-run approval hash/plan, blocks local execution even if --approved is supplied, no longer writes verify-loop cycle evidence, cannot unlock deploy, and never installs packages, deploys, calls provider CLIs, or reads .env/.env.*
+          verify-loop: removed legacy script-runner tombstone only, not a migration engine and not the canonical agent engine; the hardcoded build -> preview -> QA -> screenshot -> visual critique -> repair/visual-polish -> agent-run script has been removed. It does not delegate to engine-run, does not return an approval hash, blocks local execution even if --approved is supplied, no longer writes verify-loop cycle evidence, cannot unlock deploy, and never installs packages, deploys, calls provider CLIs, or reads .env/.env.*
           agent-run --task latest --agent codex --dry-run
           agent-run --task latest --agent openmanus --dry-run
           workbench: plans, exports, or serves a local UI manifest under .ai-web/workbench using declarative CLI controls only; requires initialized .ai-web/state.yaml, --dry-run writes nothing and serve dry-run returns an approval_hash bound to the current localhost serve capability envelope, export writes only workbench artifacts, real serve is a lower-level localhost ops action that requires the matching hash plus explicit approval before process launch, executes no controls, and never mutates state.yaml

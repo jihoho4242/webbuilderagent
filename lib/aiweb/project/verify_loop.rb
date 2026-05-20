@@ -25,21 +25,7 @@ module Aiweb
       implementation_agent = verify_loop_agent(agent, state)
       implementation_sandbox = verify_loop_sandbox(sandbox, implementation_agent)
       approval_hash_present = !approval_hash.to_s.strip.empty?
-      engine_payload = engine_run(
-        goal: verify_loop_engine_goal(cycle_limit),
-        agent: implementation_agent,
-        mode: "agentic_local",
-        sandbox: implementation_sandbox,
-        max_cycles: cycle_limit,
-        approved: false,
-        approval_hash: approval_hash,
-        dry_run: true,
-        force: force
-      )
-
-      engine = engine_payload["engine_run"].is_a?(Hash) ? engine_payload["engine_run"] : {}
       metadata = verify_loop_engine_shim_metadata(
-        engine: engine,
         cycle_limit: cycle_limit,
         agent: implementation_agent,
         sandbox: implementation_sandbox,
@@ -48,14 +34,17 @@ module Aiweb
         approval_hash_present: approval_hash_present,
         requested_execution: !dry_run
       )
-      payload = engine_payload.merge(
+      {
+        "schema_version" => 1,
+        "current_phase" => state["phase"]["current"],
         "action_taken" => verify_loop_action_taken(metadata),
         "verify_loop" => metadata,
-        "blocking_issues" => (Array(engine_payload["blocking_issues"]) + Array(metadata["blocking_issues"])).uniq,
-        "next_action" => verify_loop_next_action(metadata, engine_payload)
-      )
-      payload["dry_run"] = true if dry_run
-      payload
+        "changed_files" => [],
+        "planned_changes" => [],
+        "blocking_issues" => Array(metadata["blocking_issues"]).uniq,
+        "next_action" => verify_loop_next_action(metadata),
+        "dry_run" => dry_run
+      }
     end
 
     private
@@ -88,31 +77,28 @@ module Aiweb
       value
     end
 
-    def verify_loop_engine_goal(cycle_limit)
-      "verify and improve local web-building evidence for #{cycle_limit} engine-run cycle(s)"
-    end
-
-    def verify_loop_engine_shim_metadata(engine:, cycle_limit:, agent:, sandbox:, approved:, dry_run:, approval_hash_present:, requested_execution:)
-      engine_status = engine["status"].to_s.empty? ? "unknown" : engine["status"].to_s
+    def verify_loop_engine_shim_metadata(cycle_limit:, agent:, sandbox:, approved:, dry_run:, approval_hash_present:, requested_execution:)
       execution_blocked = requested_execution
       status = if execution_blocked
                  "blocked"
                else
-                 engine_status
+                 "dry_run"
                end
-      blocking_issues = Array(engine["blocking_issues"])
+      blocking_issues = []
       if execution_blocked
-        blocking_issues.unshift("verify-loop is a read-only migration shim; run aiweb engine-run directly with the dry-run approval_hash for local execution")
+        blocking_issues.unshift("verify-loop has been removed as an execution engine; use aiweb agent --dry-run or aiweb engine-run --dry-run directly")
       end
 
       {
         "schema_version" => 2,
         "status" => status,
         "canonical_runtime" => "engine-run",
-        "compatibility_role" => "engine_run_facade",
-        "read_only_migration_shim" => true,
+        "compatibility_role" => "removed_command_tombstone",
+        "removed_command" => true,
+        "read_only_migration_shim" => false,
         "execution_allowed" => false,
-        "engine_run_dry_run" => true,
+        "engine_run_dry_run" => false,
+        "engine_run_delegation_present" => false,
         "legacy_execution_removed" => true,
         "script_executor_neutralized" => true,
         "fixed_pipeline_present" => false,
@@ -128,22 +114,11 @@ module Aiweb
         "cycle_count" => 0,
         "cycles" => [],
         "steps" => [],
-        "engine_run" => {
-          "run_id" => engine["run_id"],
-          "status" => engine_status,
-          "mode" => engine["mode"],
-          "agent" => engine["agent"],
-          "metadata_path" => engine["metadata_path"],
-          "events_path" => engine["events_path"],
-          "checkpoint_path" => engine["checkpoint_path"],
-          "workspace_path" => engine["workspace_path"],
-          "approval_hash" => engine["approval_hash"]
-        }.compact,
-        "approval_hash" => engine["approval_hash"],
+        "approval_hash_present" => approval_hash_present,
         "blocking_issues" => blocking_issues.uniq,
         "guardrails" => [
           "verify-loop no longer executes a hardcoded build/preview/QA/repair/agent-run script",
-          "verify-loop is read-only and cannot execute engine-run on behalf of the user",
+          "verify-loop has no engine-run delegation path",
           "local source work must enter through engine-run",
           "engine-run enforces DecisionPacket/PolicyKernel/ToolGateway and sandbox/copy-back gates",
           "dry-run writes nothing and launches nothing",
@@ -154,24 +129,18 @@ module Aiweb
     end
 
     def verify_loop_action_taken(metadata)
-      return "planned engine-run verification handoff" if metadata["dry_run"]
-      return "verify-loop read-only shim blocked before local execution" if metadata["requires_engine_run_direct_execution"]
+      return "verify-loop removed command tombstone" if metadata["dry_run"]
+      return "verify-loop removed before local execution" if metadata["requires_engine_run_direct_execution"]
 
-      "reported engine-run verification handoff"
+      "verify-loop removed command tombstone"
     end
 
-    def verify_loop_next_action(metadata, engine_payload)
-      approval_hash = metadata["approval_hash"].to_s
+    def verify_loop_next_action(metadata)
       agent = metadata["agent"]
       sandbox = metadata["sandbox"].to_s
       sandbox_args = agent == "openmanus" && !sandbox.empty? ? " --sandbox #{sandbox}" : ""
-      if metadata["dry_run"] || metadata["requires_engine_run_direct_execution"]
-        return "rerun aiweb engine-run --agent #{agent} --mode agentic_local#{sandbox_args} --max-cycles #{metadata["max_cycles"]} --dry-run to obtain an approval_hash; verify-loop is a read-only migration shim" if approval_hash.empty?
 
-        return "use aiweb engine-run --agent #{agent} --mode agentic_local#{sandbox_args} --max-cycles #{metadata["max_cycles"]} --approval-hash #{approval_hash} --approved; verify-loop is a read-only migration shim"
-      end
-
-      engine_payload["next_action"] || "inspect engine-run evidence"
+      "use aiweb agent \"verify and improve this local scaffold\" --mode supervised --dry-run or aiweb engine-run --agent #{agent} --mode agentic_local#{sandbox_args} --max-cycles #{metadata["max_cycles"]} --dry-run; verify-loop has been removed"
     end
   end
 end

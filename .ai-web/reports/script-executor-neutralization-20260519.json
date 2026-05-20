@@ -34,15 +34,14 @@
     },
     {
       "surface": "verify-loop fixed build/preview/QA/repair/agent-run pipeline",
-      "status": "deleted_and_reduced_to_read_only_engine_run_migration_shim",
+      "status": "deleted_and_reduced_to_removed_command_tombstone",
       "evidence": [
         "lib/aiweb/project/verify_loop/execution.rb deleted",
         "lib/aiweb/project/verify_loop/reporting.rb deleted",
-        "lib/aiweb/project/verify_loop.rb delegates compatibility requests to engine-run",
-        "verify_loop.fixed_pipeline_present=false and steps=[] in shim payload",
-        "verify_loop.read_only_migration_shim=true and execution_allowed=false in shim payload",
-        "verify-loop now invokes engine-run only with dry_run=true and approved=false",
-        "approved verify-loop calls with a dry-run approval_hash block instead of delegating execution to engine-run"
+        "lib/aiweb/project/verify_loop.rb no longer calls engine_run",
+        "verify_loop.engine_run_delegation_present=false and execution_allowed=false in tombstone payload",
+        "verify-loop emits no approval_hash and writes no cycle evidence",
+        "approved verify-loop calls with --approval-hash HASH block instead of delegating execution or dry-run planning to engine-run"
       ]
     },
     {
@@ -469,7 +468,7 @@
       "surface": "approved-only next-action and live guidance shortcuts",
       "status": "hash_bound_guidance_required",
       "evidence": [
-        "agent facade, engine-run cancelled/resume guidance, eval-baseline next_action, and human-review-pack reviewer guidance now require dry-run review plus matching --approval-hash HASH and --approved instead of approved-only reruns; verify-loop is no longer approval-capable and is read-only migration guidance",
+        "agent facade, engine-run cancelled/resume guidance, eval-baseline next_action, and human-review-pack reviewer guidance now require dry-run review plus matching --approval-hash HASH and --approved instead of approved-only reruns; verify-loop is no longer approval-capable and is removed-command tombstone guidance",
         "static surface audit rejects stale approved-only aiweb agent, engine-run resume, eval-baseline import, and human-review-pack schema wording",
         "human review pack schema keeps import_requires_hash_bound_approval and no longer exposes import_requires_approved_flag"
       ]
@@ -479,7 +478,7 @@
       "status": "hash_bound_guidance_required",
       "evidence": [
         "aiweb help now lists agent real execution as --dry-run followed by --approval-hash HASH plus --approved instead of [--approved] [--dry-run]",
-        "bin/webbuilder setup help keeps hash-bound approval guidance, while verify-loop help is now read-only migration guidance with no execution path",
+        "bin/webbuilder setup help keeps hash-bound approval guidance, while verify-loop help is now removed-command tombstone guidance with no execution path",
         "README verify-loop guidance now blocks execution even with --approval-hash HASH --approved, and static audit rejects stale approved-only help patterns"
       ]
     },
@@ -562,12 +561,12 @@
     },
     {
       "surface": "verify-loop approved execution delegation",
-      "status": "removed_read_only_migration_shim",
+      "status": "removed_legacy_command_tombstone",
       "evidence": [
         "lib/aiweb/project/verify_loop.rb no longer has approved: execute_engine or execute_engine = approved paths",
-        "verify-loop --approval-hash HASH --approved returns blocked read_only_migration_shim evidence and writes no engine-run or verify-loop artifacts",
+        "verify-loop --approval-hash HASH --approved returns blocked removed-command tombstone evidence and writes no engine-run or verify-loop artifacts",
         "backend bridge blocks non-dry-run verify-loop requests before launching bin/aiweb",
-        "configs/tool_registry.yaml marks verify_loop as L1 read_only_engine_run_migration_shim with execution_available=false"
+        "configs/tool_registry.yaml marks verify_loop as removed_legacy_script_runner_tombstone with execution_available=false"
       ]
     },
     {
@@ -852,13 +851,13 @@
     "ruby -Itest test/test_agent_os_v32_static_surface_audit.rb after deploy guidance demotion": "passed: 6 runs, 184 assertions, 0 failures, 0 errors",
     "ruby -Itest test/test_aiweb_cli.rb -n /verify_loop approved read-only shim targeted tests/ after verify-loop execution delegation removal": "passed: 4 runs, 145 assertions, 0 failures, 0 errors",
     "ruby -Itest test/test_agent_os_v32_static_surface_audit.rb after verify-loop read-only shim demotion": "passed: 6 runs, 194 assertions, 0 failures, 0 errors",
-    "ruby -Itest test/test_aiweb_cli.rb -n /verify_loop|verify-loop/ after verify-loop read-only migration shim": "passed: 11 runs, 282 assertions, 0 failures, 0 errors",
-    "ruby -Itest test/test_agentification_runtime.rb -n /verify_loop/ after verify-loop read-only migration shim": "passed: 1 run, 25 assertions, 0 failures, 0 errors",
-    "ruby -Itest test/test_daemon.rb -n /test_generic_backend_bridge_rejects_hash_bound_approved_commands_without_approval_hash/ after verify-loop bridge read-only block": "passed: 1 run, 15 assertions, 0 failures, 0 errors",
-    "ruby -Itest test/test_agent_os_v32_static_surface_audit.rb after verify-loop read-only migration shim": "passed: 6 runs, 196 assertions, 0 failures, 0 errors",
+    "ruby -Itest test/test_aiweb_cli.rb -n /verify_loop|verify-loop/ after verify-loop removed tombstone": "passed: 11 runs, 301 assertions, 0 failures, 0 errors",
+    "ruby -Itest test/test_agentification_runtime.rb -n /verify_loop/ after verify-loop removed tombstone": "passed: 1 run, 27 assertions, 0 failures, 0 errors",
+    "ruby -Itest test/test_daemon.rb -n /daemon_dry_run|verify-loop|generic_backend_bridge_rejects_hash_bound/ after verify-loop backend allowlist removal": "passed: 1 run, 15 assertions, 0 failures, 0 errors",
+    "ruby -Itest test/test_agent_os_v32_static_surface_audit.rb after verify-loop removed tombstone": "passed: 6 runs, 294 assertions, 0 failures, 0 errors",
     "ruby -Itest test/test_agent_os_v32_decision_packet.rb after verify-loop tool registry read-only demotion": "passed: 3 runs, 22 assertions, 0 failures, 0 errors",
     "ruby -Itest test/test_agent_os_v32_release_evidence.rb after verify-loop P5 role demotion": "passed: 2 runs, 259 assertions, 0 failures, 0 errors",
-    "ruby -Ilib side_effect_surface_audit after verify-loop read-only bridge demotion": "passed: coverage=classified, unclassified=0, entry_count=19",
+    "ruby -Itest test/test_contracts.rb -n /side_effect_surface_audit/ after verify-loop backend tombstone": "passed: 5 runs, 82 assertions, 0 failures, 0 errors",
     "ruby -Itest test/test_aiweb_cli.rb -n /test_agent_run_help_and_webbuilder_passthrough/ after agent-run runbook demotion": "passed: 1 run, 32 assertions, 0 failures, 0 errors",
     "ruby -Itest test/test_agent_os_v32_static_surface_audit.rb -n /test_live_guidance_does_not_reintroduce_approved_only_execution_shortcuts|test_public_product_docs_do_not_market_engine_run_with_manus_claims/ after agent-run runbook demotion": "passed: 2 runs, 98 assertions, 0 failures, 0 errors",
     "ruby -Itest test/test_aiweb_cli.rb -n /test_setup_help_and_korean_webbuilder_passthrough_surface|test_workbench_help_and_webbuilder_passthrough/ after setup/workbench runbook demotion": "passed: 2 runs, 63 assertions, 0 failures, 0 errors",
@@ -870,7 +869,8 @@
     "ruby -Itest test/test_aiweb_cli.rb -n /engine_scheduler|mcp_broker|eval_baseline/ after scheduler/mcp/eval live help demotion": "passed: 14 runs, 633 assertions, 0 failures, 0 errors",
     "ruby -Itest test/test_agent_os_v32_static_surface_audit.rb after runtime next_action approved guidance demotion": "passed: 6 runs, 292 assertions, 0 failures, 0 errors",
     "ruby -Itest test/test_aiweb_cli.rb -n /agent_run_dry_run|setup_install_dry_run|setup_install_approved_without_approval_hash|workbench_serve_dry_run|mcp_broker|eval_baseline|engine_scheduler/ after runtime next_action demotion": "passed: 19 runs, 817 assertions, 0 failures, 0 errors",
-    "ruby bin/check after final runbook demotion and ProcessRunner cleanup": "passed: syntax checks, repository text guard, load smoke, warning load smoke, full test suite 486 runs, 12934 assertions, 0 failures, 0 errors, 3 skips, and git diff --check"
+    "ruby bin/check after final runbook demotion and ProcessRunner cleanup": "passed: syntax checks, repository text guard, load smoke, warning load smoke, full test suite 486 runs, 12934 assertions, 0 failures, 0 errors, 3 skips, and git diff --check",
+    "verify-loop removed tombstone no engine-run delegation": "passed: ruby -Itest test/test_aiweb_cli.rb -n /verify_loop|verify-loop/ (11 runs, 301 assertions), test_agentification_runtime verify_loop (1 run, 27 assertions), test_daemon backend allowlist (1 run, 15 assertions), static audit (6 runs, 294 assertions), release evidence (2 runs, 259 assertions), decision packet (3 runs, 22 assertions), side_effect_surface_audit (5 runs, 82 assertions), and git diff --check, ruby bin/check syntax/load/test-suite passed (486 runs, 12957 assertions, 0 failures, 0 errors, 3 skips) before CRLF normalization, and git diff --check passed after LF normalization"
   },
   "completion_status": "not_complete",
   "why_not_complete": "Top-level fixed script-runner surfaces, stale deploy provider execution, browser deterministic-probe naming claims, CLI/contract Manus wording marketing overclaims, fixture-eval production-readiness overclaims, red-team catalog-fixture overclaims, secret-canary value emission, self-improvement dry-run overclaims, release validation evidence overclaims, P5 policy/tool gateway overclaims, P5 HITL fixture overclaims, L3 boolean approval bypasses, verifier-result approval hash bypasses, weak HITL artifact self-integrity checks, engine-run approved-without-hash execution shortcuts, agent-run approved-without-hash execution shortcuts, setup install approved-without-hash execution shortcuts, workbench serve approved-without-hash execution shortcuts, backend generic command approved-without-hash bridge shortcut, implementation MCP broker approved-without-hash connector/file access shortcut, eval-baseline import approved-without-hash corpus overwrite shortcut, P5 replay readiness overclaims, Brain safety wording overclaims, Brain JSON snapshot/projection/hash-chain evidence gaps, the Codex agent-run worker subprocess, runtime_commands direct git/taskkill process forms, agent-run diff-policy direct git subprocesses, OpenManus readiness direct image inspect subprocess, and agent-run OpenManus direct image inspect preflight, engine-run sandbox runtime attestation direct Docker/Podman probes, Codex agent-run worker direct subprocess execution, and OpenManus agent-run sandbox worker direct subprocess execution, and engine-run agent worker direct subprocess execution, and engine-run capture helper direct subprocess execution, and setup install/supply-chain direct subprocess execution are neutralized, but Manus-grade natural-language web-app agent readiness still requires independent production red-team/release evidence plus real SQLite-backed Brain storage evidence (sqlite3 Ruby gem is not available in this runtime), local ruby bin/check/test-all evidence now passes in this commit; Manus-grade readiness still requires GitHub Actions run ids, operator drill evidence, independent production red-team/release evidence, and real SQLite-backed Brain storage evidence.",

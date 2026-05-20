@@ -303,22 +303,24 @@ class AgentificationRuntimeTest < Minitest::Test
     end
   end
 
-  def test_verify_loop_is_engine_run_shim_instead_of_profile_d_pipeline_for_s
+  def test_verify_loop_is_removed_tombstone_instead_of_profile_d_pipeline_for_s
     in_tmp do |dir|
       prepare_profile_s_project(dir)
 
       payload, code, stderr = json_cmd("--path", dir, "verify-loop", "--max-cycles", "1", "--approved")
 
-      assert_equal 5, code, stderr
+      assert_equal 1, code, stderr
       assert_equal "engine-run", payload.dig("verify_loop", "canonical_runtime")
       assert_equal true, payload.dig("verify_loop", "legacy_execution_removed")
       assert_equal true, payload.dig("verify_loop", "script_executor_neutralized")
-      assert_equal true, payload.dig("verify_loop", "read_only_migration_shim")
+      assert_equal true, payload.dig("verify_loop", "removed_command")
+      assert_equal false, payload.dig("verify_loop", "read_only_migration_shim")
+      assert_equal false, payload.dig("verify_loop", "engine_run_delegation_present")
       assert_equal false, payload.dig("verify_loop", "execution_allowed")
       assert_equal false, payload.dig("verify_loop", "fixed_pipeline_present")
       assert_empty payload.dig("verify_loop", "steps")
       joined = payload["blocking_issues"].join("\n")
-      assert_match(/read-only|engine-run/i, joined)
+      assert_match(/removed|engine-run|agent/i, joined)
       refute_match(/Profile S does not support build/, joined)
       refute_match(/Profile S does not support preview/, joined)
       refute_match(/Profile S does not support browser_qa/, joined)

@@ -387,7 +387,7 @@ class AiwebDaemonTest < Minitest::Test
     assert_includes payload.dig("backend", "routes"), "POST /api/project/job/resume"
     assert_includes payload.dig("backend", "bridge", "allowed_commands"), "agent-run"
     assert_includes payload.dig("backend", "bridge", "allowed_commands"), "engine-run"
-    assert_includes payload.dig("backend", "bridge", "allowed_commands"), "verify-loop"
+    refute_includes payload.dig("backend", "bridge", "allowed_commands"), "verify-loop"
     assert_includes payload.dig("backend", "bridge", "allowed_commands"), "ingest-reference"
     assert_includes payload.dig("backend", "bridge", "guardrails"), "frontend sends structured JSON only; no raw shell commands"
     assert_includes payload.dig("backend", "bridge", "guardrails"), "backend bridge command execution is recorded through aiweb.backend.side_effect_broker evidence before process launch"
@@ -1831,7 +1831,7 @@ class AiwebDaemonTest < Minitest::Test
       )
 
       assert_equal 403, status
-      assert_match(/read-only|engine-run/i, blocked["error"])
+      assert_match(/not allowed|verify-loop/i, blocked["error"])
       assert_empty Dir.glob(File.join(dir, ".ai-web", "runs", "engine-run-*")), "bridge must block verify-loop before engine-run artifacts"
     end
   end
