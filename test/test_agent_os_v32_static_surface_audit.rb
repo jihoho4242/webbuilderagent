@@ -150,6 +150,7 @@ class AgentOsV32StaticSurfaceAuditTest < Minitest::Test
       lib/aiweb/project/runtime_commands/setup.rb
       lib/aiweb/project/workbench.rb
     ].to_h { |relative| [relative, File.read(File.join(REPO_ROOT, relative))] }
+    korean_overview = File.read(File.join(REPO_ROOT, "docs", "README.ko.md"))
 
     refute_match(/aiweb agent --mode supervised --approved(?!.*--approval-hash)/, live_guidance.fetch("lib/aiweb/project/agent_runtime_facade.rb"))
     refute_match(/engine-run --resume .*--approved after reviewing/, live_guidance.fetch("lib/aiweb/project/engine_run/run_state.rb"))
@@ -176,6 +177,14 @@ class AgentOsV32StaticSurfaceAuditTest < Minitest::Test
     refute_includes live_guidance.fetch("lib/aiweb/cli/help_text.rb"), "engine-scheduler daemon [--run-id latest|ID] [--max-ticks N] [--interval-seconds N] [--workers N] [--approval-hash HASH] [--approved] [--execute]"
     refute_includes live_guidance.fetch("lib/aiweb/cli/help_text.rb"), "mcp-broker call --server lazyweb --tool lazyweb_health|lazyweb_search [--query QUERY] [--limit N] [--endpoint URL] [--approval-hash HASH] [--approved]"
     refute_includes live_guidance.fetch("lib/aiweb/cli/help_text.rb"), "eval-baseline import --path .ai-web/eval/candidate-human-baselines.json --approval-hash HASH --approved"
+    refute_includes live_guidance.fetch("bin/webbuilder"), "read-only engine-run migration shim"
+    refute_includes live_guidance.fetch("bin/webbuilder"), "verify-loop cannot execute local work even with --approved; real local execution must use engine-run directly with matching --approval-hash HASH plus --approved"
+    assert_includes live_guidance.fetch("bin/webbuilder"), "verify-loop is now a removed legacy command tombstone"
+    assert_includes live_guidance.fetch("bin/webbuilder"), "verify-loop does not delegate to engine-run, returns no approval hash"
+    refute_includes korean_overview, "read-only engine-run migration shim"
+    assert_includes korean_overview, "removed legacy command tombstone"
+    assert_includes korean_overview, "it no longer delegates to `engine-run`"
+    assert_includes korean_overview, "no approval hash, and no engine-run delegation"
     assert_includes live_guidance.fetch("lib/aiweb/cli/help_text.rb"), "Real package install remains a lower-level ops action"
     assert_includes live_guidance.fetch("lib/aiweb/cli/help_text.rb"), "real serve is a lower-level localhost ops action"
     assert_includes live_guidance.fetch("lib/aiweb/cli/help_text.rb"), "resume execution remains a lower-level ops action"

@@ -78,6 +78,7 @@ WebBuilderAgent is closer to a natural-language, engine-run-centered supervised 
 - Demoted Workbench serve user-facing approved runbooks: README, `aiweb help`, and `bin/webbuilder` no longer list `workbench --serve --approval-hash HASH --approved` as a friendly control shortcut; serve remains a lower-level localhost ops action reached through dry-run approval_hash evidence.
 '
 - Verify-loop tombstone hardening: `lib/aiweb/project/verify_loop.rb` no longer calls `engine_run`, emits no approval hash, reports `engine_run_delegation_present=false`, and the backend bridge no longer allows `verify-loop` as a command.
+- Removed stale webbuilder launcher / Korean overview migration-shim wording: `bin/webbuilder` and `docs/README.ko.md` now describe `verify-loop` only as a removed legacy command tombstone with no approval hash and no engine-run delegation.
 - Removed webbuilder/help approved-only UX guidance: `aiweb help`, `bin/webbuilder`, and README now present dry-run approval hash review before `--approval-hash HASH --approved` execution, and static audit rejects the stale `[--approved] [--dry-run]` / `--approved --approval-hash HASH` guidance patterns.
 
 
@@ -112,6 +113,11 @@ WebBuilderAgent is closer to a natural-language, engine-run-centered supervised 
 - `ruby -Itest test/test_agentification_runtime.rb -n /verify_loop/` after verify-loop removed tombstone ? PASS: 1 run, 27 assertions, 0 failures, 0 errors
 - `ruby -Itest test/test_daemon.rb -n /daemon_dry_run|verify-loop|generic_backend_bridge_rejects_hash_bound/` after verify-loop backend allowlist removal ? PASS: 1 run, 15 assertions, 0 failures, 0 errors
 - `ruby -Itest test/test_agent_os_v32_static_surface_audit.rb` after verify-loop removed tombstone ? PASS: 6 runs, 294 assertions, 0 failures, 0 errors
+- `ruby -Itest test/test_agent_os_v32_static_surface_audit.rb` after launcher/ko verify-loop tombstone wording cleanup ? PASS: 6 runs, 310 assertions, 0 failures, 0 errors
+- `ruby -Itest test/test_aiweb_cli.rb -n /test_verify_loop_help_and_webbuilder_dry_run_passthrough/` after launcher tombstone wording cleanup ? PASS: 1 run, 55 assertions, 0 failures, 0 errors
+- `ruby -Itest test/test_agentification_runtime.rb -n '/help_and_readme|verify_loop/'` after launcher tombstone wording cleanup ? PASS: 2 runs, 49 assertions, 0 failures, 0 errors
+- `ruby -c bin/webbuilder` after launcher tombstone wording cleanup ? PASS: Syntax OK
+- `ruby -Itest test/test_contracts.rb -n /side_effect_surface_audit/` after launcher tombstone wording cleanup ? PASS: 5 runs, 82 assertions, 0 failures, 0 errors
 - `ruby bin/check` after verify-loop tombstone hardening ? PARTIAL/PASS EVIDENCE: syntax/load/warning-load/test-suite passed with 486 runs, 12957 assertions, 0 failures, 0 errors, 3 skips; final diff check initially failed on CRLF only, then `git diff --check` passed after LF normalization.
 - `ruby -Itest test/test_agent_os_v32_decision_packet.rb` after verify-loop tool registry read-only demotion ? PASS: 3 runs, 22 assertions, 0 failures, 0 errors
 - `ruby -Itest test/test_agent_os_v32_release_evidence.rb` after verify-loop P5 role demotion ? PASS: 2 runs, 259 assertions, 0 failures, 0 errors

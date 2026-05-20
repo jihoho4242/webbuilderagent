@@ -31,7 +31,7 @@ WebBuilderAgent? ??? **? ? ???? ?? ???? ???? ???**? ???, ???? ??? ???? ???? ????
 - deploy/provider CLI/git push ?? ?? side effect? ?? ?? ??? ???? ????.
 - `engine-run`? ?? durable runtime???.
 - `aiweb agent`? goal facade???.
-- `verify-loop` is now only a read-only engine-run migration shim; the legacy fixed build/preview/QA/repair/agent-run script was removed and execution must move to `engine-run` directly.
+- `verify-loop` is now only a removed legacy command tombstone; the legacy fixed build/preview/QA/repair/agent-run script was removed, it no longer delegates to `engine-run`, and execution must move to `agent` or `engine-run` directly.
 - side effect? `DecisionPacket -> PolicyKernel -> ToolGateway`? ???? ???.
 - self-improvement? ????? production patch? ??? proposal/sandbox/eval evidence? ?????.
 
@@ -80,7 +80,7 @@ WebBuilderAgent? ??? **? ? ???? ?? ???? ???? ???**? ???, ???? ??? ???? ???? ????
    - `engine-run` = canonical durable runtime
    - `aiweb agent` = goal facade / compatibility evidence
 5. Script-executor removal
-   - `verify-loop` = read-only engine-run migration shim, no fixed local script runner and no execution delegation
+   - `verify-loop` = removed legacy command tombstone, no fixed local script runner, no approval hash, and no engine-run delegation
    - browser static scenario = deterministic local browser probe
 6. Eval / Red-team / Brain / Self-improvement MVP
    - `evals/`, `redteam/`, `lib/aiweb/brain`, `lib/aiweb/self_improvement`
