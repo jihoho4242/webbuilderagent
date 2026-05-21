@@ -3,6 +3,7 @@
 require_relative "path_safety"
 require_relative "io_helpers"
 require_relative "quality_gate_helpers"
+require_relative "state_mutation_helpers"
 require_relative "runtime_commands"
 require_relative "verify_loop"
 require_relative "sandbox_runtime"
@@ -32,6 +33,7 @@ module Aiweb
   module ProjectFeatures
     include ProjectIoHelpers
     include ProjectQualityGateHelpers
+    include ProjectStateMutationHelpers
     include ProjectPathSafety
     include ProjectRuntimeCommands
     include ProjectVerifyLoop
