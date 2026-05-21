@@ -1,5 +1,6 @@
 # frozen_string_literal: true
 
+require_relative "agent_run/openmanus_sandbox"
 require_relative "agent_run/openmanus"
 require_relative "agent_run/source_policy"
 require_relative "agent_run/diff_policy"
