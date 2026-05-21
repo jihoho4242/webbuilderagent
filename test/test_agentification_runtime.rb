@@ -125,6 +125,27 @@ class AgentificationRuntimeTest < Minitest::Test
     end
   end
 
+  def test_process_runner_preserves_locale_and_normalizes_binary_stdout_to_utf8
+    in_tmp do |dir|
+      script = File.join(dir, "utf8_probe.rb")
+      File.write(script, "STDOUT.binmode\nSTDOUT.write([0xED,0x95,0x9C,0xEA,0xB8,0x80].pack('C*'))\n")
+
+      result = Aiweb::Runtime::ProcessRunner.new.capture(
+        Aiweb::Runtime::CommandSpec.new(
+          argv: [RbConfig.ruby, script],
+          cwd: dir,
+          timeout: 10
+        )
+      ).to_h
+
+      assert_equal "passed", result["status"]
+      assert_equal Encoding::UTF_8, result["stdout"].encoding
+      assert_equal "한글", result["stdout"]
+      assert_equal ENV["LANG"], Aiweb::Runtime::EnvPolicy.clean_env["LANG"] if ENV.key?("LANG")
+      JSON.generate(result)
+    end
+  end
+
   def test_process_runner_writes_stdin_through_command_spec
     in_tmp do |dir|
       script = File.join(dir, "stdin_probe.rb")

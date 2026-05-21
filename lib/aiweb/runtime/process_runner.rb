@@ -29,8 +29,8 @@ module Aiweb
               stderr = safe_thread_value(stderr_thread)
               return ToolResult.new(
                 status: "timeout",
-                stdout: truncate(EnvPolicy.redact(stdout), spec.max_output_bytes),
-                stderr: truncate(EnvPolicy.redact("#{stderr}\ncommand timed out after #{spec.timeout}s"), spec.max_output_bytes),
+                stdout: truncate(EnvPolicy.redact(utf8_text(stdout)), spec.max_output_bytes),
+                stderr: truncate(EnvPolicy.redact("#{utf8_text(stderr)}\ncommand timed out after #{spec.timeout}s"), spec.max_output_bytes),
                 exit_code: nil,
                 command: spec.command
               )
@@ -38,17 +38,34 @@ module Aiweb
           end
           ToolResult.new(
             status: status.success? ? "passed" : "failed",
-            stdout: truncate(EnvPolicy.redact(stdout), spec.max_output_bytes),
-            stderr: truncate(EnvPolicy.redact(stderr), spec.max_output_bytes),
+            stdout: truncate(EnvPolicy.redact(utf8_text(stdout)), spec.max_output_bytes),
+            stderr: truncate(EnvPolicy.redact(utf8_text(stderr)), spec.max_output_bytes),
             exit_code: status.exitstatus,
             command: spec.command
           )
         rescue SystemCallError, IOError => e
-          ToolResult.new(status: "failed", stdout: truncate(EnvPolicy.redact(stdout), spec.max_output_bytes), stderr: truncate(EnvPolicy.redact("#{stderr}\n#{e.class}: #{e.message}"), spec.max_output_bytes), exit_code: nil, command: spec.command)
+          ToolResult.new(
+            status: "failed",
+            stdout: truncate(EnvPolicy.redact(utf8_text(stdout)), spec.max_output_bytes),
+            stderr: truncate(EnvPolicy.redact("#{utf8_text(stderr)}\n#{e.class}: #{e.message}"), spec.max_output_bytes),
+            exit_code: nil,
+            command: spec.command
+          )
         end
       end
 
       private
+
+      def utf8_text(value)
+        text = value.to_s
+        return text if text.encoding == Encoding::UTF_8 && text.valid_encoding?
+
+        text = text.dup
+        text = text.force_encoding(Encoding::UTF_8) if text.encoding == Encoding::BINARY || text.encoding == Encoding::ASCII_8BIT
+        text.encode(Encoding::UTF_8, invalid: :replace, undef: :replace, replace: "�")
+      rescue EncodingError
+        value.to_s.bytes.map { |byte| byte < 128 ? byte.chr : "�" }.join
+      end
 
       def spawn_options(cwd)
         options = { chdir: cwd, unsetenv_others: true }
@@ -97,8 +114,8 @@ module Aiweb
       end
 
       def truncate(value, max)
-        text = value.to_s
-        text.bytesize > max ? text.byteslice(0, max).to_s + "\n[truncated]" : text
+        text = utf8_text(value)
+        text.bytesize > max ? "#{utf8_text(text.byteslice(0, max))}\n[truncated]" : text
       end
     end
   end
