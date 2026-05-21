@@ -3,6 +3,7 @@
 require_relative "setup/supply_chain"
 require_relative "setup/approval"
 require_relative "setup/environment"
+require_relative "setup/non_executing_payloads"
 require_relative "setup/payloads"
 
 module Aiweb
@@ -101,92 +102,42 @@ module Aiweb
       )
 
       unless approval_blockers.empty? || dry_run
-        return setup_payload(
+        return setup_install_approval_blocked_payload(
           state: state,
-          metadata: setup_run_metadata(
-            run_id: run_id,
-            status: "blocked",
-            command: command,
-            package_manager: package_manager,
-            started_at: nil,
-            finished_at: nil,
-            exit_code: nil,
-            stdout_log: relative(stdout_path),
-            stderr_log: relative(stderr_path),
-            metadata_path: relative(metadata_path),
-            lifecycle_script_warnings: lifecycle_warnings,
-            lifecycle_enabled_requested: allow_lifecycle_scripts,
-            node_modules_present: File.directory?(File.join(root, "node_modules")),
-            blocking_issues: approval_blockers,
-            dry_run: false,
-            approved: approved,
-            approval_hash: expected_hash,
-            supplied_approval_hash: supplied_hash.empty? ? nil : supplied_hash,
-            capability: capability,
-            requires_approval: true,
-            side_effect_broker_path: relative(side_effect_broker_path),
-            side_effect_broker: side_effect_broker_plan.merge(
-              "status" => "blocked",
-              "policy" => side_effect_broker_plan.fetch("policy").merge(
-                "decision" => "deny",
-                "blocking_issues" => approval_blockers
-              )
-            ),
-            side_effect_broker_events: [],
-            supply_chain_gate_path: relative(supply_chain_gate_path),
-            supply_chain_gate: supply_chain_plan,
-            sbom_path: relative(sbom_path),
-            cyclonedx_sbom_path: relative(cyclonedx_sbom_path),
-            spdx_sbom_path: relative(spdx_sbom_path),
-            package_audit_path: relative(package_audit_path),
-            audit_exception: audit_exception_plan
-          ),
-          changed_files: [],
-          action_taken: "setup install blocked",
-          blocking_issues: approval_blockers,
-          next_action: "rerun aiweb setup --install --dry-run and review approval_hash #{expected_hash}; real install remains a lower-level ops action"
+          run_id: run_id,
+          command: command,
+          package_manager: package_manager,
+          setup_paths: setup_paths,
+          lifecycle_warnings: lifecycle_warnings,
+          allow_lifecycle_scripts: allow_lifecycle_scripts,
+          approval_blockers: approval_blockers,
+          approved: approved,
+          expected_hash: expected_hash,
+          supplied_hash: supplied_hash,
+          capability: capability,
+          side_effect_broker_plan: side_effect_broker_plan,
+          supply_chain_plan: supply_chain_plan,
+          audit_exception_plan: audit_exception_plan
         )
       end
 
       if dry_run
-        return setup_payload(
+        return setup_install_dry_run_payload(
           state: state,
-          metadata: setup_run_metadata(
-            run_id: run_id,
-            status: "dry_run",
-            command: command,
-            package_manager: package_manager,
-            started_at: nil,
-            finished_at: nil,
-            exit_code: nil,
-            stdout_log: relative(stdout_path),
-            stderr_log: relative(stderr_path),
-            metadata_path: relative(metadata_path),
-            lifecycle_script_warnings: lifecycle_warnings,
-            lifecycle_enabled_requested: allow_lifecycle_scripts,
-            node_modules_present: File.directory?(File.join(root, "node_modules")),
-            blocking_issues: [],
-            dry_run: true,
-            approved: approved,
-            approval_hash: expected_hash,
-            supplied_approval_hash: supplied_hash.empty? ? nil : supplied_hash,
-            capability: capability,
-            requires_approval: false,
-            side_effect_broker_path: relative(side_effect_broker_path),
-            side_effect_broker: side_effect_broker_plan,
-            side_effect_broker_events: [],
-            supply_chain_gate_path: relative(supply_chain_gate_path),
-            supply_chain_gate: supply_chain_plan,
-            sbom_path: relative(sbom_path),
-            cyclonedx_sbom_path: relative(cyclonedx_sbom_path),
-            spdx_sbom_path: relative(spdx_sbom_path),
-            package_audit_path: relative(package_audit_path),
-            audit_exception: audit_exception_plan
-          ),
-          changed_files: planned_changes,
-          action_taken: "planned setup install",
-          blocking_issues: [],
-          next_action: "review setup approval_hash #{expected_hash}; executing #{command.inspect} is a lower-level ops action, not a friendly web-building runbook"
+          run_id: run_id,
+          command: command,
+          package_manager: package_manager,
+          setup_paths: setup_paths,
+          lifecycle_warnings: lifecycle_warnings,
+          allow_lifecycle_scripts: allow_lifecycle_scripts,
+          approved: approved,
+          expected_hash: expected_hash,
+          supplied_hash: supplied_hash,
+          capability: capability,
+          side_effect_broker_plan: side_effect_broker_plan,
+          supply_chain_plan: supply_chain_plan,
+          audit_exception_plan: audit_exception_plan,
+          planned_changes: planned_changes
         )
       end
 
