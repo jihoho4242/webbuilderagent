@@ -7,6 +7,7 @@ require "openssl"
 require "time"
 
 require_relative "../authz_contract"
+require_relative "../runtime/path_policy"
 require_relative "local_backend_authz"
 require_relative "local_backend_routes"
 
@@ -292,9 +293,7 @@ module Aiweb
     end
 
     def unsafe_env_path?(path)
-      value = path.to_s
-      parts = value.split(/[\\\/]+/)
-      parts.any? { |part| part == ".env" || part.start_with?(".env.") }
+      Aiweb::Runtime::PathPolicy.unsafe_env_path?(path)
     end
 
     def parse_nonnegative_integer(value, default:, label:)
