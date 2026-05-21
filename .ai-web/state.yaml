@@ -187,6 +187,12 @@ implementation:
     side effects
   constitution_path: configs/constitution.yaml
   p5_release_manifest: releases/v0.3.2-rc1/release_manifest.yaml
+  latest_agent_goal_completion_audit: .ai-web/reports/agent-goal-completion-audit-20260521.md
+  agent_goal_completion_status: active_goal_completed_production_readiness_not_claimed
+  latest_green_ci_run: https://github.com/jihoho4242/webbuilderagent/actions/runs/26203877131
+  latest_green_ci_head: 04df0805362e26c3e6cfa9fe75d8ed88cfc00b8e
+  manus_grade_claim: not_claimed
+  supervised_local_agent_director_status: ready_with_production_p5_blockers_documented
 setup:
   latest_run: null
   package_manager: null

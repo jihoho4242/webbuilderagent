@@ -1,0 +1,125 @@
+{
+  "schema_version": 1,
+  "created_at": "2026-05-21T04:05:00Z",
+  "status": "active_goal_completed_production_readiness_not_claimed",
+  "objective": "????? ???? ???? ??? ??? ?????? ???? ??? ?????? ????, ??????? ??????? ????? ??? ?? ????",
+  "completion_boundary": {
+    "completed": [
+      "top-level legacy script-runner and phase-runner surfaces are removed or tombstoned",
+      "natural-language agent surface is positioned as supervised local engine-run facade, not a fixed script executor",
+      "marketing/contract surfaces avoid Manus-grade or production-ready overclaims",
+      "current validation has local full bin/check evidence plus GitHub Actions matrix success"
+    ],
+    "not_claimed": [
+      "unsupervised one-prompt production app generation",
+      "external deploy/provider execution",
+      "production-grade P5 release readiness",
+      "operator drill, real HITL operations, production red-team/eval science, and SQLite Brain dependency readiness"
+    ]
+  },
+  "script_executor_evidence": [
+    {
+      "surface": "aiweb run",
+      "status": "removed_legacy_phase_runner_tombstone",
+      "evidence": [
+        "lib/aiweb/project.rb#run",
+        "test/test_aiweb_cli.rb#test_run_is_removed_phase_runner_tombstone_without_writes_or_placeholder_artifacts"
+      ],
+      "invariants": [
+        "execution_allowed=false",
+        "engine_run_delegation_present=false",
+        "direct_phase_mutation_present=false",
+        "placeholder_artifact_generation_present=false"
+      ]
+    },
+    {
+      "surface": "verify-loop",
+      "status": "removed_legacy_script_runner_tombstone",
+      "evidence": [
+        "lib/aiweb/project/verify_loop.rb",
+        "test/test_agent_os_v32_static_surface_audit.rb",
+        "test/test_aiweb_cli.rb verify-loop tombstone tests"
+      ],
+      "invariants": [
+        "fixed_pipeline_present=false",
+        "engine_run_delegation_present=false",
+        "execution_allowed=false",
+        "approval_hash not emitted"
+      ]
+    },
+    {
+      "surface": "AgentRuntime loop/planner/executor",
+      "status": "deleted_as_canonical_runtime",
+      "evidence": [
+        "test/test_agent_os_v32_static_surface_audit.rb checks deleted legacy AgentRuntime files",
+        "lib/aiweb/project/agent_runtime_facade.rb delegates to engine_run"
+      ],
+      "invariants": [
+        "canonical_runtime=engine-run",
+        "facade role only"
+      ]
+    },
+    {
+      "surface": "direct subprocess/HTTP side-effect islands",
+      "status": "centralized_or_blocked",
+      "evidence": [
+        ".ai-web/reports/script-executor-neutralization-20260519.md",
+        "test/test_contracts.rb side_effect_surface_audit"
+      ],
+      "invariants": [
+        "unclassified direct execution surfaces=0 in static audit",
+        "ProcessRunner/CommandSpec or HttpClient boundaries used for known local execution"
+      ]
+    }
+  ],
+  "agent_readiness_judgement": {
+    "manus_grade_claim": false,
+    "current_label": "supervised local natural-language web-building agent/director over engine-run",
+    "reason": "The repo now has stronger agentic runtime/evidence/safety substrate and removed top-level script executors, but it truthfully does not claim unsupervised production-grade Manus-level operation because P5/operator/red-team/eval/Brain production blockers remain documented."
+  },
+  "validation_evidence": {
+    "local": [
+      "ruby bin/check: 493 runs, 13090 assertions, 0 failures, 0 errors, 3 skips (2026-05-21 before CI parity commits)",
+      "ruby -Itest test/test_agentification_runtime.rb -n '/json|process_runner/': 5 runs, 23 assertions, 0 failures",
+      "ruby -Itest test/test_daemon.rb --seed 12000: 52 runs, 832 assertions, 0 failures, 1 skip",
+      "failed engine-run CI warning cluster filter: 17 runs, 414 assertions, 0 failures",
+      "test_agent_os_v32_static_surface_audit/test_contracts/test_agent_os_v32_release_evidence: passed",
+      "git diff --check: passed"
+    ],
+    "github_actions": {
+      "run_id": 26203877131,
+      "url": "https://github.com/jihoho4242/webbuilderagent/actions/runs/26203877131",
+      "head_sha": "04df0805362e26c3e6cfa9fe75d8ed88cfc00b8e",
+      "conclusion": "success",
+      "jobs": {
+        "Engine runtime matrix smoke (Docker/Podman)": "success",
+        "Ruby CLI tests (3.3)": "success",
+        "Ruby CLI tests (3.4)": "success",
+        "Ruby CLI tests (4.0)": "success"
+      }
+    }
+  },
+  "latest_commits": [
+    {
+      "sha": "04df080",
+      "summary": "Normalize engine-run JSON evidence before serialization"
+    },
+    {
+      "sha": "84cdd5b",
+      "summary": "Preserve UTF-8 subprocess evidence for CI parity"
+    },
+    {
+      "sha": "7e6fd0f",
+      "summary": "Keep CI fixtures compatible with Ruby 4"
+    },
+    {
+      "sha": "87d209e",
+      "summary": "Remove the legacy phase-runner shortcut"
+    }
+  ],
+  "remaining_non_goal_blockers": [
+    "P5 production release readiness remains intentionally blocked in releases/v0.3.2-rc1 until real operator drill/HITL/audit/replay/eval/red-team/SQLite Brain evidence is attached.",
+    "External provider deploy and credential flows remain fail-closed by design.",
+    "The product should continue to describe itself as supervised local web-building agent/director, not autonomous Manus-grade production generator."
+  ]
+}
