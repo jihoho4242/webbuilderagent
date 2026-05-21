@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require_relative "monitor_checks"
+
 module Aiweb
   module ProjectEngineSchedulerService
     def engine_scheduler_monitor(dry_run:)
