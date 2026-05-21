@@ -8,6 +8,8 @@ require_relative "../../runtime"
 
 module Aiweb
   module ProjectRuntimeReadiness
+    private
+
     def runtime_state_snapshot
       return [nil, "Project is not initialized; run aiweb init --profile D or aiweb start before checking runtime readiness."] unless File.file?(state_path)
 
