@@ -1310,8 +1310,7 @@ module Aiweb
     def engine_run_sandbox_self_attestation_probe(agent:, sandbox:, workspace_dir:)
       return { "schema_version" => 1, "status" => "skipped", "reason" => "missing_sandbox_or_non_container_agent" } unless engine_run_container_worker_agent?(agent) && !sandbox.to_s.strip.empty?
 
-      FileUtils.mkdir_p(File.join(workspace_dir, "_aiweb", "home"))
-      FileUtils.mkdir_p(File.join(workspace_dir, "_aiweb", "tmp"))
+      engine_run_prepare_container_scratch_dirs(workspace_dir)
       script = <<~'SH'
         if command -v python3 >/dev/null 2>&1; then PY=python3; elif command -v python >/dev/null 2>&1; then PY=python; else echo '{"schema_version":1,"status":"not_observed","reason":"python_unavailable"}'; exit 0; fi
         "$PY" - <<'PY'
@@ -1962,8 +1961,7 @@ module Aiweb
     end
 
     def engine_run_capture_agent(command:, prompt:, workspace_dir:, paths:, agent:, sandbox:)
-      FileUtils.mkdir_p(File.join(workspace_dir, "_aiweb", "home"))
-      FileUtils.mkdir_p(File.join(workspace_dir, "_aiweb", "tmp"))
+      engine_run_prepare_container_scratch_dirs(workspace_dir)
       if agent.to_s == "openhands"
         task_path = File.join(workspace_dir, "_aiweb", "openhands-task.md")
         FileUtils.mkdir_p(File.dirname(task_path))
@@ -2042,6 +2040,17 @@ module Aiweb
         "TMP" => File.join(workspace_dir, "_aiweb", "tmp"),
         "TEMP" => File.join(workspace_dir, "_aiweb", "tmp")
       )
+    end
+
+    def engine_run_prepare_container_scratch_dirs(workspace_dir)
+      [
+        File.join(workspace_dir, "_aiweb"),
+        File.join(workspace_dir, "_aiweb", "home"),
+        File.join(workspace_dir, "_aiweb", "tmp")
+      ].each do |path|
+        FileUtils.mkdir_p(path)
+        FileUtils.chmod(0o777, path) unless windows?
+      end
     end
 
     def engine_run_verification_result(workspace_dir, capability, paths, events, agent:, sandbox:)

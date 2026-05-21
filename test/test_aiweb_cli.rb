@@ -8036,6 +8036,22 @@ class AiwebCliTest < Minitest::Test
     end
   end
 
+  def test_container_scratch_dirs_are_prepared_for_non_root_worker_writes
+    in_tmp do
+      json_cmd("init")
+      workspace = File.join(Dir.pwd, ".ai-web", "tmp", "openmanus", "scratch")
+      project = Aiweb::Project.new(Dir.pwd)
+
+      project.send(:engine_run_prepare_container_scratch_dirs, workspace)
+
+      %w[_aiweb _aiweb/home _aiweb/tmp].each do |rel|
+        path = File.join(workspace, rel)
+        assert File.directory?(path), "#{rel} should exist"
+        assert_equal 0o777, File.stat(path).mode & 0o777 unless windows?
+      end
+    end
+  end
+
   def test_runtime_inspect_accepts_podman_expanded_cap_drop_all
     in_tmp do
       json_cmd("init")
