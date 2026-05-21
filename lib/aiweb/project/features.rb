@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require_relative "path_safety"
+require_relative "io_helpers"
 require_relative "runtime_commands"
 require_relative "verify_loop"
 require_relative "sandbox_runtime"
@@ -28,6 +29,7 @@ require_relative "visual_critique_boundary"
 
 module Aiweb
   module ProjectFeatures
+    include ProjectIoHelpers
     include ProjectPathSafety
     include ProjectRuntimeCommands
     include ProjectVerifyLoop
