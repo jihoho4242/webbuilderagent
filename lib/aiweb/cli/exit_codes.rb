@@ -115,6 +115,14 @@ module Aiweb
       EXIT_VALIDATION_FAILED
     end
 
+    def director_run_exit_code(result)
+      status = result.dig("director_run", "status").to_s
+      return EXIT_SUCCESS if status == "dry_run"
+      return EXIT_VALIDATION_FAILED if status == "blocked"
+
+      EXIT_VALIDATION_FAILED
+    end
+
     def engine_run_exit_code(result)
       status = result.dig("engine_run", "status").to_s
       return EXIT_SUCCESS if %w[dry_run planned passed no_changes cancelled].include?(status)
@@ -248,6 +256,7 @@ module Aiweb
       return mcp_broker_exit_code(result) if command == "mcp-broker"
       return agent_exit_code(result) if command == "agent"
       return agent_run_exit_code(result) if command == "agent-run"
+      return director_run_exit_code(result) if command == "run"
       return eval_baseline_exit_code(result) if %w[eval-baseline human-baseline].include?(command)
       return build_exit_code(result) if command == "build"
       return preview_exit_code(result) if command == "preview"

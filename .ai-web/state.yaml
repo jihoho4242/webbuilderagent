@@ -181,6 +181,7 @@ implementation:
   latest_agent_os_upgrade: releases/v0.3.2-rc1/p5_gate_report.md
   agent_os_runtime: engine-run
   agent_runtime_role: compatibility_facade
+  director_run_role: removed_legacy_phase_runner_tombstone_no_engine_run_delegation
   verify_loop_role: removed_legacy_script_runner_tombstone_no_engine_run_delegation
   tool_gateway_policy: DecisionPacket -> PolicyKernel -> ToolGateway required for
     side effects

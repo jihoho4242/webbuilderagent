@@ -18,7 +18,6 @@ module Aiweb
 
     WORKBENCH_CONTROLS = [
       ["agent", "Plan supervised natural-language agent run", "aiweb agent \"Improve this local site\" --mode supervised --dry-run"],
-      ["run", "Plan director run", "aiweb run --dry-run"],
       ["design", "Plan design candidates", "aiweb design --dry-run"],
       ["build", "Plan scaffold build", "aiweb build --dry-run"],
       ["preview", "Plan local preview", "aiweb preview --dry-run"],
@@ -492,7 +491,7 @@ module Aiweb
     def workbench_control_side_effects(command)
       text = command.to_s
       dry_run = text.match?(/\s--dry-run\b/)
-      mutates = !dry_run && text.match?(/\b(?:agent|run|design|build|preview|qa-|visual-critique|repair|visual-polish|engine-run|component-map|visual-edit)\b/)
+      mutates = !dry_run && text.match?(/\b(?:agent|design|build|preview|qa-|visual-critique|repair|visual-polish|engine-run|component-map|visual-edit)\b/)
       launches = !dry_run && text.match?(/\b(?:agent|build|preview|qa-|engine-run)\b/)
       approval = !dry_run && text.match?(/\b(?:agent|engine-run|visual-polish|visual-edit)\b/)
       {

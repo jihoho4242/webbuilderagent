@@ -13,6 +13,7 @@ require "yaml"
 
 require_relative "support/test_helper"
 require_relative "support/fake_runtime_tooling"
+require_relative "support/fake_executable_tooling"
 
 require "aiweb"
 
@@ -23,6 +24,7 @@ class AiwebDaemonTest < Minitest::Test
   APPROVAL_TOKEN = "test-approval-token"
 
   include FakeRuntimeTooling
+  include FakeExecutableTooling
 
   def in_tmp
     Dir.mktmpdir("aiweb-daemon-test-") { |dir| yield dir }

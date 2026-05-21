@@ -101,6 +101,14 @@ module Aiweb
       preview.json
     ].freeze
 
+    REMOVED_DIRECTOR_RUN_ACTIONS = %w[
+      interview
+      design-prompt
+      placeholder-design-candidate
+      next-task
+      qa-checklist
+    ].freeze
+
     SCAFFOLD_PROFILE_D_REQUIRED_FILES = %w[
       package.json
       astro.config.mjs
@@ -958,20 +966,14 @@ module Aiweb
     def run(dry_run: false)
       assert_initialized!
       state = load_state
-      case state.dig("phase", "current")
-      when "phase-0", "phase-1", "phase-1.5"
-        interview(idea: state.dig("project", "name"), dry_run: dry_run)
-      when "phase-3"
-        design_prompt(dry_run: dry_run)
-      when "phase-3.5"
-        ingest_design(title: "Draft design candidate", source: "aiweb run", notes: "Generated placeholder candidate. Replace with image/design analysis.", dry_run: dry_run)
-      when "phase-8", "phase-9", "phase-11"
-        next_task(dry_run: dry_run)
-      when "phase-10"
-        qa_checklist(dry_run: dry_run)
-      else
-        status_hash(state: state, changed_files: []).merge("action_taken" => "no automatic run action for #{state.dig("phase", "current")}")
-      end
+      metadata = removed_director_run_metadata(state, dry_run: dry_run)
+      status_hash(state: state, changed_files: []).merge(
+        "action_taken" => removed_director_run_action_taken(metadata),
+        "director_run" => metadata,
+        "planned_changes" => [],
+        "blocking_issues" => Array(metadata["blocking_issues"]).uniq,
+        "next_action" => removed_director_run_next_action
+      )
     end
 
     def load_state
@@ -1203,6 +1205,52 @@ module Aiweb
         "budget" => summarize_budget(state),
         "next_action" => next_action_for(state, blockers)
       }
+    end
+
+    def removed_director_run_metadata(state, dry_run:)
+      requested_execution = !dry_run
+      blocking_issues = []
+      if requested_execution
+        blocking_issues << "aiweb run has been removed as a phase-script execution engine; use aiweb agent --dry-run or aiweb engine-run --dry-run directly"
+      end
+
+      {
+        "schema_version" => 1,
+        "status" => requested_execution ? "blocked" : "dry_run",
+        "current_phase" => state.dig("phase", "current"),
+        "canonical_runtime" => "engine-run",
+        "compatibility_role" => "removed_legacy_phase_runner_tombstone",
+        "removed_command" => true,
+        "legacy_execution_removed" => true,
+        "script_executor_neutralized" => true,
+        "execution_allowed" => false,
+        "fixed_phase_action_present" => false,
+        "engine_run_delegation_present" => false,
+        "direct_phase_mutation_present" => false,
+        "placeholder_artifact_generation_present" => false,
+        "removed_actions" => REMOVED_DIRECTOR_RUN_ACTIONS,
+        "dry_run" => dry_run,
+        "requires_approval" => false,
+        "blocking_issues" => blocking_issues,
+        "guardrails" => [
+          "aiweb run no longer dispatches phase-canned interview/design/task/QA actions",
+          "aiweb run no longer creates placeholder design candidates",
+          "local source work must enter through aiweb agent or engine-run",
+          "dry-run writes nothing and launches nothing",
+          "no deploy or provider CLI",
+          "no .env or .env.* reads, writes, or output"
+        ]
+      }
+    end
+
+    def removed_director_run_action_taken(metadata)
+      return "aiweb run removed command tombstone" if metadata["dry_run"]
+
+      "aiweb run removed before phase-script execution"
+    end
+
+    def removed_director_run_next_action
+      "use aiweb agent \"improve this website\" --mode supervised --dry-run or aiweb engine-run --agent codex --mode agentic_local --max-cycles 3 --dry-run; aiweb run has been removed as a phase-script runner"
     end
 
     def summarize_gates(state)

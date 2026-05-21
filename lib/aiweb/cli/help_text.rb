@@ -12,7 +12,7 @@ module Aiweb
           status
           interview --idea "..."
           intent route --idea "..."
-          run
+          run (removed legacy phase runner; tombstone only, use agent/engine-run --dry-run)
           run-status [--run-id active|latest|ID]
           run-timeline [--limit N] (alias: timeline)
           observability-summary [--limit N] (alias: summary)
@@ -91,6 +91,7 @@ module Aiweb
           supabase-secret-qa: reruns local-only Profile S secret guard QA against safe scaffold/template paths, including supabase/env.example.template, and records .ai-web/qa/supabase-secret-qa.json; --dry-run writes nothing and never reads .env/.env.*
           supabase-local-verify: verifies generated Profile S files, safe Supabase template, migrations/RLS/storage docs, and SSR client/server stubs locally, records .ai-web/qa/supabase-local-verify.json, and never creates hosted Supabase projects, runs provider CLI/network, deploys, installs, builds, previews, or reads .env/.env.*
           runtime-plan/scaffold-status: read-only profile-aware runtime readiness metadata; Profile D reports build/preview/browser QA readiness and Profile S reports local-only Supabase verification readiness without installing or launching Node
+          run: removed legacy phase-script runner tombstone only; it no longer auto-dispatches interview/design/placeholder-candidate/next-task/QA actions, writes nothing, returns no approval hash, and blocks local execution. Use natural-language agent or canonical engine-run dry-run planning instead.
           run-status/run-cancel/run-resume: local run lifecycle control plane backed by .ai-web/runs/active-run.json plus per-run lifecycle/cancel/resume descriptors; status is read-only, cancel/resume support --dry-run no-write planning, cancellation is observed at lifecycle checkpoints, and resume records a descriptor without launching provider or agent commands
           engine-run: supervised local engine-run runtime for bounded web-building tasks; --dry-run writes nothing and returns a capability envelope, planned run artifacts, event/checkpoint paths, and approval hash; approved agentic_local runs stage a filtered sandbox workspace, let codex/openmanus/experimental OpenHands/LangGraph/OpenAI Agents SDK work there, run local verification where available, then copy back only validated safe source changes while network/install/deploy/provider CLI/git push remain elevated-approval actions
   engine-scheduler: project-local durable graph scheduler service surface; status is read-only, tick records .ai-web/runs/<run-id>/artifacts/scheduler-service.json plus .ai-web/scheduler/ledger.jsonl, daemon records .ai-web/scheduler/daemon.json plus heartbeat/worker-pool artifacts for a foreground loop, supervisor records .ai-web/scheduler/supervisor.json with external service-unit/runbook templates but does not install OS services, monitor records .ai-web/scheduler/monitor.json health evidence over heartbeat/leases/queue/worker-pool artifacts, and resume execution remains a lower-level ops action through the explicit engine-run bridge after dry-run hash review

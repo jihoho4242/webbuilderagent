@@ -539,6 +539,37 @@ class AiwebCliTest < Minitest::Test
     end
   end
 
+  def test_run_is_removed_phase_runner_tombstone_without_writes_or_placeholder_artifacts
+    in_tmp do |dir|
+      _payload, code = json_cmd("--path", dir, "init")
+      assert_equal 0, code
+      before_entries = project_entries
+      before_state = File.read(".ai-web/state.yaml")
+
+      dry_payload, dry_code = json_cmd("--path", dir, "run", "--dry-run")
+
+      assert_equal 0, dry_code
+      assert_equal "aiweb run removed command tombstone", dry_payload["action_taken"]
+      assert_equal "dry_run", dry_payload.dig("director_run", "status")
+      assert_equal false, dry_payload.dig("director_run", "execution_allowed")
+      assert_equal false, dry_payload.dig("director_run", "fixed_phase_action_present")
+      assert_equal false, dry_payload.dig("director_run", "placeholder_artifact_generation_present")
+      assert_equal "engine-run", dry_payload.dig("director_run", "canonical_runtime")
+      assert_equal before_entries, project_entries
+      assert_equal before_state, File.read(".ai-web/state.yaml")
+
+      run_payload, run_code = json_cmd("--path", dir, "run")
+
+      assert_equal 1, run_code
+      assert_equal "aiweb run removed before phase-script execution", run_payload["action_taken"]
+      assert_equal "blocked", run_payload.dig("director_run", "status")
+      assert_includes run_payload.fetch("blocking_issues").join(" "), "removed as a phase-script execution engine"
+      assert_equal before_entries, project_entries
+      assert_equal before_state, File.read(".ai-web/state.yaml")
+      assert_empty Dir.glob(".ai-web/design-candidates/*"), "removed aiweb run must not create placeholder design candidates"
+    end
+  end
+
   def write_human_baseline_corpus(path, fixture_id:, reviewer_count: 2, average_score: 92.5, secret_note: nil)
     FileUtils.mkdir_p(File.dirname(path))
     File.write(
@@ -9945,7 +9976,6 @@ class AiwebCliTest < Minitest::Test
       controls = payload.dig("workbench", "controls")
       expected_controls = [
         "aiweb agent \"Improve this local site\" --mode supervised --dry-run",
-        "aiweb run --dry-run",
         "aiweb design --dry-run",
         "aiweb build --dry-run",
         "aiweb preview --dry-run",

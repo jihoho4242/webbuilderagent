@@ -23,7 +23,7 @@ module Aiweb
 
     def emit_result(result)
       if @json
-        puts JSON.pretty_generate(result)
+        puts JSON.pretty_generate(json_safe_value(result))
       else
         puts human_result(result)
       end
@@ -38,12 +38,37 @@ module Aiweb
         "next_action" => "fix the reported issue and rerun the command"
       }
       if @json
-        puts JSON.pretty_generate(payload)
+        puts JSON.pretty_generate(json_safe_value(payload))
       else
         warn "Error: #{message}"
         warn "Next command: #{payload["next_action"]}"
       end
       code
+    end
+
+    def json_safe_value(value)
+      case value
+      when String
+        json_safe_string(value)
+      when Array
+        value.map { |entry| json_safe_value(entry) }
+      when Hash
+        value.each_with_object({}) do |(key, entry), memo|
+          memo[json_safe_value(key)] = json_safe_value(entry)
+        end
+      else
+        value
+      end
+    end
+
+    def json_safe_string(value)
+      string = value.dup
+      string = string.force_encoding(Encoding::UTF_8) if string.encoding == Encoding::BINARY
+      return string if string.valid_encoding? && string.encoding == Encoding::UTF_8
+
+      string.encode(Encoding::UTF_8, invalid: :replace, undef: :replace, replace: "�")
+    rescue EncodingError
+      value.to_s.bytes.map { |byte| byte < 128 ? byte.chr : "�" }.join
     end
 
     def human_result(result)

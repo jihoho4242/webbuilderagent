@@ -36,6 +36,14 @@ tools:
     side_effect_class: bounded_source_write
     owner: runtime_owner
     dry_run_supported: true
+  director_run:
+    permission_tier: L1
+    risk_tier: L1
+    side_effect_class: removed_legacy_phase_runner_tombstone
+    owner: runtime_owner
+    dry_run_supported: true
+    execution_available: false
+    agent_engine_role: removed_legacy_phase_runner_no_delegation
   verify_loop:
     permission_tier: L1
     risk_tier: L1

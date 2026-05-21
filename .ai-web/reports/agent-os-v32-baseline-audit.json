@@ -18,6 +18,11 @@
       "finding": "fixed build/preview/QA/visual-critique/repair/agent-run pipeline removed; command is now a removed legacy tombstone with no engine-run delegation, no approval hash, no cycle evidence writer, and blocked local execution even when --approval-hash HASH --approved is supplied."
     },
     {
+      "surface": "aiweb run legacy phase runner",
+      "status": "removed_legacy_phase_runner_tombstone",
+      "finding": "phase-canned interview/design-prompt/placeholder-candidate/next-task/QA-checklist dispatch has been removed; command is now a no-write tombstone with no engine-run delegation, no approval hash, and blocked local execution."
+    },
+    {
       "surface": "browser deterministic probe plan/results",
       "status": "demoted_and_renamed_probe_contract",
       "finding": "deterministic local browser probe, not autonomous planning; live schema/code now use probe_generator/probe_plan/probe_results and static audit rejects static_safe_action_plan/scenario_* names"

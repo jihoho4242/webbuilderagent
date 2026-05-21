@@ -14,9 +14,21 @@ class AgentOsV32StaticSurfaceAuditTest < Minitest::Test
 
   def test_script_executor_surfaces_are_demoted_not_claimed_as_canonical_engines
     tool_registry = YAML.safe_load(File.read(File.join(REPO_ROOT, "configs", "tool_registry.yaml")), permitted_classes: [], aliases: false)
+    assert_equal "removed_legacy_phase_runner_no_delegation", tool_registry.dig("tools", "director_run", "agent_engine_role")
+    assert_equal "removed_legacy_phase_runner_tombstone", tool_registry.dig("tools", "director_run", "side_effect_class")
+    assert_equal false, tool_registry.dig("tools", "director_run", "execution_available")
     assert_equal "removed_legacy_script_runner_no_delegation", tool_registry.dig("tools", "verify_loop", "agent_engine_role")
     assert_equal "removed_legacy_script_runner_tombstone", tool_registry.dig("tools", "verify_loop", "side_effect_class")
     assert_equal false, tool_registry.dig("tools", "verify_loop", "execution_available")
+
+    project_source = File.read(File.join(REPO_ROOT, "lib", "aiweb", "project.rb"))
+    run_body = project_source.match(/def run\(dry_run: false\)(.*?)\n    def load_state/m)[1]
+    assert_includes run_body, "removed_director_run_metadata"
+    refute_includes run_body, "interview("
+    refute_includes run_body, "design_prompt("
+    refute_includes run_body, "ingest_design("
+    refute_includes run_body, "next_task("
+    refute_includes run_body, "qa_checklist("
 
     %w[
       loop.rb
@@ -74,6 +86,7 @@ class AgentOsV32StaticSurfaceAuditTest < Minitest::Test
 
     state = YAML.safe_load(File.read(File.join(REPO_ROOT, ".ai-web", "state.yaml")), permitted_classes: [], aliases: false)
     assert_equal "engine-run", state.dig("implementation", "agent_os_runtime")
+    assert_equal "removed_legacy_phase_runner_tombstone_no_engine_run_delegation", state.dig("implementation", "director_run_role")
     assert_equal "removed_legacy_script_runner_tombstone_no_engine_run_delegation", state.dig("implementation", "verify_loop_role")
     refute_equal "read_only_engine_run_migration_shim", state.dig("implementation", "verify_loop_role")
   end
@@ -166,6 +179,7 @@ class AgentOsV32StaticSurfaceAuditTest < Minitest::Test
     assert_includes live_guidance.fetch("lib/aiweb/project/run_lifecycle.rb"), 'aiweb agent "improve this website" --mode supervised --dry-run'
     refute_includes live_guidance.fetch("lib/aiweb/project/workbench.rb"), "aiweb verify-loop --max-cycles 3"
     assert_includes live_guidance.fetch("lib/aiweb/project/workbench.rb"), "aiweb engine-run --agent codex --mode agentic_local --max-cycles 3 --dry-run"
+    refute_includes live_guidance.fetch("lib/aiweb/project/workbench.rb"), "aiweb run --dry-run"
     assert_includes live_guidance.fetch("lib/aiweb/project/workbench.rb"), "Plan supervised natural-language agent run"
     assert_includes live_guidance.fetch("lib/aiweb/project/workbench.rb"), "--mode supervised --dry-run"
     refute_includes live_guidance.fetch("lib/aiweb/project/engine_run/eval_baseline.rb"), "import still requires --approved"

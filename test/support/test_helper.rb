@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "minitest/autorun"
+require "minitest/mock"
 
 AIWEB_TEST_REPO_ROOT = File.expand_path("../..", __dir__) unless defined?(AIWEB_TEST_REPO_ROOT)
 AIWEB_TEST_LIB_DIR = File.join(AIWEB_TEST_REPO_ROOT, "lib") unless defined?(AIWEB_TEST_LIB_DIR)
