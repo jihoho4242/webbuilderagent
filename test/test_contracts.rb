@@ -580,6 +580,7 @@ class AiwebContractTest < Minitest::Test
     assert_includes runtime_matrix_script, "RuntimeMatrixCommandFailure"
     assert_includes runtime_matrix_script, "engine_run_summary"
     assert_includes runtime_matrix_script, "runtime_matrix"
+    assert_includes File.read(File.join(REPO_ROOT, "lib", "aiweb", "project", "sandbox_runtime.rb")), "\"--pull\", \"never\""
     refute_includes runtime_matrix_script, "RUN cat > /usr/local/bin/openmanus <<"
     refute File.exist?(File.join(REPO_ROOT, "Gemfile")), "quality gate must remain dependency-free until a Gemfile is explicitly introduced"
   end

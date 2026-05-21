@@ -7981,6 +7981,7 @@ class AiwebCliTest < Minitest::Test
       joined = blockers.join("\n")
 
       assert_match(/network.*none/i, joined)
+      assert_match(/pull.*never/i, joined)
       assert_match(/pids-limit/i, joined)
       assert_match(/memory/i, joined)
       assert_match(/cpus/i, joined)
@@ -8011,6 +8012,8 @@ class AiwebCliTest < Minitest::Test
 
       assert_includes command, "--userns"
       assert_equal "keep-id", command[command.index("--userns") + 1]
+      assert_includes command, "--pull"
+      assert_equal "never", command[command.index("--pull") + 1]
       assert_includes command, "--user"
       refute_match(/\A(?:0(?::0)?|root)(?::|$)/i, command[command.index("--user") + 1])
     end
@@ -8635,6 +8638,7 @@ class AiwebCliTest < Minitest::Test
 
       blockers = project.send(:agent_run_openmanus_sandbox_command_blockers, unsafe, sandbox: "docker", workspace_dir: workspace_dir)
       message = blockers.join("\n")
+      assert_match(/--pull never|pull.*never/i, message)
       assert_match(/--network none/, message)
       assert_match(/read-only/, message)
       assert_match(/drop all capabilities/, message)

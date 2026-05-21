@@ -6,7 +6,7 @@ module Aiweb
 
     def sandbox_runtime_container_command(provider:, workspace_dir:, image:, env:, pids_limit:, memory:, cpus:, tmpfs_size:, command:)
       [
-        provider.to_s, "run", "--rm", "-i",
+        provider.to_s, "run", "--pull", "never", "--rm", "-i",
         *sandbox_runtime_provider_run_flags(provider),
         "--network", "none",
         "--read-only",
@@ -31,6 +31,7 @@ module Aiweb
       executable = File.basename(argv.first.to_s).downcase.sub(/\.(?:exe|cmd|bat|com)\z/, "")
       blockers << "#{label} command must start with #{sandbox}" unless executable == sandbox.to_s
       blockers << "#{label} command must use #{sandbox} run" unless argv[1] == "run"
+      blockers << "#{label} command must disable image pulls with --pull never" unless sandbox_runtime_argv_option_value(argv, "--pull") == "never"
       blockers << "#{label} command must disable networking with --network none" unless sandbox_runtime_argv_option_value(argv, "--network") == "none"
       blockers << "#{label} command must use --read-only root filesystem" unless argv.include?("--read-only")
       blockers << "#{label} command must drop all capabilities" unless sandbox_runtime_argv_option_value(argv, "--cap-drop") == "ALL"
