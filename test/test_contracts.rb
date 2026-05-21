@@ -575,6 +575,7 @@ class AiwebContractTest < Minitest::Test
     assert_includes runtime_matrix_script, "\"--dry-run\""
     assert_includes runtime_matrix_script, "approval_hash ="
     assert_includes runtime_matrix_script, "\"--approval-hash\""
+    assert_includes runtime_matrix_script, "localhost/aiweb-openmanus-smoke:ci"
     assert_includes runtime_matrix_script, "openmanus-smoke.sh"
     assert_includes runtime_matrix_script, "RuntimeMatrixCommandFailure"
     assert_includes runtime_matrix_script, "engine_run_summary"

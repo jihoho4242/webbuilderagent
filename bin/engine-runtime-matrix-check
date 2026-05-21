@@ -26,7 +26,7 @@ end
 
 options = {
   matrix: ENV.fetch("AIWEB_ENGINE_RUN_RUNTIME_MATRIX", "docker,podman"),
-  image: ENV.fetch("AIWEB_OPENMANUS_IMAGE", "aiweb-openmanus-smoke:ci"),
+  image: ENV.fetch("AIWEB_OPENMANUS_IMAGE", "localhost/aiweb-openmanus-smoke:ci"),
   base_image: ENV.fetch("AIWEB_RUNTIME_MATRIX_BASE_IMAGE", "python:3.12-alpine"),
   goal: "runtime matrix smoke patch",
   dry_run: false,
