@@ -3,6 +3,7 @@
 require_relative "aiweb/errors"
 require_relative "aiweb/version"
 require_relative "aiweb/redaction"
+require_relative "aiweb/json_safety"
 require_relative "aiweb/authz_contract"
 require_relative "aiweb/profiles"
 require_relative "aiweb/profile_policy"

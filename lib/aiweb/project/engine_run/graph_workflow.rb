@@ -102,7 +102,7 @@ module Aiweb
     def engine_run_write_workspace_graph_execution_plan(workspace_dir, graph_execution_plan)
       path = File.join(workspace_dir, "_aiweb", "graph-execution-plan.json")
       FileUtils.mkdir_p(File.dirname(path))
-      File.write(path, JSON.pretty_generate(graph_execution_plan) + "\n")
+      File.write(path, json_pretty_generate(graph_execution_plan) + "\n")
       path
     end
 
@@ -154,7 +154,7 @@ module Aiweb
     def engine_run_write_workspace_graph_scheduler_state(workspace_dir, graph_scheduler_state)
       path = File.join(workspace_dir, "_aiweb", "graph-scheduler-state.json")
       FileUtils.mkdir_p(File.dirname(path))
-      File.write(path, JSON.pretty_generate(graph_scheduler_state) + "\n")
+      File.write(path, json_pretty_generate(graph_scheduler_state) + "\n")
       path
     end
 

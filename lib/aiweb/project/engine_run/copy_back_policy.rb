@@ -63,7 +63,7 @@ module Aiweb
         type = action.fetch("type", "elevated_action")
         {
           "schema_version" => 1,
-          "id" => "approval-#{Digest::SHA256.hexdigest(JSON.generate(action))[0, 16]}",
+          "id" => "approval-#{Digest::SHA256.hexdigest(json_generate(action))[0, 16]}",
           "type" => type,
           "status" => "pending",
           "why_needed" => action["reason"].to_s,

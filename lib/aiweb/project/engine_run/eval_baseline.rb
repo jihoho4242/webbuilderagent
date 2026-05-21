@@ -255,7 +255,7 @@ module Aiweb
 
     def eval_baseline_review_pack_artifact(status:, review_pack_path:, candidate_path:, target_path:, fixture_id:, template_fixture_id:, fixture_source:, blockers:)
       created_at = now
-      pack_id = "human-review-pack-#{Digest::SHA256.hexdigest(JSON.generate(["human-review-pack", created_at, template_fixture_id, relative(review_pack_path)]))[0, 16]}"
+      pack_id = "human-review-pack-#{Digest::SHA256.hexdigest(json_generate(["human-review-pack", created_at, template_fixture_id, relative(review_pack_path)]))[0, 16]}"
       score_axes = %w[hierarchy spacing typography contrast interaction action_recovery browser_action_loop accessibility]
       {
         "schema_version" => 1,
@@ -385,7 +385,8 @@ module Aiweb
       blocking_issues = []
       blocking_issues << "human baseline corpus schema_version must be 1" unless data["schema_version"] == 1
       blocking_issues << "human baseline corpus must contain fixtures" unless data.key?("fixtures")
-      if JSON.generate(data).match?(ENGINE_RUN_SECRET_VALUE_PATTERN) || JSON.generate(data).match?(/\b[A-Z0-9_]*(?:SECRET|TOKEN|PASSWORD|PRIVATE[_-]?KEY|API[_-]?KEY|CREDENTIAL)[A-Z0-9_]*=/i)
+      serialized_data = json_generate(data)
+      if serialized_data.match?(ENGINE_RUN_SECRET_VALUE_PATTERN) || serialized_data.match?(/\b[A-Z0-9_]*(?:SECRET|TOKEN|PASSWORD|PRIVATE[_-]?KEY|API[_-]?KEY|CREDENTIAL)[A-Z0-9_]*=/i)
         blocking_issues << "human baseline corpus must not contain raw secrets or environment values"
       end
 
@@ -629,7 +630,7 @@ module Aiweb
     end
 
     def eval_baseline_import_approval_hash(capability)
-      Digest::SHA256.hexdigest(JSON.generate(capability))
+      Digest::SHA256.hexdigest(json_generate(capability))
     end
 
     def eval_baseline_import_approval_blockers(supplied_hash:, expected_hash:)

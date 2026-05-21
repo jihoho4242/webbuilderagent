@@ -131,7 +131,7 @@ module Aiweb
       {
         "schema_version" => 1,
         "status" => selected["status"] == "ready" ? "ready" : "missing",
-        "fixture_id" => "design-fixture-#{Digest::SHA256.hexdigest(JSON.generate(basis))[0, 16]}",
+        "fixture_id" => "design-fixture-#{Digest::SHA256.hexdigest(json_generate(basis))[0, 16]}",
         "recorded_at" => now,
         "human_approved_target_brief" => {
           "path" => target_brief_path,
@@ -209,7 +209,7 @@ module Aiweb
       {
         "schema_version" => 1,
         "status" => status,
-        "benchmark_id" => "eval-benchmark-#{Digest::SHA256.hexdigest(JSON.generate(basis))[0, 16]}",
+        "benchmark_id" => "eval-benchmark-#{Digest::SHA256.hexdigest(json_generate(basis))[0, 16]}",
         "recorded_at" => now,
         "fixture_id" => design_fixture.to_h["fixture_id"],
         "human_calibration_status" => human_calibration.fetch("status"),
@@ -507,7 +507,8 @@ module Aiweb
           end
         end
       end
-      if JSON.generate(fixture_baseline).match?(ENGINE_RUN_SECRET_VALUE_PATTERN) || JSON.generate(fixture_baseline).match?(/\b[A-Z0-9_]*(?:SECRET|TOKEN|PASSWORD|PRIVATE[_-]?KEY|API[_-]?KEY|CREDENTIAL)[A-Z0-9_]*=/i)
+      serialized_fixture_baseline = json_generate(fixture_baseline)
+      if serialized_fixture_baseline.match?(ENGINE_RUN_SECRET_VALUE_PATTERN) || serialized_fixture_baseline.match?(/\b[A-Z0-9_]*(?:SECRET|TOKEN|PASSWORD|PRIVATE[_-]?KEY|API[_-]?KEY|CREDENTIAL)[A-Z0-9_]*=/i)
         issues << "human baseline must not contain raw secrets or environment values"
       end
       issues.uniq

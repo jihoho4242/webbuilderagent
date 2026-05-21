@@ -146,6 +146,17 @@ class AgentificationRuntimeTest < Minitest::Test
     end
   end
 
+  def test_json_safety_normalizes_binary_tagged_strings_before_serialization
+    binary_text = [0xED, 0x95, 0x9C, 0xEA, 0xB8, 0x80].pack("C*")
+    assert_equal Encoding::ASCII_8BIT, binary_text.encoding
+
+    encoded = Aiweb::JsonSafety.generate("message" => binary_text)
+    payload = JSON.parse(encoded)
+
+    assert_equal "한글", payload.fetch("message")
+    assert_equal Encoding::UTF_8, Aiweb::JsonSafety.safe_string(binary_text).encoding
+  end
+
   def test_process_runner_writes_stdin_through_command_spec
     in_tmp do |dir|
       script = File.join(dir, "stdin_probe.rb")

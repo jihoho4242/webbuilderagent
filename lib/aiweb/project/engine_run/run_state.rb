@@ -236,7 +236,7 @@ module Aiweb
       event["event_hash"] = engine_run_event_hash(event)
       events << event
       FileUtils.mkdir_p(File.dirname(path))
-      File.open(path, "a") { |file| file.write(JSON.generate(event) + "\n") }
+      File.open(path, "a") { |file| file.write(json_generate(event) + "\n") }
       event
     end
 
@@ -267,7 +267,7 @@ module Aiweb
 
     def engine_run_event_hash(event)
       payload = event.reject { |key, _value| key == "event_hash" }
-      "sha256:#{Digest::SHA256.hexdigest(JSON.generate(payload))}"
+      "sha256:#{Digest::SHA256.hexdigest(json_generate(payload))}"
     end
 
     def engine_run_next_event_seq(path, events)

@@ -99,7 +99,7 @@ module Aiweb
     def engine_run_write_workspace_project_index(workspace_dir, project_index)
       path = File.join(workspace_dir, "_aiweb", "project-index.json")
       FileUtils.mkdir_p(File.dirname(path))
-      File.write(path, JSON.pretty_generate(project_index))
+      File.write(path, json_pretty_generate(project_index))
       path
     end
 
@@ -156,7 +156,7 @@ module Aiweb
 
       body = payload.to_h.compact
       {
-        "id" => "mem-#{Digest::SHA256.hexdigest([kind, key_text, JSON.generate(body)].join("\0"))[0, 16]}",
+        "id" => "mem-#{Digest::SHA256.hexdigest([kind, key_text, json_generate(body)].join("\0"))[0, 16]}",
         "kind" => kind,
         "key" => key_text,
         "summary" => body.map { |field, value| "#{field}=#{value}" }.join("; ")[0, 500],
@@ -167,21 +167,21 @@ module Aiweb
     def engine_run_write_workspace_run_memory(workspace_dir, run_memory)
       path = File.join(workspace_dir, "_aiweb", "run-memory.json")
       FileUtils.mkdir_p(File.dirname(path))
-      File.write(path, JSON.pretty_generate(run_memory))
+      File.write(path, json_pretty_generate(run_memory))
       path
     end
 
     def engine_run_write_workspace_worker_adapter_contract(workspace_dir, contract)
       path = File.join(workspace_dir, "_aiweb", "worker-adapter-contract.json")
       FileUtils.mkdir_p(File.dirname(path))
-      File.write(path, JSON.pretty_generate(contract))
+      File.write(path, json_pretty_generate(contract))
       path
     end
 
     def engine_run_write_workspace_worker_adapter_registry(workspace_dir, registry)
       path = File.join(workspace_dir, "_aiweb", "worker-adapter-registry.json")
       FileUtils.mkdir_p(File.dirname(path))
-      File.write(path, JSON.pretty_generate(registry))
+      File.write(path, json_pretty_generate(registry))
       path
     end
 

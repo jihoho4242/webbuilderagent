@@ -1399,7 +1399,15 @@ module Aiweb
     end
 
     def write_json(path, data, dry_run)
-      write_file(path, JSON.pretty_generate(data) + "\n", dry_run)
+      write_file(path, json_pretty_generate(data) + "\n", dry_run)
+    end
+
+    def json_generate(data)
+      Aiweb::JsonSafety.generate(data)
+    end
+
+    def json_pretty_generate(data)
+      Aiweb::JsonSafety.pretty_generate(data)
     end
 
     def create_dir(path, dry_run)

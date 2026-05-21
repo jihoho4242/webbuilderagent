@@ -187,7 +187,7 @@ module Aiweb
         engine_run_event(paths.fetch(:events_path), events, "goal.understood", "captured user goal", goal: capability.fetch("goal"))
         engine_run_opendesign_events(paths.fetch(:events_path), events, opendesign_contract, resume_context)
 
-        changes << write_file(paths.fetch(:approval_path), JSON.generate(engine_run_approval_record(run_id: run_id, capability: capability, approval_hash: expected_hash, approved: approved, scope: "execute")) + "\n", false)
+        changes << write_file(paths.fetch(:approval_path), json_generate(engine_run_approval_record(run_id: run_id, capability: capability, approval_hash: expected_hash, approved: approved, scope: "execute")) + "\n", false)
         engine_run_event(paths.fetch(:events_path), events, "approval.granted", "recorded approved capability envelope", approval_hash: expected_hash, approval_path: relative(paths.fetch(:approval_path)))
         stage = if resume_context
                   { manifest: resume_context.fetch(:manifest) }
@@ -1068,7 +1068,7 @@ module Aiweb
 
     def engine_run_approval_hash(capability)
       stable = capability.to_h.reject { |key, _value| key == "run_id" }
-      Digest::SHA256.hexdigest(JSON.generate(stable))
+      Digest::SHA256.hexdigest(json_generate(stable))
     end
 
     def engine_run_tool_broker_contract(mode)
@@ -1826,10 +1826,10 @@ module Aiweb
         "Write a short JSON result to _aiweb/engine-result.json when possible.",
         "",
         "## Capability",
-        JSON.pretty_generate(capability),
+        json_pretty_generate(capability),
         "",
         "## Staged Manifest Summary",
-        JSON.pretty_generate(
+        json_pretty_generate(
           "workspace_root" => manifest["workspace_root"],
           "file_count" => manifest.fetch("files").length,
           "excluded_count" => manifest.fetch("excluded").length,
@@ -1838,7 +1838,7 @@ module Aiweb
         ),
         "",
         "## Evidence Paths",
-        JSON.pretty_generate(
+        json_pretty_generate(
           "stdout_log" => relative(paths.fetch(:stdout_path)),
           "stderr_log" => relative(paths.fetch(:stderr_path)),
           "worker_adapter_contract_path" => "_aiweb/worker-adapter-contract.json",
@@ -1938,7 +1938,7 @@ module Aiweb
       FileUtils.mkdir_p(File.dirname(path))
       File.write(
         path,
-        JSON.pretty_generate(
+        json_pretty_generate(
           "schema_version" => 1,
           "written_at" => now,
           "verification" => verification,

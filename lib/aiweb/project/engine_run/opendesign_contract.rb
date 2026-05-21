@@ -46,7 +46,7 @@ module Aiweb
         "reference_no_copy_rules" => engine_run_reference_no_copy_rules(files),
         "reference_forbidden_terms" => engine_run_reference_forbidden_terms(files)
       }
-      contract_hash = "sha256:#{Digest::SHA256.hexdigest(JSON.generate(contract_basis))}"
+      contract_hash = "sha256:#{Digest::SHA256.hexdigest(json_generate(contract_basis))}"
       contract_basis.merge(
         "schema_version" => 1,
         "status" => selected_file ? "ready" : "missing",
