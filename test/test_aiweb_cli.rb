@@ -326,6 +326,17 @@ class AiwebCliTest < Minitest::Test
     old&.each { |key, value| value.nil? ? ENV.delete(key) : ENV[key] = value }
   end
 
+  def with_stubbed_singleton_method(receiver, method_name, replacement)
+    singleton_class = class << receiver; self; end
+    original = singleton_class.instance_method(method_name)
+    singleton_class.define_method(method_name) do |*args, &block|
+      replacement.respond_to?(:call) ? replacement.call(*args, &block) : replacement
+    end
+    yield
+  ensure
+    singleton_class.define_method(method_name, original) if original
+  end
+
   def run_aiweb_with_env(env, *args)
     stdout, stderr, status = Open3.capture3(env, RbConfig.ruby, AIWEB, *args.map(&:to_s))
     [stdout, stderr, status.exitstatus]
@@ -7444,8 +7455,8 @@ class AiwebCliTest < Minitest::Test
       with_env_values(env) do
         project = Aiweb::Project.new(Dir.pwd)
         approval_hash = project_setup_approval_hash(project)
-        Time.stub(:now, fixed) do
-          SecureRandom.stub(:hex, ->(_bytes) { suffixes.shift }) do
+        with_stubbed_singleton_method(Time, :now, fixed) do
+          with_stubbed_singleton_method(SecureRandom, :hex, ->(_bytes) { suffixes.shift }) do
             first_payload = project.setup(install: true, approved: true, approval_hash: approval_hash)
             second_hash = project_setup_approval_hash(project)
             second_payload = project.setup(install: true, approved: true, approval_hash: second_hash)
