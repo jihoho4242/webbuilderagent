@@ -2018,7 +2018,7 @@ module Aiweb
 
     def engine_run_clean_env(workspace_dir, paths, sandbox)
       allowed = subprocess_path_env
-      allowed.merge(
+      clean = allowed.merge(
         "AIWEB_ENGINE_RUN_WORKSPACE" => workspace_dir,
         "AIWEB_ENGINE_RUN_RESULT_PATH" => File.join(workspace_dir, "_aiweb", "engine-result.json"),
         "AIWEB_OPENMANUS_RESULT_PATH" => File.join(workspace_dir, "_aiweb", "engine-result.json"),
@@ -2028,7 +2028,11 @@ module Aiweb
         "AIWEB_MCP_ALLOWED" => "0",
         "AIWEB_ENV_ACCESS_ALLOWED" => "0",
         "AIWEB_TOOL_BROKER_EVENTS_PATH" => "/workspace/_aiweb/tool-broker-events.jsonl",
-        "AIWEB_TOOL_BROKER_REAL_PATH" => "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+        "AIWEB_TOOL_BROKER_REAL_PATH" => "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+      )
+      return clean if %w[docker podman].include?(sandbox.to_s)
+
+      clean.merge(
         "HOME" => File.join(workspace_dir, "_aiweb", "home"),
         "USERPROFILE" => File.join(workspace_dir, "_aiweb", "home"),
         "TMPDIR" => File.join(workspace_dir, "_aiweb", "tmp"),

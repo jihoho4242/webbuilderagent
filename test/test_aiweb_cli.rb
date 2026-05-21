@@ -8018,6 +8018,21 @@ class AiwebCliTest < Minitest::Test
     end
   end
 
+  def test_container_runtime_host_env_does_not_shadow_podman_storage_home
+    in_tmp do
+      json_cmd("init")
+      workspace = File.join(Dir.pwd, ".ai-web", "tmp", "openmanus", "podman-host-env")
+      FileUtils.mkdir_p(File.join(workspace, "_aiweb"))
+      project = Aiweb::Project.new(Dir.pwd)
+
+      env = project.send(:engine_run_clean_env, workspace, { events_path: File.join(workspace, "_aiweb", "events.jsonl") }, "podman")
+
+      assert_equal "0", env.fetch("AIWEB_NETWORK_ALLOWED")
+      refute_equal File.join(workspace, "_aiweb", "home"), env["HOME"]
+      refute_equal File.join(workspace, "_aiweb", "tmp"), env["TMPDIR"]
+    end
+  end
+
   def test_agent_run_source_patch_requires_selected_design_gate_before_planning
     in_tmp do |dir|
       json_cmd("init", "--profile", "D")
