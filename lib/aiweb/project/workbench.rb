@@ -700,8 +700,7 @@ module Aiweb
     def workbench_excluded_path?(path)
       value = path.to_s
       return true if value.empty? && path
-      parts = value.split(/[\\\/]+/)
-      return true if parts.any? { |part| part == ".env" || part.start_with?(".env.") }
+      return true if secret_surface_path?(value)
 
       normalized = value.sub(%r{\A\./}, "")
       self.class::WORKBENCH_FILE_TREE_EXCLUDES.any? do |excluded|

@@ -666,10 +666,10 @@ module Aiweb
     end
 
     def preview_command_argv(command)
-      parts = Shellwords.split(command.to_s)
+      parts = Aiweb::Runtime::CommandSpec.argv_from_command(command, default: ["pnpm", "dev", "--host", "127.0.0.1"])
       executable = executable_path(parts.fetch(0))
       [executable || parts.fetch(0), *parts.drop(1)]
-    rescue IndexError, ArgumentError
+    rescue IndexError
       ["pnpm", "dev", "--host", "127.0.0.1"]
     end
 
@@ -885,8 +885,7 @@ module Aiweb
     end
 
     def build_command_argv(command)
-      parts = command.to_s.split(/\s+/).reject(&:empty?)
-      parts.empty? ? ["pnpm", "build"] : parts
+      Aiweb::Runtime::CommandSpec.argv_from_command(command, default: ["pnpm", "build"])
     end
 
     def runtime_scaffold_summary(state)

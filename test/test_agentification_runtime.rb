@@ -103,6 +103,26 @@ class AgentificationRuntimeTest < Minitest::Test
     refute policy.safe_workspace_path?(Dir.pwd, "..\\outside.txt")
   end
 
+  def test_runtime_path_policy_classifies_secret_surface_paths
+    policy = Aiweb::Runtime::PathPolicy
+
+    assert policy.secret_surface_path?(".aws/credentials")
+    assert policy.secret_surface_path?("nested/.vercel/project.json")
+    assert policy.secret_surface_path?(".config/google-chrome/Default/Cookies")
+    assert policy.secret_surface_path?("profile/.mozilla/firefox/Login Data")
+    assert policy.secret_surface_path?(".npmrc")
+    assert policy.secret_surface_path?("keys/id_ed25519")
+    refute policy.secret_surface_path?("src/pages/index.astro")
+  end
+
+  def test_runtime_command_spec_parses_shell_like_commands_without_losing_quoted_args
+    argv = Aiweb::Runtime::CommandSpec.argv_from_command(%(pnpm run "build site"), default: ["pnpm", "build"])
+
+    assert_equal ["pnpm", "run", "build site"], argv
+    assert_equal ["pnpm", "build"], Aiweb::Runtime::CommandSpec.argv_from_command("   ", default: ["pnpm", "build"])
+    assert_equal ["pnpm", "build"], Aiweb::Runtime::CommandSpec.argv_from_command(%(pnpm run "unterminated), default: ["pnpm", "build"])
+  end
+
   def test_process_runner_uses_clean_env_and_redacts_secret_output
     in_tmp do |dir|
       script = File.join(dir, "env_probe.rb")

@@ -1714,18 +1714,7 @@ module Aiweb
     end
 
     def engine_run_secret_surface_path?(relative_path)
-      normalized = relative_path.to_s.tr("\\", "/").sub(%r{\A(?:\./)+}, "")
-      return true if unsafe_env_path?(normalized)
-      return true if secret_looking_path?(normalized)
-
-      parts = normalized.split("/")
-      return true if parts.any? { |part| %w[.ssh .aws .azure .gcloud .docker .kube .vercel .netlify].include?(part) }
-      return true if parts.any? { |part| %w[.npmrc .yarnrc .pypirc .netrc].include?(part) }
-      return true if normalized.match?(%r{(?:\A|/)\.config/(?:google-chrome|chromium)(?:/|\z)})
-      return true if normalized.match?(%r{(?:\A|/)\.mozilla(?:/|\z)})
-      return true if normalized.match?(%r{(?:\A|/)(?:Cookies|Login Data|Local State|Local Storage|Session Storage)(?:/|\z)})
-
-      false
+      secret_surface_path?(relative_path)
     end
 
     def engine_run_empty_agent_result

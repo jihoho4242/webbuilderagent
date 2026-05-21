@@ -783,17 +783,7 @@ module Aiweb
     end
 
     def unsafe_secret_surface_path?(path)
-      normalized = path.to_s.tr("\\", "/").sub(%r{\A(?:\./)+}, "")
-      return true if unsafe_env_path?(normalized)
-      return true if secret_looking_path?(normalized)
-
-      parts = normalized.split("/")
-      return true if parts.any? { |part| %w[.ssh .aws .vercel .netlify].include?(part) }
-      return true if parts.any? { |part| %w[.npmrc .yarnrc .pypirc].include?(part) }
-      return true if File.basename(normalized).match?(/\A(?:id_rsa|id_dsa|id_ed25519)\z/i)
-      return true if File.extname(normalized).match?(/\A\.(?:pem|key)\z/i)
-
-      false
+      secret_surface_path?(path)
     end
 
     def windows?

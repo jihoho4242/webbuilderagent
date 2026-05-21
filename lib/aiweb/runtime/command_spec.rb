@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require "shellwords"
+
 module Aiweb
   module Runtime
     class CommandSpec
@@ -22,6 +24,13 @@ module Aiweb
 
       def command
         argv.join(" ")
+      end
+
+      def self.argv_from_command(command, default:)
+        parts = Shellwords.split(command.to_s)
+        parts.empty? ? Array(default).map(&:to_s) : parts
+      rescue ArgumentError
+        Array(default).map(&:to_s)
       end
 
       def validate!

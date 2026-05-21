@@ -11,6 +11,32 @@ module Aiweb
           (?:\A|/)[^/\s`"'<>]*\.(?:pem|key)\z
         )
       }ix.freeze
+      SECRET_SURFACE_DIRS = %w[
+        .ssh
+        .aws
+        .azure
+        .gcloud
+        .docker
+        .kube
+        .vercel
+        .netlify
+      ].freeze
+      SECRET_SURFACE_FILES = %w[
+        .npmrc
+        .yarnrc
+        .pypirc
+        .netrc
+        id_rsa
+        id_dsa
+        id_ed25519
+      ].freeze
+      BROWSER_SECRET_SURFACE_PATTERN = %r{
+        (?:
+          (?:\A|/)\.config/(?:google-chrome|chromium)(?:/|\z)|
+          (?:\A|/)\.mozilla(?:/|\z)|
+          (?:\A|/)(?:Cookies|Login\ Data|Local\ State|Local\ Storage|Session\ Storage)(?:/|\z)
+        )
+      }x.freeze
 
       module_function
 
@@ -26,6 +52,18 @@ module Aiweb
 
       def secret_looking_path?(path)
         normalize_relative(path).match?(SECRET_LOOKING_PATH_PATTERN)
+      end
+
+      def secret_surface_path?(path)
+        normalized = normalize_relative(path)
+        return true if unsafe_env_path?(normalized) || secret_looking_path?(normalized)
+
+        parts = normalized.split("/")
+        return true if parts.any? { |part| SECRET_SURFACE_DIRS.include?(part) }
+        return true if parts.any? { |part| SECRET_SURFACE_FILES.include?(part) }
+        return true if normalized.match?(BROWSER_SECRET_SURFACE_PATTERN)
+
+        false
       end
 
       def traversal_path?(path)
