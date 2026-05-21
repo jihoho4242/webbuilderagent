@@ -55,7 +55,7 @@ module Aiweb
     end
 
     def sandbox_runtime_provider_run_flags(provider)
-      provider.to_s == "podman" ? ["--userns", "keep-id"] : []
+      []
     end
 
     def sandbox_runtime_env_flags(env)

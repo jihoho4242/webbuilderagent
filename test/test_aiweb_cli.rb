@@ -7991,10 +7991,10 @@ class AiwebCliTest < Minitest::Test
     end
   end
 
-  def test_podman_sandbox_command_uses_keep_id_user_namespace
+  def test_podman_sandbox_command_does_not_force_user_namespace
     in_tmp do
       json_cmd("init")
-      workspace = File.join(Dir.pwd, ".ai-web", "tmp", "openmanus", "podman-keep-id")
+      workspace = File.join(Dir.pwd, ".ai-web", "tmp", "openmanus", "podman-local-image")
       FileUtils.mkdir_p(workspace)
 
       command = Aiweb::Project.new(Dir.pwd).send(
@@ -8010,8 +8010,7 @@ class AiwebCliTest < Minitest::Test
         command: ["openmanus"]
       )
 
-      assert_includes command, "--userns"
-      assert_equal "keep-id", command[command.index("--userns") + 1]
+      refute_includes command, "--userns"
       assert_includes command, "--pull"
       assert_equal "never", command[command.index("--pull") + 1]
       assert_includes command, "--user"
