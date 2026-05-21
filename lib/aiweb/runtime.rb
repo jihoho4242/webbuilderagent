@@ -3,6 +3,7 @@
 require_relative "runtime/path_policy"
 require_relative "runtime/env_policy"
 require_relative "runtime/command_spec"
+require_relative "runtime/source_patch_guard"
 require_relative "runtime/process_runner"
 require_relative "runtime/launch_spec"
 require_relative "runtime/process_launcher"

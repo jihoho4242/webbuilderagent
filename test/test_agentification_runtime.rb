@@ -266,7 +266,8 @@ class AgentificationRuntimeTest < Minitest::Test
       "max_changed_files" => 2,
       "max_patch_bytes" => 10
     }
-    guard = Aiweb::AgentRuntime::SourcePatchGuard.new
+    guard = Aiweb::Runtime::SourcePatchGuard.new
+    assert_same Aiweb::Runtime::SourcePatchGuard, Aiweb::AgentRuntime::SourcePatchGuard
 
     passed = guard.validate(manifest: manifest, changed_files: ["src/app/page.tsx", "package.json"], patch_bytes: 10)
     assert_equal "passed", passed["status"]
@@ -283,6 +284,22 @@ class AgentificationRuntimeTest < Minitest::Test
     too_large = guard.validate(manifest: manifest, changed_files: ["src/app/page.tsx"], patch_bytes: 11)
     assert_equal "blocked", too_large["status"]
     assert_match(/exceeds max_patch_bytes/, too_large["blocking_issues"].join("\n"))
+  end
+
+  def test_runtime_artifact_store_writes_only_inside_run_dir_with_json_safety
+    in_tmp do |dir|
+      store = Aiweb::Runtime::ArtifactStore.new(root: dir, run_id: "engine-run-test")
+      json_path = store.write_json("artifacts/result.json", "message" => "ok".b)
+      jsonl_path = store.write_jsonl("events.jsonl", [{ "event" => "created".b }])
+
+      assert_equal ".ai-web/runs/engine-run-test/artifacts/result.json", json_path
+      assert_equal ".ai-web/runs/engine-run-test/events.jsonl", jsonl_path
+      assert_match(/"message": "ok"/, File.read(File.join(dir, json_path)))
+      assert_match(/"event":"created"/, File.read(File.join(dir, jsonl_path)))
+
+      assert_raises(ArgumentError) { store.write_json("../escape.json", {}) }
+      assert_raises(ArgumentError) { Aiweb::Runtime::ArtifactStore.new(root: dir, run_id: "../escape") }
+    end
   end
 
   def test_profile_s_runtime_plan_is_local_planning_only_without_astro_blockers

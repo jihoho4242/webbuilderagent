@@ -1,7 +1,7 @@
 # frozen_string_literal: true
 
 require "fileutils"
-require "json"
+require_relative "../json_safety"
 
 module Aiweb
   module Runtime
@@ -19,7 +19,7 @@ module Aiweb
         path = File.expand_path(File.join(@run_dir, relative_name))
         ensure_inside_run_dir!(path)
         FileUtils.mkdir_p(File.dirname(path))
-        File.write(path, JSON.pretty_generate(payload) + "\n")
+        File.write(path, Aiweb::JsonSafety.pretty_generate(payload) + "\n")
         relative(path)
       end
 
@@ -28,7 +28,7 @@ module Aiweb
         path = File.expand_path(File.join(@run_dir, relative_name))
         ensure_inside_run_dir!(path)
         FileUtils.mkdir_p(File.dirname(path))
-        File.write(path, Array(events).map { |event| JSON.generate(event) }.join("\n") + "\n")
+        File.write(path, Array(events).map { |event| Aiweb::JsonSafety.generate(event) }.join("\n") + "\n")
         relative(path)
       end
 
