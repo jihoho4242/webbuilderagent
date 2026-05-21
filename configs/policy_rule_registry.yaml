@@ -13,3 +13,6 @@ rules:
   - id: allow_l0_l2_local
     match: risk_tier_l0_l2
     decision: allow
+  - id: require_approval_above_auto_allow
+    match: risk_tier_above_auto_allow_without_approval
+    decision: approval_required

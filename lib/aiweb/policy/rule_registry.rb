@@ -51,6 +51,8 @@ module Aiweb
         raise KeyError, "capability matrix permission_tiers missing" unless tiers.is_a?(Hash)
 
         %w[L0 L1 L2 L3 L4 L5].each { |tier| raise KeyError, "capability matrix missing #{tier}" unless tiers.key?(tier) }
+        auto_allow = data["autonomous_local_auto_allow_max_tier"].to_s
+        raise KeyError, "capability matrix autonomous_local_auto_allow_max_tier missing" unless tiers.key?(auto_allow)
       end
     end
   end

@@ -20,6 +20,7 @@ module Aiweb
       def decide(packet:, approved: false, approval: nil, approval_artifact: nil, action_diff: nil, args: nil, evidence: nil, paths: [])
         registry = @rule_registry.load
         capability_matrix = @rule_registry.capability_matrix
+        auto_allow_max_tier = capability_matrix.fetch("autonomous_local_auto_allow_max_tier")
         constitution = @constitution_verifier.verify(expected_hash: packet["constitution_hash"])
         unless constitution["status"] == "passed"
           return event(packet, "block", constitution.fetch("blocking_issues").join("; "), "constitution_hash_mismatch", "critical", "blocked")
@@ -52,7 +53,21 @@ module Aiweb
           end
         end
 
-        event(packet, "allow", "policy allow for #{tier}", rule_for(registry, "allow_l0_l2_local"), tier == "L2" ? "low" : "none", "not_required")
+        return event(packet, "allow", "policy allow for #{tier}", rule_for(registry, "allow_l0_l2_local"), tier == "L2" ? "low" : "none", "not_required") if tier_allowed_without_approval?(capability_matrix, tier, auto_allow_max_tier)
+
+        approval_check = verify_approval(packet, approval_artifact || approval, action_diff, args, evidence)
+        unless approval_check["status"] == "passed"
+          return event(
+            packet,
+            "approval_required",
+            "#{tier} exceeds autonomous-local auto-allow max tier #{auto_allow_max_tier}; HITL v2 approval artifact required: #{approval_check.fetch("blocking_issues", []).join("; ")}",
+            rule_for(registry, "require_approval_above_auto_allow"),
+            "medium",
+            approval_check.fetch("status", "blocked")
+          )
+        end
+
+        event(packet, "allow", "policy allow for #{tier} with passing HITL v2 approval artifact", rule_for(registry, "require_approval_above_auto_allow"), "low", approval_check.fetch("status", "passed"))
       rescue StandardError => e
         fallback = packet.is_a?(Hash) ? packet : { "packet_id" => "missing", "requested_tool" => "unknown", "risk_tier" => "L5", "permission_tier" => "L5", "constitution_hash" => Aiweb::Constitution::Loader.new.content_hash, "policy_kernel_version" => VERSION }
         DecisionEvent.build(packet: fallback, decision: "block", reason: "policy kernel failure: #{e.class}: #{e.message}", rule_id: "policy_kernel_fail_closed", residual_risk: "critical", approval_status: "blocked")
@@ -83,6 +98,14 @@ module Aiweb
         raise KeyError, "unknown permission tier #{tier}"
       end
 
+      def tier_allowed_without_approval?(capability_matrix, tier, max_tier)
+        tier_rank(capability_matrix, tier) <= tier_rank(capability_matrix, max_tier)
+      end
+
+      def tier_rank(capability_matrix, tier)
+        capability_matrix.fetch("permission_tiers").keys.index(tier) || raise(KeyError, "unknown permission tier #{tier}")
+      end
+
       def verify_approval(packet, artifact, action_diff, args, evidence)
         return { "status" => "blocked", "blocking_issues" => ["approval artifact missing"] } unless artifact.is_a?(Hash)
         if artifact["schema_version"] != 2
@@ -103,7 +126,7 @@ module Aiweb
 
       def secret_path_blocker(paths)
         Array(paths).each do |path|
-          next if Aiweb::Runtime::PathPolicy.safe_relative_path?(path.to_s)
+          next if Aiweb::Runtime::PathPolicy.safe_relative_path?(path.to_s) && !Aiweb::Runtime::PathPolicy.secret_surface_path?(path.to_s)
 
           return "unsafe or secret path blocked by PolicyKernel: #{path}"
         end

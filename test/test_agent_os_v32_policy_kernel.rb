@@ -125,6 +125,10 @@ class AgentOsV32PolicyKernelTest < Minitest::Test
     decision = Aiweb::Policy::Kernel.new.decide(packet: packet("finish"), paths: ["nested/.env.production"])
     assert_equal "block", decision.fetch("decision")
     assert_match(/unsafe or secret path/, decision.fetch("reason"))
+
+    secret_surface = Aiweb::Policy::Kernel.new.decide(packet: packet("finish"), paths: [".kube/config"])
+    assert_equal "block", secret_surface.fetch("decision")
+    assert_match(/unsafe or secret path/, secret_surface.fetch("reason"))
   end
 
   def test_policy_blocks_mismatched_external_network_scope_before_side_effect
@@ -152,5 +156,45 @@ class AgentOsV32PolicyKernelTest < Minitest::Test
     decision = Aiweb::Policy::Kernel.new.decide(packet: bad)
     assert_equal "block", decision.fetch("decision")
     assert_match(/constitution hash mismatch/, decision.fetch("reason"))
+  end
+
+  def test_policy_obeys_capability_matrix_auto_allow_tier
+    Dir.mktmpdir("aiweb-policy-matrix-test-") do |dir|
+      registry_path = File.join(dir, "policy_rule_registry.yaml")
+      matrix_path = File.join(dir, "capability_matrix.yaml")
+      File.write(registry_path, YAML.dump(
+        "schema_version" => 1,
+        "default_decision" => "block",
+        "rules" => [
+          { "id" => "block_secret_paths", "match" => "secret_or_env_path", "decision" => "block" },
+          { "id" => "require_approval_for_l3", "match" => "risk_tier_l3_without_approval", "decision" => "approval_required" },
+          { "id" => "require_hitl_for_l4_l5", "match" => "risk_tier_l4_l5", "decision" => "approval_required" },
+          { "id" => "allow_l0_l2_local", "match" => "risk_tier_l0_l2", "decision" => "allow" },
+          { "id" => "require_approval_above_auto_allow", "match" => "risk_tier_above_auto_allow_without_approval", "decision" => "approval_required" }
+        ]
+      ))
+      File.write(matrix_path, YAML.dump(
+        "schema_version" => 1,
+        "permission_tiers" => {
+          "L0" => "read_only_local_metadata",
+          "L1" => "local_artifact_read",
+          "L2" => "local_evidence_write",
+          "L3" => "local_process_browser_or_source_patch",
+          "L4" => "external_network_package_provider_deploy_git_or_mcp_credentials",
+          "L5" => "irreversible_production_account_customer_financial_or_security_action"
+        },
+        "autonomous_local_auto_allow_max_tier" => "L1",
+        "l4_l5_requires_second_reviewer" => true,
+        "secret_read_policy" => "block"
+      ))
+
+      kernel = Aiweb::Policy::Kernel.new(rule_registry: Aiweb::Policy::RuleRegistry.new(registry_path, matrix_path))
+      local_verify = packet("local_verify")
+      decision = kernel.decide(packet: local_verify)
+
+      assert_equal "approval_required", decision.fetch("decision")
+      assert_equal "require_approval_above_auto_allow", decision.fetch("rule_id")
+      assert_match(/auto-allow max tier L1/, decision.fetch("reason"))
+    end
   end
 end
