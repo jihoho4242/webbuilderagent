@@ -4,6 +4,7 @@ require_relative "path_safety"
 require_relative "core_helpers"
 require_relative "lifecycle_commands"
 require_relative "design_commands"
+require_relative "visual_commands"
 require_relative "io_helpers"
 require_relative "quality_gate_helpers"
 require_relative "state_mutation_helpers"
@@ -38,6 +39,7 @@ module Aiweb
     include ProjectCoreHelpers
     include ProjectLifecycleCommands
     include ProjectDesignCommands
+    include ProjectVisualCommands
     include ProjectIoHelpers
     include ProjectQualityGateHelpers
     include ProjectStateMutationHelpers
