@@ -3,6 +3,7 @@
 require_relative "supply_chain/broker"
 require_relative "supply_chain/plan"
 require_relative "supply_chain/network_policy"
+require_relative "supply_chain/audit_exception"
 require_relative "supply_chain/artifacts"
 
 module Aiweb
