@@ -2,6 +2,7 @@
 
 require_relative "agent_run/openmanus_sandbox"
 require_relative "agent_run/openmanus_workspace"
+require_relative "agent_run/openmanus_runtime"
 require_relative "agent_run/openmanus_contract"
 require_relative "agent_run/openmanus"
 require_relative "agent_run/source_policy"
