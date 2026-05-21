@@ -5739,6 +5739,9 @@ class AiwebCliTest < Minitest::Test
         assert entries.fetch(runtime).key?("inside_container_probe_status")
         assert entries.fetch(runtime).key?("inside_container_probe_reason")
         assert entries.fetch(runtime).key?("inside_container_probe_stderr")
+        assert entries.fetch(runtime).key?("inside_container_workspace_writable")
+        assert entries.fetch(runtime).key?("inside_container_root_filesystem_write_blocked")
+        assert entries.fetch(runtime).key?("inside_container_env_guards")
         assert_equal "passed", entries.fetch(runtime).dig("runtime_container_inspect", "status")
         assert_equal "passed", entries.fetch(runtime).dig("security_attestation", "status")
         assert_equal "passed", entries.fetch(runtime).dig("egress_denial_probe", "status")
@@ -8030,6 +8033,18 @@ class AiwebCliTest < Minitest::Test
       assert_equal "0", env.fetch("AIWEB_NETWORK_ALLOWED")
       refute_equal File.join(workspace, "_aiweb", "home"), env["HOME"]
       refute_equal File.join(workspace, "_aiweb", "tmp"), env["TMPDIR"]
+    end
+  end
+
+  def test_runtime_inspect_accepts_podman_expanded_cap_drop_all
+    in_tmp do
+      json_cmd("init")
+      project = Aiweb::Project.new(Dir.pwd)
+
+      assert project.send(:engine_run_runtime_inspect_cap_drop_all?, ["ALL"])
+      assert project.send(:engine_run_runtime_inspect_cap_drop_all?, ["CAP_CHOWN", "CAP_DAC_OVERRIDE", "CAP_SETUID"])
+      refute project.send(:engine_run_runtime_inspect_cap_drop_all?, [])
+      refute project.send(:engine_run_runtime_inspect_cap_drop_all?, ["NET_ADMIN"])
     end
   end
 

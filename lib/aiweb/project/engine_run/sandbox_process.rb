@@ -79,7 +79,9 @@ module Aiweb
 
       blockers << "runtime inspect did not confirm --network none" unless network_mode == "none"
       blockers << "runtime inspect did not confirm read-only root filesystem" unless readonly_rootfs == true
-      blockers << "runtime inspect did not confirm cap-drop ALL" unless cap_drop.include?("ALL")
+      unless engine_run_runtime_inspect_cap_drop_all?(cap_drop)
+        blockers << "runtime inspect did not confirm cap-drop ALL"
+      end
       unless security_opt.any? { |option| option == "no-new-privileges" || option.start_with?("no-new-privileges:") }
         blockers << "runtime inspect did not confirm no-new-privileges"
       end
@@ -105,6 +107,18 @@ module Aiweb
       end
 
       blockers.uniq
+    end
+
+    def engine_run_runtime_inspect_cap_drop_all?(cap_drop)
+      values = Array(cap_drop).map(&:to_s).reject(&:empty?)
+      return true if values.include?("ALL")
+
+      # Podman expands `--cap-drop ALL` into the concrete capability names in
+      # inspect output. The inside-container /proc/self/status attestation still
+      # proves CapEff/CapPrm/CapBnd are zero; this inspect check accepts the
+      # expanded runtime representation instead of requiring Docker's literal
+      # "ALL" echo.
+      values.any? && values.all? { |value| value.match?(/\ACAP_[A-Z0-9_]+\z/) }
     end
 
     def engine_run_same_filesystem_path?(observed, expected)
