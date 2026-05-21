@@ -1,5 +1,8 @@
 # frozen_string_literal: true
 
+require "fileutils"
+require "json"
+
 module Aiweb
   module ProjectEngineRun
     def engine_run_sandbox_preflight_skipped(reason)
@@ -142,6 +145,341 @@ module Aiweb
         blockers << "sandbox preflight did not observe an effective user id"
       end
       blockers.uniq
+    end
+
+    def engine_run_sandbox_runtime_matrix_evidence(agent:, selected_sandbox:, workspace_dir:, selected_runtime_info:, selected_inside_probe:, selected_image_inspect:)
+      unless engine_run_container_worker_agent?(agent) && !selected_sandbox.to_s.strip.empty?
+        return {
+          "schema_version" => 1,
+          "status" => "skipped",
+          "required" => false,
+          "policy_source" => [],
+          "selected_runtime" => nil,
+          "requested_runtimes" => [],
+          "entries" => [],
+          "blocking_issues" => [],
+          "reason" => "missing_sandbox_or_non_container_agent"
+        }
+      end
+
+      requested = engine_run_required_sandbox_runtime_matrix
+      policy_sources = engine_run_required_sandbox_runtime_matrix_policy_sources
+      invalid_requested = engine_run_invalid_sandbox_runtime_matrix
+      required = !policy_sources.empty?
+      runtimes = (required && !requested.empty? ? requested : [selected_sandbox.to_s]).uniq
+      entries = runtimes.map do |runtime|
+        engine_run_sandbox_runtime_matrix_entry(
+          runtime: runtime,
+          selected_sandbox: selected_sandbox.to_s,
+          workspace_dir: workspace_dir,
+          selected_runtime_info: selected_runtime_info,
+          selected_inside_probe: selected_inside_probe,
+          selected_image_inspect: selected_image_inspect,
+          agent: agent
+        )
+      end
+      blockers = entries.flat_map do |entry|
+        entry.fetch("blocking_issues", []).map { |issue| "#{entry.fetch("runtime")} runtime matrix: #{issue}" }
+      end.uniq
+      invalid_requested.each do |runtime|
+        blockers << "unsupported runtime matrix entry: #{runtime.inspect}; expected docker or podman"
+      end
+      blockers << "runtime matrix policy configured but no valid runtimes were requested" if required && requested.empty?
+      {
+        "schema_version" => 1,
+        "status" => blockers.empty? ? "passed" : (required ? "failed" : "partial"),
+        "required" => required,
+        "policy_source" => policy_sources,
+        "selected_runtime" => selected_sandbox.to_s,
+        "requested_runtimes" => requested,
+        "invalid_requested_runtimes" => invalid_requested,
+        "entries" => entries,
+        "blocking_issues" => blockers
+      }
+    end
+
+    def engine_run_sandbox_runtime_matrix_entry(runtime:, selected_sandbox:, workspace_dir:, selected_runtime_info:, selected_inside_probe:, selected_image_inspect:, agent: "openmanus")
+      image = engine_run_agent_container_image(agent)
+      command = executable_path(runtime) ? engine_run_agent_container_command(agent, runtime, workspace_dir) : []
+      command_blockers = executable_path(runtime) ? engine_run_agent_sandbox_command_blockers(agent, command, sandbox: runtime, workspace_dir: workspace_dir) : ["#{runtime} executable is missing from PATH"]
+      image_inspect = runtime == selected_sandbox ? selected_image_inspect : engine_run_container_image_inspect(runtime, image)
+      runtime_info = runtime == selected_sandbox ? selected_runtime_info : engine_run_sandbox_runtime_info(runtime)
+      inside_probe = if command_blockers.empty?
+                       runtime == selected_sandbox ? selected_inside_probe : engine_run_sandbox_self_attestation_probe(agent: agent, sandbox: runtime, workspace_dir: workspace_dir)
+                     else
+                       engine_run_failed_sandbox_self_attestation(reason: "runtime_matrix_command_blocked")
+                     end
+      inspect = inside_probe["runtime_container_inspect"] || { "status" => "not_observed", "reason" => "runtime_matrix_missing_container_inspect" }
+      security = inside_probe["security_attestation"] || engine_run_failed_security_attestation("runtime_matrix_missing_security_attestation")
+      egress = inside_probe["egress_denial_probe"] || engine_run_failed_egress_denial_probe("runtime_matrix_missing_egress_denial_probe")
+      effective_user = inside_probe["effective_user"]
+
+      blockers = []
+      blockers.concat(command_blockers)
+      blockers << "image inspect did not pass" unless image_inspect.fetch("status", "failed") == "passed"
+      blockers << "runtime info did not pass" unless runtime_info.fetch("status", "failed") == "passed"
+      blockers << "inside-container self-attestation did not pass" unless inside_probe.fetch("status", "failed") == "passed"
+      blockers << "inside-container security attestation did not pass" unless security.fetch("status", "failed") == "passed"
+      blockers << "inside-container egress denial did not pass" unless egress.fetch("status", "failed") == "passed"
+      blockers << "runtime container inspect did not pass" unless inspect.fetch("status", "failed") == "passed"
+      if effective_user.is_a?(Hash)
+        blockers << "effective user id was not observed" if effective_user["uid"].nil?
+        blockers << "effective user is root" if effective_user["uid"].to_i == 0
+      else
+        blockers << "effective user id was not observed"
+      end
+
+      {
+        "runtime" => runtime,
+        "status" => blockers.empty? ? "passed" : "failed",
+        "command" => command,
+        "resolved_executable_path" => executable_path(runtime),
+        "image_inspect" => image_inspect,
+        "runtime_info" => runtime_info,
+        "inside_container_probe_status" => inside_probe["status"],
+        "inside_container_probe_reason" => inside_probe["reason"],
+        "inside_container_probe_exit_code" => inside_probe["exit_code"],
+        "inside_container_probe_stderr" => inside_probe["stderr"],
+        "inside_container_workspace_writable" => inside_probe["workspace_writable"],
+        "inside_container_root_filesystem_write_blocked" => inside_probe["root_filesystem_write_blocked"],
+        "inside_container_env_guards" => inside_probe["env_guards"],
+        "runtime_container_id" => inside_probe["runtime_container_id"],
+        "runtime_container_inspect" => inspect,
+        "security_attestation" => security,
+        "egress_denial_probe" => egress,
+        "effective_user" => effective_user,
+        "blocking_issues" => blockers.uniq
+      }
+    end
+
+    def engine_run_sandbox_self_attestation_probe(agent:, sandbox:, workspace_dir:)
+      return { "schema_version" => 1, "status" => "skipped", "reason" => "missing_sandbox_or_non_container_agent" } unless engine_run_container_worker_agent?(agent) && !sandbox.to_s.strip.empty?
+
+      engine_run_prepare_container_scratch_dirs(workspace_dir)
+      script = <<~'SH'
+        if command -v python3 >/dev/null 2>&1; then PY=python3; elif command -v python >/dev/null 2>&1; then PY=python; else echo '{"schema_version":1,"status":"not_observed","reason":"python_unavailable"}'; exit 0; fi
+        "$PY" - <<'PY'
+        import getpass, json, os, socket
+
+        def write_probe(path, content):
+            try:
+                with open(path, "w", encoding="utf-8") as handle:
+                    handle.write(content)
+                try:
+                    os.remove(path)
+                except OSError:
+                    pass
+                return True
+            except OSError:
+                return False
+
+        def root_write_blocked():
+            path = "/aiweb-root-write-probe"
+            try:
+                with open(path, "w", encoding="utf-8") as handle:
+                    handle.write("probe")
+                try:
+                    os.remove(path)
+                except OSError:
+                    pass
+                return False
+            except OSError:
+                return True
+
+        def read_text(path, limit=12000):
+            try:
+                with open(path, "r", encoding="utf-8", errors="replace") as handle:
+                    return handle.read(limit)
+            except OSError:
+                return ""
+
+        def proc_status_fields():
+            fields = {}
+            for line in read_text("/proc/self/status").splitlines():
+                if ":" not in line:
+                    continue
+                key, value = line.split(":", 1)
+                if key in ["NoNewPrivs", "Seccomp", "Seccomp_filters", "CapEff", "CapPrm", "CapBnd"]:
+                    fields[key] = value.strip()
+            no_new_privs = fields.get("NoNewPrivs") == "1"
+            seccomp_filtering = fields.get("Seccomp") in ["2", "1"]
+            cap_eff = fields.get("CapEff", "")
+            try:
+                cap_eff_zero = int(cap_eff, 16) == 0
+            except ValueError:
+                cap_eff_zero = False
+            status = "passed" if no_new_privs and seccomp_filtering and cap_eff_zero else "failed"
+            return {
+                "status": status,
+                "source": "/proc/self/status",
+                "no_new_privs": fields.get("NoNewPrivs"),
+                "no_new_privs_enabled": no_new_privs,
+                "seccomp": fields.get("Seccomp"),
+                "seccomp_filtering": seccomp_filtering,
+                "seccomp_filters": fields.get("Seccomp_filters"),
+                "cap_eff": cap_eff,
+                "cap_eff_zero": cap_eff_zero,
+                "cap_prm": fields.get("CapPrm"),
+                "cap_bnd": fields.get("CapBnd")
+            }
+
+        egress = {
+            "status": "not_observed",
+            "method": "inside_container_python_socket_connect_93_184_216_34_80",
+            "target": "93.184.216.34:80"
+        }
+        try:
+            socket.create_connection(("93.184.216.34", 80), timeout=2).close()
+            egress.update({"status": "failed", "observed": "unexpected_connect"})
+        except OSError as error:
+            egress.update({"status": "passed", "observed": "connection_denied", "error_class": error.__class__.__name__, "error": str(error)[:160]})
+
+        env_guards = {
+            key: os.environ.get(key)
+            for key in ["AIWEB_NETWORK_ALLOWED", "AIWEB_MCP_ALLOWED", "AIWEB_ENV_ACCESS_ALLOWED", "AIWEB_ENGINE_RUN_TOOL"]
+        }
+        uid = os.getuid() if hasattr(os, "getuid") else None
+        gid = os.getgid() if hasattr(os, "getgid") else None
+        try:
+            user_name = getpass.getuser()
+        except Exception:
+            user_name = str(uid) if uid is not None else None
+        security = proc_status_fields()
+        cgroup_lines = read_text("/proc/self/cgroup", 4000).splitlines()[:20]
+        mountinfo_lines = read_text("/proc/self/mountinfo", 8000).splitlines()[:40]
+        workspace_writable = write_probe("/workspace/_aiweb/self-attestation-write-probe", "ok")
+        root_blocked = root_write_blocked()
+        probe = {
+            "schema_version": 1,
+            "status": "passed" if egress["status"] == "passed" and workspace_writable and root_blocked and security["status"] == "passed" else "failed",
+            "container_id": socket.gethostname(),
+            "effective_user": {
+                "uid": uid,
+                "gid": gid,
+                "name": user_name
+            },
+            "cwd": os.getcwd(),
+            "home": os.environ.get("HOME"),
+            "env_guards": env_guards,
+            "workspace_writable": workspace_writable,
+            "root_filesystem_write_blocked": root_blocked,
+            "security_attestation": security,
+            "cgroup": {
+                "source": "/proc/self/cgroup",
+                "lines": cgroup_lines
+            },
+            "mountinfo_excerpt": {
+                "source": "/proc/self/mountinfo",
+                "lines": mountinfo_lines
+            },
+            "egress_denial_probe": egress
+        }
+        print(json.dumps(probe, sort_keys=True))
+        PY
+      SH
+      cidfile = File.join(workspace_dir, "_aiweb", "sandbox-preflight.cid")
+      FileUtils.rm_f(cidfile)
+      command = engine_run_sandbox_tool_command(sandbox, workspace_dir, ["sh", "-lc", script], tool: "sandbox_preflight_probe", agent: agent)
+      command = engine_run_preflight_probe_command(command, cidfile)
+      stdout, stderr, status = engine_run_capture_command(command, workspace_dir, 30, env: engine_run_clean_env(workspace_dir, { events_path: File.join(workspace_dir, "_aiweb", "preflight-events.jsonl") }, sandbox))
+      runtime_container_id = File.file?(cidfile) ? File.read(cidfile, 512).to_s.strip : nil
+      runtime_container_inspect = runtime_container_id.to_s.empty? ? { "status" => "not_observed", "reason" => "cidfile was not written" } : engine_run_runtime_container_inspect(sandbox, runtime_container_id, expected_workspace_dir: workspace_dir)
+      engine_run_remove_runtime_container(sandbox, runtime_container_id) unless runtime_container_id.to_s.empty?
+      unless status == 0
+        return engine_run_failed_sandbox_self_attestation(
+          reason: "self_attestation_probe_command_failed",
+          runtime_container_id: runtime_container_id,
+          runtime_container_inspect: runtime_container_inspect,
+          exit_code: status,
+          stderr: stderr
+        )
+      end
+
+      parsed = JSON.parse(stdout.to_s)
+      unless parsed.is_a?(Hash)
+        return engine_run_failed_sandbox_self_attestation(
+          reason: "self_attestation_probe_output_not_object",
+          runtime_container_id: runtime_container_id,
+          runtime_container_inspect: runtime_container_inspect
+        )
+      end
+      parsed["schema_version"] ||= 1
+      parsed["runtime_container_id"] = runtime_container_id unless runtime_container_id.to_s.empty?
+      parsed["runtime_container_inspect"] = runtime_container_inspect
+      parsed["effective_user"] = { "uid" => nil, "gid" => nil, "name" => nil } unless parsed["effective_user"].is_a?(Hash)
+      parsed["security_attestation"] = engine_run_failed_security_attestation("self_attestation_probe_missing_security_attestation") unless parsed["security_attestation"].is_a?(Hash)
+      parsed["egress_denial_probe"] = engine_run_failed_egress_denial_probe("self_attestation_probe_missing_egress_denial_probe") unless parsed["egress_denial_probe"].is_a?(Hash)
+      parsed
+    rescue JSON::ParserError
+      engine_run_failed_sandbox_self_attestation(reason: "self_attestation_probe_output_parse_failed", runtime_container_id: runtime_container_id, runtime_container_inspect: runtime_container_inspect)
+    rescue SystemCallError => e
+      engine_run_failed_sandbox_self_attestation(reason: e.message, runtime_container_id: runtime_container_id, runtime_container_inspect: runtime_container_inspect)
+    end
+
+    def engine_run_failed_sandbox_self_attestation(reason:, runtime_container_id: nil, runtime_container_inspect: nil, exit_code: nil, stderr: nil)
+      record = {
+        "schema_version" => 1,
+        "status" => "failed",
+        "reason" => reason.to_s,
+        "runtime_container_id" => runtime_container_id,
+        "container_id" => nil,
+        "effective_user" => {
+          "uid" => nil,
+          "gid" => nil,
+          "name" => nil
+        },
+        "env_guards" => {},
+        "workspace_writable" => false,
+        "root_filesystem_write_blocked" => false,
+        "security_attestation" => engine_run_failed_security_attestation(reason),
+        "cgroup" => {
+          "source" => "/proc/self/cgroup",
+          "lines" => []
+        },
+        "mountinfo_excerpt" => {
+          "source" => "/proc/self/mountinfo",
+          "lines" => []
+        },
+        "egress_denial_probe" => engine_run_failed_egress_denial_probe(reason),
+        "runtime_container_inspect" => runtime_container_inspect || { "status" => "not_observed", "reason" => "runtime container id was not observed" }
+      }
+      record["exit_code"] = exit_code if exit_code
+      record["stderr"] = agent_run_redact_process_output(stderr.to_s)[0, 1000] unless stderr.to_s.empty?
+      record
+    end
+
+    def engine_run_failed_security_attestation(reason = "security_attestation_not_observed")
+      {
+        "status" => "failed",
+        "source" => "/proc/self/status",
+        "reason" => reason.to_s,
+        "no_new_privs" => nil,
+        "no_new_privs_enabled" => false,
+        "seccomp" => nil,
+        "seccomp_filtering" => false,
+        "seccomp_filters" => nil,
+        "cap_eff" => nil,
+        "cap_eff_zero" => false,
+        "cap_prm" => nil,
+        "cap_bnd" => nil
+      }
+    end
+
+    def engine_run_not_observed_security_attestation(reason = "security_attestation_not_observed")
+      engine_run_failed_security_attestation(reason).merge(
+        "status" => "not_observed",
+        "no_new_privs_enabled" => false,
+        "seccomp_filtering" => false,
+        "cap_eff_zero" => false
+      )
+    end
+
+    def engine_run_failed_egress_denial_probe(reason = "egress_denial_probe_not_observed")
+      {
+        "status" => "failed",
+        "method" => "inside_container_socket_probe",
+        "observed" => reason.to_s
+      }
     end
 
   end
