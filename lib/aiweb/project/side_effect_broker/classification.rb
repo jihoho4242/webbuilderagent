@@ -29,6 +29,9 @@ module Aiweb
       if path.end_with?("lib/aiweb/project/engine_run/generated_sources.rb") && line.match?(/exec "\$dir\/\$TOOL_NAME"/)
         return side_effect_classification("brokered_generated_tool_broker_delegate", "brokered", "aiweb.engine_run.tool_broker", "generated POSIX tool-broker shim delegates only after package/git/external-network block checks")
       end
+      if path.end_with?("lib/aiweb/project/engine_run/generated_sources/tool_broker_shim.rb") && line.match?(/exec "\$dir\/\$TOOL_NAME"/)
+        return side_effect_classification("brokered_generated_tool_broker_delegate", "brokered", "aiweb.engine_run.tool_broker", "generated POSIX tool-broker shim delegates only after package/git/external-network block checks")
+      end
       side_effect_classification("unclassified_direct_side_effect", "unclassified", nil, "direct process/network surface is not yet classified by side-effect broker audit")
     end
 
