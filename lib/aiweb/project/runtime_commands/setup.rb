@@ -45,12 +45,7 @@ module Aiweb
       timestamp = Time.now.utc.strftime("%Y%m%dT%H%M%S%6NZ")
       run_id = "setup-#{timestamp}-#{SecureRandom.hex(4)}"
       setup_paths = setup_install_run_paths(run_id)
-      run_dir = setup_paths.fetch(:run_dir)
-      artifacts_dir = setup_paths.fetch(:artifacts_dir)
       package_cache_dir = setup_paths.fetch(:package_cache_dir)
-      stdout_path = setup_paths.fetch(:stdout_path)
-      stderr_path = setup_paths.fetch(:stderr_path)
-      metadata_path = setup_paths.fetch(:metadata_path)
       side_effect_broker_path = setup_paths.fetch(:side_effect_broker_path)
       supply_chain_gate_path = setup_paths.fetch(:supply_chain_gate_path)
       sbom_path = setup_paths.fetch(:sbom_path)
