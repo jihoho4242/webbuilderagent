@@ -173,7 +173,7 @@ module Aiweb
         }
         payload["planned_changes"] = blockers.empty? ? [relative(plan_path)] : []
         payload["blocking_issues"] = (payload["blocking_issues"] + blockers).uniq
-        payload["next_action"] = blockers.empty? ? "rerun aiweb run-resume --run-id #{target.fetch("run_id")} to record the resume descriptor, then execute next_command manually if desired" : "inspect aiweb run-status and choose a resumable run"
+        payload["next_action"] = blockers.empty? ? "rerun aiweb run-resume --run-id #{target.fetch("run_id")} to record the resume descriptor; any lower-level approved execution must remain approval_hash-gated" : "inspect aiweb run-status and choose a resumable run"
         return payload
       end
 

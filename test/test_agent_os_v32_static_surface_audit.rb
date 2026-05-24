@@ -21,8 +21,8 @@ class AgentOsV32StaticSurfaceAuditTest < Minitest::Test
     assert_equal "removed_legacy_script_runner_tombstone", tool_registry.dig("tools", "verify_loop", "side_effect_class")
     assert_equal false, tool_registry.dig("tools", "verify_loop", "execution_available")
 
-    project_source = File.read(File.join(REPO_ROOT, "lib", "aiweb", "project.rb"))
-    run_body = project_source.match(/def run\(dry_run: false\)(.*?)\n    def load_state/m)[1]
+    project_source = File.read(File.join(REPO_ROOT, "lib", "aiweb", "project", "recovery_commands.rb"))
+    run_body = project_source.match(/def run\(dry_run: false\)(.*?)\n    end/m)[1]
     assert_includes run_body, "removed_director_run_metadata"
     refute_includes run_body, "interview("
     refute_includes run_body, "design_prompt("
@@ -64,7 +64,10 @@ class AgentOsV32StaticSurfaceAuditTest < Minitest::Test
     refute_includes verify_loop_source, "execute_engine = approved"
     refute_match(/verify_loop_record_step|build\(dry_run: false\)|preview\(dry_run: false\)|qa_playwright|agent_run\(task: \"latest\"/, verify_loop_source)
 
-    browser_actions_source = File.read(File.join(REPO_ROOT, "lib", "aiweb", "project", "engine_run", "preview_browser", "browser_actions.rb"))
+    browser_actions_source = [
+      File.read(File.join(REPO_ROOT, "lib", "aiweb", "project", "engine_run", "preview_browser", "browser_actions.rb")),
+      File.read(File.join(REPO_ROOT, "lib", "aiweb", "project", "engine_run", "preview_browser", "browser_actions", "action_loop_payload.rb"))
+    ].join("\n")
     browser_schema = File.read(File.join(REPO_ROOT, "docs", "schemas", "browser-evidence.schema.json"))
     [browser_actions_source, browser_schema].each do |text|
       assert_includes text, "deterministic_local_browser_probe"
@@ -161,6 +164,7 @@ class AgentOsV32StaticSurfaceAuditTest < Minitest::Test
       lib/aiweb/cli/dispatch.rb
       lib/aiweb/project/agent_run.rb
       lib/aiweb/project/agent_run/openmanus.rb
+      lib/aiweb/project/agent_run/openmanus_sandbox.rb
       lib/aiweb/project/agent_run/metadata_payload.rb
       lib/aiweb/project/mcp_broker.rb
       lib/aiweb/project/engine_run/eval_baseline.rb
@@ -223,9 +227,9 @@ class AgentOsV32StaticSurfaceAuditTest < Minitest::Test
     ].each do |relative|
       refute_includes live_guidance.fetch(relative), "then rerun with --approval-hash HASH --approved", "#{relative} must not emit copy-paste approved next_action guidance"
     end
-    assert_includes live_guidance.fetch("lib/aiweb/project/agent_run/openmanus.rb"), "prefer aiweb agent or aiweb engine-run for user-facing execution"
+    assert_includes live_guidance.fetch("lib/aiweb/project/agent_run/openmanus_sandbox.rb"), "prefer aiweb agent or aiweb engine-run for user-facing execution"
     assert_includes live_guidance.fetch("lib/aiweb/project/mcp_broker.rb"), "lower-level ops action"
-    assert_includes live_guidance.fetch("lib/aiweb/project/engine_run/eval_baseline.rb"), "not a friendly runbook"
+    assert_includes live_guidance.fetch("lib/aiweb/project/engine_run/eval_baseline.rb"), "not treat import as a friendly web-building runbook"
     assert_includes live_guidance.fetch("lib/aiweb/project/runtime_commands/setup.rb"), "lower-level ops action"
     assert_includes live_guidance.fetch("lib/aiweb/project/workbench.rb"), "lower-level localhost ops action"
     assert_includes live_guidance.fetch("lib/aiweb/cli/help_text.rb"), 'agent "verify and improve this local scaffold" --mode supervised --dry-run'
