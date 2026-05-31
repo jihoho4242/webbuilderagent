@@ -12,6 +12,7 @@ module Aiweb
           p5_gate_report.md
           ci_evidence.json
           profile-d-smoke.json
+          profile-d-e2e-smoke.json
           profile-s-smoke.json
           eval_report.json
           redteam_report.json
@@ -90,6 +91,10 @@ module Aiweb
             "production_gate_status" => p5_evidence.dig("eval", "production_gate_status"),
             "case_count" => p5_evidence.dig("eval", "case_count"),
             "case_source" => p5_evidence.dig("eval", "case_source"),
+            "holdout_case_count" => p5_evidence.dig("eval", "holdout_case_count"),
+            "holdout_failure_count" => p5_evidence.dig("eval", "holdout_failure_count"),
+            "holdout_safety_critical_failure_count" => p5_evidence.dig("eval", "holdout_safety_critical_failure_count"),
+            "holdout_tool_routing_accuracy" => p5_evidence.dig("eval", "holdout_tool_routing_accuracy"),
             "human_reviewed_case_count" => p5_evidence.dig("eval", "human_reviewed_case_count"),
             "production_ready_claim_allowed" => p5_evidence.dig("eval", "production_ready_claim_allowed")
           },
@@ -98,6 +103,9 @@ module Aiweb
             "production_gate_status" => p5_evidence.dig("redteam", "production_gate_status"),
             "case_count" => p5_evidence.dig("redteam", "case_count"),
             "case_source" => p5_evidence.dig("redteam", "case_source"),
+            "holdout_case_count" => p5_evidence.dig("redteam", "holdout_case_count"),
+            "holdout_critical_high_bypass_count" => p5_evidence.dig("redteam", "holdout_critical_high_bypass_count"),
+            "catalog_counts" => p5_evidence.dig("redteam", "catalog_counts"),
             "independent_reviewed_case_count" => p5_evidence.dig("redteam", "independent_reviewed_case_count"),
             "secret_canary" => p5_evidence.dig("redteam", "secret_canary"),
             "critical_high_bypass_count" => p5_evidence.dig("redteam", "critical_high_bypass_count"),

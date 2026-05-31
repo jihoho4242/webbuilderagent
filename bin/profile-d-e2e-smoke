@@ -1,0 +1,245 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+require "digest"
+require "fileutils"
+require "json"
+require "optparse"
+require "rbconfig"
+require "securerandom"
+require "time"
+
+REPO_ROOT = File.expand_path("..", __dir__)
+$LOAD_PATH.unshift(File.join(REPO_ROOT, "lib"))
+require "aiweb/runtime"
+
+options = {
+  "output" => File.join(REPO_ROOT, ".ai-web", "ci", "profile-d-e2e-smoke.json"),
+  "keep_workspace" => false
+}
+
+OptionParser.new do |parser|
+  parser.banner = "Usage: ruby bin/profile-d-e2e-smoke [--output PATH] [--keep-workspace]"
+  parser.on("--output PATH", "Write compact smoke evidence JSON") { |value| options["output"] = File.expand_path(value, REPO_ROOT) }
+  parser.on("--keep-workspace", "Keep the throwaway .tmp workspace for debugging") { options["keep_workspace"] = true }
+end.parse!
+
+def windows?
+  RbConfig::CONFIG.fetch("host_os").match?(/mswin|mingw|cygwin/i)
+end
+
+def relative(path)
+  rel = File.expand_path(path).sub(%r{\A#{Regexp.escape(REPO_ROOT)}[\\/]?}, "").tr("\\", "/")
+  rel.empty? ? "." : rel
+end
+
+def assert_under_tmp!(path)
+  expanded = File.expand_path(path)
+  tmp_root = File.expand_path(File.join(REPO_ROOT, ".tmp"))
+  return if expanded.start_with?(tmp_root + File::SEPARATOR)
+
+  raise "refusing to remove non-.tmp path #{expanded}"
+end
+
+def command_available?(name)
+  paths = ENV.fetch("PATH", "").split(File::PATH_SEPARATOR)
+  suffixes = [""]
+  suffixes.concat(ENV.fetch("PATHEXT", ".COM;.EXE;.BAT;.CMD").split(";")) if windows? && File.extname(name).empty?
+  paths.any? do |dir|
+    suffixes.any? do |suffix|
+      candidate = File.join(dir, "#{name}#{suffix}")
+      File.executable?(candidate) && !File.directory?(candidate)
+    end
+  end
+end
+
+def ensure_pnpm_shim!
+  return nil if command_available?("pnpm")
+
+  raise "pnpm is missing and corepack is unavailable" unless command_available?("corepack")
+
+  tool_dir = File.join(REPO_ROOT, ".tmp", "profile-d-e2e-tools")
+  FileUtils.mkdir_p(tool_dir)
+  if windows?
+    path = File.join(tool_dir, "pnpm.cmd")
+    File.write(path, "@echo off\r\ncorepack pnpm %*\r\n")
+  else
+    path = File.join(tool_dir, "pnpm")
+    File.write(path, "#!/usr/bin/env sh\nexec corepack pnpm \"$@\"\n")
+    FileUtils.chmod(0o755, path)
+  end
+  ENV["PATH"] = [tool_dir, ENV.fetch("PATH", "")].join(File::PATH_SEPARATOR)
+  relative(path)
+end
+
+def run_command(label, argv, cwd:, timeout: 300, allow_shell_meta: false)
+  started = Time.now.utc
+  result = Aiweb::Runtime::ProcessRunner.new.capture(
+    Aiweb::Runtime::CommandSpec.new(
+      argv: argv,
+      cwd: cwd,
+      timeout: timeout,
+      max_output_bytes: 2_000_000,
+      risk_class: "profile_d_e2e_smoke_process",
+      description: label,
+      allow_shell_meta: allow_shell_meta
+    )
+  )
+  stdout = result.stdout
+  stderr = result.stderr
+  command = argv.map do |part|
+    value = part.to_s
+    if value == RbConfig.ruby
+      "ruby"
+    elsif value.start_with?(REPO_ROOT)
+      relative(value)
+    else
+      value
+    end
+  end.join(" ")
+  stdout_tail = stdout.lines.last(20).join.gsub(REPO_ROOT.tr("\\", "/"), ".").gsub(REPO_ROOT, ".")
+  stderr_tail = stderr.lines.last(20).join.gsub(REPO_ROOT.tr("\\", "/"), ".").gsub(REPO_ROOT, ".")
+  {
+    "label" => label,
+    "command" => command,
+    "cwd" => relative(cwd),
+    "status" => result.success? ? "passed" : result.status,
+    "exit_code" => result.exit_code,
+    "started_at" => started.iso8601,
+    "finished_at" => Time.now.utc.iso8601,
+    "stdout" => stdout,
+    "stderr" => stderr,
+    "stdout_tail" => stdout_tail,
+    "stderr_tail" => stderr_tail
+  }
+end
+
+def run_aiweb(label, workspace, *args)
+  result = run_command(
+    label,
+    [RbConfig.ruby, File.join(REPO_ROOT, "bin", "aiweb"), "--path", workspace, "--json", *args],
+    cwd: REPO_ROOT
+  )
+  payload = JSON.parse(result.fetch("stdout"))
+  result.merge(
+    "payload_status" => payload["status"],
+    "action_taken" => payload["action_taken"],
+    "blocking_issues" => payload["blocking_issues"] || [],
+    "payload" => payload
+  )
+rescue JSON::ParserError
+  result.merge("payload_status" => "unparseable")
+end
+
+def wait_for_http(url, timeout: 45)
+  deadline = Time.now + timeout
+  last_error = nil
+  while Time.now < deadline
+    probe = run_command(
+      "preview-readiness-probe",
+      [
+        "node",
+        "-e",
+        "fetch(process.argv[1]).then(function(r){console.log(r.status);process.exit((r.status>=200&&r.status<500)?0:1)}).catch(function(e){console.error(e.message);process.exit(1)})",
+        url
+      ],
+      cwd: REPO_ROOT,
+      timeout: 10,
+      allow_shell_meta: true
+    )
+    return { "ready" => true, "status_code" => probe["stdout_tail"].to_i, "url" => url } if probe["status"] == "passed"
+
+    last_error = probe["stderr_tail"].to_s.strip
+    sleep 0.5
+  end
+  { "ready" => false, "url" => url, "last_error" => last_error }
+end
+
+workspace = File.join(REPO_ROOT, ".tmp", "profile-d-e2e-#{Time.now.utc.strftime("%Y%m%dT%H%M%SZ")}-#{SecureRandom.hex(3)}")
+assert_under_tmp!(workspace)
+FileUtils.mkdir_p(workspace)
+FileUtils.mkdir_p(File.dirname(options.fetch("output")))
+
+steps = []
+preview_started = false
+preview_url = nil
+pnpm_shim = ensure_pnpm_shim!
+
+begin
+  steps << run_aiweb("init", workspace, "init", "--profile", "D")
+  steps << run_aiweb("interview", workspace, "interview", "--idea", "premium content marketing landing page")
+  steps << run_aiweb("design-brief", workspace, "design-brief", "--force")
+  File.write(File.join(workspace, ".ai-web", "DESIGN.md"), "# RC3 Profile D Design System\n\nUse editorial calm, clear hierarchy, safe local-only evidence, and source-backed proof only.\n")
+  steps << run_aiweb("design", workspace, "design", "--candidates", "3")
+  steps << run_aiweb("select-design", workspace, "select-design", "candidate-02")
+  steps << run_aiweb("scaffold", workspace, "scaffold", "--profile", "D")
+  steps << run_command("pnpm add @playwright/test", %w[pnpm add -D @playwright/test --ignore-scripts], cwd: workspace, timeout: 300)
+  install_args = ENV["CI"] && !windows? ? %w[pnpm exec playwright install --with-deps chromium] : %w[pnpm exec playwright install chromium]
+  steps << run_command("playwright install chromium", install_args, cwd: workspace, timeout: 600)
+  steps << run_aiweb("runtime-plan", workspace, "runtime-plan")
+  steps << run_aiweb("build", workspace, "build")
+  preview = run_aiweb("preview", workspace, "preview")
+  steps << preview
+  preview_started = preview.dig("payload", "preview", "status") == "running"
+  preview_url = preview.dig("payload", "preview", "url")
+  readiness = wait_for_http(preview_url)
+  steps << { "label" => "preview-readiness", "status" => readiness["ready"] ? "passed" : "failed", "readiness" => readiness }
+  raise "preview did not become ready at #{preview_url}" unless readiness["ready"]
+
+  steps << run_aiweb("qa-playwright", workspace, "qa-playwright", "--url", preview_url, "--task-id", "rc3-profile-d-e2e")
+ensure
+  if preview_started
+    begin
+      steps << run_aiweb("preview-stop", workspace, "preview", "--stop")
+    rescue StandardError => e
+      steps << { "label" => "preview-stop", "status" => "failed", "error" => "#{e.class}: #{e.message}" }
+    end
+  end
+end
+
+failed = steps.select { |step| step["status"] != "passed" && step.dig("payload", "preview", "status") != "stopped" }
+qa_payload = steps.find { |step| step["label"] == "qa-playwright" }&.fetch("payload", {})
+build_payload = steps.find { |step| step["label"] == "build" }&.fetch("payload", {})
+preview_payload = steps.find { |step| step["label"] == "preview" }&.fetch("payload", {})
+
+evidence = {
+  "schema_version" => 1,
+  "status" => failed.empty? && qa_payload.dig("playwright_qa", "status") == "passed" ? "profile_d_e2e_passed" : "profile_d_e2e_failed",
+  "profile" => "D",
+  "toolchain" => {
+    "node_version" => run_command("node --version", %w[node --version], cwd: workspace, timeout: 20)["stdout_tail"].strip,
+    "pnpm_version" => run_command("pnpm --version", %w[pnpm --version], cwd: workspace, timeout: 20)["stdout_tail"].strip,
+    "pnpm_shim" => pnpm_shim
+  },
+  "workspace" => {
+    "path" => relative(workspace),
+    "kept" => options.fetch("keep_workspace")
+  },
+  "build" => {
+    "status" => build_payload.dig("build", "status"),
+    "metadata_path" => build_payload.dig("build", "metadata_path")
+  },
+  "preview" => {
+    "status" => preview_payload.dig("preview", "status"),
+    "url" => preview_url,
+    "metadata_path" => preview_payload.dig("preview", "metadata_path")
+  },
+  "playwright_qa" => {
+    "status" => qa_payload.dig("playwright_qa", "status"),
+    "result_path" => qa_payload.dig("playwright_qa", "result_path"),
+    "metadata_path" => qa_payload.dig("playwright_qa", "metadata_path")
+  },
+  "forbidden_side_effects" => {
+    "dot_env_files_present" => Dir.glob(File.join(workspace, ".env*")).map { |path| relative(path) },
+    "deploy_or_provider_cli_invoked" => false,
+    "production_side_effect" => false
+  },
+  "steps" => steps.map { |step| step.reject { |key, _| %w[payload stdout stderr].include?(key) } },
+  "blocking_issues" => failed.map { |step| "#{step["label"]}: #{step["status"]}" },
+  "created_at" => Time.now.utc.iso8601
+}
+
+File.write(options.fetch("output"), JSON.pretty_generate(evidence) + "\n")
+FileUtils.rm_rf(workspace) unless options.fetch("keep_workspace")
+
+exit(evidence["status"] == "profile_d_e2e_passed" ? 0 : 1)

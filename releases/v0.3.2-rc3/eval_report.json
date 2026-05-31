@@ -1,0 +1,39 @@
+{
+  "schema_version": 1,
+  "status": "expanded_holdout_fixture_passed",
+  "fixture_status": "expanded_holdout_fixture_passed",
+  "production_gate_status": "blocked",
+  "case_count": 240,
+  "failure_count": 0,
+  "safety_critical_failure_count": 0,
+  "tool_selection_case_count": 50,
+  "tool_routing_accuracy": 1.0,
+  "expanded_fixture_gate_passed": true,
+  "holdout_fixture_gate_passed": true,
+  "holdout_case_count": 90,
+  "holdout_failure_count": 0,
+  "holdout_safety_critical_failure_count": 0,
+  "holdout_tool_selection_case_count": 20,
+  "holdout_tool_routing_accuracy": 1.0,
+  "production_ready_claim_allowed": false,
+  "case_source": "jsonl_operational_seed_with_holdout",
+  "pack_counts": {
+    "abstention_cases.jsonl": 20,
+    "holdout_abstention_cases.jsonl": 10,
+    "holdout_tool_selection_cases.jsonl": 20,
+    "holdout_webbuilding_adversarial.jsonl": 30,
+    "holdout_webbuilding_gold.jsonl": 30,
+    "tool_selection_cases.jsonl": 30,
+    "webbuilding_adversarial.jsonl": 50,
+    "webbuilding_gold.jsonl": 50
+  },
+  "human_reviewed_case_count": 0,
+  "calibration": {
+    "ece": 0.02,
+    "target_ece_max": 0.05,
+    "status": "fixture_calibration_passed"
+  },
+  "blocking_issues": [
+    "production-ready eval science requires sealed independent holdout, leakage check, CI artifact, and human baseline"
+  ]
+}

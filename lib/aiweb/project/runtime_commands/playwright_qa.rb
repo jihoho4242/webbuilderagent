@@ -125,7 +125,7 @@ module Aiweb
 
     def qa_playwright_spec
       <<~JS
-        const { test, expect } = require('@playwright/test');
+        import { test, expect } from '@playwright/test';
 
         test('AI Web Director PR11 smoke', async ({ page }) => {
           const url = process.env.PLAYWRIGHT_BASE_URL;

@@ -1,0 +1,248 @@
+{
+  "schema_version": 1,
+  "status": "profile_d_e2e_passed",
+  "profile": "D",
+  "toolchain": {
+    "node_version": "v24.13.1",
+    "pnpm_version": "11.0.9",
+    "pnpm_shim": ".tmp/profile-d-e2e-tools/pnpm.cmd"
+  },
+  "workspace": {
+    "path": ".tmp/profile-d-e2e-20260531T142152Z-d49b71",
+    "kept": false
+  },
+  "build": {
+    "status": "passed",
+    "metadata_path": ".ai-web/runs/build-20260531T142201Z/build.json"
+  },
+  "preview": {
+    "status": "running",
+    "url": "http://127.0.0.1:4321/",
+    "metadata_path": ".ai-web/runs/preview-20260531T142205Z/preview.json"
+  },
+  "playwright_qa": {
+    "status": "passed",
+    "result_path": ".ai-web/qa/results/qa-20260531T142208Z-rc3-profile-d-e2e.json",
+    "metadata_path": ".ai-web/runs/playwright-qa-20260531T142208Z/playwright-qa.json"
+  },
+  "forbidden_side_effects": {
+    "dot_env_files_present": [
+
+    ],
+    "deploy_or_provider_cli_invoked": false,
+    "production_side_effect": false
+  },
+  "steps": [
+    {
+      "label": "init",
+      "command": "ruby bin/aiweb --path .tmp/profile-d-e2e-20260531T142152Z-d49b71 --json init --profile D",
+      "cwd": ".",
+      "status": "passed",
+      "exit_code": 0,
+      "started_at": "2026-05-31T14:21:52Z",
+      "finished_at": "2026-05-31T14:21:52Z",
+      "stdout_tail": "    \"accepted_references\": 0,\n    \"unique_companies\": 0,\n    \"skipped_reason\": null,\n    \"last_error\": \"\"\n  },\n  \"current_task\": null,\n  \"open_failures\": [\n\n  ],\n  \"budget\": {\n    \"cost_mode\": \"subscription_usage\",\n    \"meter_model_cost\": false,\n    \"max_design_generations_total\": 10,\n    \"max_design_candidates\": 10,\n    \"max_qa_runtime_minutes\": 60,\n    \"qa_timeout_action\": \"self_diagnose_fix_rerun\",\n    \"max_qa_timeout_recovery_cycles\": 3\n  },\n  \"next_action\": \"resolve blockers then run aiweb advance\"\n}\n",
+      "stderr_tail": "",
+      "payload_status": null,
+      "action_taken": "initialized profile D",
+      "blocking_issues": [
+        "artifact project is stub"
+      ]
+    },
+    {
+      "label": "interview",
+      "command": "ruby bin/aiweb --path .tmp/profile-d-e2e-20260531T142152Z-d49b71 --json interview --idea premium content marketing landing page",
+      "cwd": ".",
+      "status": "passed",
+      "exit_code": 0,
+      "started_at": "2026-05-31T14:21:52Z",
+      "finished_at": "2026-05-31T14:21:53Z",
+      "stdout_tail": "    \"accepted_references\": 0,\n    \"unique_companies\": 0,\n    \"skipped_reason\": null,\n    \"last_error\": \"\"\n  },\n  \"current_task\": null,\n  \"open_failures\": [\n\n  ],\n  \"budget\": {\n    \"cost_mode\": \"subscription_usage\",\n    \"meter_model_cost\": false,\n    \"max_design_generations_total\": 10,\n    \"max_design_candidates\": 10,\n    \"max_qa_runtime_minutes\": 60,\n    \"qa_timeout_action\": \"self_diagnose_fix_rerun\",\n    \"max_qa_timeout_recovery_cycles\": 3\n  },\n  \"next_action\": \"aiweb interview --idea '<website idea>'\"\n}\n",
+      "stderr_tail": "",
+      "payload_status": null,
+      "action_taken": "generated interview drafts",
+      "blocking_issues": [
+
+      ]
+    },
+    {
+      "label": "design-brief",
+      "command": "ruby bin/aiweb --path .tmp/profile-d-e2e-20260531T142152Z-d49b71 --json design-brief --force",
+      "cwd": ".",
+      "status": "passed",
+      "exit_code": 0,
+      "started_at": "2026-05-31T14:21:53Z",
+      "finished_at": "2026-05-31T14:21:53Z",
+      "stdout_tail": "    \"accepted_references\": 0,\n    \"unique_companies\": 0,\n    \"skipped_reason\": null,\n    \"last_error\": \"\"\n  },\n  \"current_task\": null,\n  \"open_failures\": [\n\n  ],\n  \"budget\": {\n    \"cost_mode\": \"subscription_usage\",\n    \"meter_model_cost\": false,\n    \"max_design_generations_total\": 10,\n    \"max_design_candidates\": 10,\n    \"max_qa_runtime_minutes\": 60,\n    \"qa_timeout_action\": \"self_diagnose_fix_rerun\",\n    \"max_qa_timeout_recovery_cycles\": 3\n  },\n  \"next_action\": \"aiweb interview --idea '<website idea>'\"\n}\n",
+      "stderr_tail": "",
+      "payload_status": null,
+      "action_taken": "regenerated design brief",
+      "blocking_issues": [
+
+      ]
+    },
+    {
+      "label": "design",
+      "command": "ruby bin/aiweb --path .tmp/profile-d-e2e-20260531T142152Z-d49b71 --json design --candidates 3",
+      "cwd": ".",
+      "status": "passed",
+      "exit_code": 0,
+      "started_at": "2026-05-31T14:21:53Z",
+      "finished_at": "2026-05-31T14:21:54Z",
+      "stdout_tail": "    \"accepted_references\": 0,\n    \"unique_companies\": 0,\n    \"skipped_reason\": null,\n    \"last_error\": \"\"\n  },\n  \"current_task\": null,\n  \"open_failures\": [\n\n  ],\n  \"budget\": {\n    \"cost_mode\": \"subscription_usage\",\n    \"meter_model_cost\": false,\n    \"max_design_generations_total\": 10,\n    \"max_design_candidates\": 10,\n    \"max_qa_runtime_minutes\": 60,\n    \"qa_timeout_action\": \"self_diagnose_fix_rerun\",\n    \"max_qa_timeout_recovery_cycles\": 3\n  },\n  \"next_action\": \"review .ai-web/design-candidates/comparison.md then run aiweb select-design candidate-01|candidate-02|candidate-03\"\n}\n",
+      "stderr_tail": "",
+      "payload_status": null,
+      "action_taken": "generated design candidates",
+      "blocking_issues": [
+
+      ]
+    },
+    {
+      "label": "select-design",
+      "command": "ruby bin/aiweb --path .tmp/profile-d-e2e-20260531T142152Z-d49b71 --json select-design candidate-02",
+      "cwd": ".",
+      "status": "passed",
+      "exit_code": 0,
+      "started_at": "2026-05-31T14:21:54Z",
+      "finished_at": "2026-05-31T14:21:55Z",
+      "stdout_tail": "    \"accepted_references\": 0,\n    \"unique_companies\": 0,\n    \"skipped_reason\": null,\n    \"last_error\": \"\"\n  },\n  \"current_task\": null,\n  \"open_failures\": [\n\n  ],\n  \"budget\": {\n    \"cost_mode\": \"subscription_usage\",\n    \"meter_model_cost\": false,\n    \"max_design_generations_total\": 10,\n    \"max_design_candidates\": 10,\n    \"max_qa_runtime_minutes\": 60,\n    \"qa_timeout_action\": \"self_diagnose_fix_rerun\",\n    \"max_qa_timeout_recovery_cycles\": 3\n  },\n  \"next_action\": \"keep .ai-web/DESIGN.md as source of truth; use selected candidate notes for design-prompt or next-task handoff\"\n}\n",
+      "stderr_tail": "",
+      "payload_status": null,
+      "action_taken": "selected design candidate candidate-02",
+      "blocking_issues": [
+
+      ]
+    },
+    {
+      "label": "scaffold",
+      "command": "ruby bin/aiweb --path .tmp/profile-d-e2e-20260531T142152Z-d49b71 --json scaffold --profile D",
+      "cwd": ".",
+      "status": "passed",
+      "exit_code": 0,
+      "started_at": "2026-05-31T14:21:55Z",
+      "finished_at": "2026-05-31T14:21:55Z",
+      "stdout_tail": "    \"qa_timeout_action\": \"self_diagnose_fix_rerun\",\n    \"max_qa_timeout_recovery_cycles\": 3\n  },\n  \"next_action\": \"review generated Astro-style files; do not run package install until implementation approval\",\n  \"scaffold\": {\n    \"schema_version\": 1,\n    \"profile\": \"D\",\n    \"framework\": \"Astro\",\n    \"package_manager\": \"pnpm\",\n    \"dev_command\": \"pnpm dev\",\n    \"build_command\": \"pnpm build\",\n    \"scaffold_target\": \"Astro + MDX/Content Collections + Cloudflare Pages + Tailwind + sitemap/RSS\",\n    \"selected_candidate\": \"candidate-02\",\n    \"selected_candidate_path\": \".ai-web/design-candidates/candidate-02.html\",\n    \"design_source\": \".ai-web/DESIGN.md\",\n    \"design_brief_source\": \".ai-web/design-brief.md\",\n    \"created_at\": \"2026-05-31T14:21:55Z\",\n    \"metadata_path\": \".ai-web/scaffold-profile-D.json\"\n  }\n}\n",
+      "stderr_tail": "",
+      "payload_status": null,
+      "action_taken": "generated scaffold profile D",
+      "blocking_issues": [
+
+      ]
+    },
+    {
+      "label": "pnpm add @playwright/test",
+      "command": "pnpm add -D @playwright/test --ignore-scripts",
+      "cwd": ".tmp/profile-d-e2e-20260531T142152Z-d49b71",
+      "status": "passed",
+      "exit_code": 0,
+      "started_at": "2026-05-31T14:21:55Z",
+      "finished_at": "2026-05-31T14:21:59Z",
+      "stdout_tail": "Progress: resolved 1, reused 0, downloaded 0, added 0\nProgress: resolved 424, reused 330, downloaded 0, added 0\nPackages: +328\n++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++\nProgress: resolved 424, reused 330, downloaded 0, added 214\nProgress: resolved 424, reused 330, downloaded 0, added 328, done\n\ndependencies:\n+ @astrojs/mdx 6.0.1\n+ @astrojs/sitemap 3.7.3\n+ @tailwindcss/vite 4.3.0\n+ astro 6.4.2\n+ tailwindcss 4.3.0\n\ndevDependencies:\n+ @playwright/test 1.60.0\n\nDone in 3.2s using pnpm v11.0.9\n",
+      "stderr_tail": ""
+    },
+    {
+      "label": "playwright install chromium",
+      "command": "pnpm exec playwright install chromium",
+      "cwd": ".tmp/profile-d-e2e-20260531T142152Z-d49b71",
+      "status": "passed",
+      "exit_code": 0,
+      "started_at": "2026-05-31T14:21:59Z",
+      "finished_at": "2026-05-31T14:21:59Z",
+      "stdout_tail": "",
+      "stderr_tail": ""
+    },
+    {
+      "label": "runtime-plan",
+      "command": "ruby bin/aiweb --path .tmp/profile-d-e2e-20260531T142152Z-d49b71 --json runtime-plan",
+      "cwd": ".",
+      "status": "passed",
+      "exit_code": 0,
+      "started_at": "2026-05-31T14:21:59Z",
+      "finished_at": "2026-05-31T14:22:00Z",
+      "stdout_tail": "        \"valid_json\": true,\n        \"selected_candidate\": \"candidate-02\",\n        \"selected_candidate_path\": \".ai-web/design-candidates/candidate-02.html\",\n        \"error\": null\n      },\n      \"selected_candidate_present\": true,\n      \"selected_candidate_path\": \".ai-web/design-candidates/candidate-02.html\",\n      \"design_md_path\": \".ai-web/DESIGN.md\",\n      \"design_md_present\": true,\n      \"design_md_substantive\": true\n    },\n    \"missing_required_scaffold_files\": [\n\n    ],\n    \"blockers\": [\n\n    ]\n  },\n  \"next_action\": \"runtime tools may inspect scripts next; do not install packages or launch Node from this read-only check\"\n}\n",
+      "stderr_tail": "",
+      "payload_status": null,
+      "action_taken": "reported runtime plan",
+      "blocking_issues": [
+
+      ]
+    },
+    {
+      "label": "build",
+      "command": "ruby bin/aiweb --path .tmp/profile-d-e2e-20260531T142152Z-d49b71 --json build",
+      "cwd": ".",
+      "status": "passed",
+      "exit_code": 0,
+      "started_at": "2026-05-31T14:22:00Z",
+      "finished_at": "2026-05-31T14:22:04Z",
+      "stdout_tail": "  \"build\": {\n    \"schema_version\": 1,\n    \"run_id\": \"build-20260531T142201Z\",\n    \"status\": \"passed\",\n    \"command\": \"pnpm build\",\n    \"cwd\": \"./.tmp/profile-d-e2e-20260531T142152Z-d49b71\",\n    \"started_at\": \"2026-05-31T14:22:01Z\",\n    \"finished_at\": \"2026-05-31T14:22:04Z\",\n    \"exit_code\": 0,\n    \"stdout_log\": \".ai-web/runs/build-20260531T142201Z/stdout.log\",\n    \"stderr_log\": \".ai-web/runs/build-20260531T142201Z/stderr.log\",\n    \"metadata_path\": \".ai-web/runs/build-20260531T142201Z/build.json\",\n    \"build_output_path\": \"dist\",\n    \"dry_run\": false,\n    \"blocking_issues\": [\n\n    ]\n  },\n  \"next_action\": \"continue to the next approved roadmap stage; preview/QA/repair are intentionally outside aiweb build\"\n}\n",
+      "stderr_tail": "",
+      "payload_status": null,
+      "action_taken": "ran scaffold build",
+      "blocking_issues": [
+
+      ]
+    },
+    {
+      "label": "preview",
+      "command": "ruby bin/aiweb --path .tmp/profile-d-e2e-20260531T142152Z-d49b71 --json preview",
+      "cwd": ".",
+      "status": "passed",
+      "exit_code": 0,
+      "started_at": "2026-05-31T14:22:04Z",
+      "finished_at": "2026-05-31T14:22:05Z",
+      "stdout_tail": "    \"status\": \"running\",\n    \"command\": \"pnpm dev --host 127.0.0.1\",\n    \"cwd\": \"./.tmp/profile-d-e2e-20260531T142152Z-d49b71\",\n    \"started_at\": \"2026-05-31T14:22:05Z\",\n    \"finished_at\": null,\n    \"exit_code\": null,\n    \"pid\": 19860,\n    \"port\": 4321,\n    \"url\": \"http://127.0.0.1:4321/\",\n    \"preview_url\": \"http://127.0.0.1:4321/\",\n    \"stdout_log\": \".ai-web/runs/preview-20260531T142205Z/stdout.log\",\n    \"stderr_log\": \".ai-web/runs/preview-20260531T142205Z/stderr.log\",\n    \"metadata_path\": \".ai-web/runs/preview-20260531T142205Z/preview.json\",\n    \"dry_run\": false,\n    \"blocking_issues\": [\n\n    ]\n  },\n  \"next_action\": \"open the preview_url locally; run aiweb preview --stop when finished\"\n}\n",
+      "stderr_tail": "",
+      "payload_status": null,
+      "action_taken": "started scaffold preview",
+      "blocking_issues": [
+
+      ]
+    },
+    {
+      "label": "preview-readiness",
+      "status": "passed",
+      "readiness": {
+        "ready": true,
+        "status_code": 200,
+        "url": "http://127.0.0.1:4321/"
+      }
+    },
+    {
+      "label": "qa-playwright",
+      "command": "ruby bin/aiweb --path .tmp/profile-d-e2e-20260531T142152Z-d49b71 --json qa-playwright --url http://127.0.0.1:4321/ --task-id rc3-profile-d-e2e",
+      "cwd": ".",
+      "status": "passed",
+      "exit_code": 0,
+      "started_at": "2026-05-31T14:22:08Z",
+      "finished_at": "2026-05-31T14:22:11Z",
+      "stdout_tail": "    \"preview_run_id\": \"preview-20260531T142205Z\",\n    \"spec_path\": \".ai-web/runs/playwright-qa-20260531T142208Z/smoke.spec.js\",\n    \"stdout_log\": \".ai-web/runs/playwright-qa-20260531T142208Z/stdout.log\",\n    \"stderr_log\": \".ai-web/runs/playwright-qa-20260531T142208Z/stderr.log\",\n    \"result_path\": \".ai-web/qa/results/qa-20260531T142208Z-rc3-profile-d-e2e.json\",\n    \"metadata_path\": \".ai-web/runs/playwright-qa-20260531T142208Z/playwright-qa.json\",\n    \"provider\": \"codex_browser\",\n    \"evidence_schema\": \"qa-result-v1\",\n    \"allowed_hosts\": [\n      \"localhost\",\n      \"127.0.0.1\"\n    ],\n    \"file_access\": \"workspace_only\",\n    \"dry_run\": false,\n    \"blocking_issues\": [\n\n    ]\n  },\n  \"next_action\": \"use the recorded qa-result-v1 evidence for QA gate review or rerun aiweb qa-report --from if a phase report is required\"\n}\n",
+      "stderr_tail": "",
+      "payload_status": null,
+      "action_taken": "ran Playwright QA",
+      "blocking_issues": [
+
+      ]
+    },
+    {
+      "label": "preview-stop",
+      "command": "ruby bin/aiweb --path .tmp/profile-d-e2e-20260531T142152Z-d49b71 --json preview --stop",
+      "cwd": ".",
+      "status": "passed",
+      "exit_code": 0,
+      "started_at": "2026-05-31T14:22:11Z",
+      "finished_at": "2026-05-31T14:22:12Z",
+      "stdout_tail": "    \"command\": \"pnpm dev --host 127.0.0.1\",\n    \"cwd\": \"./.tmp/profile-d-e2e-20260531T142152Z-d49b71\",\n    \"started_at\": \"2026-05-31T14:22:05Z\",\n    \"finished_at\": \"2026-05-31T14:22:12Z\",\n    \"exit_code\": null,\n    \"pid\": null,\n    \"port\": 4321,\n    \"url\": \"http://127.0.0.1:4321/\",\n    \"preview_url\": \"http://127.0.0.1:4321/\",\n    \"stdout_log\": \".ai-web/runs/preview-20260531T142205Z/stdout.log\",\n    \"stderr_log\": \".ai-web/runs/preview-20260531T142205Z/stderr.log\",\n    \"metadata_path\": \".ai-web/runs/preview-20260531T142205Z/preview.json\",\n    \"dry_run\": false,\n    \"blocking_issues\": [\n\n    ],\n    \"stopped_pid\": 19860\n  },\n  \"next_action\": \"rerun aiweb preview to start a new local preview\"\n}\n",
+      "stderr_tail": "",
+      "payload_status": null,
+      "action_taken": "stopped scaffold preview",
+      "blocking_issues": [
+
+      ]
+    }
+  ],
+  "blocking_issues": [
+
+  ],
+  "created_at": "2026-05-31T14:22:12Z"
+}

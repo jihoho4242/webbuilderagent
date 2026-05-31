@@ -50,10 +50,11 @@ class AgentOsV32ReleaseEvidenceTest < Minitest::Test
     assert_equal "catalog_fixture_passed", evidence.dig("redteam", "status")
     assert_equal "blocked", evidence.dig("redteam", "production_gate_status")
     assert_equal false, evidence.dig("redteam", "production_ready_claim_allowed")
-    assert_equal "local_attack_catalog_fixture", evidence.dig("redteam", "case_source")
+    assert_equal "local_attack_catalog_with_holdout_fixture", evidence.dig("redteam", "case_source")
     assert_match(/independent adversarial review/, evidence.dig("redteam", "operational_blocking_issues").join("\n"))
     assert_equal false, evidence.dig("redteam", "secret_canary", "canary_value_emitted")
     assert_equal 0, evidence.dig("redteam", "critical_high_bypass_count")
+    assert_equal 0, evidence.dig("redteam", "holdout_critical_high_bypass_count")
     assert_equal "expanded_fixture_passed", evidence.dig("eval", "status")
     assert_equal "blocked", evidence.dig("eval", "production_gate_status")
     assert_equal false, evidence.dig("eval", "production_ready_claim_allowed")
@@ -292,6 +293,62 @@ class AgentOsV32ReleaseEvidenceTest < Minitest::Test
     assert_equal "local_only_smoke_passed", profile_s.fetch("status")
     assert_equal "passed", profile_s.dig("local_verify", "status")
     assert_equal false, profile_s.dig("forbidden_side_effects", "provider_cli_invoked")
+
+    integrity = YAML.safe_load(File.read(File.join(release_dir, "evidence_integrity_manifest.yaml")), permitted_classes: [], aliases: false)
+    integrity.fetch("files").each do |entry|
+      absolute = File.join(REPO_ROOT, entry.fetch("path"))
+      assert_equal "sha256:#{Digest::SHA256.file(absolute).hexdigest}", entry.fetch("sha256")
+    end
+  end
+
+  def test_rc3_release_evidence_bundle_records_node24_profile_d_e2e_and_holdouts
+    release_dir = File.join(REPO_ROOT, "releases", "v0.3.2-rc3")
+    %w[
+      release_manifest.yaml
+      evidence_integrity_manifest.yaml
+      p5_gate_report.md
+      ci_evidence.json
+      profile-d-e2e-smoke.json
+      profile-d-smoke.json
+      eval_report.json
+      redteam_report.json
+      operator_drill_report.json
+    ].each do |name|
+      assert File.file?(File.join(release_dir, name)), "missing rc3 #{name}"
+    end
+
+    manifest = YAML.safe_load(File.read(File.join(release_dir, "release_manifest.yaml")), permitted_classes: [], aliases: false)
+    assert_equal "v0.3.2-rc3", manifest.fetch("release_id")
+    assert_equal false, manifest.fetch("production_readiness_claimed")
+    assert_equal "profile_d_e2e_attached", manifest.dig("profile_smoke_report", "status")
+    assert_equal "profile_d_e2e_passed", manifest.dig("profile_smoke_report", "profile_d_e2e_status")
+    assert manifest.fetch("evidence_files").any? { |item| item.fetch("path") == "releases/v0.3.2-rc3/profile-d-e2e-smoke.json" }
+    assert_equal "expanded_holdout_fixture_passed", manifest.dig("eval_report", "status")
+    assert_equal 240, manifest.dig("eval_report", "case_count")
+    assert_equal 90, manifest.dig("eval_report", "holdout_case_count")
+    assert_equal 0, manifest.dig("eval_report", "holdout_failure_count")
+    assert_equal 0, manifest.dig("eval_report", "holdout_safety_critical_failure_count")
+    assert_equal 1.0, manifest.dig("eval_report", "holdout_tool_routing_accuracy")
+    assert_equal "catalog_fixture_passed", manifest.dig("redteam_report", "status")
+    assert_equal 22, manifest.dig("redteam_report", "case_count")
+    assert_equal 12, manifest.dig("redteam_report", "holdout_case_count")
+    assert_equal 0, manifest.dig("redteam_report", "critical_high_bypass_count")
+    assert_equal 0, manifest.dig("redteam_report", "holdout_critical_high_bypass_count")
+
+    ci = JSON.parse(File.read(File.join(release_dir, "ci_evidence.json")))
+    assert_equal "actions/checkout@v5", ci.dig("node_24_actions_migration", "checkout_action")
+    assert_equal "actions/upload-artifact@v6", ci.dig("node_24_actions_migration", "upload_artifact_action")
+    assert_equal "actions/setup-node@v5", ci.dig("node_24_actions_migration", "setup_node_action")
+    assert_equal "24", ci.dig("node_24_actions_migration", "profile_d_node_version")
+    assert_equal true, ci.dig("node_24_actions_migration", "post_push_ci_required")
+
+    profile_d = JSON.parse(File.read(File.join(release_dir, "profile-d-e2e-smoke.json")))
+    assert_equal "profile_d_e2e_passed", profile_d.fetch("status")
+    assert_equal "passed", profile_d.dig("build", "status")
+    assert_equal "passed", profile_d.dig("playwright_qa", "status")
+    assert_empty profile_d.dig("forbidden_side_effects", "dot_env_files_present")
+    assert_equal false, profile_d.dig("forbidden_side_effects", "deploy_or_provider_cli_invoked")
+    assert_equal false, profile_d.dig("forbidden_side_effects", "production_side_effect")
 
     integrity = YAML.safe_load(File.read(File.join(release_dir, "evidence_integrity_manifest.yaml")), permitted_classes: [], aliases: false)
     integrity.fetch("files").each do |entry|

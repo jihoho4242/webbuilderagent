@@ -1,0 +1,23 @@
+{
+  "schema_version": 1,
+  "release_id": "v0.3.2-rc3",
+  "status": "profile_d_e2e_passed",
+  "supersedes": "v0.3.2-rc2 environment-blocked Profile D smoke",
+  "e2e_evidence_path": "releases/v0.3.2-rc3/profile-d-e2e-smoke.json",
+  "build_status": "passed",
+  "preview_status": "running",
+  "playwright_qa_status": "passed",
+  "toolchain": {
+    "node_version": "v24.13.1",
+    "pnpm_version": "11.0.9",
+    "pnpm_shim": ".tmp/profile-d-e2e-tools/pnpm.cmd"
+  },
+  "forbidden_side_effects": {
+    "dot_env_files_present": [
+
+    ],
+    "deploy_or_provider_cli_invoked": false,
+    "production_side_effect": false
+  },
+  "production_ready_claim_allowed": false
+}

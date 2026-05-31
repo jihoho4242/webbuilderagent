@@ -18,7 +18,7 @@ jobs:
         ruby: ["3.3", "3.4", "4.0"]
     steps:
       - name: Check out repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Set up Ruby
         uses: ruby/setup-ruby@v1
@@ -34,7 +34,7 @@ jobs:
     timeout-minutes: 25
     steps:
       - name: Check out repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Set up Ruby
         uses: ruby/setup-ruby@v1
@@ -54,9 +54,44 @@ jobs:
           ruby bin/engine-runtime-matrix-check --json | tee .ai-web/ci/engine-runtime-matrix-smoke.json
 
       - name: Upload runtime matrix evidence
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         if: always()
         with:
           name: engine-runtime-matrix-smoke
           path: .ai-web/ci/engine-runtime-matrix-smoke.json
+          if-no-files-found: error
+
+  profile-d-e2e-smoke:
+    name: Profile D pnpm/Playwright E2E smoke
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v5
+
+      - name: Set up Ruby
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: "3.4"
+
+      - name: Set up Node 24
+        uses: actions/setup-node@v5
+        with:
+          node-version: "24"
+
+      - name: Enable pnpm through Corepack
+        run: |
+          corepack enable
+          corepack prepare pnpm@11.0.9 --activate
+          pnpm --version
+
+      - name: Run Profile D pnpm/Playwright E2E smoke
+        run: ruby bin/profile-d-e2e-smoke --output .ai-web/ci/profile-d-e2e-smoke.json
+
+      - name: Upload Profile D E2E smoke evidence
+        uses: actions/upload-artifact@v6
+        if: always()
+        with:
+          name: profile-d-e2e-smoke
+          path: .ai-web/ci/profile-d-e2e-smoke.json
           if-no-files-found: error

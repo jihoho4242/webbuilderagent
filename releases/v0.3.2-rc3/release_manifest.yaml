@@ -1,0 +1,265 @@
+---
+schema_version: 1
+release_id: v0.3.2-rc3
+release_ready: false
+p5_status: scaffold_demo_passed
+production_readiness_claimed: false
+operational_readiness: blocked_pending_ci_operator_drill_and_production_benchmarks
+constitution_hash: sha256:87f5f29f48f18135b27b12f940af93e49e9851df23cf0752d45e0ef4bc73d23c
+p5_evidence_status: scaffold_demo_passed
+commit_sha: 4f8ffb2eb398a8f6dde377c54955ebda38e71c51
+github_actions_run_id: 26713769331
+github_actions_report:
+  schema_version: 1
+  status: completed
+  run_id: 26713769331
+  head_sha: 4f8ffb2eb398a8f6dde377c54955ebda38e71c51
+  workflow_name: CI
+  url: https://github.com/jihoho4242/webbuilderagent/actions/runs/26713769331
+  conclusion: success
+  production_gate_status: blocked
+  production_ready_claim_allowed: false
+evidence_files:
+- path: releases/v0.3.2-rc3/p5_gate_report.md
+  sha256: sha256:ba037259cf39ed4fdd599e7f3a849eb1fe4fe60fdb515091e635f5fd40fa18d1
+- path: releases/v0.3.2-rc3/ci_evidence.json
+  sha256: sha256:bf9059ddf6bea1d9a85d6281521bb6bb9e6321771fea5c6f3d8193282d676ab0
+- path: releases/v0.3.2-rc3/profile-d-smoke.json
+  sha256: sha256:1bcbc1b63ed584d0820843225873b72b72a60820ebb2f3419dff80ab5f693d87
+- path: releases/v0.3.2-rc3/profile-d-e2e-smoke.json
+  sha256: sha256:73938900807a0329cbb556129c72068cc32c9b70bf8c6adb8fd65b76b267f677
+- path: releases/v0.3.2-rc3/eval_report.json
+  sha256: sha256:ea78b140c966d5c69fab9c3fa93a2cc3d5c2b3fdeece7f0ca23a17596d5c82d0
+- path: releases/v0.3.2-rc3/redteam_report.json
+  sha256: sha256:5c4816493b9d70dceabca4a41a3f0cf03cdb42b2e6477351c3f30c148e95d32c
+- path: releases/v0.3.2-rc3/operator_drill_report.json
+  sha256: sha256:b77a3cf5b16a16af6f7a3c5766972223d2fa3bfeabb2d5e4c029650332f86527
+schema_validation_report:
+  status: full_local_validation_attached
+  validation_keys:
+  - ruby bin/check
+  - targeted_rc3
+  - test/all.rb
+  ruby_bin_check_passed: true
+  test_all_passed: true
+  github_actions_run_id: 26713769331
+  blocking_issue:
+policy_gateway_report:
+  status: gateway_demo_passed
+  coverage_status: unproven
+  all_side_effects_require_decision_packet_policy_gateway: false
+  production_gate_status: blocked
+  demo_tool: finish
+side_effect_surface_audit_report:
+  status: static_audit_attached
+  scanner: aiweb.side_effect_surface_audit.v1
+  coverage_status: classified
+  entry_count: 20
+  unclassified_count: 0
+  runtime_universal_enforcement_proven: false
+  production_gate_status: blocked
+  production_ready_claim_allowed: false
+tool_gateway_report:
+  status: gateway_demo_passed
+  verifier_status: passed
+  demo_tool: finish
+  l3_boolean_approval_rejected: true
+  l3_boolean_gateway_status: approval_required
+  l3_hash_bound_approval_passed: true
+  l3_artifact_gateway_status: passed
+  verifier_result_hash_rejected: true
+  verifier_result_gateway_status: approval_required
+  production_gate_status: blocked
+  production_ready_claim_allowed: false
+hitl_report:
+  status: approval_fixture_passed
+  verifier_status: passed
+  artifact_hash_self_verified: true
+  validation_hash_verified: true
+  production_gate_status: blocked
+  approver_fixture_only: true
+  production_ready_claim_allowed: false
+replay_report:
+  status: replay_demo_passed
+  fixture_status: decision_replay_key_fixture_present
+  production_gate_status: blocked
+  side_effect_free_replay_proven: false
+  replay_run_attached: false
+  production_ready_claim_allowed: false
+eval_report:
+  status: expanded_holdout_fixture_passed
+  production_gate_status: blocked
+  case_count: 240
+  case_source: jsonl_operational_seed_with_holdout
+  holdout_case_count: 90
+  holdout_failure_count: 0
+  holdout_safety_critical_failure_count: 0
+  holdout_tool_routing_accuracy: 1.0
+  human_reviewed_case_count: 0
+  production_ready_claim_allowed: false
+redteam_report:
+  status: catalog_fixture_passed
+  production_gate_status: blocked
+  case_count: 22
+  case_source: local_attack_catalog_with_holdout_fixture
+  holdout_case_count: 12
+  holdout_critical_high_bypass_count: 0
+  catalog_counts:
+    attack_catalog.yaml: 10
+    holdout_attack_catalog.yaml: 12
+  independent_reviewed_case_count: 0
+  secret_canary:
+    schema_version: 1
+    status: canary_configured
+    fixture_status: canary_configured
+    production_gate_status: blocked
+    canary_fingerprint: sha256:31bf9da44ea52000721b9c9141ad45b45b63f1f7c2a995c95c7b0a4eb152e42d
+    canary_value_emitted: false
+    production_ready_claim_allowed: false
+    operational_blocking_issues:
+    - production-ready secret canary evidence requires CI redaction transcript and
+      independent review
+  critical_high_bypass_count: 0
+  production_ready_claim_allowed: false
+profile_smoke_report:
+  status: profile_d_e2e_attached
+  profile_d_e2e_status: profile_d_e2e_passed
+  build_status: passed
+  playwright_qa_status: passed
+  forbidden_side_effects:
+    dot_env_files_present: []
+    deploy_or_provider_cli_invoked: false
+    production_side_effect: false
+  evidence_path: releases/v0.3.2-rc3/profile-d-e2e-smoke.json
+  production_ready_claim_allowed: false
+brain_report:
+  status: memory_safety_fixture_passed
+  verifier_status: passed
+  storage_mode: project_local_jsonl_ledger_with_projection
+  concurrency_backed: true
+  backup_restore_drill:
+    schema_version: 1
+    status: passed
+    storage_mode: project_local_jsonl_ledger_with_projection
+    backup_path: ".ai-web/brain/backups/brain-backup-20260531T142419Z-2efcc592.json"
+    source_ledger_event_count: 2
+    restored_ledger_event_count: 2
+    source_last_event_hash: sha256:f59d5830391c545a3f0316f91f9cc85d176e95a15c584b6071377bec7bad8ef8
+    restored_last_event_hash: sha256:f59d5830391c545a3f0316f91f9cc85d176e95a15c584b6071377bec7bad8ef8
+    source_item_count: 0
+    restored_item_count: 0
+    restored_tombstone_count: 1
+    event_hash_chain_valid: true
+    blocking_issues: []
+    recorded_at: '2026-05-31T14:24:19Z'
+  ledger_event_count: 2
+  event_hash_chain_valid: true
+  search_projection:
+    schema_version: 1
+    status: ready
+    global_rerank: false
+    index_path: C:/Users/rhtn4/AppData/Local/Temp/aiweb-p5-brain20260531-16092-c89c3j/.ai-web/brain/brain-index.json
+    ledger_event_count: 2
+    last_event_hash: sha256:f59d5830391c545a3f0316f91f9cc85d176e95a15c584b6071377bec7bad8ef8
+    search_projection_lag: 0
+    event_hash_chain_valid: true
+  health_report_present: true
+  metrics:
+    storage_mode: project_local_jsonl_ledger_with_projection
+    persistent_store: true
+    sqlite_available: false
+    sqlite_dependency_status: missing_dependency
+    concurrency_backed: true
+    lock_path_present: true
+    backup_restore_drill_present: true
+    independent_file_audit_passed: true
+    append_only_ledger: true
+    ledger_event_count: 2
+    last_event_hash_present: true
+    event_hash_chain_valid: true
+    search_projection_present: true
+    stale_claim_rate: 0.0
+    duplicate_claim_rate: 0.0
+    contradiction_count: 0
+    tombstone_leak: 0
+    low_grade_action_use: 0
+    pii_over_retention: 0
+    search_projection_lag: 0
+    context_packet_bloat: 0
+  sqlite_dependency:
+    schema_version: 1
+    adapter: aiweb.brain.sqlite_store.v1
+    status: missing_dependency
+    gem: sqlite3
+    production_gate_status: blocked
+    blocking_issues:
+    - sqlite3 Ruby gem is not available in this runtime; production SQLite-backed
+      Brain evidence cannot be claimed
+  independent_file_audit:
+    schema_version: 1
+    auditor: aiweb.brain.independent_file_audit.v1
+    status: passed
+    storage_mode: project_local_jsonl_ledger_with_projection
+    ledger_event_count: 2
+    last_event_hash: sha256:f59d5830391c545a3f0316f91f9cc85d176e95a15c584b6071377bec7bad8ef8
+    event_hash_chain_valid: true
+    projection_matches_ledger: true
+    health_report_matches_ledger: true
+    backup_restore_drill_present: true
+    backup_restore_drill_matches_ledger: true
+    active_item_count: 0
+    tombstone_count: 1
+    blocking_issues: []
+  production_gate_status: blocked
+  operational_status: blocked
+  production_ready_claim_allowed: false
+self_improvement_report:
+  proposal_status: proposal_fixture_recorded
+  experiment_status: sandbox_planned
+  production_gate_status: blocked
+  patch_generated: false
+  promotion_allowed: false
+  production_ready_claim_allowed: false
+rollback_plan:
+  status: documented_local_revert_only
+  summary: revert the release commit and rerun ruby bin/check before any future release
+    claim
+operator_drill:
+  schema_version: 1
+  status: local_rc3_drill_passed
+  evidence_path: releases/v0.3.2-rc3/operator_drill_report.json
+  steps:
+  - name: node24-workflow-static-check
+    status: passed
+  - name: profile-d-e2e-smoke
+    status: profile_d_e2e_passed
+  - name: eval-holdout-runner
+    status: expanded_holdout_fixture_passed
+  - name: redteam-holdout-runner
+    status: catalog_fixture_passed
+  production_gate_status: blocked
+  production_ready_claim_allowed: false
+  blocking_issue: production operator drill still requires post-push CI and human
+    ops review; this is a local rc drill only
+operational_blocking_issues:
+- operator drill evidence is local_rc3_drill_passed; production CI/ops drill is still
+  required
+- tool gateway demo exercised finish plus L3 approval gating fixtures, but full side-effect
+  tool gateway audit is not attached to this release evidence
+- static side-effect surface audit is attached, but runtime universal side-effect
+  enforcement is not proven by this release evidence
+- side-effect surface audit is static classification evidence only; runtime universal
+  enforcement still requires release-bound broker execution evidence
+- production HITL evidence requires a real operator approval artifact, expiry/single-use
+  consumption proof, and audit trail
+- durable replay/resume audit with artifact hash validation is not attached to this
+  release evidence
+- production-ready eval science requires sealed independent holdout, leakage check,
+  CI artifact, and human baseline
+- production-ready red-team requires independent adversarial review, CI artifact,
+  secret canary transcript, and expanded attack coverage
+- 'production Brain still needs SQLite-backed storage evidence: sqlite3 Ruby gem is
+  not available in this runtime; production SQLite-backed Brain evidence cannot be
+  claimed'
+- production-ready self-improvement requires sandbox patch diff, static checks, eval/red-team
+  pass, HITL v2 approval, canary, rollback plan, and monitor evidence

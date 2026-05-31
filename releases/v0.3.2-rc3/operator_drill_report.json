@@ -1,0 +1,25 @@
+{
+  "schema_version": 1,
+  "release_id": "v0.3.2-rc3",
+  "status": "local_rc3_drill_passed",
+  "steps": [
+    {
+      "name": "node24-workflow-static-check",
+      "status": "passed"
+    },
+    {
+      "name": "profile-d-e2e-smoke",
+      "status": "profile_d_e2e_passed"
+    },
+    {
+      "name": "eval-holdout-runner",
+      "status": "expanded_holdout_fixture_passed"
+    },
+    {
+      "name": "redteam-holdout-runner",
+      "status": "catalog_fixture_passed"
+    }
+  ],
+  "blocking_issue": "production operator drill still requires post-push CI and human ops review; this is a local rc drill only",
+  "production_ready_claim_allowed": false
+}

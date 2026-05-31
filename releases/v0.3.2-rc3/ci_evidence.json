@@ -1,0 +1,66 @@
+{
+  "schema_version": 1,
+  "release_id": "v0.3.2-rc3",
+  "status": "pre_push_baseline_green_rc3_workflow_migration_pending_post_push",
+  "baseline_green_run": {
+    "run_id": 26713769331,
+    "run_url": "https://github.com/jihoho4242/webbuilderagent/actions/runs/26713769331",
+    "head_sha": "4f8ffb2eb398a8f6dde377c54955ebda38e71c51",
+    "workflow_name": "CI",
+    "status": "completed",
+    "conclusion": "success",
+    "jobs": [
+      {
+        "name": "Engine runtime matrix smoke (Docker/Podman)",
+        "databaseId": 78728602665,
+        "status": "completed",
+        "conclusion": "success",
+        "url": "https://github.com/jihoho4242/webbuilderagent/actions/runs/26713769331/job/78728602665"
+      },
+      {
+        "name": "Ruby CLI tests (3.4)",
+        "databaseId": 78728602672,
+        "status": "completed",
+        "conclusion": "success",
+        "url": "https://github.com/jihoho4242/webbuilderagent/actions/runs/26713769331/job/78728602672"
+      },
+      {
+        "name": "Ruby CLI tests (3.3)",
+        "databaseId": 78728602679,
+        "status": "completed",
+        "conclusion": "success",
+        "url": "https://github.com/jihoho4242/webbuilderagent/actions/runs/26713769331/job/78728602679"
+      },
+      {
+        "name": "Ruby CLI tests (4.0)",
+        "databaseId": 78728602682,
+        "status": "completed",
+        "conclusion": "success",
+        "url": "https://github.com/jihoho4242/webbuilderagent/actions/runs/26713769331/job/78728602682"
+      }
+    ],
+    "artifacts": [
+      {
+        "id": 7317057825,
+        "name": "engine-runtime-matrix-smoke",
+        "digest": "sha256:8bcf68c4d224c9d0e087f14bfe9768c494dfc19660d6d7c18428ebc2a4618914",
+        "expired": false
+      }
+    ]
+  },
+  "node_24_actions_migration": {
+    "workflow_path": ".github/workflows/ci.yml",
+    "checkout_action": "actions/checkout@v5",
+    "upload_artifact_action": "actions/upload-artifact@v6",
+    "setup_node_action": "actions/setup-node@v5",
+    "profile_d_node_version": "24",
+    "profile_d_pnpm_version": "11.0.9",
+    "profile_d_e2e_job": "profile-d-e2e-smoke",
+    "post_push_ci_required": true
+  },
+  "known_gaps": [
+    "This commit cannot embed its own future post-push GitHub Actions run id without a self-referential evidence loop.",
+    "Baseline CI run predates the Node 24 workflow migration; rc3 post-push CI must be reported externally after push."
+  ],
+  "production_ready_claim_allowed": false
+}

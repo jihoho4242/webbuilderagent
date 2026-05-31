@@ -560,7 +560,12 @@ class AiwebContractTest < Minitest::Test
     assert_includes ci_workflow, "ruby bin/check"
     assert_includes ci_workflow, "engine-runtime-matrix-smoke:"
     assert_includes ci_workflow, "ruby bin/engine-runtime-matrix-check --json"
-    assert_includes ci_workflow, "actions/upload-artifact@v4"
+    assert_includes ci_workflow, "actions/checkout@v5"
+    assert_includes ci_workflow, "actions/upload-artifact@v6"
+    assert_includes ci_workflow, "profile-d-e2e-smoke:"
+    assert_includes ci_workflow, "actions/setup-node@v5"
+    assert_includes ci_workflow, "node-version: \"24\""
+    assert_includes ci_workflow, "ruby bin/profile-d-e2e-smoke"
     assert_includes ci_workflow, "if-no-files-found: error"
     refute_match(/engine-runtime-matrix-smoke:[\s\S]*if:\s*github\.event_name == ['\"]workflow_dispatch['\"]/, ci_workflow)
     assert_includes readme, "ruby bin/check"

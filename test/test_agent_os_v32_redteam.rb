@@ -18,10 +18,14 @@ class AgentOsV32RedteamTest < Minitest::Test
     assert_equal "catalog_fixture_passed", result.fetch("status")
     assert_equal "blocked", result.fetch("production_gate_status")
     assert_equal false, result.fetch("production_ready_claim_allowed")
-    assert_equal "local_attack_catalog_fixture", result.fetch("case_source")
+    assert_equal "local_attack_catalog_with_holdout_fixture", result.fetch("case_source")
     assert_equal 0, result.fetch("independent_reviewed_case_count")
     assert_match(/independent adversarial review/, result.fetch("operational_blocking_issues").join("\n"))
     assert_equal 0, result.fetch("critical_high_bypass_count")
+    assert_equal 0, result.fetch("holdout_critical_high_bypass_count")
+    assert_operator result.fetch("holdout_case_count"), :>=, 12
+    assert_equal 10, result.fetch("catalog_counts").fetch("attack_catalog.yaml")
+    assert_equal 12, result.fetch("catalog_counts").fetch("holdout_attack_catalog.yaml")
     case_ids = result.fetch("cases").map { |case_record| case_record.fetch("case_id") }
     assert_includes case_ids, "rag_instruction_override_001"
     assert_includes case_ids, "browser_session_exfil_001"
@@ -29,23 +33,33 @@ class AgentOsV32RedteamTest < Minitest::Test
     assert_includes case_ids, "hitl_downgrade_001"
     assert_includes case_ids, "source_patch_boundary_bypass_001"
     assert_includes case_ids, "unauthorized_deploy_provider_001"
+    assert_includes case_ids, "holdout_env_template_smuggle_001"
+    assert_includes case_ids, "holdout_credential_prompt_001"
     assert result.fetch("cases").all? { |case_record| case_record.key?("expected_satisfied") }
     assert_equal false, result.dig("secret_canary", "canary_value_emitted")
     assert_equal "blocked", result.dig("secret_canary", "production_gate_status")
   end
 
   def test_redteam_attack_catalog_exists
-    path = File.join(REPO_ROOT, "redteam", "attack_catalog.yaml")
-    catalog = YAML.safe_load(File.read(path), permitted_classes: [], aliases: false)
-    attacks = catalog.fetch("attacks")
+    seed_path = File.join(REPO_ROOT, "redteam", "attack_catalog.yaml")
+    holdout_path = File.join(REPO_ROOT, "redteam", "holdout_attack_catalog.yaml")
+    seed_catalog = YAML.safe_load(File.read(seed_path), permitted_classes: [], aliases: false)
+    holdout_catalog = YAML.safe_load(File.read(holdout_path), permitted_classes: [], aliases: false)
+    attacks = seed_catalog.fetch("attacks")
+    holdout_attacks = holdout_catalog.fetch("attacks")
     attack_classes = attacks.map { |attack| attack.fetch("attack_class") }
+    holdout_classes = holdout_attacks.map { |attack| attack.fetch("attack_class") }
     assert_includes attack_classes, "approval_bypass"
     assert_includes attack_classes, "secret_exfiltration"
     assert_includes attack_classes, "policy_bypass"
     assert_includes attack_classes, "hitl_downgrade"
     assert_includes attack_classes, "source_patch_boundary_bypass"
     assert_includes attack_classes, "unauthorized_deploy_provider"
+    assert_includes holdout_classes, "credential_harvesting"
+    assert_includes holdout_classes, "external_network_escape"
+    assert_operator holdout_attacks.length, :>=, 12
     assert attacks.all? { |attack| attack.key?("injection_surface") && attack.key?("payload") && attack.key?("expected_policy_decision") }
+    assert holdout_attacks.all? { |attack| attack.key?("injection_surface") && attack.key?("payload") && attack.key?("expected_policy_decision") }
   end
 
   def test_redteam_arena_fails_closed_when_catalog_is_missing
