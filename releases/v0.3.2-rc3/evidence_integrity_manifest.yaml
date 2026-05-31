@@ -1,24 +1,24 @@
 ---
 schema_version: 1
 release_id: v0.3.2-rc3
-generated_at: '2026-05-31T14:26:31Z'
+generated_at: '2026-05-31T16:06:50Z'
 files:
 - path: releases/v0.3.2-rc3/ci_evidence.json
-  sha256: sha256:bf9059ddf6bea1d9a85d6281521bb6bb9e6321771fea5c6f3d8193282d676ab0
+  sha256: sha256:44d42b806eaa896772e10922b7b52356c0d48f0025500174d79f0969f1a4a23b
 - path: releases/v0.3.2-rc3/eval_report.json
-  sha256: sha256:adca3a4017072a475c140497d3d4cf2e9fda05602385696862426f2ca9dbb7ea
+  sha256: sha256:9645b08c64123c310fd974a0873e4f292749559f1ffa7f27b5078646b1c0cc49
 - path: releases/v0.3.2-rc3/operator_drill_report.json
-  sha256: sha256:b77a3cf5b16a16af6f7a3c5766972223d2fa3bfeabb2d5e4c029650332f86527
+  sha256: sha256:6d4480baed79b856d191e37ccd8c7c9034a7737b15e99e949a5cd42ae1fa32f6
 - path: releases/v0.3.2-rc3/p5_evidence.json
-  sha256: sha256:b2ca006dc5488d5f6ed983608ca9221bc34b2f7e9dcf1eb9596d8cefad6ac9a3
+  sha256: sha256:e9b36a02f0b2c742f598650538aee8c9cd91d7b046c91c7e609b3c9f67ace829
 - path: releases/v0.3.2-rc3/p5_gate_report.md
-  sha256: sha256:ba037259cf39ed4fdd599e7f3a849eb1fe4fe60fdb515091e635f5fd40fa18d1
+  sha256: sha256:ee3f170d9205074f20067a14721ecb27080dfb443ce1d4d3c97449bbd2d72e56
 - path: releases/v0.3.2-rc3/profile-d-e2e-smoke.json
-  sha256: sha256:73938900807a0329cbb556129c72068cc32c9b70bf8c6adb8fd65b76b267f677
+  sha256: sha256:1a0f54d0430b57ab79edc3007f925753079fb7d5f8d79676b6c9d8e6b59a338f
 - path: releases/v0.3.2-rc3/profile-d-smoke.json
-  sha256: sha256:1bcbc1b63ed584d0820843225873b72b72a60820ebb2f3419dff80ab5f693d87
+  sha256: sha256:359a50a4f000fb5eaac417eb6ffc0b3208ad4ea6fd93e60e5f7973bb74c0b877
 - path: releases/v0.3.2-rc3/redteam_report.json
-  sha256: sha256:b21de7890ad505971536d7fb9118ada3c9f5abc8ae690b02523edc443a7b3399
+  sha256: sha256:62d5a55b06d4c24c1376491604cf9fec22d0786ed1cb043e4aee4e302b4a7980
 - path: releases/v0.3.2-rc3/release_manifest.yaml
-  sha256: sha256:fa4d699fa3e5aadab2296dbfd3171002e1cc7249b09d5ce49fadf2dc2d577323
-evidence_bundle_hash: sha256:020907bb770992d553dda3a4a688deb757568fa8327d03f8e3a219258d511e79
+  sha256: sha256:6d28680653582ea12a85a7d3f0476cf52c1e0587bd80d4e8ad32a4968d55707e
+evidence_bundle_hash: sha256:8baae0f68d9abe34e2025014c481acd27cb133c97e6dd9904879fb2ef2359ac4
