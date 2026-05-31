@@ -15,7 +15,7 @@ require_relative "../redteam"
 module Aiweb
   module Ops
     class P5Gate
-      def evidence(validation: {}, github_actions: nil, operator_drill: nil)
+      def evidence(validation: {}, github_actions: nil, operator_drill: nil, release_id: "v0.3.2-rc1", profile_smoke: nil, eval_result: nil, redteam_result: nil)
         constitution = Aiweb::Constitution::Verifier.new.verify
         packet_builder = Aiweb::Tools::DecisionPacket.new
         policy_kernel = Aiweb::Policy::Kernel.new
@@ -61,8 +61,8 @@ module Aiweb
         end
         proposal = Aiweb::SelfImprovement::Governor.new.dry_run_proposal(target_component: "runtime_tool_description", hypothesis: "Improve clarity", eval_plan: { "required" => true }, rollback_plan: { "summary" => "revert proposal" })
         experiment = Aiweb::SelfImprovement::ExperimentRegistry.new.record(proposal)
-        redteam = Aiweb::Redteam::Arena.new.run(policy_kernel: policy_kernel, packet_builder: packet_builder)
-        eval_result = Aiweb::Evals::Runner.new.run(cases: Aiweb::Evals::Runner.default_fixture_cases)
+        redteam = redteam_result || Aiweb::Redteam::Arena.new.run(policy_kernel: policy_kernel, packet_builder: packet_builder)
+        eval_result = eval_result || Aiweb::Evals::Runner.new.run(cases: Aiweb::Evals::Runner.default_fixture_cases)
         side_effect_audit = Aiweb::Project.new(Dir.pwd).send(:side_effect_surface_audit)
         scaffold_blockers = []
         scaffold_blockers.concat(constitution.fetch("blocking_issues", [])) unless constitution["status"] == "passed"
@@ -150,7 +150,7 @@ module Aiweb
         operational_blockers = github_actions_blocking_issues(github_actions_evidence) + operator_drill_blocking_issues(operator_drill_evidence) + validation_blocking_issues(validation) + tool_gateway_evidence.fetch("operational_blocking_issues", []) + policy_coverage.fetch("operational_blocking_issues", []) + side_effect_surface_audit_evidence.fetch("operational_blocking_issues", []) + hitl_evidence.fetch("operational_blocking_issues", []) + replay_evidence.fetch("operational_blocking_issues", []) + eval_result.fetch("blocking_issues", []) + redteam.fetch("operational_blocking_issues", []) + brain_audit.fetch("operational_blocking_issues", []) + experiment.fetch("operational_blocking_issues", [])
         {
           "schema_version" => 1,
-          "release_id" => "v0.3.2-rc1",
+          "release_id" => release_id,
           "p5_status" => scaffold_blockers.empty? ? "scaffold_demo_passed" : "scaffold_demo_blocked",
           "release_ready" => false,
           "production_readiness_claimed" => false,
@@ -168,6 +168,7 @@ module Aiweb
           "script_executor_neutralization" => { "status" => "top_level_surfaces_neutralized", "top_level_agent_runtime_removed" => true, "verify_loop_role" => "removed_legacy_script_runner_tombstone_no_engine_run_delegation", "browser_static_scenario_role" => "deterministic_local_browser_probe" },
           "github_actions" => github_actions_evidence,
           "operator_drill" => operator_drill_evidence,
+          "profile_smoke" => profile_smoke || { "status" => "not_attached", "production_ready_claim_allowed" => false },
           "validation" => validation,
           "scaffold_demo_blocking_issues" => scaffold_blockers,
           "operational_blocking_issues" => operational_blockers,

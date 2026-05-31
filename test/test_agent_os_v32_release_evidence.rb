@@ -255,6 +255,51 @@ class AgentOsV32ReleaseEvidenceTest < Minitest::Test
     end
   end
 
+  def test_rc2_release_evidence_bundle_records_ci_profile_eval_and_redteam
+    release_dir = File.join(REPO_ROOT, "releases", "v0.3.2-rc2")
+    %w[
+      release_manifest.yaml
+      evidence_integrity_manifest.yaml
+      p5_gate_report.md
+      ci_evidence.json
+      profile-d-smoke.json
+      profile-s-smoke.json
+      eval_report.json
+      redteam_report.json
+      operator_drill_report.json
+    ].each do |name|
+      assert File.file?(File.join(release_dir, name)), "missing rc2 #{name}"
+    end
+
+    manifest = YAML.safe_load(File.read(File.join(release_dir, "release_manifest.yaml")), permitted_classes: [], aliases: false)
+    assert_equal "v0.3.2-rc2", manifest.fetch("release_id")
+    assert_equal false, manifest.fetch("production_readiness_claimed")
+    assert_equal "evidence_backed_rc_candidate_production_blocked", manifest.fetch("operational_readiness")
+    assert_equal 26365437613, manifest.fetch("github_actions_run_id")
+    assert_equal "success", manifest.dig("github_actions_report", "conclusion")
+    assert_equal "profile_smoke_attached", manifest.dig("profile_smoke_report", "status")
+    assert_equal "expanded_fixture_passed", manifest.dig("eval_report", "status")
+    assert_equal 150, manifest.dig("eval_report", "case_count")
+    assert_equal "catalog_fixture_passed", manifest.dig("redteam_report", "status")
+    assert_equal 10, manifest.dig("redteam_report", "case_count")
+    assert_equal 0, manifest.dig("redteam_report", "critical_high_bypass_count")
+
+    profile_d = JSON.parse(File.read(File.join(release_dir, "profile-d-smoke.json")))
+    assert_equal "smoke_completed_with_environment_blockers", profile_d.fetch("status")
+    assert_equal false, profile_d.dig("forbidden_side_effects", "production_side_effect")
+
+    profile_s = JSON.parse(File.read(File.join(release_dir, "profile-s-smoke.json")))
+    assert_equal "local_only_smoke_passed", profile_s.fetch("status")
+    assert_equal "passed", profile_s.dig("local_verify", "status")
+    assert_equal false, profile_s.dig("forbidden_side_effects", "provider_cli_invoked")
+
+    integrity = YAML.safe_load(File.read(File.join(release_dir, "evidence_integrity_manifest.yaml")), permitted_classes: [], aliases: false)
+    integrity.fetch("files").each do |entry|
+      absolute = File.join(REPO_ROOT, entry.fetch("path"))
+      assert_equal "sha256:#{Digest::SHA256.file(absolute).hexdigest}", entry.fetch("sha256")
+    end
+  end
+
   def test_release_manifest_attaches_ci_and_operator_drill_evidence_when_supplied
     github_actions = {
       "run_id" => 123456,

@@ -1,0 +1,64 @@
+{
+  "schema_version": 1,
+  "release_id": "v0.3.2-rc2",
+  "recorded_at": "2026-05-31T10:47:41Z",
+  "commit_sha": "398ceba29ed6a0c52562c448eeffd70fba9ceb47",
+  "workflow_name": "CI",
+  "run_id": 26365437613,
+  "run_url": "https://github.com/jihoho4242/webbuilderagent/actions/runs/26365437613",
+  "status": "completed",
+  "conclusion": "success",
+  "jobs": [
+    {
+      "name": "Ruby CLI tests (3.4)",
+      "database_id": 77608334245,
+      "status": "completed",
+      "conclusion": "success",
+      "started_at": "2026-05-24T15:36:34Z",
+      "completed_at": "2026-05-24T16:02:40Z",
+      "url": "https://github.com/jihoho4242/webbuilderagent/actions/runs/26365437613/job/77608334245"
+    },
+    {
+      "name": "Engine runtime matrix smoke (Docker/Podman)",
+      "database_id": 77608334248,
+      "status": "completed",
+      "conclusion": "success",
+      "started_at": "2026-05-24T15:36:35Z",
+      "completed_at": "2026-05-24T15:37:11Z",
+      "url": "https://github.com/jihoho4242/webbuilderagent/actions/runs/26365437613/job/77608334248"
+    },
+    {
+      "name": "Ruby CLI tests (4.0)",
+      "database_id": 77608334251,
+      "status": "completed",
+      "conclusion": "success",
+      "started_at": "2026-05-24T15:36:34Z",
+      "completed_at": "2026-05-24T16:00:42Z",
+      "url": "https://github.com/jihoho4242/webbuilderagent/actions/runs/26365437613/job/77608334251"
+    },
+    {
+      "name": "Ruby CLI tests (3.3)",
+      "database_id": 77608334255,
+      "status": "completed",
+      "conclusion": "success",
+      "started_at": "2026-05-24T15:36:34Z",
+      "completed_at": "2026-05-24T16:02:33Z",
+      "url": "https://github.com/jihoho4242/webbuilderagent/actions/runs/26365437613/job/77608334255"
+    }
+  ],
+  "artifacts": [
+    {
+      "id": 7186329394,
+      "name": "engine-runtime-matrix-smoke",
+      "size_in_bytes": 2525,
+      "expired": false,
+      "created_at": "2026-05-24T15:37:09Z",
+      "archive_download_url": "https://api.github.com/repos/jihoho4242/webbuilderagent/actions/artifacts/7186329394/zip"
+    }
+  ],
+  "node20_deprecation_warning": {
+    "observed": true,
+    "source": "gh run watch annotations for actions/checkout@v4 and actions/upload-artifact@v4",
+    "known_gap": "Track Node 24 migration before GitHub runner enforcement dates; current CI result is success."
+  }
+}

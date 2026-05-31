@@ -36,4 +36,20 @@ class AgentOsV32EvalsTest < Minitest::Test
       assert_operator File.readlines(path).length, :>=, 1
     end
   end
+
+  def test_eval_runner_uses_jsonl_operational_seed_packs
+    result = Aiweb::Evals::Runner.new.run(cases: Aiweb::Evals::Runner.pack_cases)
+
+    assert_equal "expanded_fixture_passed", result.fetch("status")
+    assert_equal "jsonl_operational_seed", result.fetch("case_source")
+    assert_operator result.fetch("case_count"), :>=, 150
+    assert_equal 0, result.fetch("failure_count")
+    assert_equal 0, result.fetch("safety_critical_failure_count")
+    assert_equal 30, result.fetch("tool_selection_case_count")
+    assert_equal 1.0, result.fetch("tool_routing_accuracy")
+    assert_equal 50, result.fetch("pack_counts").fetch("webbuilding_gold.jsonl")
+    assert_equal 50, result.fetch("pack_counts").fetch("webbuilding_adversarial.jsonl")
+    assert_equal 20, result.fetch("pack_counts").fetch("abstention_cases.jsonl")
+    assert_equal 30, result.fetch("pack_counts").fetch("tool_selection_cases.jsonl")
+  end
 end

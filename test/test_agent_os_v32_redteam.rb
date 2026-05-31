@@ -25,6 +25,10 @@ class AgentOsV32RedteamTest < Minitest::Test
     case_ids = result.fetch("cases").map { |case_record| case_record.fetch("case_id") }
     assert_includes case_ids, "rag_instruction_override_001"
     assert_includes case_ids, "browser_session_exfil_001"
+    assert_includes case_ids, "policy_kernel_bypass_001"
+    assert_includes case_ids, "hitl_downgrade_001"
+    assert_includes case_ids, "source_patch_boundary_bypass_001"
+    assert_includes case_ids, "unauthorized_deploy_provider_001"
     assert result.fetch("cases").all? { |case_record| case_record.key?("expected_satisfied") }
     assert_equal false, result.dig("secret_canary", "canary_value_emitted")
     assert_equal "blocked", result.dig("secret_canary", "production_gate_status")
@@ -37,6 +41,10 @@ class AgentOsV32RedteamTest < Minitest::Test
     attack_classes = attacks.map { |attack| attack.fetch("attack_class") }
     assert_includes attack_classes, "approval_bypass"
     assert_includes attack_classes, "secret_exfiltration"
+    assert_includes attack_classes, "policy_bypass"
+    assert_includes attack_classes, "hitl_downgrade"
+    assert_includes attack_classes, "source_patch_boundary_bypass"
+    assert_includes attack_classes, "unauthorized_deploy_provider"
     assert attacks.all? { |attack| attack.key?("injection_surface") && attack.key?("payload") && attack.key?("expected_policy_decision") }
   end
 

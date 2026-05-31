@@ -8,3 +8,6 @@
 # Local environment files
 .env
 .env.*
+
+# Local throwaway smoke/evidence scratch
+.tmp/

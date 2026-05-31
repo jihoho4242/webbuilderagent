@@ -1,0 +1,38 @@
+{
+  "schema_version": 1,
+  "release_id": "v0.3.2-rc2",
+  "status": "local_dry_run_passed",
+  "evidence_path": "releases/v0.3.2-rc2/operator_drill_report.json",
+  "production_ready_claim_allowed": false,
+  "steps": [
+    {
+      "name": "run-status",
+      "status": "passed",
+      "action_taken": "reported run lifecycle"
+    },
+    {
+      "name": "engine-run dry-run",
+      "status": "passed",
+      "approval_hash_present": true,
+      "changed_files": [
+
+      ]
+    },
+    {
+      "name": "github-sync dry-run",
+      "status": "passed"
+    },
+    {
+      "name": "deploy dry-run",
+      "status": "passed",
+      "provider_readiness": "blocked"
+    }
+  ],
+  "blocking_issue": "local drill only; production CI/ops drill still required before production readiness claim",
+  "forbidden_side_effects": {
+    "external_push_performed": false,
+    "external_deploy_performed": false,
+    "provider_cli_invoked": false,
+    "dot_env_read": false
+  }
+}

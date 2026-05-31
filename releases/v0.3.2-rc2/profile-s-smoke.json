@@ -1,0 +1,222 @@
+{
+  "schema_version": 1,
+  "release_id": "v0.3.2-rc2",
+  "profile": "S",
+  "workspace": ".tmp/rc2-smoke/profile-s",
+  "status": "local_only_smoke_passed",
+  "scaffold": {
+    "status": "passed",
+    "metadata": {
+      "schema_version": 1,
+      "profile": "S",
+      "framework": "Next.js",
+      "framework_detail": "Next.js App Router + Supabase SSR",
+      "package_manager": "pnpm",
+      "dev_command": "pnpm dev",
+      "build_command": "pnpm build",
+      "scaffold_target": "Next.js App Router + Supabase SSR client/server stubs + draft migrations/RLS/storage docs",
+      "metadata_path": ".ai-web/scaffold-profile-S.json",
+      "secret_qa_path": ".ai-web/qa/supabase-secret-qa.json",
+      "local_verify_path": ".ai-web/qa/supabase-local-verify.json",
+      "local_only": true,
+      "external_actions_allowed": false,
+      "env_template_path": "supabase/env.example.template",
+      "env_dotfile_created": false,
+      "supabase_public_env": [
+        "NEXT_PUBLIC_SUPABASE_URL",
+        "NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY"
+      ],
+      "guardrails": [
+        "no external Supabase project creation",
+        "no deploy/external hosting",
+        "no .env or .env.* files"
+      ],
+      "created_at": "2026-05-31T10:42:39Z",
+      "files": [
+        {
+          "path": "package.json",
+          "sha256": "fc418eeede43b8b30b7a858d5a4129470cba88cf7a6a87e7de48a77bab3f9d30"
+        },
+        {
+          "path": "next.config.mjs",
+          "sha256": "1e3206cb200e264fdddb4dbb2e4772daebc839fdbc94b78316d74892a0de6fa2"
+        },
+        {
+          "path": "tsconfig.json",
+          "sha256": "de5556bcb44f244eeba93e0ed9da40c2b864d9d8d7654c0357787de9d4b8f26c"
+        },
+        {
+          "path": "src/app/layout.tsx",
+          "sha256": "acb919bc402ae6f400e18fd8f6b64297df25e825bcbf29720019ce762e106017"
+        },
+        {
+          "path": "src/app/page.tsx",
+          "sha256": "e0f17bc2510f48bd5a41e87ce4444c0cab60beb0ebcd31e1d00559a516bdf8ec"
+        },
+        {
+          "path": "src/app/globals.css",
+          "sha256": "64f884f1e833705ef5076e0abecc1480a07b387962889024d4dfdaa09d6a2230"
+        },
+        {
+          "path": "src/lib/supabase/client.ts",
+          "sha256": "3ea3cee21789aca4efed18385695e7238aa075b2a2a1f7500537a017320cd7f7"
+        },
+        {
+          "path": "src/lib/supabase/server.ts",
+          "sha256": "25685b8a196dabfff4e84e1cc5a3caf492e2fdbcba1824612d87b620e3114b89"
+        },
+        {
+          "path": "supabase/migrations/0001_initial_schema.sql",
+          "sha256": "6a4a7d34007b3e8515e87e912e04511064dd952df97a63123984d18ee8fbf906"
+        },
+        {
+          "path": "supabase/rls-draft.md",
+          "sha256": "da19c21e630890ed851424a0d527c8bf581240e7e70b95a1181ea7c1f9dd9796"
+        },
+        {
+          "path": "supabase/storage.md",
+          "sha256": "895172d6cce05f3edc79a7546b9ad3c3a2e7b60f4d5878a6bccb869f1b544a24"
+        },
+        {
+          "path": "supabase/env.example.template",
+          "sha256": "b0b0cc3f7b1abfb81a2995f46948b1d88d103a647ba2804238d8b4d577bf0454"
+        }
+      ]
+    },
+    "generated_file_count": 43,
+    "required_file_blockers": [
+
+    ]
+  },
+  "runtime_plan": {
+    "readiness": "local_planning_only",
+    "capabilities": {
+      "setup": false,
+      "build": false,
+      "preview": false,
+      "browser_qa": false,
+      "visual_critique": false,
+      "source_patch": true,
+      "local_verify": true,
+      "supabase_secret_qa": true
+    },
+    "forbidden_actions": [
+      "hosted_supabase_project_creation",
+      "supabase_provider_cli",
+      "provider_network_mutation",
+      "deploy",
+      "credential_use",
+      "dot_env_read"
+    ]
+  },
+  "secret_qa": {
+    "status": "passed",
+    "read_dot_env": false,
+    "findings": [
+
+    ],
+    "scanned_paths": [
+      ".ai-web/scaffold-profile-S.json",
+      "next.config.mjs",
+      "package.json",
+      "src/app/globals.css",
+      "src/app/layout.tsx",
+      "src/app/page.tsx",
+      "src/lib/supabase/client.ts",
+      "src/lib/supabase/server.ts",
+      "supabase/env.example.template",
+      "supabase/migrations/0001_initial_schema.sql",
+      "supabase/rls-draft.md",
+      "supabase/storage.md",
+      "tsconfig.json"
+    ]
+  },
+  "local_verify": {
+    "status": "passed",
+    "local_only": true,
+    "external_actions_performed": false,
+    "provider_cli_invoked": false,
+    "read_dot_env": false,
+    "checks": {
+      "required_files": {
+        "status": "passed",
+        "missing_paths": [
+
+        ],
+        "findings": [
+
+        ]
+      },
+      "safe_env_template": {
+        "status": "passed",
+        "allowed_public_env": [
+          "NEXT_PUBLIC_SUPABASE_URL",
+          "NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY"
+        ],
+        "dot_env_created": false,
+        "findings": [
+
+        ]
+      },
+      "ssr_stubs": {
+        "status": "passed",
+        "client_path": "src/lib/supabase/client.ts",
+        "server_path": "src/lib/supabase/server.ts",
+        "findings": [
+
+        ]
+      },
+      "migrations_rls": {
+        "status": "passed",
+        "path": "supabase/migrations/0001_initial_schema.sql",
+        "findings": [
+
+        ]
+      },
+      "storage_docs": {
+        "status": "passed",
+        "path": "supabase/storage.md",
+        "findings": [
+
+        ]
+      },
+      "metadata": {
+        "status": "passed",
+        "path": ".ai-web/scaffold-profile-S.json",
+        "findings": [
+
+        ]
+      },
+      "secret_qa": {
+        "status": "passed",
+        "path": ".ai-web/qa/supabase-secret-qa.json",
+        "findings": [
+
+        ]
+      },
+      "external_actions": {
+        "status": "passed",
+        "performed": false,
+        "network": false,
+        "provider_cli": false,
+        "findings": [
+
+        ]
+      }
+    },
+    "findings": [
+
+    ]
+  },
+  "blocked_runtime": {
+    "build_preview_browser_qa": "blocked_by_profile_policy",
+    "reason": "Profile S runtime_readiness is local_planning_only; local verification/reporting surfaces are supported instead."
+  },
+  "forbidden_side_effects": {
+    "hosted_supabase_project_created": false,
+    "provider_cli_invoked": false,
+    "dot_env_read": false,
+    "deploy_performed": false,
+    "production_side_effect": false
+  }
+}

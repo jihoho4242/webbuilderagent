@@ -1,0 +1,114 @@
+{
+  "schema_version": 1,
+  "release_id": "v0.3.2-rc2",
+  "profile": "D",
+  "workspace": ".tmp/rc2-smoke/profile-d",
+  "status": "smoke_completed_with_environment_blockers",
+  "scaffold": {
+    "status": "passed",
+    "metadata": {
+      "schema_version": 1,
+      "profile": "D",
+      "framework": "Astro",
+      "package_manager": "pnpm",
+      "dev_command": "pnpm dev",
+      "build_command": "pnpm build",
+      "scaffold_target": "Astro + MDX/Content Collections + Cloudflare Pages + Tailwind + sitemap/RSS",
+      "selected_candidate": "candidate-01",
+      "selected_candidate_path": ".ai-web/design-candidates/candidate-01.html",
+      "design_source": ".ai-web/DESIGN.md",
+      "design_brief_source": ".ai-web/design-brief.md",
+      "created_at": "2026-05-31T10:42:04Z",
+      "metadata_path": ".ai-web/scaffold-profile-D.json",
+      "files": [
+        {
+          "path": "package.json",
+          "sha256": "efc5786a4960bb5e065c34c9df6e89b75cf8dc31916d27731b37eaabe719348e"
+        },
+        {
+          "path": "astro.config.mjs",
+          "sha256": "474ecd2568d8a24fecfa9ef80242d5f5fd1f690f51640d517f35cfdb09a63ecf"
+        },
+        {
+          "path": "tailwind.config.mjs",
+          "sha256": "c574a04dcf97101f6d949a47c9cd7e9cf4341a3d24c11feaa6ffa7882c07fd13"
+        },
+        {
+          "path": "src/styles/global.css",
+          "sha256": "1cc763f72ed2a1444b44df2fea535054fe23523291afaaf00b760261782723cc"
+        },
+        {
+          "path": "src/content/site.json",
+          "sha256": "78c4afe0cb9c5db06fa0e2682c1e6862d6d6500621aed408b1df22f84ef64208"
+        },
+        {
+          "path": "src/components/Hero.astro",
+          "sha256": "5b9a1b39d7a9033fd60c71a027374e475a2a3d27a3c07200eda937bc703e596f"
+        },
+        {
+          "path": "src/components/SectionCard.astro",
+          "sha256": "9377e412f5925a265ca50dd3dcf91b45c0c19e9d500c562cebd2791914678089"
+        },
+        {
+          "path": "src/pages/index.astro",
+          "sha256": "653ddebf599106a4bd5329dc41b9bb720029608f7ac1fa3b49ab551ff81f2265"
+        },
+        {
+          "path": "public/.gitkeep",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      ]
+    },
+    "generated_file_count": 51,
+    "required_file_blockers": [
+
+    ]
+  },
+  "runtime_plan": {
+    "status": "ready",
+    "blockers": [
+
+    ],
+    "required_files_missing": [
+
+    ]
+  },
+  "setup_dry_run": {
+    "status": "planned",
+    "approval_required": true,
+    "external_network_performed": false,
+    "dot_env_read": false
+  },
+  "build": {
+    "status": "blocked",
+    "command": "pnpm build",
+    "blocking_issues": [
+      "pnpm executable is missing; install project dependencies outside aiweb build, then rerun."
+    ]
+  },
+  "preview_dry_run": {
+    "status": "dry_run",
+    "command": "pnpm dev --host 127.0.0.1",
+    "url": "http://127.0.0.1:4321/",
+    "blocking_issues": [
+
+    ]
+  },
+  "browser_qa": {
+    "status": "blocked",
+    "command": "pnpm exec playwright test .ai-web/runs/playwright-qa-20260531T104216Z/smoke.spec.js --reporter=json",
+    "blocking_issues": [
+      "Local Playwright executable node_modules/.bin/playwright is missing; install project dependencies outside aiweb qa-playwright, then rerun."
+    ]
+  },
+  "forbidden_side_effects": {
+    "deploy_performed": false,
+    "provider_cli_invoked": false,
+    "dot_env_read": false,
+    "production_side_effect": false
+  },
+  "known_gaps": [
+    "Host environment lacks pnpm, so Profile D build is evidence-backed blocked rather than passed.",
+    "Host workspace lacks local Playwright executable, so browser QA is evidence-backed blocked rather than passed."
+  ]
+}

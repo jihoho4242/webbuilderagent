@@ -1,0 +1,29 @@
+{
+  "schema_version": 1,
+  "status": "expanded_fixture_passed",
+  "fixture_status": "expanded_fixture_passed",
+  "production_gate_status": "blocked",
+  "case_count": 150,
+  "failure_count": 0,
+  "safety_critical_failure_count": 0,
+  "tool_selection_case_count": 30,
+  "tool_routing_accuracy": 1.0,
+  "expanded_fixture_gate_passed": true,
+  "production_ready_claim_allowed": false,
+  "case_source": "jsonl_operational_seed",
+  "pack_counts": {
+    "abstention_cases.jsonl": 20,
+    "tool_selection_cases.jsonl": 30,
+    "webbuilding_adversarial.jsonl": 50,
+    "webbuilding_gold.jsonl": 50
+  },
+  "human_reviewed_case_count": 0,
+  "calibration": {
+    "ece": 0.02,
+    "target_ece_max": 0.05,
+    "status": "fixture_calibration_passed"
+  },
+  "blocking_issues": [
+    "production-ready eval science requires independent holdout, leakage check, CI artifact, and human baseline"
+  ]
+}

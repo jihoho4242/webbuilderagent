@@ -1,0 +1,24 @@
+---
+schema_version: 1
+release_id: v0.3.2-rc2
+generated_at: '2026-05-31T10:47:45Z'
+files:
+- path: releases/v0.3.2-rc2/p5_gate_report.md
+  sha256: sha256:34a5add2a872622e0190591022694c0ca8d1d9ef8855925e95f078629e0562e3
+- path: releases/v0.3.2-rc2/p5_evidence.json
+  sha256: sha256:642776ab42946e1f769f82d961ad9e8ec95647192fa4a6fabe22a65141b4e320
+- path: releases/v0.3.2-rc2/release_manifest.yaml
+  sha256: sha256:14cfa7cace858ccf19843237786422753e666a65dbf6160c36378034bee0afe7
+- path: releases/v0.3.2-rc2/ci_evidence.json
+  sha256: sha256:264f9da4f29f885f457d24266945c5f065c3541f719769fccbafeeef09b126b0
+- path: releases/v0.3.2-rc2/profile-d-smoke.json
+  sha256: sha256:5ffcdca1fbe207a7c6291745402e15e82942a79f4cfa2a65ae75d92194e11503
+- path: releases/v0.3.2-rc2/profile-s-smoke.json
+  sha256: sha256:e62abf676ab7a9bcc6a7f27093371918da0eee6f9a8d921ad1f1112bdfb9346d
+- path: releases/v0.3.2-rc2/eval_report.json
+  sha256: sha256:19830c7c3f1cacd4ea80bcb4783ded3c8cb7c822f0e88d43421291ff3c85244a
+- path: releases/v0.3.2-rc2/redteam_report.json
+  sha256: sha256:f7897383e33d08380f9a8bf2c5bb6387fefa7fec9e21ebde31966155d669ccc5
+- path: releases/v0.3.2-rc2/operator_drill_report.json
+  sha256: sha256:b4411dbdbdfebe41e5bd7c23050532e63ee3c34fc31645a72f372f802f4039de
+evidence_bundle_hash: sha256:da1566583cc87c5d7e9aeefea181a868decedcd5037d5fefdff8df4ff949a5d2

@@ -135,7 +135,10 @@ artifacts:
     path: .ai-web/reports/agent-os-v32-baseline-audit.json
     status: present
   agent_os_v32_p5_release:
-    path: releases/v0.3.2-rc1/p5_gate_report.md
+    path: releases/v0.3.2-rc2/p5_gate_report.md
+    status: present
+  agent_os_v32_rc2_status:
+    path: docs/status/WEBBUILDER_AGENT_OS_STATUS.md
     status: present
   agent_os_v32_repair_loop:
     path: .ai-web/reports/agent-os-v32-repair-loop.jsonl
@@ -178,7 +181,7 @@ implementation:
   last_diff: null
   current_task: null
   completed_tasks: []
-  latest_agent_os_upgrade: releases/v0.3.2-rc1/p5_gate_report.md
+  latest_agent_os_upgrade: releases/v0.3.2-rc2/p5_gate_report.md
   agent_os_runtime: engine-run
   agent_runtime_role: compatibility_facade
   director_run_role: removed_legacy_phase_runner_tombstone_no_engine_run_delegation
@@ -186,13 +189,14 @@ implementation:
   tool_gateway_policy: DecisionPacket -> PolicyKernel -> ToolGateway required for
     side effects
   constitution_path: configs/constitution.yaml
-  p5_release_manifest: releases/v0.3.2-rc1/release_manifest.yaml
+  p5_release_manifest: releases/v0.3.2-rc2/release_manifest.yaml
   latest_agent_goal_completion_audit: .ai-web/reports/agent-goal-completion-audit-20260521.md
   agent_goal_completion_status: active_goal_completed_production_readiness_not_claimed
-  latest_green_ci_run: https://github.com/jihoho4242/webbuilderagent/actions/runs/26203877131
-  latest_green_ci_head: 04df0805362e26c3e6cfa9fe75d8ed88cfc00b8e
+  latest_green_ci_run: https://github.com/jihoho4242/webbuilderagent/actions/runs/26365437613
+  latest_green_ci_head: 398ceba29ed6a0c52562c448eeffd70fba9ceb47
   manus_grade_claim: not_claimed
   supervised_local_agent_director_status: ready_with_production_p5_blockers_documented
+  latest_rc_evidence_status: v0.3.2-rc2 evidence_backed_rc_candidate_production_blocked
 setup:
   latest_run: null
   package_manager: null

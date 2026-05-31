@@ -85,7 +85,13 @@ WebBuilderAgent? ??? **? ? ???? ?? ???? ???? ???**? ???, ???? ??? ???? ???? ????
 6. Eval / Red-team / Brain / Self-improvement MVP
    - `evals/`, `redteam/`, `lib/aiweb/brain`, `lib/aiweb/self_improvement`
 7. P5 release evidence
-   - `releases/v0.3.2-rc1/*`
+- `releases/v0.3.2-rc1/*`
+
+## Current status index
+
+- Canonical current status: `docs/status/WEBBUILDER_AGENT_OS_STATUS.md`
+- Current release candidate evidence: `releases/v0.3.2-rc2/`
+- Previous scaffold/demo evidence: `releases/v0.3.2-rc1/`
 
 ## ?? ?? ??
 

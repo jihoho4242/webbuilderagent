@@ -7,17 +7,26 @@ module Aiweb
   module Ops
     class ReleaseManifest
       def build(p5_evidence)
-        evidence_files = %w[
-          releases/v0.3.2-rc1/p5_gate_report.md
-        ].map do |path|
+        release_id = p5_evidence.fetch("release_id")
+        evidence_names = %w[
+          p5_gate_report.md
+          ci_evidence.json
+          profile-d-smoke.json
+          profile-s-smoke.json
+          eval_report.json
+          redteam_report.json
+          operator_drill_report.json
+        ]
+        evidence_files = evidence_names.map do |name|
+          path = "releases/#{release_id}/#{name}"
           {
             "path" => path,
             "sha256" => File.file?(path) ? "sha256:#{Digest::SHA256.file(path).hexdigest}" : nil
           }
-        end
+        end.select { |entry| entry["sha256"] }
         {
           "schema_version" => 1,
-          "release_id" => p5_evidence.fetch("release_id"),
+          "release_id" => release_id,
           "release_ready" => p5_evidence.fetch("release_ready"),
           "p5_status" => p5_evidence.fetch("p5_status", "unknown"),
           "production_readiness_claimed" => p5_evidence.fetch("production_readiness_claimed", false),
@@ -94,6 +103,7 @@ module Aiweb
             "critical_high_bypass_count" => p5_evidence.dig("redteam", "critical_high_bypass_count"),
             "production_ready_claim_allowed" => p5_evidence.dig("redteam", "production_ready_claim_allowed")
           },
+          "profile_smoke_report" => p5_evidence.fetch("profile_smoke", {}),
           "brain_report" => {
             "status" => p5_evidence.dig("brain", "status"),
             "verifier_status" => p5_evidence.dig("brain", "verifier_status"),
